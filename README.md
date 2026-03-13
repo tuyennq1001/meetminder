@@ -1,9 +1,18 @@
-# My Translator
+<p align="center">
+  <img src="icon.png" alt="My Translator" width="128" height="128">
+</p>
 
-Real-time speech translation for macOS (Apple Silicon). Captures system audio or microphone input, transcribes it, and translates it — all in real-time using your own [Soniox](https://soniox.com) API key.
+<h1 align="center">My Translator</h1>
 
-![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-black?logo=apple)
-![License](https://img.shields.io/badge/license-MIT-blue)
+<p align="center">
+  Real-time speech translation for macOS (Apple Silicon).<br>
+  Captures system audio or microphone input, transcribes and translates it — all in real-time using your own <a href="https://soniox.com">Soniox</a> API key.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-black?logo=apple" alt="macOS">
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
+</p>
 
 ## Features
 
