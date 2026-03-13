@@ -1,12 +1,5 @@
 <p align="center">
-  <img src="icon.png" alt="My Translator" width="128" height="128">
-</p>
-
-<h1 align="center">My Translator</h1>
-
-<p align="center">
-  Real-time speech translation for macOS (Apple Silicon).<br>
-  Captures system audio or microphone input, transcribes and translates it — all in real-time using your own <a href="https://soniox.com">Soniox</a> API key.
+  <img src="banner.png" alt="My Translator — Real-time Speech Translation">
 </p>
 
 <p align="center">
