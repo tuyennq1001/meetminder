@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="banner.png" alt="My Translator — Real-time Speech Translation">
+  <img src="banner.png?v=2" alt="My Translator — Real-time Speech Translation">
 </p>
 
 <p align="center">
