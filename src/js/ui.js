@@ -182,9 +182,9 @@ export class TranscriptUI {
 
             if (seg.status === 'translated' && seg.translation) {
                 html += `<span class="seg-translated">${this._esc(seg.translation)}</span>`;
-            } else if (seg.status === 'original' && seg.original) {
-                html += `<span class="seg-original">${this._esc(seg.original)}</span>`;
             }
+            // 'original' segments (pending translation) are not rendered
+            // — provisional text (gray) already shows what's being heard
         }
 
         // Provisional text with speaker
