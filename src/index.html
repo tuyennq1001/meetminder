@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Translator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles/main.css" />
+</head>
+
+<body>
+  <!-- ═══════════════════ OVERLAY VIEW ═══════════════════ -->
+  <div id="overlay-view" class="view active">
+    <!-- Drag Region (title bar area) -->
+    <div id="drag-region" data-tauri-drag-region>
+      <div class="control-bar" data-tauri-drag-region>
+        <button id="btn-settings" class="icon-btn" title="Settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+
+        <div class="status-area" data-tauri-drag-region>
+          <span id="status-indicator" class="status-dot disconnected"></span>
+          <span id="status-text" class="status-text">Ready</span>
+        </div>
+
+        <div class="source-controls">
+          <button id="btn-source-system" class="source-btn active" title="System Audio">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+            </svg>
+          </button>
+          <button id="btn-source-mic" class="source-btn" title="Microphone">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+          </button>
+        </div>
+
+        <button id="btn-start" class="action-btn" title="Start/Stop">
+          <svg id="icon-play" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
+          <svg id="icon-stop" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display:none">
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+          </svg>
+        </button>
+
+        <button id="btn-clear" class="icon-btn" title="Clear transcript">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            <path d="M10 11v6" />
+            <path d="M14 11v6" />
+          </svg>
+        </button>
+
+        <button id="btn-close" class="icon-btn close-btn" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Transcript Area -->
+    <div id="transcript-container" data-tauri-drag-region>
+      <div id="transcript-content" data-tauri-drag-region>
+        <div class="transcript-placeholder">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+            opacity="0.4">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="23" />
+            <line x1="8" y1="23" x2="16" y2="23" />
+          </svg>
+          <p>Press ▶ to start translating</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resize Handle -->
+    <div id="resize-handle"></div>
+  </div>
+
+  <!-- ═══════════════════ SETTINGS VIEW ═══════════════════ -->
+  <div id="settings-view" class="view">
+    <div id="settings-drag" data-tauri-drag-region>
+      <div class="settings-header">
+        <button id="btn-back" class="icon-btn" title="Back">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="19" y1="12" x2="5" y2="12" />
+            <polyline points="12 19 5 12 12 5" />
+          </svg>
+        </button>
+        <h2>Settings</h2>
+        <div style="width: 36px;"></div>
+      </div>
+    </div>
+
+    <div class="settings-body">
+      <!-- API Key -->
+      <div class="settings-section">
+        <label class="section-label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path
+              d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+          </svg>
+          Soniox API Key
+        </label>
+        <div class="input-group">
+          <input type="password" id="input-api-key" placeholder="Enter your Soniox API key..." autocomplete="off" />
+          <button id="btn-toggle-key" class="icon-btn small" title="Show/Hide">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </button>
+        </div>
+        <p class="hint">Get your key at <a href="#" id="link-soniox">console.soniox.com</a></p>
+      </div>
+
+      <!-- Languages -->
+      <div class="settings-section">
+        <label class="section-label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="2" y1="12" x2="22" y2="12" />
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+          </svg>
+          Languages
+        </label>
+        <div class="field-row">
+          <div class="field">
+            <span class="field-label">Source</span>
+            <select id="select-source-lang">
+              <option value="auto">Auto-detect</option>
+              <option value="en">English</option>
+              <option value="ja">Japanese</option>
+              <option value="ko">Korean</option>
+              <option value="zh">Chinese</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="es">Spanish</option>
+              <option value="vi">Vietnamese</option>
+              <option value="th">Thai</option>
+              <option value="id">Indonesian</option>
+            </select>
+          </div>
+          <div class="field">
+            <span class="field-label">Target</span>
+            <select id="select-target-lang">
+              <option value="vi">Vietnamese</option>
+              <option value="en">English</option>
+              <option value="ja">Japanese</option>
+              <option value="ko">Korean</option>
+              <option value="zh">Chinese</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="es">Spanish</option>
+              <option value="th">Thai</option>
+              <option value="id">Indonesian</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audio Source -->
+      <div class="settings-section">
+        <label class="section-label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+          </svg>
+          Audio Source
+        </label>
+        <div class="radio-group" id="audio-source-group">
+          <label class="radio-option">
+            <input type="radio" name="audio-source" value="system" checked />
+            <span class="radio-label">System Audio</span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="audio-source" value="microphone" />
+            <span class="radio-label">Microphone</span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="audio-source" value="both" />
+            <span class="radio-label">Both</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Display Options -->
+      <div class="settings-section">
+        <label class="section-label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+            <line x1="12" y1="17" x2="12" y2="21" />
+          </svg>
+          Display
+        </label>
+
+        <div class="slider-field">
+          <span class="field-label">Opacity</span>
+          <input type="range" id="range-opacity" min="20" max="100" value="85" />
+          <span id="opacity-value" class="range-value">85%</span>
+        </div>
+
+        <div class="slider-field">
+          <span class="field-label">Font Size</span>
+          <input type="range" id="range-font-size" min="12" max="28" value="16" />
+          <span id="font-size-value" class="range-value">16px</span>
+        </div>
+
+        <div class="slider-field">
+          <span class="field-label">Max Lines</span>
+          <input type="range" id="range-max-lines" min="2" max="15" value="5" />
+          <span id="max-lines-value" class="range-value">5</span>
+        </div>
+
+        <label class="checkbox-option">
+          <input type="checkbox" id="check-show-original" checked />
+          <span class="checkbox-label">Show original text</span>
+        </label>
+      </div>
+
+      <!-- Custom Context -->
+      <div class="settings-section">
+        <label class="section-label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+          Custom Context <span class="optional-badge">Optional</span>
+        </label>
+        <div class="field">
+          <span class="field-label">Domain</span>
+          <input type="text" id="input-context-domain" placeholder="e.g. Meeting, Technical, Medical..." />
+        </div>
+        <div class="field" style="margin-top: 8px;">
+          <span class="field-label">Terms</span>
+          <input type="text" id="input-context-terms" placeholder="e.g. sprint, deploy, kubernetes..." />
+        </div>
+        <p class="hint">Comma-separated terms to improve transcription accuracy</p>
+      </div>
+
+      <!-- Save Button -->
+      <div class="settings-actions">
+        <button id="btn-save-settings" class="primary-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          Save & Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/settings.js"></script>
+  <script type="module" src="/js/ui.js"></script>
+  <script type="module" src="/js/soniox.js"></script>
+  <script type="module" src="/js/app.js"></script>
+</body>
+
+</html>
