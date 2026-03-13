@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
 </p>
 
-> 📖 **[Hướng dẫn cài đặt (Tiếng Việt)](docs/installation_guide_vi.md)**
+> 📖 **[Installation Guide (English)](docs/installation_guide.md)** · **[Hướng dẫn cài đặt (Tiếng Việt)](docs/installation_guide_vi.md)**
 
 ## Features
 
