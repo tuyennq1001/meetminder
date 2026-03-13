@@ -7,7 +7,7 @@ Hướng dẫn từng bước cài đặt và sử dụng **My Translator** trê
 ## Yêu cầu
 
 - macOS 13 trở lên (Apple Silicon — chip M1/M2/M3/M4)
-- API key của [Soniox](https://soniox.com) (đăng ký miễn phí)
+- API key của [Soniox](https://soniox.com) (trả theo dùng, ~$0.12/giờ)
 
 ---
 
@@ -76,7 +76,7 @@ Sau khi app mở lại, bấm ⚙️ (hoặc `⌘ ,`) để vào **Settings**:
 ![Cài đặt API key và ngôn ngữ](user_manual/mytrans_07.png)
 
 > 💡 **Lấy API key ở đâu?**
-> 1. Vào [soniox.com](https://soniox.com) → tạo tài khoản miễn phí
+> 1. Vào [soniox.com](https://soniox.com) → tạo tài khoản
 > 2. Vào Dashboard → copy API key
 
 ---

@@ -40,7 +40,7 @@ xattr -cr /Applications/My\ Translator.app
 
 ### 2. Get a Soniox API Key
 
-1. Create a free account at [soniox.com](https://soniox.com)
+1. Create an account at [soniox.com](https://soniox.com) (pay-per-use, ~$0.12/hour)
 2. Go to your [Dashboard](https://soniox.com/dashboard) → copy your API key
 
 ### 3. Configure

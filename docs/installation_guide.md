@@ -7,7 +7,7 @@ Step-by-step guide to install and use **My Translator** on macOS.
 ## Requirements
 
 - macOS 13 or later (Apple Silicon — M1/M2/M3/M4)
-- [Soniox](https://soniox.com) API key (free sign-up)
+- [Soniox](https://soniox.com) API key (pay-per-use, ~$0.12/hour)
 
 ---
 
@@ -76,7 +76,7 @@ After the app reopens, click ⚙️ (or press `⌘ ,`) to open **Settings**:
 ![Configure API key and languages](user_manual/mytrans_07.png)
 
 > 💡 **Where to get an API key?**
-> 1. Go to [soniox.com](https://soniox.com) → create a free account
+> 1. Go to [soniox.com](https://soniox.com) → create an account
 > 2. Go to Dashboard → copy your API key
 
 ---
