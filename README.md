@@ -29,7 +29,7 @@
 
 ### 1. Download & Install
 
-1. Download the latest `.dmg` from the [Releases page](https://github.com/phuc-nt/my-translator/releases/latest)
+1. Download the latest `.dmg` from the [macOS Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.1.0) (or [Windows Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.1.0-windows))
 2. Open the `.dmg` and drag **My Translator** to Applications
 3. **Important** — the app is not yet signed with an Apple Developer certificate (pending enrollment approval). macOS will block it on first open. Run this command **once** in Terminal to allow it:
 

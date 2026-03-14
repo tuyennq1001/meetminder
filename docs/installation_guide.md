@@ -13,7 +13,7 @@ Step-by-step guide to install and use **My Translator** on macOS.
 
 ## Step 1 — Download
 
-Download the latest `.dmg` from: [**Releases**](https://github.com/phuc-nt/my-translator/releases/latest)
+Download the latest `.dmg` from: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/tag/v0.1.0)
 
 ---
 
