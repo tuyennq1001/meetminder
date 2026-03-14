@@ -4,11 +4,13 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-black?logo=apple" alt="macOS">
+  <img src="https://img.shields.io/badge/Windows-10%2F11-blue?logo=windows" alt="Windows">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
 </p>
 
-> 📖 **[Installation Guide (English)](docs/installation_guide.md)**<br>
-> 📖 **[Hướng dẫn cài đặt (Tiếng Việt)](docs/installation_guide_vi.md)**
+> 📖 **[Installation Guide — macOS (English)](docs/installation_guide.md)**<br>
+> 📖 **[Hướng dẫn cài đặt — macOS (Tiếng Việt)](docs/installation_guide_vi.md)**<br>
+> 📖 **[Installation Guide — Windows](docs/installation_guide_win.md)**
 
 ## Features
 
@@ -135,9 +137,11 @@ The app bundle is at `src-tauri/target/release/bundle/macos/My Translator.app`.
 
 ## Roadmap
 
+- [x] macOS Apple Silicon support
+- [x] Windows support
 - [ ] macOS Intel support
-- [ ] Windows support
 - [ ] Apple code signing & notarization
+- [ ] Windows code signing
 
 ## License
 
