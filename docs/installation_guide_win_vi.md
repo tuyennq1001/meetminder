@@ -1,0 +1,137 @@
+# Hướng dẫn cài đặt — Windows
+
+Hướng dẫn từng bước cài đặt và sử dụng **My Translator** trên Windows 10/11.
+
+---
+
+## Yêu cầu
+
+- Windows 10 trở lên (x64 hoặc ARM64)
+- API key từ [Soniox](https://soniox.com) (trả theo dùng, ~$0.12/giờ)
+
+---
+
+## Bước 1 — Tải xuống
+
+Tải file `.exe` mới nhất tại: [**Releases**](https://github.com/phuc-nt/my-translator/releases/latest)
+
+Chọn phiên bản phù hợp:
+- **x64** — Đa số PC Windows (Intel/AMD)
+- **arm64** — Windows trên ARM (Surface Pro X, laptop Snapdragon)
+
+---
+
+## Bước 2 — Bỏ qua SmartScreen
+
+> ⚠️ Ứng dụng chưa có chữ ký số. Windows SmartScreen sẽ chặn lần chạy đầu tiên.
+
+Khi thấy màn hình **"Windows protected your PC"**:
+
+1. Nhấn **"More info"** (Thêm thông tin)
+
+![SmartScreen — nhấn More info](user_manual_win/mytrans_win_01.png)
+
+2. Nhấn **"Run anyway"** (Vẫn chạy)
+
+![Nhấn Run anyway](user_manual_win/mytrans_win_02.png)
+
+---
+
+## Bước 3 — Cài đặt
+
+Trình cài đặt sẽ hướng dẫn bạn:
+
+1. Nhấn **Next** để bắt đầu
+
+![Welcome to My Translator Setup](user_manual_win/mytrans_win_03.png)
+
+2. Chọn thư mục cài đặt (để mặc định là được) → nhấn **Next**
+
+![Chọn thư mục cài đặt](user_manual_win/mytrans_win_04.png)
+
+3. Đợi cài đặt hoàn tất → nhấn **Next**
+
+![Cài đặt hoàn tất](user_manual_win/mytrans_win_05.png)
+
+4. Tích **"Run My Translator"** → nhấn **Finish**
+
+![Hoàn thành — Chạy My Translator](user_manual_win/mytrans_win_06.png)
+
+---
+
+## Bước 4 — Cấu hình API Key và ngôn ngữ
+
+Ứng dụng mở lên. Nhấn ⚙️ để mở **Settings** (Cài đặt):
+
+![Màn hình chính — Ready](user_manual_win/mytrans_win_07.png)
+
+Cấu hình:
+
+1. **SONIOX API KEY** — Dán API key từ [console.soniox.com](https://console.soniox.com)
+2. **Source** — Chọn ngôn ngữ nguồn (hoặc để Auto-detect - tự nhận diện)
+3. **Target** — Chọn ngôn ngữ đích (VD: Vietnamese, English...)
+4. **Audio Source** — Chọn System Audio (âm thanh máy tính) hoặc Microphone
+
+![Settings — API Key và ngôn ngữ](user_manual_win/mytrans_win_08.png)
+
+Kéo xuống để xem thêm tuỳ chọn:
+
+- **Font Size** — Điều chỉnh cỡ chữ
+- **Max Lines** — Số dòng hiển thị tối đa
+- **Show original text** — Hiện text gốc bên cạnh bản dịch
+- **Custom Context** — Thêm lĩnh vực/thuật ngữ để dịch chính xác hơn
+
+![Settings — Hiển thị và ngữ cảnh](user_manual_win/mytrans_win_09.png)
+
+Nhấn **Save & Close** khi xong.
+
+> 💡 **Lấy API key ở đâu?**
+> 1. Vào [soniox.com](https://soniox.com) → tạo tài khoản
+> 2. Vào Dashboard → copy API key
+
+---
+
+## Bước 5 — Bắt đầu dịch!
+
+Nhấn ▶ để bắt đầu. Ứng dụng sẽ hiện **Listening...**
+
+![Đang lắng nghe](user_manual_win/mytrans_win_10.png)
+
+Giờ phát bất kỳ âm thanh nào trên PC (YouTube, Zoom, podcast...) và bản dịch sẽ xuất hiện theo thời gian thực!
+
+![Dịch theo thời gian thực với nhãn speaker](user_manual_win/mytrans_win_11.png)
+
+---
+
+## Mẹo sử dụng
+
+- **System Audio** bắt tất cả âm thanh đang phát trên PC — không cần virtual cable
+- **Microphone** bắt giọng nói trực tiếp từ mic
+- Ứng dụng hoạt động như **overlay** — kéo thả tự do, thay đổi kích thước tuỳ ý
+- Bản dịch được **lưu tự động** — nhấn 📋 để xem file transcript
+
+---
+
+## Phím tắt
+
+| Phím tắt | Chức năng |
+|----------|-----------|
+| `Ctrl+Enter` | Bắt đầu / Dừng |
+| `Ctrl+,` | Mở Settings |
+| `Esc` | Đóng Settings |
+
+---
+
+## Khắc phục sự cố
+
+### SmartScreen chặn trình cài đặt
+→ Nhấn **"More info"** → **"Run anyway"** (xem Bước 2).
+
+### Không hiện bản dịch
+→ Kiểm tra API key Soniox đã đúng trong Settings (⚙️).
+
+### Không bắt được âm thanh hệ thống
+→ Đảm bảo đang phát audio trên PC. Một số ứng dụng dùng exclusive audio mode — thử nguồn audio khác.
+
+### Ứng dụng không mở
+→ Đảm bảo WebView2 Runtime đã cài. Windows 10/11 thường có sẵn, nhưng phiên bản cũ cần cài từ [Microsoft](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).

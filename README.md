@@ -10,7 +10,8 @@
 
 > 📖 **[Installation Guide — macOS (English)](docs/installation_guide.md)**<br>
 > 📖 **[Hướng dẫn cài đặt — macOS (Tiếng Việt)](docs/installation_guide_vi.md)**<br>
-> 📖 **[Installation Guide — Windows](docs/installation_guide_win.md)**
+> 📖 **[Installation Guide — Windows](docs/installation_guide_win.md)**<br>
+> 📖 **[Hướng dẫn cài đặt — Windows (Tiếng Việt)](docs/installation_guide_win_vi.md)**
 
 ## Features
 
