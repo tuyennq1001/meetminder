@@ -3,7 +3,7 @@ mod commands;
 mod settings;
 
 use audio::microphone::MicCapture;
-use audio::system_audio::SystemAudioCapture;
+use audio::SystemAudioCapture;
 use commands::audio::AudioState;
 use settings::{Settings, SettingsState};
 use std::sync::Mutex;
