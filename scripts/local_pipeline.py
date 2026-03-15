@@ -94,19 +94,14 @@ class LocalPipeline:
             emit({"type": "status", "message": "Loading Whisper-large-v3-turbo..."})
             t = time.time()
             import mlx_whisper
-            # Pre-load by running a tiny transcription
-            _dummy = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            with wave.open(_dummy.name, "w") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(16000)
-                wf.writeframes(b"\x00" * 3200)  # 0.1s silence
+            import numpy as np
+            # Pre-load by running a tiny transcription (numpy array to bypass ffmpeg)
+            dummy_audio = np.zeros(1600, dtype=np.float32)  # 0.1s silence
             mlx_whisper.transcribe(
-                _dummy.name,
+                dummy_audio,
                 path_or_hf_repo="mlx-community/whisper-large-v3-turbo",
                 language="ja",
             )
-            os.unlink(_dummy.name)
             self.asr_model = "mlx-community/whisper-large-v3-turbo"
             log(f"Whisper loaded in {time.time()-t:.1f}s")
         elif self.asr_model_type == "qwen":
