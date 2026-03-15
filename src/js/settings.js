@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = {
   font_size: 16,
   max_lines: 5,
   show_original: true,
+  translation_mode: 'soniox',
   custom_context: null,
 };
 

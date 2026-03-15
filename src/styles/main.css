@@ -413,16 +413,27 @@ body {
   overflow-wrap: break-word;
 }
 
+/* Each segment block: original + translation pair */
+.seg-block {
+  display: block;
+  margin-bottom: 4px;
+}
+
 /* Translated text — primary white */
 .seg-translated {
+  display: block;
   color: var(--text-primary);
   font-weight: 400;
 }
 
-/* Original text pending translation — cyan accent */
+/* Original text — smaller, dimmer, above translation */
 .seg-original {
-  color: #5ce0d8;
+  display: block;
+  color: rgba(255, 255, 255, 0.45);
   font-weight: 400;
+  font-size: 0.8em;
+  margin-top: 8px;
+  margin-bottom: 2px;
 }
 
 /* Speaker label — shown when speaker changes */
@@ -438,6 +449,7 @@ body {
 
 /* Provisional text — dimmed, in-progress */
 .seg-provisional {
+  display: block;
   color: var(--text-muted);
   font-weight: 400;
   font-style: italic;
@@ -889,4 +901,190 @@ input[type="range"]::-webkit-slider-thumb:hover {
   to {
     opacity: 1;
   }
+}
+
+/* ─── Setup Modal ───────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: modalFadeIn 0.3s ease;
+}
+
+.modal-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px 0;
+}
+
+.modal-header h3 {
+  color: var(--text-primary);
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: 16px 24px;
+}
+
+.modal-desc {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.modal-footer {
+  padding: 12px 24px 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.secondary-btn {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 8px 20px;
+  font-size: 0.85em;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.secondary-btn:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+/* Progress bar */
+.progress-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), #a78bfa);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+  position: relative;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  animation: progressShine 2s infinite;
+}
+
+.progress-pct {
+  color: var(--text-secondary);
+  font-size: 0.8em;
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+  text-align: right;
+}
+
+/* Step indicators */
+.setup-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.setup-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.setup-step.active {
+  background: var(--accent-glow);
+}
+
+.setup-step.done {
+  opacity: 0.6;
+}
+
+.step-icon {
+  font-size: 0.9em;
+  width: 20px;
+  text-align: center;
+}
+
+.step-text {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+
+.setup-step.active .step-text {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* Status text */
+.setup-status {
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+#setup-status-text {
+  color: var(--text-muted);
+  font-size: 0.8em;
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  word-break: break-all;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes progressShine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
 }

@@ -15,35 +15,37 @@ fn transcript_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-/// Append a line of text to today's transcript file
+/// Save a complete transcript session to a timestamped file
+/// Called when user clicks "Clear", stops recording, or closes app
 #[tauri::command]
-pub fn append_transcript(app: AppHandle, text: String, speaker: Option<String>) -> Result<(), String> {
+pub fn save_transcript(app: AppHandle, content: String) -> Result<String, String> {
     let dir = transcript_dir(&app)?;
-    let today = Local::now().format("%Y-%m-%d").to_string();
-    let filepath = dir.join(format!("{}.txt", today));
+    let now = Local::now();
+    let filename = format!("{}.md", now.format("%Y-%m-%d_%H-%M-%S"));
+    let filepath = dir.join(&filename);
 
-    let timestamp = Local::now().format("%H:%M:%S").to_string();
-    let speaker_prefix = speaker.map(|s| format!("[Speaker {}] ", s)).unwrap_or_default();
-    let line = format!("[{}] {}{}\n", timestamp, speaker_prefix, text);
+    fs::write(&filepath, content)
+        .map_err(|e| format!("Failed to save transcript: {}", e))?;
 
-    use std::io::Write;
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&filepath)
-        .map_err(|e| format!("Failed to open transcript file: {}", e))?;
-
-    file.write_all(line.as_bytes())
-        .map_err(|e| format!("Failed to write transcript: {}", e))?;
-
-    Ok(())
+    Ok(filepath.to_string_lossy().to_string())
 }
 
-/// Get the path to today's transcript file (for user reference)
+/// Open the transcript directory in the system file manager
+/// macOS: Finder, Windows: Explorer
 #[tauri::command]
-pub fn get_transcript_path(app: AppHandle) -> Result<String, String> {
+pub fn open_transcript_dir(app: AppHandle) -> Result<(), String> {
     let dir = transcript_dir(&app)?;
-    let today = Local::now().format("%Y-%m-%d").to_string();
-    let filepath = dir.join(format!("{}.txt", today));
-    Ok(filepath.to_string_lossy().to_string())
+
+    #[cfg(target_os = "macos")]
+    let cmd = "open";
+    #[cfg(target_os = "windows")]
+    let cmd = "explorer";
+    #[cfg(target_os = "linux")]
+    let cmd = "xdg-open";
+
+    std::process::Command::new(cmd)
+        .arg(&dir)
+        .spawn()
+        .map_err(|e| format!("Failed to open transcript dir: {}", e))?;
+    Ok(())
 }

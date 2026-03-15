@@ -14,8 +14,12 @@ class App {
     constructor() {
         this.isRunning = false;
         this.currentSource = 'system'; // 'system' | 'microphone'
+        this.translationMode = 'soniox'; // 'soniox' | 'local'
         this.transcriptUI = null;
         this.appWindow = getCurrentWindow();
+        this.localPipelineChannel = null;
+        this.localPipelineReady = false;
+        this.recordingStartTime = null;
     }
 
     async init() {
@@ -57,8 +61,11 @@ class App {
             this._showView('overlay');
         });
 
-        // Close button
+        // Close button (overlay)
         document.getElementById('btn-close').addEventListener('click', async () => {
+            if (this.transcriptUI.hasSegments()) {
+                await this._saveTranscriptFile();
+            }
             await this._saveWindowPosition();
             await this.stop();
             await this.appWindow.close();
@@ -82,19 +89,59 @@ class App {
             this._setSource('microphone');
         });
 
-        // Clear button
-        document.getElementById('btn-clear').addEventListener('click', () => {
+        // Clear button — save transcript file then clear
+        document.getElementById('btn-clear').addEventListener('click', async () => {
+            if (this.transcriptUI.hasSegments()) {
+                await this._saveTranscriptFile();
+            }
             this.transcriptUI.clear();
             this.transcriptUI.showPlaceholder();
+            this.recordingStartTime = null;
+        });
+
+        // Copy transcript button
+        document.getElementById('btn-copy').addEventListener('click', async () => {
+            const text = this.transcriptUI.getPlainText();
+            if (text) {
+                await navigator.clipboard.writeText(text);
+                this._showToast('Copied to clipboard', 'success');
+            } else {
+                this._showToast('Nothing to copy', 'info');
+            }
+        });
+
+        // Open saved transcripts folder
+        document.getElementById('btn-open-transcripts').addEventListener('click', async () => {
+            try {
+                await invoke('open_transcript_dir');
+            } catch (err) {
+                this._showToast('Failed to open folder: ' + err, 'error');
+            }
         });
 
         // Settings form elements
         this._bindSettingsForm();
 
+        // Manual drag for settings view
+        // data-tauri-drag-region doesn't work well when parent contains buttons
+        // Using Tauri's recommended appWindow.startDragging() approach instead
+        document.getElementById('settings-view')?.addEventListener('mousedown', (e) => {
+            const interactive = e.target.closest('button, input, select, label, a, textarea, .settings-section, .settings-actions');
+            if (!interactive && e.buttons === 1) {
+                e.preventDefault();
+                this.appWindow.startDragging();
+            }
+        });
+
         // Toggle API key visibility
         document.getElementById('btn-toggle-key').addEventListener('click', () => {
             const input = document.getElementById('input-api-key');
             input.type = input.type === 'password' ? 'text' : 'password';
+        });
+
+        // Translation mode toggle
+        document.getElementById('select-translation-mode').addEventListener('change', (e) => {
+            this._updateModeUI(e.target.value);
         });
 
         // Soniox link
@@ -128,8 +175,6 @@ class App {
 
         sonioxClient.onTranslation = (text) => {
             this.transcriptUI.addTranslation(text);
-            // Save translation to disk
-            this._saveTranscript(text);
         };
 
         sonioxClient.onProvisional = (text, speaker) => {
@@ -220,6 +265,8 @@ class App {
         document.getElementById('input-api-key').value = s.soniox_api_key || '';
         document.getElementById('select-source-lang').value = s.source_language || 'auto';
         document.getElementById('select-target-lang').value = s.target_language || 'vi';
+        document.getElementById('select-translation-mode').value = s.translation_mode || 'soniox';
+        this._updateModeUI(s.translation_mode || 'soniox');
 
         // Audio source radio
         const radioValue = s.audio_source || 'system';
@@ -250,6 +297,7 @@ class App {
             soniox_api_key: document.getElementById('input-api-key').value.trim(),
             source_language: document.getElementById('select-source-lang').value,
             target_language: document.getElementById('select-target-lang').value,
+            translation_mode: document.getElementById('select-translation-mode').value,
             audio_source: document.querySelector('input[name="audio-source"]:checked')?.value || 'system',
             overlay_opacity: parseInt(document.getElementById('range-opacity').value) / 100,
             font_size: parseInt(document.getElementById('range-font-size').value),
@@ -325,12 +373,24 @@ class App {
             this.currentSource === 'microphone');
     }
 
+    _updateModeUI(mode) {
+        const apiKeySection = document.getElementById('section-api-key');
+        const hintSoniox = document.getElementById('hint-mode-soniox');
+        const hintLocal = document.getElementById('hint-mode-local');
+
+        if (apiKeySection) apiKeySection.style.display = mode === 'local' ? 'none' : '';
+        if (hintSoniox) hintSoniox.style.display = mode === 'soniox' ? '' : 'none';
+        if (hintLocal) hintLocal.style.display = mode === 'local' ? '' : 'none';
+    }
+
     // ─── Start/Stop ────────────────────────────────────────
 
     async start() {
         const settings = settingsManager.get();
+        this.translationMode = settings.translation_mode || 'soniox';
+        console.log('[App] start() called, translation_mode:', this.translationMode, 'settings:', JSON.stringify(settings));
 
-        if (!settings.soniox_api_key) {
+        if (this.translationMode === 'soniox' && !settings.soniox_api_key) {
             this._showToast('Please add your Soniox API key in Settings', 'error');
             this._showView('settings');
             return;
@@ -338,15 +398,23 @@ class App {
 
         this.isRunning = true;
         this._updateStartButton();
+        if (!this.recordingStartTime) this.recordingStartTime = Date.now();
 
         // Clear transcript only if nothing is showing
         if (!this.transcriptUI.hasContent()) {
             this.transcriptUI.showListening();
         } else {
-            // Remove provisional text but keep existing content
             this.transcriptUI.clearProvisional();
         }
 
+        if (this.translationMode === 'local') {
+            await this._startLocalMode(settings);
+        } else {
+            await this._startSonioxMode(settings);
+        }
+    }
+
+    async _startSonioxMode(settings) {
         // Connect to Soniox
         console.log('[App] Connecting to Soniox...');
         sonioxClient.connect({
@@ -384,6 +452,248 @@ class App {
         }
     }
 
+    async _startLocalMode(settings) {
+        console.log('[App] Starting Local mode (MLX models)...');
+        this._updateStatus('connecting');
+
+        // Check if MLX setup is complete
+        try {
+            const checkResult = await invoke('check_mlx_setup');
+            const status = JSON.parse(checkResult);
+            if (!status.ready) {
+                // Need setup — ask user
+                const proceed = confirm(
+                    'MLX local models need to be downloaded (~5GB).\n' +
+                    'This is a one-time setup.\n\n' +
+                    'Continue?'
+                );
+                if (!proceed) {
+                    this._updateStatus('disconnected');
+                    this.isRunning = false;
+                    this._updateStartButton();
+                    return;
+                }
+
+                // Run setup with progress
+                await this._runMlxSetup();
+            }
+        } catch (err) {
+            console.warn('[App] MLX check failed (proceeding anyway):', err);
+        }
+
+        // Step 1: Start pipeline FIRST (independent of audio)
+        try {
+            this._showToast('Starting local pipeline...', 'success');
+
+            this.localPipelineChannel = new window.__TAURI__.core.Channel();
+            this.localPipelineReady = false;
+
+            this.localPipelineChannel.onmessage = (msg) => {
+                let data;
+                try {
+                    data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
+                } catch (e) {
+                    console.warn('[Local] JSON parse failed:', typeof msg, msg);
+                    return;
+                }
+                try {
+                    this._handleLocalPipelineResult(data);
+                } catch (e) {
+                    console.error('[Local] Handler error for type:', data?.type, e);
+                }
+            };
+
+            const sourceLangMap = {
+                'auto': 'auto', 'ja': 'Japanese', 'en': 'English',
+                'zh': 'Chinese', 'ko': 'Korean', 'vi': 'Vietnamese',
+            };
+            const sourceLang = sourceLangMap[settings.source_language] || 'Japanese';
+
+            await invoke('start_local_pipeline', {
+                sourceLang: sourceLang,
+                targetLang: settings.target_language || 'vi',
+                channel: this.localPipelineChannel,
+            });
+            console.log('[App] Local pipeline spawned');
+        } catch (err) {
+            console.error('Failed to start pipeline:', err);
+            this._showToast(`Pipeline error: ${err}`, 'error');
+            await this.stop();
+            return;
+        }
+
+        // Step 2: Start audio capture (failure is non-fatal for debugging)
+        try {
+            const audioChannel = new window.__TAURI__.core.Channel();
+            let audioChunkCount = 0;
+
+            audioChannel.onmessage = async (pcmData) => {
+                audioChunkCount++;
+                if (audioChunkCount <= 3 || audioChunkCount % 50 === 0) {
+                    console.log(`[Local] Audio batch #${audioChunkCount}, size:`, pcmData?.length || 0);
+                }
+                try {
+                    await invoke('send_audio_to_pipeline', { data: Array.from(new Uint8Array(pcmData)) });
+                } catch (e) {
+                    // Pipeline may not be ready yet
+                }
+            };
+
+            await invoke('start_capture', {
+                source: this.currentSource,
+                channel: audioChannel,
+            });
+            console.log('[App] Audio capture started');
+        } catch (err) {
+            console.error('Audio capture failed (pipeline still running):', err);
+            this._showToast(`Audio: ${err}. Pipeline still loading...`, 'error');
+        }
+    }
+
+    _handleLocalPipelineResult(data) {
+        switch (data.type) {
+            case 'ready':
+                this.localPipelineReady = true;
+                this._updateStatus('connected');
+                this._showToast('Local models ready!', 'success');
+                break;
+            case 'result':
+                // Chase effect: show original first (gray), then translation (white)
+                if (data.original) {
+                    this.transcriptUI.addOriginal(data.original);
+                }
+                // Small delay for visual "chase" effect
+                setTimeout(() => {
+                    if (data.translated) {
+                        this.transcriptUI.addTranslation(data.translated);
+                    }
+                }, 80);
+                break;
+            case 'status':
+                const statusText = document.getElementById('status-text');
+                if (statusText) {
+                    statusText.textContent = data.message || 'Loading...';
+                }
+                break;
+            case 'done':
+                this._updateStatus('disconnected');
+                break;
+        }
+    }
+
+    async _runMlxSetup() {
+        const modal = document.getElementById('setup-modal');
+        const progressFill = document.getElementById('setup-progress-fill');
+        const progressPct = document.getElementById('setup-progress-pct');
+        const statusText = document.getElementById('setup-status-text');
+        const cancelBtn = document.getElementById('btn-cancel-setup');
+
+        // Step mapping: step name → total progress weight
+        const stepWeights = { check: 5, venv: 10, packages: 35, models: 50 };
+        let totalProgress = 0;
+
+        const updateStep = (stepName, icon, isActive) => {
+            const stepEl = document.getElementById(`step-${stepName}`);
+            if (!stepEl) return;
+            stepEl.querySelector('.step-icon').textContent = icon;
+            stepEl.classList.toggle('active', isActive);
+            stepEl.classList.toggle('done', icon === '✅');
+        };
+
+        const updateProgress = (pct) => {
+            totalProgress = Math.min(100, pct);
+            progressFill.style.width = totalProgress + '%';
+            progressPct.textContent = Math.round(totalProgress) + '%';
+        };
+
+        // Show modal
+        modal.style.display = 'flex';
+
+        return new Promise((resolve, reject) => {
+            const channel = new window.__TAURI__.core.Channel();
+
+            // Cancel handler
+            const onCancel = () => {
+                modal.style.display = 'none';
+                reject(new Error('Setup cancelled'));
+            };
+            cancelBtn.addEventListener('click', onCancel, { once: true });
+
+            channel.onmessage = (msg) => {
+                let data;
+                try {
+                    data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
+                } catch (e) {
+                    return;
+                }
+
+                switch (data.type) {
+                    case 'progress':
+                        statusText.textContent = data.message || 'Working...';
+
+                        // Update step indicators
+                        if (data.step) {
+                            // Mark previous steps as done
+                            const steps = ['check', 'venv', 'packages', 'models'];
+                            const currentIdx = steps.indexOf(data.step);
+                            steps.forEach((s, i) => {
+                                if (i < currentIdx) updateStep(s, '✅', false);
+                                else if (i === currentIdx) updateStep(s, '🔄', true);
+                            });
+
+                            if (data.done) {
+                                updateStep(data.step, '✅', false);
+                            }
+
+                            // Calculate overall progress
+                            let pct = 0;
+                            steps.forEach((s, i) => {
+                                if (i < currentIdx) pct += stepWeights[s];
+                                else if (i === currentIdx) {
+                                    pct += (data.progress || 0) / 100 * stepWeights[s];
+                                }
+                            });
+                            updateProgress(pct);
+                        }
+                        break;
+
+                    case 'complete':
+                        updateProgress(100);
+                        statusText.textContent = '✅ ' + (data.message || 'Setup complete!');
+                        ['check', 'venv', 'packages', 'models'].forEach(s => updateStep(s, '✅', false));
+
+                        // Close modal after brief delay
+                        setTimeout(() => {
+                            modal.style.display = 'none';
+                            resolve();
+                        }, 1000);
+                        break;
+
+                    case 'error':
+                        statusText.textContent = '❌ ' + (data.message || 'Setup failed');
+                        cancelBtn.textContent = 'Close';
+                        cancelBtn.removeEventListener('click', onCancel);
+                        cancelBtn.addEventListener('click', () => {
+                            modal.style.display = 'none';
+                            reject(new Error(data.message));
+                        }, { once: true });
+                        break;
+
+                    case 'log':
+                        console.log('[MLX Setup]', data.message);
+                        break;
+                }
+            };
+
+            invoke('run_mlx_setup', { channel })
+                .catch(err => {
+                    statusText.textContent = '❌ ' + err;
+                    modal.style.display = 'none';
+                    reject(err);
+                });
+        });
+    }
+
     async stop() {
         this.isRunning = false;
         this._updateStartButton();
@@ -395,11 +705,26 @@ class App {
             console.error('Failed to stop audio capture:', err);
         }
 
-        // Disconnect Soniox
-        sonioxClient.disconnect();
+        if (this.translationMode === 'local') {
+            // Stop local pipeline
+            try {
+                await invoke('stop_local_pipeline');
+            } catch (err) {
+                console.error('Failed to stop local pipeline:', err);
+            }
+            this.localPipelineReady = false;
+        } else {
+            // Disconnect Soniox
+            sonioxClient.disconnect();
+        }
 
         // Keep transcript visible — don't clear
         this.transcriptUI.clearProvisional();
+
+        // Auto-save on stop (safety net)
+        if (this.transcriptUI.hasSegments()) {
+            await this._saveTranscriptFile();
+        }
     }
 
     _updateStartButton() {
@@ -414,11 +739,38 @@ class App {
 
     // ─── Transcript Persistence ───────────────────────────────
 
-    async _saveTranscript(text) {
+    _formatDuration(ms) {
+        const totalSec = Math.floor(ms / 1000);
+        const min = Math.floor(totalSec / 60);
+        const sec = totalSec % 60;
+        return `${min}m ${sec}s`;
+    }
+
+    async _saveTranscriptFile() {
+        const duration = this.recordingStartTime
+            ? this._formatDuration(Date.now() - this.recordingStartTime)
+            : 'unknown';
+
+        const sourceLang = document.getElementById('select-source-lang')?.value || 'auto';
+        const targetLang = document.getElementById('select-target-lang')?.value || 'vi';
+
+        const content = this.transcriptUI.getFormattedContent({
+            model: this.translationMode === 'soniox' ? 'Soniox Cloud API' : 'Local MLX Whisper',
+            sourceLang,
+            targetLang,
+            duration,
+            audioSource: this.currentSource,
+        });
+
+        if (!content) return;
+
         try {
-            await invoke('append_transcript', { text });
+            const path = await invoke('save_transcript', { content });
+            const filename = path.split('/').pop();
+            this._showToast(`Saved: ${filename}`, 'success');
         } catch (err) {
             console.error('Failed to save transcript:', err);
+            this._showToast('Failed to save transcript', 'error');
         }
     }
 

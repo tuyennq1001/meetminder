@@ -27,8 +27,8 @@ pub fn run() {
             commands::audio::start_capture,
             commands::audio::stop_capture,
             commands::audio::check_permissions,
-            commands::transcript::append_transcript,
-            commands::transcript::get_transcript_path,
+            commands::transcript::save_transcript,
+            commands::transcript::open_transcript_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -139,6 +139,58 @@ export class TranscriptUI {
     }
 
     /**
+     * Get transcript as plain text for copying
+     */
+    getPlainText() {
+        let lines = [];
+        for (const seg of this.segments) {
+            if (seg.original) lines.push(seg.original);
+            if (seg.translation) lines.push(seg.translation);
+            if (seg.original || seg.translation) lines.push('');
+        }
+        if (this.provisionalText) lines.push(this.provisionalText);
+        return lines.join('\n').trim();
+    }
+
+    /**
+     * Get formatted content for saving to file (markdown with metadata)
+     */
+    getFormattedContent(metadata = {}) {
+        if (this.segments.length === 0) return null;
+
+        const lines = [];
+
+        // Metadata header
+        lines.push('---');
+        lines.push(`date: ${new Date().toISOString()}`);
+        if (metadata.model) lines.push(`model: ${metadata.model}`);
+        if (metadata.sourceLang) lines.push(`source_language: ${metadata.sourceLang}`);
+        if (metadata.targetLang) lines.push(`target_language: ${metadata.targetLang}`);
+        if (metadata.duration) lines.push(`recording_duration: ${metadata.duration}`);
+        if (metadata.audioSource) lines.push(`audio_source: ${metadata.audioSource}`);
+        lines.push(`segments: ${this.segments.length}`);
+        lines.push('---');
+        lines.push('');
+
+        // Transcript entries
+        for (const seg of this.segments) {
+            if (seg.speaker) lines.push(`**Speaker ${seg.speaker}:**`);
+            if (seg.original) lines.push(`> ${seg.original}`);
+            if (seg.translation) lines.push(seg.translation);
+            lines.push('');
+        }
+
+        return lines.join('\n').trim();
+    }
+
+    /**
+     * Check if there are segments to save
+     */
+    hasSegments() {
+        return this.segments.length > 0;
+    }
+
+    /**
      * Clear all
      */
     clear() {
@@ -181,10 +233,15 @@ export class TranscriptUI {
             }
 
             if (seg.status === 'translated' && seg.translation) {
-                html += `<span class="seg-translated">${this._esc(seg.translation)}</span>`;
+                html += `<div class="seg-block">`;
+                if (seg.original) {
+                    html += `<div class="seg-original">${this._esc(seg.original)}</div>`;
+                }
+                html += `<div class="seg-translated">${this._esc(seg.translation)}</div>`;
+                html += `</div>`;
+            } else if (seg.status === 'original' && seg.original) {
+                html += `<div class="seg-block"><div class="seg-original">${this._esc(seg.original)}</div></div>`;
             }
-            // 'original' segments (pending translation) are not rendered
-            // — provisional text (gray) already shows what's being heard
         }
 
         // Provisional text with speaker
@@ -192,11 +249,7 @@ export class TranscriptUI {
             if (this.provisionalSpeaker && this.provisionalSpeaker !== lastRenderedSpeaker) {
                 html += `<span class="speaker-label">Speaker ${this.provisionalSpeaker}:</span> `;
             }
-            html += `<span class="seg-provisional">${this._esc(this.provisionalText)}</span>`;
-        }
-
-        if (this.segments.length > 0 || this.provisionalText) {
-            html += '<span class="cursor-blink">▎</span>';
+            html += `<div class="seg-block"><div class="seg-provisional">${this._esc(this.provisionalText)}</div></div>`;
         }
 
         this.contentEl.innerHTML = html;
