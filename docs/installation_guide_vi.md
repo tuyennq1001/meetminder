@@ -13,7 +13,7 @@ Hướng dẫn từng bước cài đặt và sử dụng **My Translator** trê
 
 ## Bước 1 — Tải về
 
-Tải file `.dmg` mới nhất tại: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/tag/v0.1.0)
+Tải file `.dmg` mới nhất tại: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/tag/v0.2.0)
 
 ---
 
