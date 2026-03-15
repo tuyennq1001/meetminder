@@ -7,13 +7,14 @@ Step-by-step guide to install and use **My Translator** on macOS.
 ## Requirements
 
 - macOS 13 or later (Apple Silicon — M1/M2/M3/M4)
-- [Soniox](https://soniox.com) API key (pay-per-use, ~$0.12/hour)
+- **Cloud mode**: [Soniox](https://soniox.com) API key (pay-per-use, ~$0.12/hour)
+- **Local mode**: ~5 GB free disk space (for AI models, one-time download)
 
 ---
 
 ## Step 1 — Download
 
-Download the latest `.dmg` from: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/tag/v0.2.0)
+Download the latest `.dmg` from: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/tag/v0.3.0)
 
 ---
 
@@ -63,21 +64,40 @@ macOS will ask you to **Quit & Reopen** the app — click that button to restart
 
 ---
 
-## Step 6 — Configure API Key & Languages
+## Step 6 — Choose Translation Mode
 
-After the app reopens, click ⚙️ (or press `⌘ ,`) to open **Settings**:
+After the app reopens, click ⚙️ (or press `⌘ ,`) to open **Settings**.
 
-1. **SONIOX API KEY** — Paste your API key from [console.soniox.com](https://console.soniox.com)
-2. **Source** — Choose the source language (or leave as Auto-detect)
-3. **Target** — Choose the target language (e.g., Vietnamese, English...)
-4. **Audio Source** — Choose System Audio (computer sound) or Microphone
-5. Click **Save**
+First, choose your **Translation Engine**:
 
-![Configure API key and languages](user_manual/mytrans_07.png)
+| Mode | Speed | Quality | Cost | Internet |
+|------|-------|---------|------|----------|
+| ☁️ **Soniox API (Cloud)** | Real-time (~2s) | 9/10 | ~$0.12/hr | Required |
+| 🖥️ **Local MLX (Offline)** | ~10s delay | 7/10 | Free | Not needed |
+
+### Option A: Cloud Mode (Soniox)
+
+1. Select **☁️ Soniox API (Cloud)** as Translation Engine
+2. Paste your API key from [console.soniox.com](https://console.soniox.com)
+3. Choose Source & Target languages
+4. Click **Save**
 
 > 💡 **Where to get an API key?**
 > 1. Go to [soniox.com](https://soniox.com) → create an account
 > 2. Go to Dashboard → copy your API key
+
+### Option B: Local Mode (MLX — Apple Silicon only)
+
+1. Select **🖥️ Local MLX (Offline)** as Translation Engine
+2. Choose Source & Target languages
+3. Click **Save**
+4. On first use, the app will **automatically download** AI models (~5 GB, one-time)
+5. Model loading takes ~30-60 seconds on first start
+
+> ⚠️ Local mode requires Apple Silicon (M1/M2/M3/M4) and ~6-7 GB RAM.
+> It is not available on Intel Macs.
+
+![Configure API key and languages](user_manual/mytrans_07.png)
 
 ---
 

@@ -7,13 +7,14 @@ Hướng dẫn từng bước cài đặt và sử dụng **My Translator** trê
 ## Yêu cầu
 
 - macOS 13 trở lên (Apple Silicon — chip M1/M2/M3/M4)
-- API key của [Soniox](https://soniox.com) (trả theo dùng, ~$0.12/giờ)
+- **Chế độ Cloud**: API key của [Soniox](https://soniox.com) (trả theo dùng, ~$0.12/giờ)
+- **Chế độ Local**: ~5 GB dung lượng ổ cứng (cho mô hình AI, tải một lần)
 
 ---
 
 ## Bước 1 — Tải về
 
-Tải file `.dmg` mới nhất tại: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/tag/v0.2.0)
+Tải file `.dmg` mới nhất tại: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/tag/v0.3.0)
 
 ---
 
@@ -63,21 +64,40 @@ macOS sẽ yêu cầu **Quit & Reopen** app — bấm nút đó để app khởi
 
 ---
 
-## Bước 6 — Cài đặt API Key & Ngôn ngữ
+## Bước 6 — Chọn chế độ dịch
 
-Sau khi app mở lại, bấm ⚙️ (hoặc `⌘ ,`) để vào **Settings**:
+Sau khi app mở lại, bấm ⚙️ (hoặc `⌘ ,`) để vào **Settings**.
 
-1. **SONIOX API KEY** — Dán API key từ [console.soniox.com](https://console.soniox.com)
-2. **Source** — Chọn ngôn ngữ nguồn (hoặc để Auto-detect)
-3. **Target** — Chọn ngôn ngữ đích (ví dụ: Vietnamese, English...)
-4. **Audio Source** — Chọn System Audio (âm thanh máy tính) hoặc Microphone
-5. Bấm **Save**
+Đầu tiên, chọn **Translation Engine** (bộ máy dịch):
 
-![Cài đặt API key và ngôn ngữ](user_manual/mytrans_07.png)
+| Chế độ | Tốc độ | Chất lượng | Chi phí | Internet |
+|--------|--------|------------|---------|----------|
+| ☁️ **Soniox API (Cloud)** | Real-time (~2 giây) | 9/10 | ~$0.12/giờ | Cần |
+| 🖥️ **Local MLX (Offline)** | ~10 giây delay | 7/10 | Miễn phí | Không cần |
+
+### Lựa chọn A: Chế độ Cloud (Soniox)
+
+1. Chọn **☁️ Soniox API (Cloud)** làm Translation Engine
+2. Dán API key từ [console.soniox.com](https://console.soniox.com)
+3. Chọn ngôn ngữ nguồn & đích
+4. Bấm **Save**
 
 > 💡 **Lấy API key ở đâu?**
 > 1. Vào [soniox.com](https://soniox.com) → tạo tài khoản
 > 2. Vào Dashboard → copy API key
+
+### Lựa chọn B: Chế độ Local (MLX — chỉ Apple Silicon)
+
+1. Chọn **🖥️ Local MLX (Offline)** làm Translation Engine
+2. Chọn ngôn ngữ nguồn & đích
+3. Bấm **Save**
+4. Lần đầu sử dụng, app sẽ **tự động tải** mô hình AI (~5 GB, chỉ tải một lần)
+5. Lần khởi động đầu, model mất ~30-60 giây để nạp
+
+> ⚠️ Chế độ Local yêu cầu Apple Silicon (M1/M2/M3/M4) và ~6-7 GB RAM.
+> Không khả dụng trên Mac Intel.
+
+![Cài đặt API key và ngôn ngữ](user_manual/mytrans_07.png)
 
 ---
 

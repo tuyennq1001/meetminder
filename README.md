@@ -15,23 +15,34 @@
 
 ## Features
 
-- **Real-time transcription & translation** — powered by Soniox STT v4
+- **Real-time transcription & translation** — powered by Soniox STT v4 (Cloud) or Whisper + Gemma (Local)
+- **Two modes**: ☁️ Cloud (real-time, 70+ languages) or 🖥️ Local (offline, free, Apple Silicon)
 - **System audio capture** — translate any audio playing on your computer (YouTube, meetings, podcasts)
 - **Microphone input** — translate live speech
-- **Multi-speaker detection** — labels different speakers automatically
-- **70+ languages** — translate between any languages supported by Soniox
+- **Multi-speaker detection** — labels different speakers automatically (Cloud mode)
 - **Overlay UI** — minimal, always-on-top dark overlay window
-- **No server, no tracking** — connects directly to Soniox. Your audio never touches a middleman
+- **No server, no tracking** — connects directly to Soniox or runs 100% on-device
 - **Smart transcript save** — auto-saves `.md` files with metadata on Stop/Clear/Close
 - **Copy & export** — copy transcript to clipboard, open saved files folder
 - **Cross-platform** — macOS (Apple Silicon) and Windows (x64 + ARM64)
-- **Seamless session management** — auto-resets every 3 minutes to maintain speed
+
+### Cloud vs Local Mode
+
+| | ☁️ Cloud (Soniox) | 🖥️ Local (MLX) |
+|-|-------------------|----------------|
+| **Latency** | Real-time (~2-3s) | ~10s delay |
+| **Quality** | 9/10 | 7/10 |
+| **Cost** | ~$0.12/hr | Free |
+| **Internet** | Required | Not needed |
+| **Languages** | 70+ | JA/EN/ZH/KO → VI/EN |
+| **Privacy** | Cloud API | 100% on-device |
+| **Platform** | All | Apple Silicon only |
 
 ## Quick Start
 
 ### 1. Download & Install
 
-1. Download the latest `.dmg` from the [macOS Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.2.0) (or [Windows Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.2.0-windows))
+1. Download the latest `.dmg` from the [macOS Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.3.0) (or [Windows Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.2.0-windows))
 2. Open the `.dmg` and drag **My Translator** to Applications
 3. **Important** — the app is not yet signed with an Apple Developer certificate (pending enrollment approval). macOS will block it on first open. Run this command **once** in Terminal to allow it:
 
@@ -43,20 +54,17 @@ xattr -cr /Applications/My\ Translator.app
 
 4. Open **My Translator** from Applications
 
-### 2. Get a Soniox API Key
-
-1. Create an account at [soniox.com](https://soniox.com) (pay-per-use, ~$0.12/hour)
-2. Go to your [Dashboard](https://soniox.com/dashboard) → copy your API key
-
-### 3. Configure
+### 2. Configure
 
 1. Open **My Translator**
 2. Click the ⚙️ gear icon (or press `⌘ ,`)
-3. Paste your Soniox API key
+3. Choose **Translation Engine**:
+   - **☁️ Soniox API (Cloud)** — paste your API key from [soniox.com](https://soniox.com) (~$0.12/hr)
+   - **🖥️ Local MLX (Offline)** — free, no API key needed (Apple Silicon only, ~5GB one-time download)
 4. Set your **source language** and **target language**
 5. Click **Save**
 
-### 4. Start Translating
+### 3. Start Translating
 
 1. Click ▶ (or press `⌘ Enter`) to start
 2. Play any audio on your Mac — translations appear in real-time
@@ -85,23 +93,16 @@ On first launch, macOS will ask for:
 
 ## How It Works
 
+### Cloud Mode (Soniox)
 ```
-System Audio (ScreenCaptureKit)
-        │
-        ▼
-   48kHz → 16kHz PCM
-        │
-        ▼
-   Soniox WebSocket ──► STT + Translation
-        │
-        ▼
-   Overlay UI (real-time)
+System Audio → 48kHz→16kHz PCM → Soniox WebSocket → STT + Translation → Overlay UI
 ```
 
-1. **Audio Capture**: ScreenCaptureKit captures system audio at 48kHz, downsampled to 16kHz PCM mono
-2. **Batched Streaming**: Audio is batched every 200ms and streamed via WebSocket to Soniox
-3. **Real-time Results**: Soniox returns transcription + translation tokens in real-time
-4. **Display**: Translations appear instantly in the overlay window
+### Local Mode (MLX — Apple Silicon)
+```
+System Audio → 48kHz→16kHz PCM → Whisper ASR → Gemma Translation → Overlay UI
+                                   (on-device)    (on-device)
+```
 
 ## Build from Source
 
@@ -127,7 +128,10 @@ The app bundle is at `src-tauri/target/release/bundle/macos/My Translator.app`.
 - **[Tauri 2](https://tauri.app/)** — Rust backend + WebView frontend
 - **[ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit)** — macOS system audio capture
 - **[cpal](https://github.com/RustAudio/cpal)** — Cross-platform microphone input
-- **[Soniox](https://soniox.com)** — Real-time speech-to-text + translation API
+- **[Soniox](https://soniox.com)** — Real-time speech-to-text + translation API (Cloud mode)
+- **[MLX](https://github.com/ml-explore/mlx)** — Apple's ML framework for on-device inference (Local mode)
+- **[Whisper](https://github.com/openai/whisper)** — Speech recognition model (Local mode)
+- **[Gemma](https://ai.google.dev/gemma)** — Translation LLM (Local mode)
 - **Vanilla HTML/CSS/JS** — Lightweight frontend, no framework
 
 ## Privacy
@@ -142,6 +146,7 @@ The app bundle is at `src-tauri/target/release/bundle/macos/My Translator.app`.
 
 - [x] macOS Apple Silicon support
 - [x] Windows support
+- [x] Local offline translation (MLX — Apple Silicon)
 - [ ] macOS Intel support
 - [ ] Apple code signing & notarization
 - [ ] Windows code signing

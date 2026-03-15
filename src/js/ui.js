@@ -92,7 +92,8 @@ export class TranscriptUI {
      * Check if there is any content to display
      */
     hasContent() {
-        return this.segments.length > 0 || this.provisionalText;
+        return this.segments.length > 0 || this.provisionalText ||
+            !!this.container.querySelector('.listening-indicator');
     }
 
     /**
@@ -122,6 +123,9 @@ export class TranscriptUI {
      * Show listening state
      */
     showListening() {
+        // Remove existing indicators first (prevent duplicates)
+        this.container.querySelectorAll('.listening-indicator').forEach(el => el.remove());
+
         const placeholder = this.container.querySelector('.transcript-placeholder');
         if (placeholder) placeholder.remove();
 
@@ -136,6 +140,31 @@ export class TranscriptUI {
             <p>Listening...</p>
         `;
         this.contentEl.appendChild(indicator);
+    }
+
+    /**
+     * Show status message in transcript area (e.g. loading model)
+     */
+    showStatusMessage(message) {
+        this._ensureContent();
+        let statusEl = this.contentEl.querySelector('.pipeline-status');
+        if (!statusEl) {
+            statusEl = document.createElement('div');
+            statusEl.className = 'pipeline-status';
+            statusEl.style.cssText = 'text-align:center; padding:8px; color:rgba(255,255,255,0.5); font-size:13px;';
+            this.contentEl.appendChild(statusEl);
+        }
+        statusEl.textContent = message;
+    }
+
+    /**
+     * Remove status message
+     */
+    removeStatusMessage() {
+        if (this.contentEl) {
+            const statusEl = this.contentEl.querySelector('.pipeline-status');
+            if (statusEl) statusEl.remove();
+        }
     }
 
     /**

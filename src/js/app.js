@@ -13,6 +13,7 @@ const { getCurrentWindow } = window.__TAURI__.window;
 class App {
     constructor() {
         this.isRunning = false;
+        this.isStarting = false; // Guard against re-entry
         this.currentSource = 'system'; // 'system' | 'microphone'
         this.translationMode = 'soniox'; // 'soniox' | 'local'
         this.transcriptUI = null;
@@ -30,6 +31,9 @@ class App {
         const transcriptContainer = document.getElementById('transcript-content');
         this.transcriptUI = new TranscriptUI(transcriptContainer);
 
+        // Check platform — hide Local MLX on non-Apple-Silicon
+        await this._checkPlatformSupport();
+
         // Apply saved settings to UI
         this._applySettings(settingsManager.get());
 
@@ -42,10 +46,34 @@ class App {
         // Subscribe to settings changes
         settingsManager.onChange((settings) => this._applySettings(settings));
 
-        // Restore window position (disabled for now — use center)
-        // await this._restoreWindowPosition();
+        console.log('🌐 Personal Translator v0.3.0 initialized');
+    }
 
-        console.log('🌐 Personal Translator initialized');
+    async _checkPlatformSupport() {
+        try {
+            // Check if we're on macOS Apple Silicon
+            const arch = await invoke('get_platform_info');
+            const info = JSON.parse(arch);
+            this.isAppleSilicon = (info.os === 'macos' && info.arch === 'aarch64');
+        } catch {
+            // Fallback: check via navigator
+            this.isAppleSilicon = navigator.platform === 'MacIntel' &&
+                navigator.userAgent.includes('Mac OS X');
+        }
+
+        if (!this.isAppleSilicon) {
+            // Hide Local MLX option
+            const select = document.getElementById('select-translation-mode');
+            const localOption = select?.querySelector('option[value="local"]');
+            if (localOption) localOption.remove();
+
+            // Force soniox mode if user had local selected
+            const settings = settingsManager.get();
+            if (settings.translation_mode === 'local') {
+                settings.translation_mode = 'soniox';
+                settingsManager.save(settings);
+            }
+        }
     }
 
     // ─── Event Binding ──────────────────────────────────────
@@ -72,11 +100,25 @@ class App {
         });
 
         // Start/Stop button
-        document.getElementById('btn-start').addEventListener('click', () => {
-            if (this.isRunning) {
-                this.stop();
-            } else {
-                this.start();
+        document.getElementById('btn-start').addEventListener('click', async () => {
+            if (this.isStarting) return; // Prevent re-entry
+            try {
+                if (this.isRunning) {
+                    await this.stop();
+                } else {
+                    this.isStarting = true;
+                    await this.start();
+                }
+            } catch (err) {
+                console.error('[App] Start/Stop error:', err);
+                this._showToast(`Error: ${err}`, 'error');
+                this.isRunning = false;
+                this._updateStartButton();
+                this._updateStatus('error');
+                this.transcriptUI.clear();
+                this.transcriptUI.showPlaceholder();
+            } finally {
+                this.isStarting = false;
             }
         });
 
@@ -210,11 +252,25 @@ class App {
             // Cmd/Ctrl + Enter: Start/Stop
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                 e.preventDefault();
-                if (this.isRunning) {
-                    this.stop();
-                } else {
-                    this.start();
-                }
+                if (this.isStarting) return;
+                (async () => {
+                    try {
+                        if (this.isRunning) {
+                            await this.stop();
+                        } else {
+                            this.isStarting = true;
+                            await this.start();
+                        }
+                    } catch (err) {
+                        console.error('[App] Keyboard start/stop error:', err);
+                        this._showToast(`Error: ${err}`, 'error');
+                        this.isRunning = false;
+                        this._updateStartButton();
+                        this._updateStatus('error');
+                    } finally {
+                        this.isStarting = false;
+                    }
+                })();
             }
 
             // Escape: Go back to overlay / close settings
@@ -417,6 +473,7 @@ class App {
     async _startSonioxMode(settings) {
         // Connect to Soniox
         console.log('[App] Connecting to Soniox...');
+        this._updateStatus('connecting');
         sonioxClient.connect({
             apiKey: settings.soniox_api_key,
             sourceLanguage: settings.source_language,
@@ -456,30 +513,38 @@ class App {
         console.log('[App] Starting Local mode (MLX models)...');
         this._updateStatus('connecting');
 
-        // Check if MLX setup is complete
+        // Step 0: Check audio permission FIRST (before loading models)
+        try {
+            await invoke('start_capture', {
+                source: this.currentSource,
+                channel: new window.__TAURI__.core.Channel(), // dummy channel for permission check
+            });
+            await invoke('stop_capture');
+        } catch (err) {
+            console.error('[App] Audio permission check failed:', err);
+            this._showToast(`Audio permission required: ${err}`, 'error');
+            this.isRunning = false;
+            this._updateStartButton();
+            this._updateStatus('error');
+            this.transcriptUI.clear();
+            this.transcriptUI.showPlaceholder();
+            return;
+        }
+
+        // Step 1: Check if MLX setup is complete
         try {
             const checkResult = await invoke('check_mlx_setup');
             const status = JSON.parse(checkResult);
             if (!status.ready) {
-                // Need setup — ask user
-                const proceed = confirm(
-                    'MLX local models need to be downloaded (~5GB).\n' +
-                    'This is a one-time setup.\n\n' +
-                    'Continue?'
-                );
-                if (!proceed) {
-                    this._updateStatus('disconnected');
-                    this.isRunning = false;
-                    this._updateStartButton();
-                    return;
-                }
-
-                // Run setup with progress
+                this._showToast('Setting up MLX models (one-time, ~5GB)...', 'success');
+                this.transcriptUI.showStatusMessage('Downloading MLX models (one-time setup)...');
                 await this._runMlxSetup();
             }
         } catch (err) {
             console.warn('[App] MLX check failed (proceeding anyway):', err);
         }
+
+        console.log('[App] MLX check passed, starting pipeline...');
 
         // Step 1: Start pipeline FIRST (independent of audio)
         try {
@@ -522,7 +587,7 @@ class App {
             return;
         }
 
-        // Step 2: Start audio capture (failure is non-fatal for debugging)
+        // Step 2: Start audio capture
         try {
             const audioChannel = new window.__TAURI__.core.Channel();
             let audioChunkCount = 0;
@@ -555,6 +620,8 @@ class App {
             case 'ready':
                 this.localPipelineReady = true;
                 this._updateStatus('connected');
+                this.transcriptUI.removeStatusMessage();
+                this.transcriptUI.showListening();
                 this._showToast('Local models ready!', 'success');
                 break;
             case 'result':
@@ -570,9 +637,16 @@ class App {
                 }, 80);
                 break;
             case 'status':
+                const msg = data.message || 'Loading...';
+                // Status bar: show compact message (strip [pipeline] prefix)
                 const statusText = document.getElementById('status-text');
                 if (statusText) {
-                    statusText.textContent = data.message || 'Loading...';
+                    const compact = msg.replace(/^\[pipeline\]\s*/, '');
+                    statusText.textContent = compact;
+                }
+                // Transcript area: only show loading/starting messages, not debug logs
+                if (!msg.startsWith('[pipeline]')) {
+                    this.transcriptUI.showStatusMessage(msg);
                 }
                 break;
             case 'done':
@@ -713,6 +787,8 @@ class App {
                 console.error('Failed to stop local pipeline:', err);
             }
             this.localPipelineReady = false;
+            this.transcriptUI.removeStatusMessage();
+            this._updateStatus('disconnected');
         } else {
             // Disconnect Soniox
             sonioxClient.disconnect();

@@ -1,12 +1,12 @@
 [package]
-name = "my-translator"
-version = "0.2.0"
+name = "personal-translator"
+version = "0.3.0"
 description = "Personal Real-time Speech Translator"
 authors = ["phucnt"]
 edition = "2021"
 
 [lib]
-name = "my_translator_lib"
+name = "personal_translator_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
