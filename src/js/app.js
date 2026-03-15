@@ -46,7 +46,7 @@ class App {
         // Subscribe to settings changes
         settingsManager.onChange((settings) => this._applySettings(settings));
 
-        console.log('🌐 Personal Translator v0.3.0 initialized');
+        console.log('🌐 My Translator v0.3.0 initialized');
     }
 
     async _checkPlatformSupport() {
