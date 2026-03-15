@@ -16,20 +16,22 @@
 ## Features
 
 - **Real-time transcription & translation** — powered by Soniox STT v4
-- **System audio capture** — translate any audio playing on your Mac (YouTube, meetings, podcasts)
-- **Microphone input** — translate live speech (requires external mic on Mac Mini)
+- **System audio capture** — translate any audio playing on your computer (YouTube, meetings, podcasts)
+- **Microphone input** — translate live speech
 - **Multi-speaker detection** — labels different speakers automatically
 - **70+ languages** — translate between any languages supported by Soniox
 - **Overlay UI** — minimal, always-on-top dark overlay window
 - **No server, no tracking** — connects directly to Soniox. Your audio never touches a middleman
-- **Transcript persistence** — translations are saved locally as daily text files
+- **Smart transcript save** — auto-saves `.md` files with metadata on Stop/Clear/Close
+- **Copy & export** — copy transcript to clipboard, open saved files folder
+- **Cross-platform** — macOS (Apple Silicon) and Windows (x64 + ARM64)
 - **Seamless session management** — auto-resets every 3 minutes to maintain speed
 
 ## Quick Start
 
 ### 1. Download & Install
 
-1. Download the latest `.dmg` from the [macOS Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.1.0) (or [Windows Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.1.0-windows))
+1. Download the latest `.dmg` from the [macOS Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.2.0) (or [Windows Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.2.0-windows))
 2. Open the `.dmg` and drag **My Translator** to Applications
 3. **Important** — the app is not yet signed with an Apple Developer certificate (pending enrollment approval). macOS will block it on first open. Run this command **once** in Terminal to allow it:
 
@@ -134,7 +136,7 @@ The app bundle is at `src-tauri/target/release/bundle/macos/My Translator.app`.
 - **No telemetry or analytics** — zero tracking
 - **No account required** — just your Soniox API key
 - **API key stored locally** — never leaves your machine
-- **Transcripts stored locally** — daily `.txt` files on your disk
+- **Transcripts stored locally** — `.md` files saved per session on your disk
 
 ## Roadmap
 
