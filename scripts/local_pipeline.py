@@ -149,8 +149,13 @@ class LocalPipeline:
         """Transcribe audio using selected ASR model."""
         if self.asr_model_type == "whisper":
             import mlx_whisper
+            import numpy as np
+            # Load WAV as float32 numpy array (bypass ffmpeg)
+            with wave.open(wav_path, "r") as wf:
+                raw = wf.readframes(wf.getnframes())
+                audio_np = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
             result = mlx_whisper.transcribe(
-                wav_path,
+                audio_np,
                 path_or_hf_repo=self.asr_model,
                 language=self._whisper_lang_code(),
                 task="transcribe",
