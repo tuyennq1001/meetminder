@@ -12,6 +12,7 @@ pub struct CustomContext {
 
 /// App settings — persisted to JSON
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct Settings {
     /// Soniox API key
     pub soniox_api_key: String,
@@ -33,6 +34,14 @@ pub struct Settings {
     pub translation_mode: String,
     /// Optional custom context for better transcription
     pub custom_context: Option<CustomContext>,
+    /// ElevenLabs API key for TTS narration
+    pub elevenlabs_api_key: String,
+    /// Whether TTS narration is enabled
+    pub tts_enabled: bool,
+    /// ElevenLabs voice ID
+    pub tts_voice_id: String,
+    /// Auto-read new translations aloud
+    pub tts_auto_read: bool,
 }
 
 impl Default for Settings {
@@ -48,6 +57,10 @@ impl Default for Settings {
             show_original: true,
             translation_mode: "soniox".to_string(),
             custom_context: None,
+            elevenlabs_api_key: String::new(),
+            tts_enabled: false,
+            tts_voice_id: "21m00Tcm4TlvDq8ikWAM".to_string(), // Rachel multilingual female
+            tts_auto_read: true,
         }
     }
 }

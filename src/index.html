@@ -31,52 +31,69 @@
         </div>
 
         <div class="source-controls">
-          <button id="btn-source-system" class="source-btn active" title="System Audio">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <button id="btn-source-system" class="source-btn active" title="System Audio (⌘1)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
               <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
             </svg>
+            <span class="btn-label">System</span>
           </button>
-          <button id="btn-source-mic" class="source-btn" title="Microphone">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <button id="btn-source-mic" class="source-btn" title="Microphone (⌘2)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
               <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
               <line x1="12" y1="19" x2="12" y2="23" />
               <line x1="8" y1="23" x2="16" y2="23" />
             </svg>
+            <span class="btn-label">Mic</span>
           </button>
         </div>
 
-        <button id="btn-start" class="action-btn" title="Start/Stop">
-          <svg id="icon-play" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+        <button id="btn-start" class="action-btn" title="Start/Stop (Space)">
+          <svg id="icon-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <polygon points="5 3 19 12 5 21 5 3" />
           </svg>
-          <svg id="icon-stop" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display:none">
+          <svg id="icon-stop" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none">
             <rect x="4" y="4" width="16" height="16" rx="2" />
           </svg>
         </button>
 
-        <button id="btn-clear" class="icon-btn" title="Clear transcript">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-            <path d="M10 11v6" />
-            <path d="M14 11v6" />
+        <button id="btn-tts" class="tts-action-btn" title="TTS Narration (⌘T)">
+          <svg id="icon-tts-off" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            <line x1="9" y1="10" x2="15" y2="10" />
           </svg>
+          <svg id="icon-tts-on" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:none">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            <path d="M9 10h2" /><path d="M13 8v4" /><path d="M15 10h1" />
+          </svg>
+          <span class="tts-label">TTS</span>
         </button>
 
-        <button id="btn-copy" class="icon-btn" title="Copy transcript">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-          </svg>
-        </button>
+        <div class="toolbar-group">
+          <button id="btn-clear" class="icon-btn" title="Clear transcript">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            </svg>
+            <span class="btn-label">Clear</span>
+          </button>
 
-        <button id="btn-open-transcripts" class="icon-btn" title="Open saved transcripts">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-          </svg>
-        </button>
+          <button id="btn-copy" class="icon-btn" title="Copy transcript">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+            <span class="btn-label">Copy</span>
+          </button>
+
+          <button id="btn-open-transcripts" class="icon-btn" title="Open saved transcripts">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span class="btn-label">Files</span>
+          </button>
+        </div>
 
         <button id="btn-close" class="icon-btn close-btn" title="Close">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -118,7 +135,11 @@
           </svg>
         </button>
         <h2>Settings</h2>
-        <div style="width: 36px;"></div>
+        <button id="btn-save-settings-top" class="icon-btn save-btn-top" title="Save & Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </button>
       </div>
     </div>
 
@@ -145,14 +166,13 @@
         <p class="hint" id="hint-mode-local" style="display:none">Offline, free, ~3-4s delay, JA/EN/ZH → VI/EN</p>
       </div>
 
-      <!-- API Key (shown only for Soniox mode) -->
+      <!-- Soniox API Key (always shown) -->
       <div class="settings-section" id="section-api-key">
         <label class="section-label">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path
-              d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
           </svg>
-          Soniox API Key
+          Soniox API Key <span class="required-badge">Required</span>
         </label>
         <div class="input-group">
           <input type="password" id="input-api-key" placeholder="Enter your Soniox API key..." autocomplete="off" />
@@ -293,6 +313,49 @@
         <p class="hint">Comma-separated terms to improve transcription accuracy</p>
       </div>
 
+      <!-- TTS Narration -->
+      <div class="settings-section" id="section-tts">
+        <label class="section-label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+          </svg>
+          TTS Narration
+        </label>
+        <label class="checkbox-option">
+          <input type="checkbox" id="check-tts-enabled" />
+          <span class="checkbox-label">Enable narration (read translations aloud)</span>
+        </label>
+        <div id="tts-settings-detail" style="display:none; margin-top: 10px;">
+          <div class="field" style="margin-bottom: 8px;">
+            <span class="field-label">ElevenLabs API Key</span>
+            <div class="input-group">
+              <input type="password" id="input-elevenlabs-key" placeholder="Enter your ElevenLabs API key..." autocomplete="off" />
+              <button id="btn-toggle-elevenlabs-key" class="icon-btn small" title="Show/Hide">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </button>
+            </div>
+            <p class="hint">Get your key at <a href="#" id="link-elevenlabs">elevenlabs.io</a></p>
+          </div>
+          <div class="field" style="margin-bottom: 8px;">
+            <span class="field-label">Voice</span>
+            <select id="select-tts-voice">
+              <option value="21m00Tcm4TlvDq8ikWAM">Rachel — Nữ (Multilingual)</option>
+              <option value="EXAVITQu4vr4xnSDxMaL">Sarah — Nữ</option>
+              <option value="onwK4e9ZLuTAKqWW03F9">Daniel — Nam</option>
+              <option value="pNInz6obpgDQGcFmaJgB">Adam — Nam</option>
+            </select>
+          </div>
+          <label class="checkbox-option">
+            <input type="checkbox" id="check-tts-auto-read" checked />
+            <span class="checkbox-label">Auto-read new translations</span>
+          </label>
+        </div>
+      </div>
+
       <!-- Save Button -->
       <div class="settings-actions">
         <button id="btn-save-settings" class="primary-btn">
@@ -363,6 +426,8 @@
   <script type="module" src="/js/settings.js"></script>
   <script type="module" src="/js/ui.js"></script>
   <script type="module" src="/js/soniox.js"></script>
+  <script type="module" src="/js/elevenlabs-tts.js"></script>
+  <script type="module" src="/js/audio-player.js"></script>
   <script type="module" src="/js/app.js"></script>
 </body>
 

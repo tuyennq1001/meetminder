@@ -1,7 +1,7 @@
 {
-  "name": "personal-translator",
+  "name": "my-translator",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "tauri": "tauri"

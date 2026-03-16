@@ -16,6 +16,10 @@ const DEFAULT_SETTINGS = {
   show_original: true,
   translation_mode: 'soniox',
   custom_context: null,
+  elevenlabs_api_key: '',
+  tts_enabled: false,
+  tts_voice_id: '21m00Tcm4TlvDq8ikWAM',
+  tts_auto_read: true,
 };
 
 class SettingsManager {

@@ -113,7 +113,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
+  flex-direction: column;
+  min-width: 32px;
   height: 32px;
   border: none;
   border-radius: var(--radius-sm);
@@ -122,6 +123,8 @@ body {
   cursor: pointer;
   transition: all var(--transition-fast);
   -webkit-app-region: no-drag;
+  padding: 0 4px;
+  gap: 1px;
 }
 
 .icon-btn:hover {
@@ -141,6 +144,67 @@ body {
 .close-btn:hover {
   background: rgba(248, 113, 113, 0.2);
   color: var(--error);
+}
+
+/* Button labels */
+.btn-label {
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+/* Toolbar group */
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* TTS Action Button — prominent, next to Start */
+.tts-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  -webkit-app-region: no-drag;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tts-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+}
+
+.tts-action-btn:active {
+  transform: scale(0.95);
+}
+
+.tts-action-btn.active {
+  background: var(--accent-glow);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tts-action-btn.active:hover {
+  background: rgba(99, 140, 255, 0.25);
+}
+
+.tts-label {
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 
 /* Status Area */
@@ -213,14 +277,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 26px;
+  flex-direction: column;
+  min-width: 30px;
+  height: 28px;
   border: none;
   border-radius: 4px;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   transition: all var(--transition-fast);
+  padding: 0 6px;
+  gap: 1px;
 }
 
 .source-btn:hover {
@@ -600,6 +667,26 @@ body {
   background: rgba(255, 255, 255, 0.05);
   padding: 1px 6px;
   border-radius: 4px;
+}
+
+.required-badge {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--warning);
+  text-transform: none;
+  letter-spacing: 0;
+  background: rgba(251, 191, 36, 0.1);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.save-btn-top {
+  color: var(--success) !important;
+}
+
+.save-btn-top:hover {
+  background: rgba(74, 222, 128, 0.15) !important;
+  color: var(--success) !important;
 }
 
 /* ─── Form Elements ────────────────────────────────────── */
