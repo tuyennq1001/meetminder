@@ -18,7 +18,7 @@ except ImportError:
     import websockets
 
 # Config
-API_KEY = "sk_f2729b691357f87d7e70d66eccacf5677d3e5c365ad99d94"
+API_KEY = os.environ.get("ELEVENLABS_API_KEY", "YOUR_API_KEY_HERE")
 VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # Rachel
 MODEL_ID = "eleven_flash_v2_5"
 OUTPUT_FORMAT = "mp3_44100_128"
