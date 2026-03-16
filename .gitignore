@@ -37,4 +37,22 @@ Thumbs.db
 src-tauri/gen/
 scripts/__pycache__/
 test_audio.wav
+
+# Agent configs (internal)
 CLAUDE.md
+GEMINI.md
+
+# Internal dev files (private repo only)
+dev-logs/
+lessons-learned/
+docs/01_internal_mechanisms.md
+docs/02_developer_motives_and_hidden_controls.md
+docs/04_reverse_engineering_guide.md
+docs/experiment_mlx_whisper.md
+docs/mlx_optimization_plan.md
+docs/windows_handoff.md
+docs/windows_port_plan.md
+
+# Dev/benchmark scripts (private repo only)
+scripts/benchmark_*.py
+scripts/test_*.py
