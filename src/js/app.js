@@ -61,7 +61,7 @@ class App {
             this._showToast(error, 'error');
         };
 
-        console.log('🌐 Personal Translator v0.4.0 initialized');
+        console.log('🌐 My Translator v0.4.0 initialized');
     }
 
     async _checkPlatformSupport() {
