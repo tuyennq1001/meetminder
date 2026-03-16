@@ -8,12 +8,13 @@ Step-by-step guide to install and use **My Translator** on Windows 10/11.
 
 - Windows 10 or later (x64 or ARM64)
 - [Soniox](https://soniox.com) API key (pay-per-use, ~$0.12/hour)
+- **TTS narration** (optional): [ElevenLabs](https://elevenlabs.io) API key (Starter plan $5/month)
 
 ---
 
 ## Step 1 — Download
 
-Download the latest `.exe` installer from: [**Releases — Windows**](https://github.com/phuc-nt/my-translator/releases/tag/v0.2.0-windows)
+Download the latest `.exe` installer from: [**Releases — Windows**](https://github.com/phuc-nt/my-translator/releases/tag/v0.4.0)
 
 Choose the right version:
 - **x64** — Most Windows PCs (Intel/AMD)  
@@ -67,7 +68,7 @@ The app opens. Click ⚙️ to open **Settings**:
 
 Configure:
 
-1. **SONIOX API KEY** — Paste your API key from [console.soniox.com](https://console.soniox.com)
+1. **SONIOX API KEY** — Paste your API key (Required)
 2. **Source** — Choose the source language (or leave as Auto-detect)
 3. **Target** — Choose the target language (e.g., Vietnamese, English...)
 4. **Audio Source** — Choose System Audio (computer sound) or Microphone
@@ -85,19 +86,51 @@ Scroll down for more options:
 
 Click **Save & Close** when done.
 
-> 💡 **Where to get an API key?**
-> 1. Go to [soniox.com](https://soniox.com) → create an account
-> 2. Go to Dashboard → copy your API key
+> 💡 **Where to get a Soniox API key?**
+> 1. Go to [console.soniox.com](https://console.soniox.com) → create an account
+> 2. Add funds ($10 minimum, lasts a long time at ~$0.12/hour)
+> 3. Go to **API Keys** → create and copy your key
+
+![Soniox Console — Billing overview](user_manual/mytrans_key_1.png)
 
 ---
 
-## Step 5 — Start Translating!
+## Step 5 — Enable TTS Narration (Optional)
+
+Want translations **read aloud**? Enable TTS narration:
+
+1. In Settings, scroll to **TTS Narration** section
+2. Check **"Enable narration (read translations aloud)"**
+
+![Settings — TTS disabled](user_manual/mytrans_setting_2.png)
+
+3. Enter your **ElevenLabs API key**
+4. Choose a **voice** (2 female, 2 male — all support Vietnamese)
+5. Click **Save & Close**
+
+![Settings — TTS enabled with API key and voice](user_manual/mytrans_setting_3.png)
+
+> 💡 **Where to get an ElevenLabs API key?**
+> 1. Go to [elevenlabs.io](https://elevenlabs.io) → create an account
+> 2. Subscribe to the **Starter plan** ($5/month, ~60 min of TTS)
+> 3. Go to **Developers → API Keys** → create a key with "Text to Speech" access
+
+![ElevenLabs — Subscription plan](user_manual/mytrans_key_2.png)
+![ElevenLabs — Create API key](user_manual/mytrans_key_3.png)
+
+> 💡 TTS is optional. If disabled, the app works exactly like before — transcript & translate only.
+
+---
+
+## Step 6 — Start Translating!
 
 Click ▶ to start. The app will show **Listening...**
 
 ![App is Listening](user_manual_win/mytrans_win_10.png)
 
 Now play any audio on your PC (YouTube, Zoom, podcasts...) and translations appear in real-time!
+
+If TTS is enabled, you can toggle it on/off with the **TTS** button or `Ctrl+T`.
 
 ![Real-time translation with speaker labels](user_manual_win/mytrans_win_11.png)
 
@@ -107,6 +140,7 @@ Now play any audio on your PC (YouTube, Zoom, podcasts...) and translations appe
 
 - **System Audio** captures whatever is playing on your PC — no virtual cable needed
 - **Microphone** captures live speech from your mic
+- **TTS** reads translations aloud — toggle with the TTS button or `Ctrl+T`
 - The app works as an **overlay** — drag it anywhere, resize as needed
 - Translations are **saved automatically** — click 📋 to view the transcript file
 
@@ -119,6 +153,7 @@ Now play any audio on your PC (YouTube, Zoom, podcasts...) and translations appe
 | `Ctrl+Enter` | Start / Stop |
 | `Ctrl+,` | Open Settings |
 | `Esc` | Close Settings |
+| `Ctrl+T` | Toggle TTS narration |
 
 ---
 
