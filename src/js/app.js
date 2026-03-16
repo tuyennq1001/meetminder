@@ -24,6 +24,8 @@ class App {
         this.localPipelineReady = false;
         this.recordingStartTime = null;
         this.ttsEnabled = false;  // TTS runtime toggle
+        this.isPinned = true;     // Always-on-top state
+        this.isCompact = false;   // Compact mode (hide control bar)
     }
 
     async init() {
@@ -60,6 +62,9 @@ class App {
             console.error('[TTS]', error);
             this._showToast(error, 'error');
         };
+
+        // Window position restore disabled — causes issues on Retina displays
+        // await this._restoreWindowPosition();
 
         console.log('🌐 My Translator v0.4.0 initialized');
     }
@@ -112,6 +117,22 @@ class App {
             await this._saveWindowPosition();
             await this.stop();
             await this.appWindow.close();
+        });
+
+        // Minimize button
+        document.getElementById('btn-minimize').addEventListener('click', async () => {
+            await this._saveWindowPosition();
+            await this.appWindow.minimize();
+        });
+
+        // Pin/Unpin button
+        document.getElementById('btn-pin').addEventListener('click', () => {
+            this._togglePin();
+        });
+
+        // Compact mode button
+        document.getElementById('btn-compact').addEventListener('click', () => {
+            this._toggleCompact();
         });
 
         // Start/Stop button
@@ -346,6 +367,25 @@ class App {
             if ((e.metaKey || e.ctrlKey) && e.key === 't') {
                 e.preventDefault();
                 this._toggleTTS();
+            }
+
+            // Cmd/Ctrl + M: Minimize
+            if ((e.metaKey || e.ctrlKey) && e.key === 'm') {
+                e.preventDefault();
+                this._saveWindowPosition();
+                this.appWindow.minimize();
+            }
+
+            // Cmd/Ctrl + P: Toggle Pin
+            if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
+                e.preventDefault();
+                this._togglePin();
+            }
+
+            // Cmd/Ctrl + D: Toggle Compact
+            if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
+                e.preventDefault();
+                this._toggleCompact();
             }
         });
     }
@@ -1019,13 +1059,15 @@ class App {
 
     async _saveWindowPosition() {
         try {
+            const factor = await this.appWindow.scaleFactor();
             const pos = await this.appWindow.outerPosition();
-            const size = await this.appWindow.outerSize();
+            const size = await this.appWindow.innerSize();
+            // Save logical coordinates (physical / scaleFactor)
             localStorage.setItem('window_state', JSON.stringify({
-                x: pos.x,
-                y: pos.y,
-                width: size.width,
-                height: size.height,
+                x: Math.round(pos.x / factor),
+                y: Math.round(pos.y / factor),
+                width: Math.round(size.width / factor),
+                height: Math.round(size.height / factor),
             }));
         } catch (err) {
             console.error('Failed to save window position:', err);
@@ -1040,14 +1082,48 @@ class App {
             const state = JSON.parse(saved);
             const { LogicalPosition, LogicalSize } = window.__TAURI__.window;
 
+            // Validate — don't restore if position seems off-screen
+            if (state.x < -100 || state.y < -100 || state.x > 5000 || state.y > 3000) {
+                console.warn('Saved window position looks off-screen, skipping restore');
+                localStorage.removeItem('window_state');
+                return;
+            }
+
+            if (state.width && state.height && state.width >= 300 && state.height >= 100) {
+                await this.appWindow.setSize(new LogicalSize(state.width, state.height));
+            }
             if (state.x !== undefined && state.y !== undefined) {
                 await this.appWindow.setPosition(new LogicalPosition(state.x, state.y));
             }
-            if (state.width && state.height) {
-                await this.appWindow.setSize(new LogicalSize(state.width, state.height));
-            }
         } catch (err) {
             console.error('Failed to restore window position:', err);
+            localStorage.removeItem('window_state');
+        }
+    }
+
+    // ─── Pin / Unpin (Always on Top) ────────────────────
+
+    async _togglePin() {
+        this.isPinned = !this.isPinned;
+        await this.appWindow.setAlwaysOnTop(this.isPinned);
+        const btn = document.getElementById('btn-pin');
+        if (btn) btn.classList.toggle('active', this.isPinned);
+        this._showToast(this.isPinned ? 'Pinned on top' : 'Unpinned — window can go behind other apps', 'success');
+    }
+
+    // ─── Compact Mode ───────────────────────────────
+
+    _toggleCompact() {
+        this.isCompact = !this.isCompact;
+        const dragRegion = document.getElementById('drag-region');
+        const overlay = document.getElementById('overlay-view');
+
+        if (this.isCompact) {
+            dragRegion.classList.add('compact-hidden');
+            overlay.classList.add('compact-mode');
+        } else {
+            dragRegion.classList.remove('compact-hidden');
+            overlay.classList.remove('compact-mode');
         }
     }
 

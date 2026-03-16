@@ -80,6 +80,7 @@ body {
    ═══════════════════════════════════════════════════════════ */
 
 #overlay-view {
+  position: relative;
   background: var(--bg-primary);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
@@ -205,6 +206,54 @@ body {
 .tts-label {
   font-weight: 600;
   letter-spacing: 0.5px;
+}
+
+/* Pin Button Active State */
+#btn-pin.active {
+  color: var(--accent);
+}
+
+#btn-pin.active:hover {
+  background: var(--accent-glow);
+}
+
+/* Minimize Button Hover */
+#btn-minimize:hover {
+  background: rgba(250, 204, 21, 0.15);
+  color: #facc15;
+}
+
+/* ─── Compact Mode ─────────────────────────────────────── */
+#drag-region.compact-hidden {
+  display: none !important;
+}
+
+/* Thin hover trigger at top when compact */
+.compact-mode::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  z-index: 100;
+  cursor: pointer;
+}
+
+.compact-mode:hover #drag-region.compact-hidden {
+  display: flex !important;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 99;
+  background: rgba(20, 20, 30, 0.95);
+  border-bottom: 1px solid var(--border-subtle);
+  height: var(--control-bar-height);
+}
+
+.compact-mode #transcript-container {
+  padding-top: 4px;
 }
 
 /* Status Area */
