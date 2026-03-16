@@ -62,9 +62,7 @@ The setup wizard will guide you:
 
 ## Step 4 — Configure API Key & Languages
 
-The app opens. Click ⚙️ to open **Settings**:
-
-![Main screen — Ready](user_manual_win/mytrans_win_07.png)
+The app opens. Click ⚙️ to open **Settings**.
 
 Configure:
 
@@ -73,7 +71,7 @@ Configure:
 3. **Target** — Choose the target language (e.g., Vietnamese, English...)
 4. **Audio Source** — Choose System Audio (computer sound) or Microphone
 
-![Settings — API Key and Languages](user_manual_win/mytrans_win_08.png)
+![Settings — API Key and Languages](user_manual/mytrans_setting_1.png)
 
 Scroll down for more options:
 
@@ -82,7 +80,7 @@ Scroll down for more options:
 - **Show original text** — Display source text alongside translation
 - **Custom Context** — Add domain/terms for better accuracy
 
-![Settings — Display and Context](user_manual_win/mytrans_win_09.png)
+![Settings — TTS Narration section](user_manual/mytrans_setting_2.png)
 
 Click **Save & Close** when done.
 
@@ -126,13 +124,11 @@ Want translations **read aloud**? Enable TTS narration:
 
 Click ▶ to start. The app will show **Listening...**
 
-![App is Listening](user_manual_win/mytrans_win_10.png)
-
 Now play any audio on your PC (YouTube, Zoom, podcasts...) and translations appear in real-time!
 
 If TTS is enabled, you can toggle it on/off with the **TTS** button or `Ctrl+T`.
 
-![Real-time translation with speaker labels](user_manual_win/mytrans_win_11.png)
+![App translating with TTS enabled](user_manual/mytrans_tts_1.png)
 
 ---
 

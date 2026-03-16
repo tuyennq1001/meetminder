@@ -62,9 +62,7 @@ Trình cài đặt sẽ hướng dẫn bạn:
 
 ## Bước 4 — Cấu hình API Key và ngôn ngữ
 
-Ứng dụng mở lên. Nhấn ⚙️ để mở **Settings** (Cài đặt):
-
-![Màn hình chính — Ready](user_manual_win/mytrans_win_07.png)
+Ứng dụng mở lên. Nhấn ⚙️ để mở **Settings** (Cài đặt).
 
 Cấu hình:
 
@@ -73,7 +71,7 @@ Cấu hình:
 3. **Target** — Chọn ngôn ngữ đích (VD: Vietnamese, English...)
 4. **Audio Source** — Chọn System Audio (âm thanh máy tính) hoặc Microphone
 
-![Settings — API Key và ngôn ngữ](user_manual_win/mytrans_win_08.png)
+![Settings — API Key và ngôn ngữ](user_manual/mytrans_setting_1.png)
 
 Kéo xuống để xem thêm tuỳ chọn:
 
@@ -82,7 +80,7 @@ Kéo xuống để xem thêm tuỳ chọn:
 - **Show original text** — Hiện text gốc bên cạnh bản dịch
 - **Custom Context** — Thêm lĩnh vực/thuật ngữ để dịch chính xác hơn
 
-![Settings — Hiển thị và ngữ cảnh](user_manual_win/mytrans_win_09.png)
+![Settings — TTS Narration](user_manual/mytrans_setting_2.png)
 
 Nhấn **Save & Close** khi xong.
 
@@ -126,13 +124,11 @@ Muốn bản dịch được **đọc thành lời**? Bật tính năng TTS:
 
 Nhấn ▶ để bắt đầu. Ứng dụng sẽ hiện **Listening...**
 
-![Đang lắng nghe](user_manual_win/mytrans_win_10.png)
-
 Giờ phát bất kỳ âm thanh nào trên PC (YouTube, Zoom, podcast...) và bản dịch sẽ xuất hiện theo thời gian thực!
 
 Nếu TTS đã bật, bạn có thể bật/tắt bằng nút **TTS** hoặc `Ctrl+T`.
 
-![Dịch theo thời gian thực với nhãn speaker](user_manual_win/mytrans_win_11.png)
+![App đang dịch với TTS bật](user_manual/mytrans_tts_1.png)
 
 ---
 
