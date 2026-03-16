@@ -465,8 +465,9 @@ class App {
         this.currentSource = settings.audio_source === 'both' ? 'system' : (settings.audio_source || 'system');
         this._updateSourceButtons();
 
-        // Update TTS state
-        this.ttsEnabled = settings.tts_enabled && !!settings.elevenlabs_api_key;
+        // Update TTS state — only enable if setting is on AND key exists
+        const hasElevenLabsKey = !!settings.elevenlabs_api_key;
+        this.ttsEnabled = !!(settings.tts_enabled && hasElevenLabsKey);
         this._updateTTSButton();
     }
 
