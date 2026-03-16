@@ -3,8 +3,8 @@
 <plist version="1.0">
 <dict>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>My Translator needs screen recording access to capture system audio for translation.</string>
+    <string>Personal Translator needs screen recording access to capture system audio for translation.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>My Translator needs microphone access for real-time speech translation.</string>
+    <string>Personal Translator needs microphone access for real-time speech translation.</string>
 </dict>
 </plist>

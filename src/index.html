@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>My Translator</title>
+  <title>Personal Translator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -169,235 +169,191 @@
     </div>
 
     <div class="settings-body">
-      <!-- Translation Mode -->
-      <div class="settings-section">
-        <label class="section-label">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2L2 7l10 5 10-5-10-5z" />
-            <path d="M2 17l10 5 10-5" />
-            <path d="M2 12l10 5 10-5" />
-          </svg>
-          Translation Engine
-        </label>
-        <div class="field-row">
-          <div class="field">
-            <select id="select-translation-mode">
-              <option value="soniox">☁️ Soniox API (Cloud)</option>
-              <option value="local">🖥️ Local MLX (Offline)</option>
-            </select>
-          </div>
-        </div>
-        <p class="hint" id="hint-mode-soniox">Real-time streaming, 70+ languages, ~$0.12/hr</p>
-        <p class="hint" id="hint-mode-local" style="display:none">Offline, free, ~3-4s delay, JA/EN/ZH → VI/EN</p>
+      <!-- Tab Bar -->
+      <div class="settings-tabs">
+        <button class="settings-tab active" data-tab="tab-translation">Translation</button>
+        <button class="settings-tab" data-tab="tab-display">Display</button>
+        <button class="settings-tab" data-tab="tab-tts">TTS</button>
       </div>
 
-      <!-- Soniox API Key (always shown) -->
-      <div class="settings-section" id="section-api-key">
-        <label class="section-label">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
-          </svg>
-          Soniox API Key <span class="required-badge">Required</span>
-        </label>
-        <div class="input-group">
-          <input type="password" id="input-api-key" placeholder="Enter your Soniox API key..." autocomplete="off" />
-          <button id="btn-toggle-key" class="icon-btn small" title="Show/Hide">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-          </button>
+      <!-- Tab: Translation -->
+      <div class="settings-tab-content active" id="tab-translation">
+        <div class="settings-section">
+          <span class="field-label">Engine</span>
+          <select id="select-translation-mode">
+            <option value="soniox">☁️ Soniox API (Cloud)</option>
+            <option value="local">🖥️ Local MLX (Offline)</option>
+          </select>
+          <p class="hint" id="hint-mode-soniox">Real-time, 70+ languages, ~$0.12/hr</p>
+          <p class="hint" id="hint-mode-local" style="display:none">Offline, free, ~3-4s delay</p>
         </div>
-        <p class="hint">Get your key at <a href="#" id="link-soniox">console.soniox.com</a></p>
-      </div>
 
-      <!-- Languages -->
-      <div class="settings-section">
-        <label class="section-label">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="2" y1="12" x2="22" y2="12" />
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-          </svg>
-          Languages
-        </label>
-        <div class="field-row">
-          <div class="field">
-            <span class="field-label">Source</span>
-            <select id="select-source-lang">
-              <option value="auto">Auto-detect</option>
-              <option value="en">English</option>
-              <option value="ja">Japanese</option>
-              <option value="ko">Korean</option>
-              <option value="zh">Chinese</option>
-              <option value="fr">French</option>
-              <option value="de">German</option>
-              <option value="es">Spanish</option>
-              <option value="vi">Vietnamese</option>
-              <option value="th">Thai</option>
-              <option value="id">Indonesian</option>
-            </select>
+        <div class="settings-section" id="section-api-key">
+          <span class="field-label">Soniox API Key <span class="required-badge">Required</span></span>
+          <div class="input-group">
+            <input type="password" id="input-api-key" placeholder="Enter your Soniox API key..." autocomplete="off" />
+            <button id="btn-toggle-key" class="icon-btn small" title="Show/Hide">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
           </div>
-          <div class="field">
-            <span class="field-label">Target</span>
-            <select id="select-target-lang">
-              <option value="vi">Vietnamese</option>
-              <option value="en">English</option>
-              <option value="ja">Japanese</option>
-              <option value="ko">Korean</option>
-              <option value="zh">Chinese</option>
-              <option value="fr">French</option>
-              <option value="de">German</option>
-              <option value="es">Spanish</option>
-              <option value="th">Thai</option>
-              <option value="id">Indonesian</option>
-            </select>
+          <p class="hint">Get key at <a href="#" id="link-soniox">console.soniox.com</a></p>
+        </div>
+
+        <div class="settings-section">
+          <div class="field-row">
+            <div class="field">
+              <span class="field-label">Source</span>
+              <select id="select-source-lang">
+                <option value="auto">Auto-detect</option>
+                <option value="en">English</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="zh">Chinese</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="es">Spanish</option>
+                <option value="vi">Vietnamese</option>
+                <option value="th">Thai</option>
+                <option value="id">Indonesian</option>
+              </select>
+            </div>
+            <div class="field">
+              <span class="field-label">Target</span>
+              <select id="select-target-lang">
+                <option value="vi">Vietnamese</option>
+                <option value="en">English</option>
+                <option value="ja">Japanese</option>
+                <option value="ko">Korean</option>
+                <option value="zh">Chinese</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="es">Spanish</option>
+                <option value="th">Thai</option>
+                <option value="id">Indonesian</option>
+              </select>
+            </div>
           </div>
+        </div>
+
+        <div class="settings-section">
+          <span class="field-label">Audio Source</span>
+          <div class="radio-group" id="audio-source-group">
+            <label class="radio-option"><input type="radio" name="audio-source" value="system" checked /><span class="radio-label">System</span></label>
+            <label class="radio-option"><input type="radio" name="audio-source" value="microphone" /><span class="radio-label">Mic</span></label>
+            <label class="radio-option"><input type="radio" name="audio-source" value="both" /><span class="radio-label">Both</span></label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <span class="field-label">Context <span class="optional-badge">Optional</span></span>
+          <input type="text" id="input-context-domain" placeholder="Domain: Meeting, Technical..." style="margin-bottom: 6px;" />
+          <input type="text" id="input-context-terms" placeholder="Terms: sprint, deploy, k8s..." />
         </div>
       </div>
 
-      <!-- Audio Source -->
-      <div class="settings-section">
-        <label class="section-label">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-          </svg>
-          Audio Source
-        </label>
-        <div class="radio-group" id="audio-source-group">
-          <label class="radio-option">
-            <input type="radio" name="audio-source" value="system" checked />
-            <span class="radio-label">System Audio</span>
-          </label>
-          <label class="radio-option">
-            <input type="radio" name="audio-source" value="microphone" />
-            <span class="radio-label">Microphone</span>
-          </label>
-          <label class="radio-option">
-            <input type="radio" name="audio-source" value="both" />
-            <span class="radio-label">Both</span>
+      <!-- Tab: Display -->
+      <div class="settings-tab-content" id="tab-display">
+        <div class="settings-section">
+          <div class="slider-field">
+            <span class="field-label">Opacity</span>
+            <input type="range" id="range-opacity" min="20" max="100" value="85" />
+            <span id="opacity-value" class="range-value">85%</span>
+          </div>
+          <div class="slider-field">
+            <span class="field-label">Font Size</span>
+            <input type="range" id="range-font-size" min="12" max="28" value="16" />
+            <span id="font-size-value" class="range-value">16px</span>
+          </div>
+          <div class="slider-field">
+            <span class="field-label">Max Lines</span>
+            <input type="range" id="range-max-lines" min="2" max="15" value="5" />
+            <span id="max-lines-value" class="range-value">5</span>
+          </div>
+          <label class="checkbox-option" style="margin-top: 8px;">
+            <input type="checkbox" id="check-show-original" checked />
+            <span class="checkbox-label">Show original text</span>
           </label>
         </div>
       </div>
 
-      <!-- Display Options -->
-      <div class="settings-section">
-        <label class="section-label">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-            <line x1="8" y1="21" x2="16" y2="21" />
-            <line x1="12" y1="17" x2="12" y2="21" />
-          </svg>
-          Display
-        </label>
-
-        <div class="slider-field">
-          <span class="field-label">Opacity</span>
-          <input type="range" id="range-opacity" min="20" max="100" value="85" />
-          <span id="opacity-value" class="range-value">85%</span>
+      <!-- Tab: TTS -->
+      <div class="settings-tab-content" id="tab-tts">
+        <div class="settings-section">
+          <label class="checkbox-option">
+            <input type="checkbox" id="check-tts-enabled" />
+            <span class="checkbox-label">Enable TTS narration</span>
+          </label>
         </div>
 
-        <div class="slider-field">
-          <span class="field-label">Font Size</span>
-          <input type="range" id="range-font-size" min="12" max="28" value="16" />
-          <span id="font-size-value" class="range-value">16px</span>
-        </div>
-
-        <div class="slider-field">
-          <span class="field-label">Max Lines</span>
-          <input type="range" id="range-max-lines" min="2" max="15" value="5" />
-          <span id="max-lines-value" class="range-value">5</span>
-        </div>
-
-        <label class="checkbox-option">
-          <input type="checkbox" id="check-show-original" checked />
-          <span class="checkbox-label">Show original text</span>
-        </label>
-      </div>
-
-      <!-- Custom Context -->
-      <div class="settings-section">
-        <label class="section-label">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="16" y1="13" x2="8" y2="13" />
-            <line x1="16" y1="17" x2="8" y2="17" />
-          </svg>
-          Custom Context <span class="optional-badge">Optional</span>
-        </label>
-        <div class="field">
-          <span class="field-label">Domain</span>
-          <input type="text" id="input-context-domain" placeholder="e.g. Meeting, Technical, Medical..." />
-        </div>
-        <div class="field" style="margin-top: 8px;">
-          <span class="field-label">Terms</span>
-          <input type="text" id="input-context-terms" placeholder="e.g. sprint, deploy, kubernetes..." />
-        </div>
-        <p class="hint">Comma-separated terms to improve transcription accuracy</p>
-      </div>
-
-      <!-- TTS Narration -->
-      <div class="settings-section" id="section-tts">
-        <label class="section-label">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-          </svg>
-          TTS Narration
-        </label>
-        <label class="checkbox-option">
-          <input type="checkbox" id="check-tts-enabled" />
-          <span class="checkbox-label">Enable narration (read translations aloud)</span>
-        </label>
-        <div id="tts-settings-detail" style="display:none; margin-top: 10px;">
-          <!-- Provider selector -->
-          <div class="field" style="margin-bottom: 8px;">
+        <div id="tts-settings-detail" style="display:none;">
+          <div class="settings-section">
             <span class="field-label">Provider</span>
             <select id="select-tts-provider">
-              <option value="webspeech">Web Speech — Free (System voice)</option>
-              <option value="elevenlabs">ElevenLabs — Premium ($)</option>
+              <option value="edge">🎙️ Edge TTS — Free (Natural)</option>
+              <option value="webspeech">🔊 Web Speech — Free (System)</option>
+              <option value="elevenlabs">✨ ElevenLabs — Premium</option>
             </select>
           </div>
 
-          <!-- Web Speech settings -->
-          <div id="tts-webspeech-settings">
-            <div class="field" style="margin-bottom: 8px;">
-              <span class="field-label">Speed: <span id="tts-speed-value">1.2</span>x</span>
-              <input type="range" id="range-tts-speed" min="0.5" max="2.0" step="0.1" value="1.2" style="width: 100%;" />
+          <!-- Edge TTS -->
+          <div class="settings-section" id="tts-edge-settings">
+            <div class="field">
+              <span class="field-label">Voice</span>
+              <select id="select-edge-voice">
+                <option value="vi-VN-HoaiMyNeural">HoaiMy — Nữ 🇻🇳</option>
+                <option value="vi-VN-NamMinhNeural">NamMinh — Nam 🇻🇳</option>
+                <option value="en-US-JennyNeural">Jenny — Female 🇺🇸</option>
+                <option value="en-US-GuyNeural">Guy — Male 🇺🇸</option>
+                <option value="ja-JP-NanamiNeural">Nanami — 女性 🇯🇵</option>
+                <option value="ko-KR-SunHiNeural">SunHi — 여성 🇰🇷</option>
+                <option value="zh-CN-XiaoxiaoNeural">Xiaoxiao — 女声 🇨🇳</option>
+              </select>
+            </div>
+            <div class="slider-field" style="margin-top: 8px;">
+              <span class="field-label">Speed</span>
+              <input type="range" id="range-edge-speed" min="-50" max="100" step="10" value="30" />
+              <span id="edge-speed-value" class="range-value">+30%</span>
+            </div>
+            <p class="hint">Microsoft Edge voices — free, no API key needed</p>
+          </div>
+
+          <!-- Web Speech -->
+          <div class="settings-section" id="tts-webspeech-settings" style="display:none;">
+            <div class="slider-field">
+              <span class="field-label">Speed</span>
+              <input type="range" id="range-tts-speed" min="0.5" max="2.0" step="0.1" value="1.2" />
+              <span id="tts-speed-value" class="range-value">1.2x</span>
             </div>
           </div>
 
-          <!-- ElevenLabs settings -->
-          <div id="tts-elevenlabs-settings" style="display:none;">
-            <div class="field" style="margin-bottom: 8px;">
-              <span class="field-label">ElevenLabs API Key</span>
-              <div class="input-group">
-                <input type="password" id="input-elevenlabs-key" placeholder="Enter your ElevenLabs API key..." autocomplete="off" />
-                <button id="btn-toggle-elevenlabs-key" class="icon-btn small" title="Show/Hide">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                </button>
-              </div>
-              <p class="hint">Get your key at <a href="#" id="link-elevenlabs">elevenlabs.io</a></p>
+          <!-- ElevenLabs -->
+          <div class="settings-section" id="tts-elevenlabs-settings" style="display:none;">
+            <span class="field-label">ElevenLabs API Key</span>
+            <div class="input-group">
+              <input type="password" id="input-elevenlabs-key" placeholder="Enter key..." autocomplete="off" />
+              <button id="btn-toggle-elevenlabs-key" class="icon-btn small" title="Show/Hide">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+                </svg>
+              </button>
             </div>
-            <div class="field" style="margin-bottom: 8px;">
+            <p class="hint">elevenlabs.io — Premium quality</p>
+            <div class="field" style="margin-top: 8px;">
               <span class="field-label">Voice</span>
               <select id="select-tts-voice">
-                <option value="21m00Tcm4TlvDq8ikWAM">Rachel — Nữ (Multilingual)</option>
-                <option value="EXAVITQu4vr4xnSDxMaL">Sarah — Nữ</option>
-                <option value="onwK4e9ZLuTAKqWW03F9">Daniel — Nam</option>
-                <option value="pNInz6obpgDQGcFmaJgB">Adam — Nam</option>
+                <option value="21m00Tcm4TlvDq8ikWAM">Rachel — Female</option>
+                <option value="EXAVITQu4vr4xnSDxMaL">Sarah — Female</option>
+                <option value="onwK4e9ZLuTAKqWW03F9">Daniel — Male</option>
+                <option value="pNInz6obpgDQGcFmaJgB">Adam — Male</option>
               </select>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Save Button -->
+      <!-- Save -->
       <div class="settings-actions">
         <button id="btn-save-settings" class="primary-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -408,7 +364,6 @@
       </div>
     </div>
   </div>
-
   <!-- ═══════════════════ SETUP MODAL ═══════════════════ -->
   <div id="setup-modal" class="modal-overlay" style="display:none">
     <div class="modal-card">

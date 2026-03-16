@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   My Translator — Main Stylesheet
+   Personal Translator — Main Stylesheet
    Dark glassmorphism overlay theme
    ═══════════════════════════════════════════════════════════ */
 
@@ -681,6 +681,44 @@ body {
 .settings-body::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 2px;
+}
+
+/* ─── Settings Tabs ───────────────────────────────────── */
+.settings-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 16px;
+}
+
+.settings-tab {
+  flex: 1;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.settings-tab:hover {
+  color: var(--text-primary);
+}
+
+.settings-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.settings-tab-content {
+  display: none;
+}
+
+.settings-tab-content.active {
+  display: block;
 }
 
 /* ─── Settings Sections ────────────────────────────────── */

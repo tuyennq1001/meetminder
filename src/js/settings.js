@@ -18,9 +18,11 @@ const DEFAULT_SETTINGS = {
   custom_context: null,
   elevenlabs_api_key: '',
   tts_enabled: false,
-  tts_provider: 'webspeech',
+  tts_provider: 'edge',
   tts_voice_id: '21m00Tcm4TlvDq8ikWAM',
   tts_speed: 1.2,
+  edge_tts_voice: 'vi-VN-HoaiMyNeural',
+  edge_tts_speed: 30,
   tts_auto_read: true,
 };
 

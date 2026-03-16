@@ -6,6 +6,7 @@ Measures: time-to-first-byte, total generation time, audio chunks, data size
 
 import asyncio
 import json
+import os
 import time
 import base64
 import sys
@@ -18,7 +19,7 @@ except ImportError:
     import websockets
 
 # Config
-API_KEY = os.environ.get("ELEVENLABS_API_KEY", "YOUR_API_KEY_HERE")
+API_KEY = os.environ.get("ELEVENLABS_API_KEY", "YOUR_KEY_HERE")
 VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # Rachel
 MODEL_ID = "eleven_flash_v2_5"
 OUTPUT_FORMAT = "mp3_44100_128"
