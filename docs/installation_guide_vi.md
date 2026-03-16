@@ -140,7 +140,7 @@ App sẽ hiện **Listening...** — bây giờ hãy phát bất kỳ audio nào
 
 Nếu TTS đã bật, bạn có thể bật/tắt bằng nút **TTS** hoặc `⌘ T`.
 
-![App đang Listening](user_manual/mytrans_06.png)
+![App đang dịch với TTS bật](user_manual/mytrans_tts_1.png)
 
 ---
 

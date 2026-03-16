@@ -140,7 +140,7 @@ The app will show **Listening...** — now play any audio on your Mac (YouTube, 
 
 If TTS is enabled, you can toggle it on/off with the **TTS** button or `⌘ T`.
 
-![App is Listening](user_manual/mytrans_06.png)
+![App translating with TTS enabled](user_manual/mytrans_tts_1.png)
 
 ---
 
