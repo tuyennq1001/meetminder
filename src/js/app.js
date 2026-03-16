@@ -7,6 +7,7 @@ import { settingsManager } from './settings.js';
 import { TranscriptUI } from './ui.js';
 import { sonioxClient } from './soniox.js';
 import { elevenLabsTTS } from './elevenlabs-tts.js';
+import { webSpeechTTS } from './web-speech-tts.js';
 import { audioPlayer } from './audio-player.js';
 
 const { invoke } = window.__TAURI__.core;
@@ -54,11 +55,15 @@ class App {
         // Init audio player for TTS
         audioPlayer.init();
 
-        // Wire TTS audio callback
+        // Wire TTS audio callbacks for ElevenLabs (Web Speech plays directly)
         elevenLabsTTS.onAudioChunk = (base64Audio, isFinal) => {
             audioPlayer.enqueue(base64Audio);
         };
         elevenLabsTTS.onError = (error) => {
+            console.error('[TTS]', error);
+            this._showToast(error, 'error');
+        };
+        webSpeechTTS.onError = (error) => {
             console.error('[TTS]', error);
             this._showToast(error, 'error');
         };
@@ -267,6 +272,21 @@ class App {
             if (detail) detail.style.display = e.target.checked ? '' : 'none';
         });
 
+        // TTS provider toggle — show/hide relevant settings
+        document.getElementById('select-tts-provider')?.addEventListener('change', (e) => {
+            const isElevenlabs = e.target.value === 'elevenlabs';
+            const wsSettings = document.getElementById('tts-webspeech-settings');
+            const elSettings = document.getElementById('tts-elevenlabs-settings');
+            if (wsSettings) wsSettings.style.display = isElevenlabs ? 'none' : '';
+            if (elSettings) elSettings.style.display = isElevenlabs ? '' : 'none';
+        });
+
+        // TTS speed slider — show value
+        document.getElementById('range-tts-speed')?.addEventListener('input', (e) => {
+            const label = document.getElementById('tts-speed-value');
+            if (label) label.textContent = e.target.value;
+        });
+
         // TTS toggle button in overlay
         document.getElementById('btn-tts').addEventListener('click', () => {
             this._toggleTTS();
@@ -438,11 +458,27 @@ class App {
         // TTS settings
         document.getElementById('input-elevenlabs-key').value = s.elevenlabs_api_key || '';
         document.getElementById('select-tts-voice').value = s.tts_voice_id || '21m00Tcm4TlvDq8ikWAM';
-        document.getElementById('check-tts-auto-read').checked = s.tts_auto_read !== false;
         const ttsEnabledCheckbox = document.getElementById('check-tts-enabled');
         const ttsDetail = document.getElementById('tts-settings-detail');
         if (ttsEnabledCheckbox) ttsEnabledCheckbox.checked = !!s.tts_enabled;
         if (ttsDetail) ttsDetail.style.display = s.tts_enabled ? '' : 'none';
+
+        // TTS provider
+        const providerSelect = document.getElementById('select-tts-provider');
+        if (providerSelect) {
+            providerSelect.value = s.tts_provider || 'webspeech';
+            const isElevenlabs = providerSelect.value === 'elevenlabs';
+            const wsSettings = document.getElementById('tts-webspeech-settings');
+            const elSettings = document.getElementById('tts-elevenlabs-settings');
+            if (wsSettings) wsSettings.style.display = isElevenlabs ? 'none' : '';
+            if (elSettings) elSettings.style.display = isElevenlabs ? '' : 'none';
+        }
+
+        // TTS speed
+        const speedSlider = document.getElementById('range-tts-speed');
+        const speedLabel = document.getElementById('tts-speed-value');
+        if (speedSlider) speedSlider.value = s.tts_speed || 1.2;
+        if (speedLabel) speedLabel.textContent = s.tts_speed || 1.2;
     }
 
     async _saveSettingsFromForm() {
@@ -471,9 +507,10 @@ class App {
 
         // TTS settings
         const ttsEnabled = document.getElementById('check-tts-enabled')?.checked || false;
+        settings.tts_provider = document.getElementById('select-tts-provider')?.value || 'webspeech';
         settings.elevenlabs_api_key = document.getElementById('input-elevenlabs-key').value.trim();
         settings.tts_voice_id = document.getElementById('select-tts-voice').value;
-        settings.tts_auto_read = document.getElementById('check-tts-auto-read').checked;
+        settings.tts_speed = parseFloat(document.getElementById('range-tts-speed')?.value || 1.2);
         settings.tts_enabled = ttsEnabled;
 
         try {
@@ -505,9 +542,14 @@ class App {
         this.currentSource = settings.audio_source === 'both' ? 'system' : (settings.audio_source || 'system');
         this._updateSourceButtons();
 
-        // Update TTS state — only enable if setting is on AND key exists
+        // Update TTS state — Edge-TTS always available (no key needed)
         const hasElevenLabsKey = !!settings.elevenlabs_api_key;
-        this.ttsEnabled = !!(settings.tts_enabled && hasElevenLabsKey);
+        const ttsProvider = settings.tts_provider || 'webspeech'; // 'webspeech' | 'elevenlabs'
+        if (ttsProvider === 'elevenlabs' && !hasElevenLabsKey) {
+            this.ttsEnabled = false;
+        } else {
+            this.ttsEnabled = !!settings.tts_enabled;
+        }
         this._updateTTSButton();
     }
 
@@ -515,7 +557,10 @@ class App {
 
     _toggleTTS() {
         const settings = settingsManager.get();
-        if (!settings.elevenlabs_api_key) {
+        const provider = settings.tts_provider || 'webspeech';
+
+        // ElevenLabs requires API key; Edge-TTS does not
+        if (provider === 'elevenlabs' && !settings.elevenlabs_api_key) {
             this._showToast('Add your ElevenLabs API key in Settings first', 'error');
             this._showView('settings');
             return;
@@ -524,20 +569,42 @@ class App {
         this.ttsEnabled = !this.ttsEnabled;
         this._updateTTSButton();
 
+        const tts = this._getActiveTTS();
+
         if (this.ttsEnabled) {
-            elevenLabsTTS.configure({
+            this._configureTTS(tts, settings);
+            if (this.isRunning) {
+                tts.connect();
+                audioPlayer.resume();
+            }
+            const label = provider === 'webspeech' ? 'Web Speech (Free)' : 'ElevenLabs';
+            this._showToast(`TTS narration ON 🔊 (${label})`, 'success');
+        } else {
+            tts.disconnect();
+            audioPlayer.stop();
+            this._showToast('TTS narration OFF 🔇', 'success');
+        }
+    }
+
+    _getActiveTTS() {
+        const settings = settingsManager.get();
+        const provider = settings.tts_provider || 'webspeech';
+        return provider === 'elevenlabs' ? elevenLabsTTS : webSpeechTTS;
+    }
+
+    _configureTTS(tts, settings) {
+        const provider = settings.tts_provider || 'webspeech';
+        if (provider === 'elevenlabs') {
+            tts.configure({
                 apiKey: settings.elevenlabs_api_key,
                 voiceId: settings.tts_voice_id || '21m00Tcm4TlvDq8ikWAM',
             });
-            if (this.isRunning) {
-                elevenLabsTTS.connect();
-                audioPlayer.resume();
-            }
-            this._showToast('TTS narration ON 🔊', 'success');
         } else {
-            elevenLabsTTS.disconnect();
-            audioPlayer.stop();
-            this._showToast('TTS narration OFF 🔇', 'success');
+            tts.configure({
+                voice: settings.web_speech_voice || null,
+                lang: 'vi-VN',
+                rate: settings.tts_speed || 1.2,
+            });
         }
     }
 
@@ -553,7 +620,7 @@ class App {
 
     _speakIfEnabled(text) {
         if (this.ttsEnabled && text?.trim()) {
-            elevenLabsTTS.speak(text);
+            this._getActiveTTS().speak(text);
         }
     }
 
@@ -631,13 +698,10 @@ class App {
         }
 
         // Start TTS if enabled
-        if (this.ttsEnabled && settings.elevenlabs_api_key) {
-            elevenLabsTTS.configure({
-                apiKey: settings.elevenlabs_api_key,
-                voiceId: settings.tts_voice_id || '21m00Tcm4TlvDq8ikWAM',
-            });
-            elevenLabsTTS.connect();
-            // Resume AudioContext on user gesture (start button click)
+        if (this.ttsEnabled) {
+            const tts = this._getActiveTTS();
+            this._configureTTS(tts, settings);
+            tts.connect();
             audioPlayer.resume();
         }
     }
@@ -972,6 +1036,7 @@ class App {
 
         // Stop TTS
         elevenLabsTTS.disconnect();
+        webSpeechTTS.disconnect();
         audioPlayer.stop();
 
         // Auto-save on stop (safety net)

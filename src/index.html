@@ -352,32 +352,48 @@
           <span class="checkbox-label">Enable narration (read translations aloud)</span>
         </label>
         <div id="tts-settings-detail" style="display:none; margin-top: 10px;">
+          <!-- Provider selector -->
           <div class="field" style="margin-bottom: 8px;">
-            <span class="field-label">ElevenLabs API Key</span>
-            <div class="input-group">
-              <input type="password" id="input-elevenlabs-key" placeholder="Enter your ElevenLabs API key..." autocomplete="off" />
-              <button id="btn-toggle-elevenlabs-key" class="icon-btn small" title="Show/Hide">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              </button>
-            </div>
-            <p class="hint">Get your key at <a href="#" id="link-elevenlabs">elevenlabs.io</a></p>
-          </div>
-          <div class="field" style="margin-bottom: 8px;">
-            <span class="field-label">Voice</span>
-            <select id="select-tts-voice">
-              <option value="21m00Tcm4TlvDq8ikWAM">Rachel — Nữ (Multilingual)</option>
-              <option value="EXAVITQu4vr4xnSDxMaL">Sarah — Nữ</option>
-              <option value="onwK4e9ZLuTAKqWW03F9">Daniel — Nam</option>
-              <option value="pNInz6obpgDQGcFmaJgB">Adam — Nam</option>
+            <span class="field-label">Provider</span>
+            <select id="select-tts-provider">
+              <option value="webspeech">Web Speech — Free (System voice)</option>
+              <option value="elevenlabs">ElevenLabs — Premium ($)</option>
             </select>
           </div>
-          <label class="checkbox-option">
-            <input type="checkbox" id="check-tts-auto-read" checked />
-            <span class="checkbox-label">Auto-read new translations</span>
-          </label>
+
+          <!-- Web Speech settings -->
+          <div id="tts-webspeech-settings">
+            <div class="field" style="margin-bottom: 8px;">
+              <span class="field-label">Speed: <span id="tts-speed-value">1.2</span>x</span>
+              <input type="range" id="range-tts-speed" min="0.5" max="2.0" step="0.1" value="1.2" style="width: 100%;" />
+            </div>
+          </div>
+
+          <!-- ElevenLabs settings -->
+          <div id="tts-elevenlabs-settings" style="display:none;">
+            <div class="field" style="margin-bottom: 8px;">
+              <span class="field-label">ElevenLabs API Key</span>
+              <div class="input-group">
+                <input type="password" id="input-elevenlabs-key" placeholder="Enter your ElevenLabs API key..." autocomplete="off" />
+                <button id="btn-toggle-elevenlabs-key" class="icon-btn small" title="Show/Hide">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </button>
+              </div>
+              <p class="hint">Get your key at <a href="#" id="link-elevenlabs">elevenlabs.io</a></p>
+            </div>
+            <div class="field" style="margin-bottom: 8px;">
+              <span class="field-label">Voice</span>
+              <select id="select-tts-voice">
+                <option value="21m00Tcm4TlvDq8ikWAM">Rachel — Nữ (Multilingual)</option>
+                <option value="EXAVITQu4vr4xnSDxMaL">Sarah — Nữ</option>
+                <option value="onwK4e9ZLuTAKqWW03F9">Daniel — Nam</option>
+                <option value="pNInz6obpgDQGcFmaJgB">Adam — Nam</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 
