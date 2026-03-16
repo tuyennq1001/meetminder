@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Personal Translator",
+  "productName": "My Translator",
   "version": "0.4.2",
-  "identifier": "com.personal.translator",
+  "identifier": "com.my.translator",
   "build": {
     "frontendDist": "../src"
   },
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Personal Translator",
+        "title": "My Translator",
         "width": 600,
         "height": 400,
         "minWidth": 400,
