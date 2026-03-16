@@ -1,200 +1,164 @@
-# Personal Translator — Dev Repo
+<p align="center">
+  <img src="banner.png?v=2" alt="My Translator — Real-time Speech Translation">
+</p>
 
-Private development repo for **My Translator**. Public release → [github.com/phuc-nt/my-translator](https://github.com/phuc-nt/my-translator)
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-black?logo=apple" alt="macOS">
+  <img src="https://img.shields.io/badge/Windows-10%2F11-blue?logo=windows" alt="Windows">
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
+</p>
 
-## Repo Roles
+> 📖 **[Installation Guide — macOS (English)](docs/installation_guide.md)**<br>
+> 📖 **[Hướng dẫn cài đặt — macOS (Tiếng Việt)](docs/installation_guide_vi.md)**<br>
+> 📖 **[Installation Guide — Windows](docs/installation_guide_win.md)**<br>
+> 📖 **[Hướng dẫn cài đặt — Windows (Tiếng Việt)](docs/installation_guide_win_vi.md)**
 
-| Repo | URL | Role |
-|------|-----|------|
-| **`realtime_pc_translator`** (Private) | `github.com/phuc-nt/realtime_pc_translator` | Development, experiments, internal docs, dev-logs |
-| **`my-translator`** (Public) | `github.com/phuc-nt/my-translator` | Release builds, user-facing docs, GitHub Releases |
+## Features
 
-**Sync rule**: Code flows `private → public`. Never edit code in public repo directly.
-**Private-only files**: CLAUDE.md, GEMINI.md, dev-logs/, lessons-learned/, docs/system/, docs/experiment_*
+- **Real-time transcription & translation** — powered by Soniox STT v4 (Cloud) or Whisper + Gemma (Local)
+- **Two modes**: ☁️ Cloud (real-time, 70+ languages) or 🖥️ Local (offline, free, Apple Silicon)
+- **TTS narration** — read translations aloud via ElevenLabs Flash v2.5 (optional)
+- **System audio capture** — translate any audio playing on your computer (YouTube, meetings, podcasts)
+- **Microphone input** — translate live speech
+- **Multi-speaker detection** — labels different speakers automatically (Cloud mode)
+- **Overlay UI** — minimal, always-on-top dark overlay window
+- **No server, no tracking** — connects directly to APIs or runs 100% on-device
+- **Smart transcript save** — auto-saves `.md` files with metadata on Stop/Clear/Close
+- **Copy & export** — copy transcript to clipboard, open saved files folder
+- **Cross-platform** — macOS (Apple Silicon) and Windows (x64 + ARM64)
 
----
+### Cloud vs Local Mode
 
-## Version History & Roadmap
+| | ☁️ Cloud (Soniox) | 🖥️ Local (MLX) |
+|-|-------------------|----------------|
+| **Latency** | Real-time (~2-3s) | ~10s delay |
+| **Quality** | 9/10 | 7/10 |
+| **Cost** | ~$0.12/hr | Free |
+| **Internet** | Required | Not needed |
+| **Languages** | 70+ | JA/EN/ZH/KO → VI/EN |
+| **Privacy** | Cloud API | 100% on-device |
+| **Platform** | All | Apple Silicon only |
 
-| Version | Features | Date | Status |
-|---------|----------|------|--------|
-| v0.1.0 | Soniox Cloud — macOS Apple Silicon | 2026-03 | ✅ Released |
-| v0.2.0 | Windows support + UI Polish | 2026-03 | ✅ Released |
-| v0.3.0 | Local MLX offline translation (Apple Silicon) | 2026-03-16 | ✅ Released |
-| v0.4.0 | TTS narration — ElevenLabs Flash v2.5 | 2026-03-16 | ✅ Released |
-| v0.5.0+ | Code signing, UX improvements | TBD | 📋 Backlog |
+## Quick Start
 
-### Version Strategy
+### 1. Download & Install
 
-- **Single version number** for all platforms (macOS, Windows)
-- Platform-specific features (e.g. Local MLX) are **feature-gated in UI**, not by version
-- Soniox Cloud features apply to all platforms
-- Local MLX features are Apple Silicon only (auto-hidden on other platforms)
-
-### v0.4.0 — TTS Narration (ElevenLabs Flash v2.5)
-
-- **Read translations aloud** via ElevenLabs WebSocket TTS API
-- Voice selector: 2 male + 2 female voices (all verified Vietnamese-capable)
-- Toggle with ⌘T shortcut or UI button
-- Audio feedback loop prevention via `excludesCurrentProcessAudio`
-- Benchmark: TTFB avg 209ms (175–260ms range)
-- Works with both Cloud (Soniox) and Local (MLX) translation modes
-
----
-
-## Platform & Feature Status
-
-| Platform | Audio | Soniox Cloud | Local MLX | Status |
-|----------|-------|-------------|-----------|--------|
-| macOS Apple Silicon | ScreenCaptureKit | ✅ | ✅ | Released v0.3.0 |
-| macOS Intel | ScreenCaptureKit | ✅ | ❌ (no Metal) | Built, chưa test |
-| Windows | WASAPI loopback | ✅ | ❌ | Code done, chưa build |
-
-## Quick Dev Setup
+1. Download the latest `.dmg` from the [macOS Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.4.0) (or [Windows Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.2.0-windows))
+2. Open the `.dmg` and drag **My Translator** to Applications
+3. **Important** — the app is not yet signed with an Apple Developer certificate (pending enrollment approval). macOS will block it on first open. Run this command **once** in Terminal to allow it:
 
 ```bash
-# Prerequisites: Rust (rustup.rs), Node.js 18+
-git clone git@github.com:phuc-nt/realtime_pc_translator.git
-cd realtime_pc_translator
+xattr -cr /Applications/My\ Translator.app
+```
+
+> This step will no longer be needed once code signing is in place.
+
+4. Open **My Translator** from Applications
+
+### 2. Configure
+
+1. Open **My Translator**
+2. Click the ⚙️ gear icon (or press `⌘ ,`)
+3. Choose **Translation Engine**:
+   - **☁️ Soniox API (Cloud)** — paste your API key from [soniox.com](https://soniox.com) (~$0.12/hr)
+   - **🖥️ Local MLX (Offline)** — free, no API key needed (Apple Silicon only, ~5GB one-time download)
+4. Set your **source language** and **target language**
+5. *(Optional)* Enable **TTS Narration** and paste your [ElevenLabs](https://elevenlabs.io) API key
+6. Click **Save & Close**
+
+### 3. Start Translating
+
+1. Click ▶ (or press `⌘ Enter`) to start
+2. Play any audio on your Mac — translations appear in real-time
+3. Click ■ to stop
+
+## Permissions
+
+On first launch, macOS will ask for:
+
+| Permission | Why | Where to enable |
+|-----------|-----|-----------------|
+| **Screen & System Audio Recording** | Capture system audio | System Settings → Privacy → Screen & System Audio Recording |
+| **Microphone** *(optional)* | Capture mic input | System Settings → Privacy → Microphone |
+
+> **Note:** After granting permissions, you may need to quit (⌘Q) and reopen the app.
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `⌘ Enter` | Start / Stop |
+| `⌘ ,` | Open Settings |
+| `Esc` | Close Settings |
+| `⌘ 1` | System Audio mode |
+| `⌘ 2` | Microphone mode |
+| `⌘ T` | Toggle TTS narration |
+
+## How It Works
+
+### Cloud Mode (Soniox)
+```
+System Audio → 48kHz→16kHz PCM → Soniox WebSocket → STT + Translation → Overlay UI
+                                                                         ↓ (optional)
+                                                              ElevenLabs TTS → 🔊 Speaker
+```
+
+### Local Mode (MLX — Apple Silicon)
+```
+System Audio → 48kHz→16kHz PCM → Whisper ASR → Gemma Translation → Overlay UI
+                                   (on-device)    (on-device)        ↓ (optional)
+                                                              ElevenLabs TTS → 🔊 Speaker
+```
+
+## Build from Source
+
+### Prerequisites
+
+- macOS 13+ (Apple Silicon)
+- [Rust](https://rustup.rs/) (latest stable)
+- [Node.js](https://nodejs.org/) 18+
+
+### Build
+
+```bash
+git clone https://github.com/phuc-nt/my-translator.git
+cd my-translator
 npm install
-
-# Debug build (nhanh hơn)
-npm run tauri build -- --debug
-
-# Release build
 npm run tauri build
-
-# Intel cross-compile (từ Apple Silicon)
-rustup target add x86_64-apple-darwin
-npm run tauri build -- --target x86_64-apple-darwin
 ```
 
-## Project Structure
+The app bundle is at `src-tauri/target/release/bundle/macos/My Translator.app`.
 
-```
-src/                          # Frontend (WebView)
-├── js/
-│   ├── app.js                # App controller, mode dispatch, audio orchestration
-│   ├── soniox.js             # Soniox WebSocket client (Cloud mode)
-│   ├── elevenlabs-tts.js      # ElevenLabs TTS WebSocket client
-│   ├── audio-player.js       # AudioContext playback queue for TTS
-│   ├── ui.js                 # TranscriptUI — render transcriptions
-│   └── settings.js           # Settings panel
-├── styles/main.css
-└── index.html
+## Tech Stack
 
-src-tauri/                    # Backend (Rust)
-├── src/
-│   ├── lib.rs                # Tauri app init, platform detection, state management
-│   ├── audio/
-│   │   ├── mod.rs            # #[cfg] platform routing, resampling
-│   │   ├── system_audio.rs   # macOS: ScreenCaptureKit (48kHz → 16kHz)
-│   │   ├── wasapi.rs         # Windows: WASAPI loopback
-│   │   └── microphone.rs     # Cross-platform (cpal)
-│   ├── commands/
-│   │   ├── audio.rs          # start_capture / stop_capture
-│   │   ├── settings.rs       # get_settings / save_settings
-│   │   ├── transcript.rs     # save_transcript / open_transcript_dir
-│   │   └── local_pipeline.rs # MLX pipeline: start/stop/send_audio, setup
-│   └── settings.rs           # Settings struct + file persistence
-└── Cargo.toml
+- **[Tauri 2](https://tauri.app/)** — Rust backend + WebView frontend
+- **[ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit)** — macOS system audio capture
+- **[cpal](https://github.com/RustAudio/cpal)** — Cross-platform microphone input
+- **[Soniox](https://soniox.com)** — Real-time speech-to-text + translation API (Cloud mode)
+- **[ElevenLabs](https://elevenlabs.io)** — Flash v2.5 TTS for narration (optional)
+- **[MLX](https://github.com/ml-explore/mlx)** — Apple’s ML framework for on-device inference (Local mode)
+- **[Whisper](https://github.com/openai/whisper)** — Speech recognition model (Local mode)
+- **[Gemma](https://ai.google.dev/gemma)** — Translation LLM (Local mode)
+- **Vanilla HTML/CSS/JS** — Lightweight frontend, no framework
 
-scripts/                      # Python sidecar (Local MLX mode)
-├── local_pipeline.py         # Whisper ASR + Gemma translation
-└── setup_mlx.py              # One-time venv + model download
+## Privacy
 
-docs/
-├── system/                   # Backend architecture & benchmarks
-├── 01_internal_mechanisms.md  # TranslaBuddy reverse engineering
-├── 03_implementation_plan.md  # Original 5-phase plan
-└── windows_port_plan.md       # Windows port plan
+- **No backend server** — the app connects directly to Soniox
+- **No telemetry or analytics** — zero tracking
+- **No account required** — just your Soniox API key
+- **API key stored locally** — never leaves your machine
+- **Transcripts stored locally** — `.md` files saved per session on your disk
 
-dev-logs/                     # Progress tracking per phase
-lessons-learned/              # Bài học kỹ thuật (permissions, audio, Tauri, MLX)
-```
+## Roadmap
 
-## Architecture
+- [x] macOS Apple Silicon support
+- [x] Windows support
+- [x] Local offline translation (MLX — Apple Silicon)
+- [x] TTS narration (ElevenLabs Flash v2.5)
+- [ ] macOS Intel support
+- [ ] Apple code signing & notarization
+- [ ] Windows code signing
 
-```
-Frontend (JS)                    Backend (Rust)
-─────────────                    ──────────────
-soniox.js    ◄── Tauri IPC ──►  audio/system_audio.rs (macOS)
-                                 audio/wasapi.rs (Windows)
-app.js ──┐                      audio/microphone.rs
-         ├── Tauri IPC ──────►  commands/local_pipeline.rs
-settings.js  ◄── Tauri IPC ──►  settings.rs
-ui.js                            commands/transcript.rs
+## License
 
-elevenlabs-tts.js ─► wss://api.elevenlabs.io (TTS)
-audio-player.js   ─► AudioContext → 🔊 Speaker
-```
-
-### Two Translation Modes
-
-| Mode | Pipeline | Latency | Quality |
-|------|----------|---------|---------|
-| **Cloud (Soniox)** | Audio → WebSocket → Soniox API → tokens | ~2-3s real-time | 9/10 |
-| **Local (MLX)** | Audio → Rust stdin → Python(Whisper+Gemma) → JSON | ~10.5s | 7/10 |
-
-Details: [docs/system/architecture.md](docs/system/architecture.md)
-
-## Release to Public Repo
-
-### Sync Code
-
-```bash
-# 1. Copy source files (không copy internal docs)
-cp -r src/ /Users/phucnt/workspace/my-translator/src/
-cp -r src-tauri/src/ /Users/phucnt/workspace/my-translator/src-tauri/src/
-cp -r scripts/ /Users/phucnt/workspace/my-translator/scripts/
-cp src-tauri/tauri.conf.json /Users/phucnt/workspace/my-translator/src-tauri/
-cp src-tauri/Cargo.toml /Users/phucnt/workspace/my-translator/src-tauri/
-cp package.json /Users/phucnt/workspace/my-translator/
-
-# ⚠️ public repo has different productName ("My Translator" vs "Personal Translator")
-# ⚠️ DON'T overwrite tauri.conf.json blindly — check productName, title
-```
-
-### Build + Sign + Upload
-
-```bash
-cd /Users/phucnt/workspace/my-translator
-
-# Build
-npm run tauri build
-
-# Sign (MANDATORY — without this, TCC permissions don't persist)
-codesign --force --deep --sign - --entitlements entitlements.plist \
-  "src-tauri/target/release/bundle/macos/My Translator.app"
-
-# Create DMG
-hdiutil create -volname "My Translator" \
-  -srcfolder "src-tauri/target/release/bundle/macos/My Translator.app" \
-  -ov -format UDZO /tmp/My.Translator_X.Y.Z_aarch64.dmg
-
-# Upload
-gh release create vX.Y.Z /tmp/My.Translator_X.Y.Z_aarch64.dmg \
-  --title "vX.Y.Z — Title" --notes "..."
-```
-
-### ⚠️ Sync Gotchas
-
-| Item | Private repo | Public repo |
-|------|-------------|-------------|
-| Product name | `Personal Translator` | `My Translator` |
-| tauri.conf.json | Don't copy blindly | Has different productName/title |
-| App Support path | `~/Library/Application Support/Personal Translator/` | Same (via bundle ID) |
-| Bundle ID | `com.personal.translator` | Same |
-| Internal docs | ✅ Included | ❌ Not synced |
-
-**Không sync sang public:** CLAUDE.md, GEMINI.md, dev-logs/, lessons-learned/, docs/system/, docs/experiment_*
-
-## Key References
-
-- [CLAUDE.md](CLAUDE.md) / [GEMINI.md](GEMINI.md) — Agent instructions
-- [docs/system/architecture.md](docs/system/architecture.md) — Backend architecture
-- [docs/system/benchmark.md](docs/system/benchmark.md) — Performance data
-- [lessons-learned/](lessons-learned/) — Deployment gotchas, best practices
-- [dev-logs/](dev-logs/) — Phase-by-phase progress
-- [Soniox API docs](https://soniox.com/docs)
-- [Tauri 2 docs](https://tauri.app/start/)
+MIT
