@@ -9,12 +9,13 @@ Step-by-step guide to install and use **My Translator** on macOS.
 - macOS 13 or later (Apple Silicon — M1/M2/M3/M4)
 - **Cloud mode**: [Soniox](https://soniox.com) API key (pay-per-use, ~$0.12/hour)
 - **Local mode**: ~5 GB free disk space (for AI models, one-time download)
+- **TTS narration** (optional): [ElevenLabs](https://elevenlabs.io) API key (Starter plan $5/month)
 
 ---
 
 ## Step 1 — Download
 
-Download the latest `.dmg` from: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/tag/v0.3.0)
+Download the latest `.dmg` from: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/tag/v0.4.0)
 
 ---
 
@@ -78,13 +79,18 @@ First, choose your **Translation Engine**:
 ### Option A: Cloud Mode (Soniox)
 
 1. Select **☁️ Soniox API (Cloud)** as Translation Engine
-2. Paste your API key from [console.soniox.com](https://console.soniox.com)
+2. Paste your Soniox API key
 3. Choose Source & Target languages
-4. Click **Save**
+4. Click **Save & Close** (✓ button at top or bottom)
 
-> 💡 **Where to get an API key?**
-> 1. Go to [soniox.com](https://soniox.com) → create an account
-> 2. Go to Dashboard → copy your API key
+![Settings — Soniox API key and languages](user_manual/mytrans_setting_1.png)
+
+> 💡 **Where to get a Soniox API key?**
+> 1. Go to [console.soniox.com](https://console.soniox.com) → create an account
+> 2. Add funds ($10 minimum, lasts a long time at ~$0.12/hour)
+> 3. Go to **API Keys** → create and copy your key
+
+![Soniox Console — Billing overview](user_manual/mytrans_key_1.png)
 
 ### Option B: Local Mode (MLX — Apple Silicon only)
 
@@ -97,15 +103,42 @@ First, choose your **Translation Engine**:
 > ⚠️ Local mode requires Apple Silicon (M1/M2/M3/M4) and ~6-7 GB RAM.
 > It is not available on Intel Macs.
 
-![Configure API key and languages](user_manual/mytrans_07.png)
+---
+
+## Step 7 — Enable TTS Narration (Optional)
+
+Want translations **read aloud**? Enable TTS narration:
+
+1. In Settings, scroll to **TTS Narration** section
+2. Check **"Enable narration (read translations aloud)"**
+
+![Settings — TTS disabled](user_manual/mytrans_setting_2.png)
+
+3. Enter your **ElevenLabs API key**
+4. Choose a **voice** (2 female, 2 male — all support Vietnamese)
+5. Click **Save & Close**
+
+![Settings — TTS enabled with API key and voice](user_manual/mytrans_setting_3.png)
+
+> 💡 **Where to get an ElevenLabs API key?**
+> 1. Go to [elevenlabs.io](https://elevenlabs.io) → create an account
+> 2. Subscribe to the **Starter plan** ($5/month, ~60 min of TTS)
+> 3. Go to **Developers → API Keys** → create a key with "Text to Speech" access
+
+![ElevenLabs — Subscription plan](user_manual/mytrans_key_2.png)
+![ElevenLabs — Create API key](user_manual/mytrans_key_3.png)
+
+> 💡 TTS is optional. If disabled, the app works exactly like before — transcript & translate only.
 
 ---
 
-## Step 7 — Start Translating!
+## Step 8 — Start Translating!
 
 Go back to the main screen → click ▶ (or press `⌘ Enter`) to start.
 
 The app will show **Listening...** — now play any audio on your Mac (YouTube, Zoom, podcasts...) and translations will appear in real-time!
+
+If TTS is enabled, you can toggle it on/off with the **TTS** button or `⌘ T`.
 
 ![App is Listening](user_manual/mytrans_06.png)
 
@@ -120,6 +153,7 @@ The app will show **Listening...** — now play any audio on your Mac (YouTube, 
 | `Esc` | Close Settings |
 | `⌘ 1` | Switch to System Audio |
 | `⌘ 2` | Switch to Microphone |
+| `⌘ T` | Toggle TTS narration |
 
 ---
 

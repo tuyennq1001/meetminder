@@ -17,11 +17,12 @@
 
 - **Real-time transcription & translation** — powered by Soniox STT v4 (Cloud) or Whisper + Gemma (Local)
 - **Two modes**: ☁️ Cloud (real-time, 70+ languages) or 🖥️ Local (offline, free, Apple Silicon)
+- **TTS narration** — read translations aloud via ElevenLabs Flash v2.5 (optional)
 - **System audio capture** — translate any audio playing on your computer (YouTube, meetings, podcasts)
 - **Microphone input** — translate live speech
 - **Multi-speaker detection** — labels different speakers automatically (Cloud mode)
 - **Overlay UI** — minimal, always-on-top dark overlay window
-- **No server, no tracking** — connects directly to Soniox or runs 100% on-device
+- **No server, no tracking** — connects directly to APIs or runs 100% on-device
 - **Smart transcript save** — auto-saves `.md` files with metadata on Stop/Clear/Close
 - **Copy & export** — copy transcript to clipboard, open saved files folder
 - **Cross-platform** — macOS (Apple Silicon) and Windows (x64 + ARM64)
@@ -42,7 +43,7 @@
 
 ### 1. Download & Install
 
-1. Download the latest `.dmg` from the [macOS Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.3.0) (or [Windows Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.2.0-windows))
+1. Download the latest `.dmg` from the [macOS Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.4.0) (or [Windows Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.2.0-windows))
 2. Open the `.dmg` and drag **My Translator** to Applications
 3. **Important** — the app is not yet signed with an Apple Developer certificate (pending enrollment approval). macOS will block it on first open. Run this command **once** in Terminal to allow it:
 
@@ -62,7 +63,8 @@ xattr -cr /Applications/My\ Translator.app
    - **☁️ Soniox API (Cloud)** — paste your API key from [soniox.com](https://soniox.com) (~$0.12/hr)
    - **🖥️ Local MLX (Offline)** — free, no API key needed (Apple Silicon only, ~5GB one-time download)
 4. Set your **source language** and **target language**
-5. Click **Save**
+5. *(Optional)* Enable **TTS Narration** and paste your [ElevenLabs](https://elevenlabs.io) API key
+6. Click **Save & Close**
 
 ### 3. Start Translating
 
@@ -90,18 +92,22 @@ On first launch, macOS will ask for:
 | `Esc` | Close Settings |
 | `⌘ 1` | System Audio mode |
 | `⌘ 2` | Microphone mode |
+| `⌘ T` | Toggle TTS narration |
 
 ## How It Works
 
 ### Cloud Mode (Soniox)
 ```
 System Audio → 48kHz→16kHz PCM → Soniox WebSocket → STT + Translation → Overlay UI
+                                                                         ↓ (optional)
+                                                              ElevenLabs TTS → 🔊 Speaker
 ```
 
 ### Local Mode (MLX — Apple Silicon)
 ```
 System Audio → 48kHz→16kHz PCM → Whisper ASR → Gemma Translation → Overlay UI
-                                   (on-device)    (on-device)
+                                   (on-device)    (on-device)        ↓ (optional)
+                                                              ElevenLabs TTS → 🔊 Speaker
 ```
 
 ## Build from Source
@@ -129,7 +135,8 @@ The app bundle is at `src-tauri/target/release/bundle/macos/My Translator.app`.
 - **[ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit)** — macOS system audio capture
 - **[cpal](https://github.com/RustAudio/cpal)** — Cross-platform microphone input
 - **[Soniox](https://soniox.com)** — Real-time speech-to-text + translation API (Cloud mode)
-- **[MLX](https://github.com/ml-explore/mlx)** — Apple's ML framework for on-device inference (Local mode)
+- **[ElevenLabs](https://elevenlabs.io)** — Flash v2.5 TTS for narration (optional)
+- **[MLX](https://github.com/ml-explore/mlx)** — Apple’s ML framework for on-device inference (Local mode)
 - **[Whisper](https://github.com/openai/whisper)** — Speech recognition model (Local mode)
 - **[Gemma](https://ai.google.dev/gemma)** — Translation LLM (Local mode)
 - **Vanilla HTML/CSS/JS** — Lightweight frontend, no framework
@@ -147,6 +154,7 @@ The app bundle is at `src-tauri/target/release/bundle/macos/My Translator.app`.
 - [x] macOS Apple Silicon support
 - [x] Windows support
 - [x] Local offline translation (MLX — Apple Silicon)
+- [x] TTS narration (ElevenLabs Flash v2.5)
 - [ ] macOS Intel support
 - [ ] Apple code signing & notarization
 - [ ] Windows code signing
