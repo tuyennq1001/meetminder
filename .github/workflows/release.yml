@@ -42,7 +42,7 @@ jobs:
             src-tauri/target/release/bundle/dmg/*.dmg
 
   build-macos-intel:
-    runs-on: macos-13  # Intel runner
+    runs-on: macos-14  # Cross-compile to Intel
     steps:
       - uses: actions/checkout@v4
 
