@@ -6,119 +6,67 @@
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-black?logo=apple" alt="macOS">
   <img src="https://img.shields.io/badge/Windows-10%2F11-blue?logo=windows" alt="Windows">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
+  <img src="https://img.shields.io/github/stars/phuc-nt/my-translator?style=flat&color=yellow" alt="Stars">
 </p>
 
-> 📖 **[Installation Guide — macOS (English)](docs/installation_guide.md)**<br>
-> 📖 **[Hướng dẫn cài đặt — macOS (Tiếng Việt)](docs/installation_guide_vi.md)**<br>
-> 📖 **[Installation Guide — Windows](docs/installation_guide_win.md)**<br>
-> 📖 **[Hướng dẫn cài đặt — Windows (Tiếng Việt)](docs/installation_guide_win_vi.md)**
+**My Translator** is a real-time speech translation desktop app built with Tauri. It captures audio directly from your system or microphone, transcribes it, and displays translations in a minimal overlay — with no intermediary server involved.
 
-## Features
+> 📖 Installation & usage guides: [macOS (EN)](docs/installation_guide.md) · [macOS (VI)](docs/installation_guide_vi.md) · [Windows (EN)](docs/installation_guide_win.md) · [Windows (VI)](docs/installation_guide_win_vi.md)
 
-- **Real-time transcription & translation** — powered by Soniox STT v4 (Cloud) or Whisper + Gemma (Local)
-- **Two modes**: ☁️ Cloud (real-time, 70+ languages) or 🖥️ Local (offline, free, Apple Silicon)
-- **TTS narration** — read translations aloud via ElevenLabs Flash v2.5 (optional)
-- **System audio capture** — translate any audio playing on your computer (YouTube, meetings, podcasts)
-- **Microphone input** — translate live speech
-- **Multi-speaker detection** — labels different speakers automatically (Cloud mode)
-- **Overlay UI** — minimal, always-on-top dark overlay window
-- **No server, no tracking** — connects directly to APIs or runs 100% on-device
-- **Smart transcript save** — auto-saves `.md` files with metadata on Stop/Clear/Close
-- **Copy & export** — copy transcript to clipboard, open saved files folder
-- **Cross-platform** — macOS (Apple Silicon) and Windows (x64 + ARM64)
-
-### Cloud vs Local Mode
-
-| | ☁️ Cloud (Soniox) | 🖥️ Local (MLX) |
-|-|-------------------|----------------|
-| **Latency** | Real-time (~2-3s) | ~10s delay |
-| **Quality** | 9/10 | 7/10 |
-| **Cost** | ~$0.12/hr | Free |
-| **Internet** | Required | Not needed |
-| **Languages** | 70+ | JA/EN/ZH/KO → VI/EN |
-| **Privacy** | Cloud API | 100% on-device |
-| **Platform** | All | Apple Silicon only |
-
-## Quick Start
-
-### 1. Download & Install
-
-1. Download the latest `.dmg` from the [macOS Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.4.0) (or [Windows Releases](https://github.com/phuc-nt/my-translator/releases/tag/v0.2.0-windows))
-2. Open the `.dmg` and drag **My Translator** to Applications
-3. **Important** — the app is not yet signed with an Apple Developer certificate (pending enrollment approval). macOS will block it on first open. Run this command **once** in Terminal to allow it:
-
-```bash
-xattr -cr /Applications/My\ Translator.app
-```
-
-> This step will no longer be needed once code signing is in place.
-
-4. Open **My Translator** from Applications
-
-### 2. Configure
-
-1. Open **My Translator**
-2. Click the ⚙️ gear icon (or press `⌘ ,`)
-3. Choose **Translation Engine**:
-   - **☁️ Soniox API (Cloud)** — paste your API key from [soniox.com](https://soniox.com) (~$0.12/hr)
-   - **🖥️ Local MLX (Offline)** — free, no API key needed (Apple Silicon only, ~5GB one-time download)
-4. Set your **source language** and **target language**
-5. *(Optional)* Enable **TTS Narration** and paste your [ElevenLabs](https://elevenlabs.io) API key
-6. Click **Save & Close**
-
-### 3. Start Translating
-
-1. Click ▶ (or press `⌘ Enter`) to start
-2. Play any audio on your Mac — translations appear in real-time
-3. Click ■ to stop
-
-## Permissions
-
-On first launch, macOS will ask for:
-
-| Permission | Why | Where to enable |
-|-----------|-----|-----------------|
-| **Screen & System Audio Recording** | Capture system audio | System Settings → Privacy → Screen & System Audio Recording |
-| **Microphone** *(optional)* | Capture mic input | System Settings → Privacy → Microphone |
-
-> **Note:** After granting permissions, you may need to quit (⌘Q) and reopen the app.
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `⌘ Enter` | Start / Stop |
-| `⌘ ,` | Open Settings |
-| `Esc` | Close Settings |
-| `⌘ 1` | System Audio mode |
-| `⌘ 2` | Microphone mode |
-| `⌘ T` | Toggle TTS narration |
+---
 
 ## How It Works
 
-### Cloud Mode (Soniox)
+The app operates in two modes, both following the same pipeline:
+
+**☁️ Cloud Mode (Soniox)**
 ```
-System Audio → 48kHz→16kHz PCM → Soniox WebSocket → STT + Translation → Overlay UI
-                                                                         ↓ (optional)
-                                                              ElevenLabs TTS → 🔊 Speaker
+System Audio / Mic → 48kHz → 16kHz PCM → Soniox WebSocket (STT + Translation) → Overlay UI
+                                                                                  ↓ (optional)
+                                                                       ElevenLabs TTS → 🔊
 ```
 
-### Local Mode (MLX — Apple Silicon)
+**🖥️ Local Mode (MLX — Apple Silicon only)**
 ```
-System Audio → 48kHz→16kHz PCM → Whisper ASR → Gemma Translation → Overlay UI
-                                   (on-device)    (on-device)        ↓ (optional)
-                                                              ElevenLabs TTS → 🔊 Speaker
+System Audio / Mic → 48kHz → 16kHz PCM → Whisper ASR → Gemma LLM → Overlay UI
+                                           (on-device)   (on-device)  ↓ (optional)
+                                                              ElevenLabs TTS → 🔊
 ```
+
+| | ☁️ Cloud (Soniox) | 🖥️ Local (MLX) |
+|-|-------------------|----------------|
+| **Latency** | ~2–3s | ~10s |
+| **Languages** | 70+ | JA/EN/ZH/KO → VI/EN |
+| **Cost** | ~$0.12/hr | Free |
+| **Internet** | Required | Not needed |
+| **Platform** | All | Apple Silicon only |
+
+---
+
+## Privacy
+
+**Your audio never touches our servers — because there are none.**
+
+- The app connects **directly** to the APIs you configure (Soniox, ElevenLabs) — no relay, no middleman
+- **You own your API keys** — stored locally on your machine, never transmitted elsewhere
+- **No account, no telemetry, no analytics** — zero tracking of any kind
+- In Local mode: everything runs **100% on-device**, nothing leaves your machine
+- Transcripts are saved as `.md` files locally, per session
+
+---
+
+## Tech Stack
+
+- **[Tauri 2](https://tauri.app/)** — Rust backend + WebView frontend
+- **[ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit)** — macOS system audio capture
+- **[cpal](https://github.com/RustAudio/cpal)** — Cross-platform microphone input
+- **[Soniox](https://soniox.com)** — Real-time STT + translation (Cloud mode)
+- **[MLX](https://github.com/ml-explore/mlx) + [Whisper](https://github.com/openai/whisper) + [Gemma](https://ai.google.dev/gemma)** — On-device inference (Local mode)
+- **[ElevenLabs](https://elevenlabs.io)** — TTS narration (optional)
+
+---
 
 ## Build from Source
-
-### Prerequisites
-
-- macOS 13+ (Apple Silicon)
-- [Rust](https://rustup.rs/) (latest stable)
-- [Node.js](https://nodejs.org/) 18+
-
-### Build
 
 ```bash
 git clone https://github.com/phuc-nt/my-translator.git
@@ -127,37 +75,15 @@ npm install
 npm run tauri build
 ```
 
-The app bundle is at `src-tauri/target/release/bundle/macos/My Translator.app`.
+Requires: Rust (stable), Node.js 18+, macOS 13+ (Apple Silicon).
 
-## Tech Stack
+---
 
-- **[Tauri 2](https://tauri.app/)** — Rust backend + WebView frontend
-- **[ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit)** — macOS system audio capture
-- **[cpal](https://github.com/RustAudio/cpal)** — Cross-platform microphone input
-- **[Soniox](https://soniox.com)** — Real-time speech-to-text + translation API (Cloud mode)
-- **[ElevenLabs](https://elevenlabs.io)** — Flash v2.5 TTS for narration (optional)
-- **[MLX](https://github.com/ml-explore/mlx)** — Apple’s ML framework for on-device inference (Local mode)
-- **[Whisper](https://github.com/openai/whisper)** — Speech recognition model (Local mode)
-- **[Gemma](https://ai.google.dev/gemma)** — Translation LLM (Local mode)
-- **Vanilla HTML/CSS/JS** — Lightweight frontend, no framework
+## Star History
 
-## Privacy
+[![Star History Chart](https://api.star-history.com/svg?repos=phuc-nt/my-translator&type=Date)](https://star-history.com/#phuc-nt/my-translator&Date)
 
-- **No backend server** — the app connects directly to Soniox
-- **No telemetry or analytics** — zero tracking
-- **No account required** — just your Soniox API key
-- **API key stored locally** — never leaves your machine
-- **Transcripts stored locally** — `.md` files saved per session on your disk
-
-## Roadmap
-
-- [x] macOS Apple Silicon support
-- [x] Windows support
-- [x] Local offline translation (MLX — Apple Silicon)
-- [x] TTS narration (ElevenLabs Flash v2.5)
-- [ ] macOS Intel support
-- [ ] Apple code signing & notarization
-- [ ] Windows code signing
+---
 
 ## License
 
