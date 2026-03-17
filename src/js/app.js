@@ -735,8 +735,8 @@ class App {
             return;
         }
 
-        // Check ElevenLabs key only if TTS is enabled
-        if (this.ttsEnabled && !settings.elevenlabs_api_key) {
+        // Check ElevenLabs key only if TTS is enabled AND provider is elevenlabs
+        if (this.ttsEnabled && settings.tts_provider === 'elevenlabs' && !settings.elevenlabs_api_key) {
             this._showToast('TTS is ON but ElevenLabs API key is missing. Add it in Settings or disable TTS.', 'error');
             this._showView('settings');
             return;
