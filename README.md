@@ -23,14 +23,14 @@ The app operates in two modes, both following the same pipeline:
 ```
 System Audio / Mic → 48kHz → 16kHz PCM → Soniox WebSocket (STT + Translation) → Overlay UI
                                                                                   ↓ (optional)
-                                                                       ElevenLabs TTS → 🔊
+                                                                              TTS → 🔊
 ```
 
 **🖥️ Local Mode (MLX — Apple Silicon only)**
 ```
 System Audio / Mic → 48kHz → 16kHz PCM → Whisper ASR → Gemma LLM → Overlay UI
                                            (on-device)   (on-device)  ↓ (optional)
-                                                              ElevenLabs TTS → 🔊
+                                                                   TTS → 🔊
 ```
 
 | | ☁️ Cloud (Soniox) | 🖥️ Local (MLX) |
@@ -40,6 +40,25 @@ System Audio / Mic → 48kHz → 16kHz PCM → Whisper ASR → Gemma LLM → Ove
 | **Cost** | ~$0.12/hr | Free |
 | **Internet** | Required | Not needed |
 | **Platform** | All | Apple Silicon only |
+
+---
+
+## TTS Narration (Optional)
+
+Read translations aloud as they appear. Three providers to choose from — no setup required for the default:
+
+| | 🔵 Edge TTS ⭐ | 🌐 Web Speech | 🟣 ElevenLabs |
+|-|---------------|--------------|---------------|
+| **Cost** | Free | Free | Paid (API key) |
+| **Quality** | ★★★★★ Neural | ★★★ Robotic | ★★★★★ Premium |
+| **Internet** | Required | Not required | Required |
+| **API Key** | Not needed | Not needed | Required |
+| **Vietnamese** | ✅ Built-in (HoaiMy, NamMinh) | ⚠️ OS-dependent | ✅ Yes |
+| **Platform** | All | All | All |
+
+**Edge TTS** (default) uses Microsoft's neural speech engine — same as "Read Aloud" in Edge browser. Free, no account needed, works out of the box on all platforms. Speed adjustable from −50% to +100%.
+
+> 📖 Full TTS guide: [English](docs/tts_guide.md) · [Tiếng Việt](docs/tts_guide_vi.md)
 
 ---
 
@@ -62,7 +81,9 @@ System Audio / Mic → 48kHz → 16kHz PCM → Whisper ASR → Gemma LLM → Ove
 - **[cpal](https://github.com/RustAudio/cpal)** — Cross-platform microphone input
 - **[Soniox](https://soniox.com)** — Real-time STT + translation (Cloud mode)
 - **[MLX](https://github.com/ml-explore/mlx) + [Whisper](https://github.com/openai/whisper) + [Gemma](https://ai.google.dev/gemma)** — On-device inference (Local mode)
-- **[ElevenLabs](https://elevenlabs.io)** — TTS narration (optional)
+- **[Edge TTS](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/index-text-to-speech)** — Neural TTS, free, no key required (default)
+- **Web Speech API** — OS-native TTS, offline
+- **[ElevenLabs](https://elevenlabs.io)** — Premium TTS, API key required
 
 ---
 
