@@ -41,6 +41,39 @@ jobs:
             src-tauri/target/release/bundle/macos/*.app
             src-tauri/target/release/bundle/dmg/*.dmg
 
+  build-macos-intel:
+    runs-on: macos-13  # Intel runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Tauri app (Intel)
+        run: npm run tauri build -- --target x86_64-apple-darwin
+
+      - name: Upload macOS Intel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-intel-build
+          path: |
+            src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+
   build-windows:
     runs-on: windows-latest
     steps:
@@ -74,7 +107,7 @@ jobs:
             src-tauri/target/release/bundle/msi/*.msi
 
   release:
-    needs: [build-macos, build-windows]
+    needs: [build-macos, build-macos-intel, build-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -84,6 +117,12 @@ jobs:
         with:
           name: macos-build
           path: artifacts/macos
+
+      - name: Download macOS Intel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-intel-build
+          path: artifacts/macos-intel
 
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
