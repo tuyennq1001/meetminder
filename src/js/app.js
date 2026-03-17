@@ -7,7 +7,7 @@ import { settingsManager } from './settings.js';
 import { TranscriptUI } from './ui.js';
 import { sonioxClient } from './soniox.js';
 import { elevenLabsTTS } from './elevenlabs-tts.js';
-import { webSpeechTTS } from './web-speech-tts.js';
+
 import { edgeTTSRust } from './edge-tts.js';
 import { audioPlayer } from './audio-player.js';
 
@@ -62,7 +62,7 @@ class App {
                 audioPlayer.enqueue(base64Audio);
             };
         }
-        for (const tts of [elevenLabsTTS, edgeTTSRust, webSpeechTTS]) {
+        for (const tts of [elevenLabsTTS, edgeTTSRust]) {
             tts.onError = (error) => {
                 console.error('[TTS]', error);
                 this._showToast(error, 'error');
@@ -301,6 +301,11 @@ class App {
             if (label) label.textContent = (v >= 0 ? '+' : '') + v + '%';
         });
 
+        // Add translation term row
+        document.getElementById('btn-add-term')?.addEventListener('click', () => {
+            this._addTermRow('', '');
+        });
+
         // TTS toggle button in overlay
         document.getElementById('btn-tts').addEventListener('click', () => {
             this._toggleTTS();
@@ -467,7 +472,13 @@ class App {
         // Custom context
         const ctx = s.custom_context;
         document.getElementById('input-context-domain').value = ctx?.domain || '';
-        document.getElementById('input-context-terms').value = (ctx?.terms || []).join(', ');
+        // Load translation terms as rows
+        const termsList = document.getElementById('translation-terms-list');
+        if (termsList) {
+            termsList.innerHTML = '';
+            const terms = ctx?.translation_terms || [];
+            terms.forEach(t => this._addTermRow(t.source, t.target));
+        }
 
         // TTS settings
         document.getElementById('input-elevenlabs-key').value = s.elevenlabs_api_key || '';
@@ -488,7 +499,7 @@ class App {
         // TTS provider
         const providerSelect = document.getElementById('select-tts-provider');
         if (providerSelect) {
-            providerSelect.value = s.tts_provider || 'webspeech';
+            providerSelect.value = s.tts_provider || 'edge';
             this._updateTTSProviderUI(providerSelect.value);
         }
 
@@ -515,17 +526,23 @@ class App {
 
         // Parse custom context
         const domain = document.getElementById('input-context-domain').value.trim();
-        const termsStr = document.getElementById('input-context-terms').value.trim();
-        if (domain) {
+        const translationTerms = [];
+        document.querySelectorAll('#translation-terms-list .term-row').forEach(row => {
+            const source = row.querySelector('.term-source')?.value.trim();
+            const target = row.querySelector('.term-target')?.value.trim();
+            if (source && target) translationTerms.push({ source, target });
+        });
+
+        if (domain || translationTerms.length > 0) {
             settings.custom_context = {
-                domain,
-                terms: termsStr ? termsStr.split(',').map(t => t.trim()).filter(Boolean) : [],
+                domain: domain || null,
+                translation_terms: translationTerms,
             };
         }
 
         // TTS settings
         const ttsEnabled = document.getElementById('check-tts-enabled')?.checked || false;
-        settings.tts_provider = document.getElementById('select-tts-provider')?.value || 'webspeech';
+        settings.tts_provider = document.getElementById('select-tts-provider')?.value || 'edge';
         settings.elevenlabs_api_key = document.getElementById('input-elevenlabs-key').value.trim();
         settings.tts_voice_id = document.getElementById('select-tts-voice').value;
         settings.edge_tts_voice = document.getElementById('select-edge-voice')?.value || 'vi-VN-HoaiMyNeural';
@@ -597,7 +614,7 @@ class App {
                 tts.connect();
                 audioPlayer.resume();
             }
-            const label = { edge: 'Edge TTS (Free)', webspeech: 'Web Speech (Free)', elevenlabs: 'ElevenLabs' }[provider] || provider;
+            const label = { edge: 'Edge TTS (Free)', elevenlabs: 'ElevenLabs' }[provider] || provider;
             this._showToast(`TTS narration ON 🔊 (${label})`, 'success');
         } else {
             tts.disconnect();
@@ -611,7 +628,7 @@ class App {
         const provider = settings.tts_provider || 'edge';
         if (provider === 'elevenlabs') return elevenLabsTTS;
         if (provider === 'edge') return edgeTTSRust;
-        return webSpeechTTS;
+        return edgeTTSRust;
     }
 
     _configureTTS(tts, settings) {
@@ -628,19 +645,28 @@ class App {
             });
         } else {
             tts.configure({
-                voice: settings.web_speech_voice || null,
-                lang: 'vi-VN',
-                rate: settings.tts_speed || 1.2,
+                voice: settings.edge_tts_voice || 'vi-VN-HoaiMyNeural',
+                speed: settings.edge_tts_speed !== undefined ? settings.edge_tts_speed : 50,
             });
         }
     }
 
+    _addTermRow(source = '', target = '') {
+        const list = document.getElementById('translation-terms-list');
+        if (!list) return;
+        const row = document.createElement('div');
+        row.className = 'term-row';
+        row.innerHTML = `<input type="text" class="term-source" value="${source}" placeholder="Source" />` +
+            `<input type="text" class="term-target" value="${target}" placeholder="Target" />` +
+            `<button type="button" class="btn-remove-term" title="Remove">×</button>`;
+        row.querySelector('.btn-remove-term').addEventListener('click', () => row.remove());
+        list.appendChild(row);
+    }
+
     _updateTTSProviderUI(provider) {
         const ed = document.getElementById('tts-edge-settings');
-        const ws = document.getElementById('tts-webspeech-settings');
         const el = document.getElementById('tts-elevenlabs-settings');
         if (ed) ed.style.display = provider === 'edge' ? '' : 'none';
-        if (ws) ws.style.display = provider === 'webspeech' ? '' : 'none';
         if (el) el.style.display = provider === 'elevenlabs' ? '' : 'none';
     }
 
@@ -1073,7 +1099,7 @@ class App {
         // Stop TTS
         elevenLabsTTS.disconnect();
         edgeTTSRust.disconnect();
-        webSpeechTTS.disconnect();
+
         audioPlayer.stop();
 
         // Auto-save on stop (safety net)

@@ -3,11 +3,19 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-/// Custom context for Soniox — provides domain-specific hints
+/// Translation term: source → target mapping for Soniox
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TranslationTerm {
+    pub source: String,
+    pub target: String,
+}
+
+/// Custom context for Soniox — provides domain-specific hints
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
 pub struct CustomContext {
-    pub domain: String,
-    pub terms: Vec<String>,
+    pub domain: Option<String>,
+    pub translation_terms: Vec<TranslationTerm>,
 }
 
 /// App settings — persisted to JSON
@@ -38,8 +46,16 @@ pub struct Settings {
     pub elevenlabs_api_key: String,
     /// Whether TTS narration is enabled
     pub tts_enabled: bool,
+    /// TTS provider: "edge" | "webspeech" | "elevenlabs"
+    pub tts_provider: String,
     /// ElevenLabs voice ID
     pub tts_voice_id: String,
+    /// TTS speed multiplier (Web Speech)
+    pub tts_speed: f64,
+    /// Edge TTS voice name
+    pub edge_tts_voice: String,
+    /// Edge TTS speed percentage
+    pub edge_tts_speed: i32,
     /// Auto-read new translations aloud
     pub tts_auto_read: bool,
 }
@@ -59,7 +75,11 @@ impl Default for Settings {
             custom_context: None,
             elevenlabs_api_key: String::new(),
             tts_enabled: false,
-            tts_voice_id: "21m00Tcm4TlvDq8ikWAM".to_string(), // Rachel multilingual female
+            tts_provider: "edge".to_string(),
+            tts_voice_id: "21m00Tcm4TlvDq8ikWAM".to_string(),
+            tts_speed: 1.2,
+            edge_tts_voice: "vi-VN-HoaiMyNeural".to_string(),
+            edge_tts_speed: 50,
             tts_auto_read: true,
         }
     }

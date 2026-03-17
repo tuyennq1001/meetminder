@@ -248,8 +248,12 @@
 
         <div class="settings-section">
           <span class="field-label">Context <span class="optional-badge">Optional</span></span>
-          <input type="text" id="input-context-domain" placeholder="Domain: Meeting, Technical..." style="margin-bottom: 6px;" />
-          <input type="text" id="input-context-terms" placeholder="Terms: sprint, deploy, k8s..." />
+          <input type="text" id="input-context-domain" placeholder="e.g. Catholic sermon, Tech meeting..." style="margin-bottom: 8px;" />
+          <div class="terms-header">
+            <span class="hint" style="margin:0;">Translation terms</span>
+            <button type="button" id="btn-add-term" class="btn-icon-sm" title="Add term">+</button>
+          </div>
+          <div id="translation-terms-list"></div>
         </div>
       </div>
 
@@ -292,7 +296,7 @@
             <span class="field-label">Provider</span>
             <select id="select-tts-provider">
               <option value="edge">🎙️ Edge TTS — Free (Natural)</option>
-              <option value="webspeech">🔊 Web Speech — Free (System)</option>
+
               <option value="elevenlabs">✨ ElevenLabs — Premium</option>
             </select>
           </div>
@@ -313,19 +317,10 @@
             </div>
             <div class="slider-field" style="margin-top: 8px;">
               <span class="field-label">Speed</span>
-              <input type="range" id="range-edge-speed" min="-50" max="100" step="10" value="30" />
-              <span id="edge-speed-value" class="range-value">+30%</span>
+              <input type="range" id="range-edge-speed" min="-50" max="100" step="10" />
+              <span id="edge-speed-value" class="range-value"></span>
             </div>
             <p class="hint">Microsoft Edge voices — free, no API key needed</p>
-          </div>
-
-          <!-- Web Speech -->
-          <div class="settings-section" id="tts-webspeech-settings" style="display:none;">
-            <div class="slider-field">
-              <span class="field-label">Speed</span>
-              <input type="range" id="range-tts-speed" min="0.5" max="2.0" step="0.1" value="1.2" />
-              <span id="tts-speed-value" class="range-value">1.2x</span>
-            </div>
           </div>
 
           <!-- ElevenLabs -->

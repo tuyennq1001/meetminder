@@ -22,7 +22,7 @@ const DEFAULT_SETTINGS = {
   tts_voice_id: '21m00Tcm4TlvDq8ikWAM',
   tts_speed: 1.2,
   edge_tts_voice: 'vi-VN-HoaiMyNeural',
-  edge_tts_speed: 30,
+  edge_tts_speed: 50,
   tts_auto_read: true,
 };
 

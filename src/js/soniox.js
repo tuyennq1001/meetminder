@@ -88,7 +88,7 @@ export class SonioxClient {
                 sample_rate: 16000,
                 num_channels: 1,
                 enable_endpoint_detection: true,
-                max_endpoint_delay_ms: 1500,
+                max_endpoint_delay_ms: 3000,
                 enable_speaker_diarization: true,
             };
 
@@ -107,11 +107,11 @@ export class SonioxClient {
 
             // Context: merge user custom context + carryover context
             const domain = this._buildDomain(customContext, carryoverContext);
-            const terms = customContext?.terms || [];
-            if (domain || terms.length > 0) {
+            const translationTerms = customContext?.translation_terms || [];
+            if (domain || translationTerms.length > 0) {
                 configMsg.context = {};
                 if (domain) configMsg.context.domain = domain;
-                if (terms.length > 0) configMsg.context.terms = terms;
+                if (translationTerms.length > 0) configMsg.context.translation_terms = translationTerms;
             }
 
             console.log('[Soniox] Sending config (model:', configMsg.model, ')');

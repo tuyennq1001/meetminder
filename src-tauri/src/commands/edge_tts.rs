@@ -43,7 +43,7 @@ fn generate_muid() -> String {
 
 /// Synthesize text using Edge TTS. Returns base64-encoded MP3 audio.
 #[tauri::command]
-pub async fn edge_tts_speak(text: String, voice: String, rate: Option<i32>) -> Result<String, String> {
+pub async fn edge_tts_speak(text: String, voice: String, rate: i32) -> Result<String, String> {
     if text.trim().is_empty() {
         return Err("Empty text".into());
     }
@@ -110,10 +110,7 @@ pub async fn edge_tts_speak(text: String, voice: String, rate: Option<i32>) -> R
         .replace('>', "&gt;")
         .replace('"', "&quot;");
 
-    let rate_str = {
-        let r = rate.unwrap_or(30);
-        if r >= 0 { format!("+{}%", r) } else { format!("{}%", r) }
-    };
+    let rate_str = if rate >= 0 { format!("+{}%", rate) } else { format!("{}%", rate) };
 
     let ssml = format!(
         "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>\

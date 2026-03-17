@@ -721,6 +721,62 @@ body {
   display: block;
 }
 
+/* Translation terms */
+.terms-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.btn-icon-sm {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast);
+}
+.btn-icon-sm:hover {
+  background: var(--bg-hover);
+}
+
+.term-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+  align-items: center;
+}
+.term-row input {
+  flex: 1;
+  min-width: 0;
+}
+.term-row .btn-remove-term {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.term-row .btn-remove-term:hover {
+  color: var(--error);
+  background: rgba(248, 113, 113, 0.1);
+}
+
 /* ─── Settings Sections ────────────────────────────────── */
 .settings-section {
   margin-bottom: 20px;
