@@ -22,7 +22,7 @@
 ```
 System Audio / Mic → 16kHz PCM → Soniox API (STT + Translation) → Overlay UI
                                                                     ↓ (optional)
-                                                                Edge TTS → 🔊
+                                                            TTS (Edge/Google/ElevenLabs) → 🔊
 ```
 
 | Feature | Detail |
@@ -30,25 +30,43 @@ System Audio / Mic → 16kHz PCM → Soniox API (STT + Translation) → Overlay 
 | **Latency** | ~2–3s |
 | **Languages** | 70+ (source) → any target |
 | **Cost** | ~$0.12/hr (Soniox API) |
-| **TTS** | Free (Edge TTS, default) |
+| **TTS** | 3 providers (Edge free, Google, ElevenLabs) |
 | **Platform** | macOS (ARM + Intel) · Windows |
+| **Signed** | ✅ macOS signed & notarized |
 
 ---
 
 ## Features
 
-### 🎙️ TTS Narration (Free)
+### 📖 Dual Panel View
 
-Read translations aloud — **no API key needed** for the default provider:
+Two display modes:
+- **Single** (default) — Translation text only, clean and focused
+- **Dual** — Source | Translation side-by-side, each panel scrolls independently
 
-| | Edge TTS ⭐ | ElevenLabs |
-|-|-------------|------------|
-| **Cost** | Free | Paid |
-| **Quality** | ★★★★★ Neural | ★★★★★ Premium |
-| **Vietnamese** | ✅ HoaiMy, NamMinh | ✅ Yes |
-| **Setup** | None | API key required |
+Toggle with the panel button (bottom-right on hover).
 
-Speed adjustable from −50% to +100% (default +50%).
+### 🔄 Smart Scroll
+
+Auto-scroll only when you're at the bottom. Scroll up to read old content without being yanked back down.
+
+### 🔤 Quick Font Size
+
+A- / A+ floating controls (bottom-right on hover). Font size adjustable up to 140px — great for presentations.
+
+### 🎙️ TTS Narration
+
+Read translations aloud — 3 providers:
+
+| | Edge TTS ⭐ | Google Chirp 3 HD | ElevenLabs |
+|-|-------------|-------------------|------------|
+| **Cost** | Free | Free 1M chars/mo | ~$5/mo+ |
+| **Quality** | ★★★★☆ Neural | ★★★★★ Near-human | ★★★★★ Premium |
+| **Vietnamese** | ✅ 2 voices | ✅ 6 voices | ✅ Yes |
+| **Setup** | None | Google Cloud API key | API key |
+| **Speed control** | ✅ | ✅ 0.5x–2.0x | ❌ |
+
+TTS is **OFF by default** — toggle with the TTS button or `⌘ T`.
 
 > 📖 TTS guide: [English](docs/tts_guide.md) · [Tiếng Việt](docs/tts_guide_vi.md)
 
@@ -89,6 +107,7 @@ Experimental offline mode using MLX + Whisper + Gemma — runs 100% on-device. J
 - **[cpal](https://github.com/RustAudio/cpal)** — Cross-platform microphone
 - **[Soniox](https://soniox.com)** — Real-time STT + translation
 - **[Edge TTS](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/index-text-to-speech)** — Free neural TTS (default)
+- **[Google Cloud TTS](https://cloud.google.com/text-to-speech)** — Chirp 3 HD (near-human quality)
 - **[ElevenLabs](https://elevenlabs.io)** — Premium TTS
 
 ---
