@@ -36,7 +36,6 @@
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
               <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
             </svg>
-            <span class="btn-label">System</span>
           </button>
           <button id="btn-source-mic" class="source-btn" title="Microphone (⌘2)">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -45,7 +44,6 @@
               <line x1="12" y1="19" x2="12" y2="23" />
               <line x1="8" y1="23" x2="16" y2="23" />
             </svg>
-            <span class="btn-label">Mic</span>
           </button>
         </div>
 
@@ -76,7 +74,6 @@
               <polyline points="3 6 5 6 21 6" />
               <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
             </svg>
-            <span class="btn-label">Clear</span>
           </button>
 
           <button id="btn-copy" class="icon-btn" title="Copy transcript">
@@ -84,14 +81,12 @@
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
             </svg>
-            <span class="btn-label">Copy</span>
           </button>
 
           <button id="btn-open-transcripts" class="icon-btn" title="Open saved transcripts">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
-            <span class="btn-label">Files</span>
           </button>
         </div>
 
@@ -102,7 +97,6 @@
             <line x1="14" y1="10" x2="21" y2="3" />
             <line x1="3" y1="21" x2="10" y2="14" />
           </svg>
-          <span class="btn-label">Compact</span>
         </button>
 
         <button id="btn-pin" class="icon-btn active" title="Pin on top (always visible)">
@@ -110,14 +104,12 @@
             <path d="M12 17v5" />
             <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76z" />
           </svg>
-          <span class="btn-label">Pin</span>
         </button>
 
         <button id="btn-minimize" class="icon-btn" title="Minimize to taskbar">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          <span class="btn-label">Min</span>
         </button>
 
         <button id="btn-close" class="icon-btn close-btn" title="Close">
@@ -143,6 +135,21 @@
           <p>Press ▶ to start translating</p>
         </div>
       </div>
+    </div>
+
+    <!-- Floating controls (bottom) -->
+    <div class="floating-controls">
+      <div class="font-controls">
+        <button id="btn-font-down" class="float-btn" title="Decrease font size">A−</button>
+        <span id="font-size-display" class="font-size-label">16</span>
+        <button id="btn-font-up" class="float-btn" title="Increase font size">A+</button>
+      </div>
+      <button id="btn-view-mode" class="float-btn" title="Toggle dual view">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="18" rx="1" />
+          <rect x="14" y="3" width="7" height="18" rx="1" />
+        </svg>
+      </button>
     </div>
 
     <!-- Resize Handle -->

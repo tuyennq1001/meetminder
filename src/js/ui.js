@@ -14,6 +14,7 @@ export class TranscriptUI {
         this.contentEl = null;
         this.maxChars = 1200;
         this.fontSize = 16;
+        this.viewMode = 'single'; // 'single' or 'dual'
 
         // Segments: each has { original, translation, status, speaker }
         this.segments = [];
@@ -25,11 +26,19 @@ export class TranscriptUI {
     /**
      * Update display settings
      */
-    configure({ maxLines, showOriginal, fontSize }) {
+    configure({ maxLines, showOriginal, fontSize, viewMode }) {
         if (maxLines !== undefined) this.maxChars = maxLines * 160;
         if (fontSize !== undefined) {
             this.fontSize = fontSize;
             this.container.style.setProperty('--transcript-font-size', `${fontSize}px`);
+        }
+        if (viewMode !== undefined) {
+            this.viewMode = viewMode;
+            const overlay = document.getElementById('overlay-view');
+            if (overlay) {
+                overlay.classList.toggle('dual-view', viewMode === 'dual');
+            }
+            this._render();
         }
     }
 
@@ -251,11 +260,18 @@ export class TranscriptUI {
         this._ensureContent();
         this._trimSegments();
 
+        if (this.viewMode === 'dual') {
+            this._renderDual();
+        } else {
+            this._renderSingle();
+        }
+    }
+
+    _renderSingle() {
         let html = '';
         let lastRenderedSpeaker = null;
 
         for (const seg of this.segments) {
-            // Show speaker label when speaker changes
             if (seg.speaker && seg.speaker !== lastRenderedSpeaker) {
                 html += `<span class="speaker-label">Speaker ${seg.speaker}:</span> `;
                 lastRenderedSpeaker = seg.speaker;
@@ -263,9 +279,6 @@ export class TranscriptUI {
 
             if (seg.status === 'translated' && seg.translation) {
                 html += `<div class="seg-block">`;
-                if (seg.original) {
-                    html += `<div class="seg-original">${this._esc(seg.original)}</div>`;
-                }
                 html += `<div class="seg-translated">${this._esc(seg.translation)}</div>`;
                 html += `</div>`;
             } else if (seg.status === 'original' && seg.original) {
@@ -273,7 +286,6 @@ export class TranscriptUI {
             }
         }
 
-        // Provisional text with speaker
         if (this.provisionalText) {
             if (this.provisionalSpeaker && this.provisionalSpeaker !== lastRenderedSpeaker) {
                 html += `<span class="speaker-label">Speaker ${this.provisionalSpeaker}:</span> `;
@@ -282,9 +294,81 @@ export class TranscriptUI {
         }
 
         this.contentEl.innerHTML = html;
-        // Scroll the parent (#transcript-container) which has overflow-y: auto
-        const scrollParent = this.container.parentElement || this.container;
-        scrollParent.scrollTop = scrollParent.scrollHeight;
+        this._smartScroll(this.container.parentElement || this.container);
+    }
+
+    _renderDual() {
+        // Save scroll state before re-render
+        const oldSrcPanel = this.contentEl.querySelector('.panel-source');
+        const oldTgtPanel = this.contentEl.querySelector('.panel-translation');
+        const srcScrollState = oldSrcPanel ? this._getScrollState(oldSrcPanel) : { nearBottom: true, scrollTop: 0 };
+        const tgtScrollState = oldTgtPanel ? this._getScrollState(oldTgtPanel) : { nearBottom: true, scrollTop: 0 };
+
+        let srcHtml = '';
+        let tgtHtml = '';
+        let lastSpeaker = null;
+
+        for (const seg of this.segments) {
+            let speakerHtml = '';
+            if (seg.speaker && seg.speaker !== lastSpeaker) {
+                speakerHtml = `<div class="speaker-label">Speaker ${seg.speaker}:</div>`;
+                lastSpeaker = seg.speaker;
+            }
+
+            if (seg.status === 'translated' && seg.translation) {
+                srcHtml += speakerHtml;
+                srcHtml += `<div class="seg-text">${this._esc(seg.original || '')}</div>`;
+                tgtHtml += speakerHtml ? '<div class="speaker-label">&nbsp;</div>' : '';
+                tgtHtml += `<div class="seg-text">${this._esc(seg.translation)}</div>`;
+            } else if (seg.status === 'original' && seg.original) {
+                srcHtml += speakerHtml;
+                srcHtml += `<div class="seg-text pending">${this._esc(seg.original)}</div>`;
+                tgtHtml += speakerHtml ? '<div class="speaker-label">&nbsp;</div>' : '';
+                tgtHtml += `<div class="seg-text pending">...</div>`;
+            }
+        }
+
+        if (this.provisionalText) {
+            srcHtml += `<div class="seg-text pending">${this._esc(this.provisionalText)}</div>`;
+            tgtHtml += `<div class="seg-text pending">...</div>`;
+        }
+
+        this.contentEl.innerHTML = `
+            <div class="panel-source">${srcHtml}</div>
+            <div class="panel-translation">${tgtHtml}</div>
+        `;
+
+        // Restore scroll: auto-scroll if was near bottom, otherwise keep position
+        const srcPanel = this.contentEl.querySelector('.panel-source');
+        const tgtPanel = this.contentEl.querySelector('.panel-translation');
+        if (srcPanel) {
+            if (srcScrollState.nearBottom) {
+                srcPanel.scrollTop = srcPanel.scrollHeight;
+            } else {
+                srcPanel.scrollTop = srcScrollState.scrollTop;
+            }
+        }
+        if (tgtPanel) {
+            if (tgtScrollState.nearBottom) {
+                tgtPanel.scrollTop = tgtPanel.scrollHeight;
+            } else {
+                tgtPanel.scrollTop = tgtScrollState.scrollTop;
+            }
+        }
+    }
+
+    _getScrollState(el) {
+        return {
+            nearBottom: (el.scrollHeight - el.scrollTop - el.clientHeight) < 100,
+            scrollTop: el.scrollTop
+        };
+    }
+
+    _smartScroll(el) {
+        const isNearBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 100;
+        if (isNearBottom) {
+            el.scrollTop = el.scrollHeight;
+        }
     }
 
     _trimSegments() {

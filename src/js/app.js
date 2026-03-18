@@ -141,6 +141,15 @@ class App {
             this._toggleCompact();
         });
 
+        // View mode toggle (dual panel)
+        document.getElementById('btn-view-mode').addEventListener('click', () => {
+            this._toggleViewMode();
+        });
+
+        // Font size quick controls
+        document.getElementById('btn-font-up').addEventListener('click', () => this._adjustFontSize(4));
+        document.getElementById('btn-font-down').addEventListener('click', () => this._adjustFontSize(-4));
+
         // Start/Stop button
         document.getElementById('btn-start').addEventListener('click', async () => {
             if (this.isStarting) return; // Prevent re-entry
@@ -579,14 +588,8 @@ class App {
         this.currentSource = settings.audio_source === 'both' ? 'system' : (settings.audio_source || 'system');
         this._updateSourceButtons();
 
-        // Update TTS state — Edge/Web Speech always available (no key needed)
-        const ttsProvider = settings.tts_provider || 'edge';
-        const needsKey = (ttsProvider === 'elevenlabs' && !settings.elevenlabs_api_key);
-        if (needsKey) {
-            this.ttsEnabled = false;
-        } else {
-            this.ttsEnabled = !!settings.tts_enabled;
-        }
+        // TTS is always OFF on app start — user must toggle on each session
+        this.ttsEnabled = false;
         this._updateTTSButton();
     }
 
@@ -1253,6 +1256,30 @@ class App {
             dragRegion.classList.remove('compact-hidden');
             overlay.classList.remove('compact-mode');
         }
+    }
+
+    _toggleViewMode() {
+        const isDual = this.transcriptUI.viewMode === 'dual';
+        const newMode = isDual ? 'single' : 'dual';
+        this.transcriptUI.configure({ viewMode: newMode });
+        const btn = document.getElementById('btn-view-mode');
+        if (btn) btn.classList.toggle('active', newMode === 'dual');
+    }
+
+    _adjustFontSize(delta) {
+        const current = this.transcriptUI.fontSize || 16;
+        const newSize = Math.max(12, Math.min(140, current + delta));
+        this.transcriptUI.configure({ fontSize: newSize });
+
+        // Update display
+        const display = document.getElementById('font-size-display');
+        if (display) display.textContent = newSize;
+
+        // Sync with settings slider
+        const slider = document.getElementById('range-font-size');
+        if (slider) slider.value = newSize;
+        const sliderVal = document.getElementById('font-size-value');
+        if (sliderVal) sliderVal.textContent = `${newSize}px`;
     }
 
     // ─── Toast ─────────────────────────────────────────────
