@@ -14,7 +14,7 @@ Hướng dẫn từng bước cài đặt và sử dụng **My Translator** trê
 
 ## Bước 1 — Tải xuống
 
-Tải file `.exe` mới nhất tại: [**Releases — Windows**](https://github.com/phuc-nt/my-translator/releases/tag/v0.4.2)
+Tải file `.exe` mới nhất tại: [**Releases — Windows**](https://github.com/phuc-nt/my-translator/releases/tag/v0.4.3)
 
 Chọn phiên bản phù hợp:
 - **x64** — Đa số PC Windows (Intel/AMD)

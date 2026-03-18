@@ -14,7 +14,7 @@ Step-by-step guide to install and use **My Translator** on Windows 10/11.
 
 ## Step 1 — Download
 
-Download the latest `.exe` installer from: [**Releases — Windows**](https://github.com/phuc-nt/my-translator/releases/tag/v0.4.2)
+Download the latest `.exe` installer from: [**Releases — Windows**](https://github.com/phuc-nt/my-translator/releases/tag/v0.4.3)
 
 Choose the right version:
 - **x64** — Most Windows PCs (Intel/AMD)  
