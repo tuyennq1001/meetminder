@@ -281,9 +281,8 @@ export class TranscriptUI {
                 html += `<div class="seg-block">`;
                 html += `<div class="seg-translated">${this._esc(seg.translation)}</div>`;
                 html += `</div>`;
-            } else if (seg.status === 'original' && seg.original) {
-                html += `<div class="seg-block"><div class="seg-original">${this._esc(seg.original)}</div></div>`;
             }
+            // Skip 'original' segments in single mode — wait for translation
         }
 
         if (this.provisionalText) {

@@ -7,7 +7,7 @@ import { settingsManager } from './settings.js';
 import { TranscriptUI } from './ui.js';
 import { sonioxClient } from './soniox.js';
 import { elevenLabsTTS } from './elevenlabs-tts.js';
-
+import { googleTTS } from './google-tts.js';
 import { edgeTTSRust } from './edge-tts.js';
 import { audioPlayer } from './audio-player.js';
 
@@ -57,12 +57,12 @@ class App {
         audioPlayer.init();
 
         // Wire TTS audio callbacks for providers that use audioPlayer
-        for (const tts of [elevenLabsTTS, edgeTTSRust]) {
+        for (const tts of [elevenLabsTTS, edgeTTSRust, googleTTS]) {
             tts.onAudioChunk = (base64Audio, isFinal) => {
                 audioPlayer.enqueue(base64Audio);
             };
         }
-        for (const tts of [elevenLabsTTS, edgeTTSRust]) {
+        for (const tts of [elevenLabsTTS, edgeTTSRust, googleTTS]) {
             tts.onError = (error) => {
                 console.error('[TTS]', error);
                 this._showToast(error, 'error');
@@ -276,6 +276,11 @@ class App {
             input.type = input.type === 'password' ? 'text' : 'password';
         });
 
+        document.getElementById('btn-toggle-google-key')?.addEventListener('click', () => {
+            const input = document.getElementById('input-google-tts-key');
+            input.type = input.type === 'password' ? 'text' : 'password';
+        });
+
         // Settings tab switching
         document.querySelectorAll('.settings-tab').forEach(tab => {
             tab.addEventListener('click', () => {
@@ -308,6 +313,11 @@ class App {
             const label = document.getElementById('edge-speed-value');
             const v = parseInt(e.target.value);
             if (label) label.textContent = (v >= 0 ? '+' : '') + v + '%';
+        });
+
+        document.getElementById('range-google-speed')?.addEventListener('input', (e) => {
+            const label = document.getElementById('google-speed-value');
+            if (label) label.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
         });
 
         // Add translation term row
@@ -500,10 +510,17 @@ class App {
         const edgeSpeed = s.edge_tts_speed !== undefined ? s.edge_tts_speed : 20;
         if (edgeSpeedSlider) edgeSpeedSlider.value = edgeSpeed;
         if (edgeSpeedLabel) edgeSpeedLabel.textContent = (edgeSpeed >= 0 ? '+' : '') + edgeSpeed + '%';
-        const ttsEnabledCheckbox = document.getElementById('check-tts-enabled');
-        const ttsDetail = document.getElementById('tts-settings-detail');
-        if (ttsEnabledCheckbox) ttsEnabledCheckbox.checked = !!s.tts_enabled;
-        if (ttsDetail) ttsDetail.style.display = s.tts_enabled ? '' : 'none';
+
+        // Google TTS settings
+        const googleKeyInput = document.getElementById('input-google-tts-key');
+        if (googleKeyInput) googleKeyInput.value = s.google_tts_api_key || '';
+        const googleVoiceSelect = document.getElementById('select-google-voice');
+        if (googleVoiceSelect) googleVoiceSelect.value = s.google_tts_voice || 'vi-VN-Chirp3-HD-Aoede';
+        const googleSpeedSlider = document.getElementById('range-google-speed');
+        const googleSpeedLabel = document.getElementById('google-speed-value');
+        const googleSpeed = s.google_tts_speed || 1.0;
+        if (googleSpeedSlider) googleSpeedSlider.value = googleSpeed;
+        if (googleSpeedLabel) googleSpeedLabel.textContent = googleSpeed + 'x';
 
         // TTS provider
         const providerSelect = document.getElementById('select-tts-provider');
@@ -511,12 +528,6 @@ class App {
             providerSelect.value = s.tts_provider || 'edge';
             this._updateTTSProviderUI(providerSelect.value);
         }
-
-        // TTS speed
-        const speedSlider = document.getElementById('range-tts-speed');
-        const speedLabel = document.getElementById('tts-speed-value');
-        if (speedSlider) speedSlider.value = s.tts_speed || 1.2;
-        if (speedLabel) speedLabel.textContent = s.tts_speed || 1.2;
     }
 
     async _saveSettingsFromForm() {
@@ -550,14 +561,16 @@ class App {
         }
 
         // TTS settings
-        const ttsEnabled = document.getElementById('check-tts-enabled')?.checked || false;
         settings.tts_provider = document.getElementById('select-tts-provider')?.value || 'edge';
         settings.elevenlabs_api_key = document.getElementById('input-elevenlabs-key').value.trim();
         settings.tts_voice_id = document.getElementById('select-tts-voice').value;
         settings.edge_tts_voice = document.getElementById('select-edge-voice')?.value || 'vi-VN-HoaiMyNeural';
         settings.edge_tts_speed = parseInt(document.getElementById('range-edge-speed')?.value || 20);
         settings.tts_speed = parseFloat(document.getElementById('range-tts-speed')?.value || 1.2);
-        settings.tts_enabled = ttsEnabled;
+        settings.google_tts_api_key = document.getElementById('input-google-tts-key')?.value.trim() || '';
+        settings.google_tts_voice = document.getElementById('select-google-voice')?.value || 'vi-VN-Chirp3-HD-Aoede';
+        settings.google_tts_speed = parseFloat(document.getElementById('range-google-speed')?.value || 1.0);
+        settings.tts_enabled = false;
 
         try {
             await settingsManager.save(settings);
@@ -599,9 +612,14 @@ class App {
         const settings = settingsManager.get();
         const provider = settings.tts_provider || 'edge';
 
-        // ElevenLabs requires API key; Edge/Web Speech do not
+        // Check API key for premium providers
         if (provider === 'elevenlabs' && !settings.elevenlabs_api_key) {
             this._showToast('Add ElevenLabs API key in Settings → TTS', 'error');
+            this._showView('settings');
+            return;
+        }
+        if (provider === 'google' && !settings.google_tts_api_key) {
+            this._showToast('Add Google TTS API key in Settings → TTS', 'error');
             this._showView('settings');
             return;
         }
@@ -617,7 +635,7 @@ class App {
                 tts.connect();
                 audioPlayer.resume();
             }
-            const label = { edge: 'Edge TTS (Free)', elevenlabs: 'ElevenLabs' }[provider] || provider;
+            const label = { edge: 'Edge TTS (Free)', google: 'Google Chirp 3 HD', elevenlabs: 'ElevenLabs' }[provider] || provider;
             this._showToast(`TTS narration ON 🔊 (${label})`, 'success');
         } else {
             tts.disconnect();
@@ -630,7 +648,7 @@ class App {
         const settings = settingsManager.get();
         const provider = settings.tts_provider || 'edge';
         if (provider === 'elevenlabs') return elevenLabsTTS;
-        if (provider === 'edge') return edgeTTSRust;
+        if (provider === 'google') return googleTTS;
         return edgeTTSRust;
     }
 
@@ -641,15 +659,19 @@ class App {
                 apiKey: settings.elevenlabs_api_key,
                 voiceId: settings.tts_voice_id || '21m00Tcm4TlvDq8ikWAM',
             });
-        } else if (provider === 'edge') {
+        } else if (provider === 'google') {
+            const voice = settings.google_tts_voice || 'vi-VN-Chirp3-HD-Aoede';
+            const langCode = voice.replace(/-Chirp3.*/, '');
             tts.configure({
-                voice: settings.edge_tts_voice || 'vi-VN-HoaiMyNeural',
-                speed: settings.edge_tts_speed !== undefined ? settings.edge_tts_speed : 20,
+                apiKey: settings.google_tts_api_key,
+                voice: voice,
+                languageCode: langCode,
+                speakingRate: settings.google_tts_speed || 1.0,
             });
         } else {
             tts.configure({
                 voice: settings.edge_tts_voice || 'vi-VN-HoaiMyNeural',
-                speed: settings.edge_tts_speed !== undefined ? settings.edge_tts_speed : 50,
+                speed: settings.edge_tts_speed !== undefined ? settings.edge_tts_speed : 20,
             });
         }
     }
@@ -668,9 +690,21 @@ class App {
 
     _updateTTSProviderUI(provider) {
         const ed = document.getElementById('tts-edge-settings');
+        const go = document.getElementById('tts-google-settings');
         const el = document.getElementById('tts-elevenlabs-settings');
         if (ed) ed.style.display = provider === 'edge' ? '' : 'none';
+        if (go) go.style.display = provider === 'google' ? '' : 'none';
         if (el) el.style.display = provider === 'elevenlabs' ? '' : 'none';
+        // Update hint text
+        const hint = document.getElementById('tts-provider-hint');
+        if (hint) {
+            const hints = {
+                edge: 'Free, natural voices — no API key needed',
+                google: 'Near-human quality — requires Google Cloud API key (1M chars/month free)',
+                elevenlabs: 'Premium quality — requires ElevenLabs API key',
+            };
+            hint.textContent = hints[provider] || '';
+        }
     }
 
     _updateTTSButton() {

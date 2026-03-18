@@ -292,65 +292,106 @@
       <!-- Tab: TTS -->
       <div class="settings-tab-content" id="tab-tts">
         <div class="settings-section">
-          <label class="checkbox-option">
-            <input type="checkbox" id="check-tts-enabled" />
-            <span class="checkbox-label">Enable TTS narration</span>
-          </label>
+          <span class="field-label">Provider</span>
+          <select id="select-tts-provider">
+            <option value="edge">🎙️ Edge TTS — Free</option>
+            <option value="google">🌐 Google Chirp 3 HD — Premium</option>
+            <option value="elevenlabs">✨ ElevenLabs — Premium</option>
+          </select>
+          <p class="hint" id="tts-provider-hint">Free, natural voices — no API key needed</p>
         </div>
 
-        <div id="tts-settings-detail" style="display:none;">
-          <div class="settings-section">
-            <span class="field-label">Provider</span>
-            <select id="select-tts-provider">
-              <option value="edge">🎙️ Edge TTS — Free (Natural)</option>
-
-              <option value="elevenlabs">✨ ElevenLabs — Premium</option>
+        <!-- Edge TTS settings -->
+        <div class="settings-section" id="tts-edge-settings">
+          <div class="field">
+            <span class="field-label">Voice</span>
+            <select id="select-edge-voice">
+              <option value="vi-VN-HoaiMyNeural">HoaiMy — Nữ 🇻🇳</option>
+              <option value="vi-VN-NamMinhNeural">NamMinh — Nam 🇻🇳</option>
+              <option value="en-US-JennyNeural">Jenny — Female 🇺🇸</option>
+              <option value="en-US-GuyNeural">Guy — Male 🇺🇸</option>
+              <option value="ja-JP-NanamiNeural">Nanami — 女性 🇯🇵</option>
+              <option value="ko-KR-SunHiNeural">SunHi — 여성 🇰🇷</option>
+              <option value="zh-CN-XiaoxiaoNeural">Xiaoxiao — 女声 🇨🇳</option>
             </select>
           </div>
-
-          <!-- Edge TTS -->
-          <div class="settings-section" id="tts-edge-settings">
-            <div class="field">
-              <span class="field-label">Voice</span>
-              <select id="select-edge-voice">
-                <option value="vi-VN-HoaiMyNeural">HoaiMy — Nữ 🇻🇳</option>
-                <option value="vi-VN-NamMinhNeural">NamMinh — Nam 🇻🇳</option>
-                <option value="en-US-JennyNeural">Jenny — Female 🇺🇸</option>
-                <option value="en-US-GuyNeural">Guy — Male 🇺🇸</option>
-                <option value="ja-JP-NanamiNeural">Nanami — 女性 🇯🇵</option>
-                <option value="ko-KR-SunHiNeural">SunHi — 여성 🇰🇷</option>
-                <option value="zh-CN-XiaoxiaoNeural">Xiaoxiao — 女声 🇨🇳</option>
-              </select>
-            </div>
-            <div class="slider-field" style="margin-top: 8px;">
-              <span class="field-label">Speed</span>
-              <input type="range" id="range-edge-speed" min="-50" max="100" step="10" />
-              <span id="edge-speed-value" class="range-value"></span>
-            </div>
-            <p class="hint">Microsoft Edge voices — free, no API key needed</p>
+          <div class="slider-field" style="margin-top: 8px;">
+            <span class="field-label">Speed</span>
+            <input type="range" id="range-edge-speed" min="-50" max="100" step="10" />
+            <span id="edge-speed-value" class="range-value"></span>
           </div>
+        </div>
 
-          <!-- ElevenLabs -->
-          <div class="settings-section" id="tts-elevenlabs-settings" style="display:none;">
-            <span class="field-label">ElevenLabs API Key</span>
-            <div class="input-group">
-              <input type="password" id="input-elevenlabs-key" placeholder="Enter key..." autocomplete="off" />
-              <button id="btn-toggle-elevenlabs-key" class="icon-btn small" title="Show/Hide">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-                </svg>
-              </button>
-            </div>
-            <p class="hint">elevenlabs.io — Premium quality</p>
-            <div class="field" style="margin-top: 8px;">
-              <span class="field-label">Voice</span>
-              <select id="select-tts-voice">
-                <option value="21m00Tcm4TlvDq8ikWAM">Rachel — Female</option>
-                <option value="EXAVITQu4vr4xnSDxMaL">Sarah — Female</option>
-                <option value="onwK4e9ZLuTAKqWW03F9">Daniel — Male</option>
-                <option value="pNInz6obpgDQGcFmaJgB">Adam — Male</option>
-              </select>
-            </div>
+        <!-- Google TTS settings -->
+        <div class="settings-section" id="tts-google-settings" style="display:none;">
+          <span class="field-label">Google Cloud API Key</span>
+          <div class="input-group">
+            <input type="password" id="input-google-tts-key" placeholder="AIzaSy..." autocomplete="off" />
+            <button id="btn-toggle-google-key" class="icon-btn small" title="Show/Hide">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          </div>
+          <p class="hint">console.cloud.google.com → Enable Text-to-Speech API → Create API Key</p>
+          <div class="field" style="margin-top: 8px;">
+            <span class="field-label">Voice</span>
+            <select id="select-google-voice">
+              <optgroup label="🇻🇳 Vietnamese">
+                <option value="vi-VN-Chirp3-HD-Aoede">Aoede — Nữ</option>
+                <option value="vi-VN-Chirp3-HD-Kore">Kore — Nữ</option>
+                <option value="vi-VN-Chirp3-HD-Leda">Leda — Nữ</option>
+                <option value="vi-VN-Chirp3-HD-Charon">Charon — Nam</option>
+                <option value="vi-VN-Chirp3-HD-Fenrir">Fenrir — Nam</option>
+                <option value="vi-VN-Chirp3-HD-Puck">Puck — Nam</option>
+              </optgroup>
+              <optgroup label="🇺🇸 English">
+                <option value="en-US-Chirp3-HD-Aoede">Aoede — Female</option>
+                <option value="en-US-Chirp3-HD-Kore">Kore — Female</option>
+                <option value="en-US-Chirp3-HD-Charon">Charon — Male</option>
+                <option value="en-US-Chirp3-HD-Puck">Puck — Male</option>
+              </optgroup>
+              <optgroup label="🇯🇵 Japanese">
+                <option value="ja-JP-Chirp3-HD-Aoede">Aoede — 女性</option>
+                <option value="ja-JP-Chirp3-HD-Charon">Charon — 男性</option>
+              </optgroup>
+              <optgroup label="🇰🇷 Korean">
+                <option value="ko-KR-Chirp3-HD-Aoede">Aoede — 여성</option>
+                <option value="ko-KR-Chirp3-HD-Charon">Charon — 남성</option>
+              </optgroup>
+              <optgroup label="🇨🇳 Chinese">
+                <option value="cmn-CN-Chirp3-HD-Aoede">Aoede — 女声</option>
+                <option value="cmn-CN-Chirp3-HD-Charon">Charon — 男声</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="slider-field" style="margin-top: 8px;">
+            <span class="field-label">Speed</span>
+            <input type="range" id="range-google-speed" min="0.5" max="2.0" step="0.1" value="1.0" />
+            <span id="google-speed-value" class="range-value">1.0x</span>
+          </div>
+        </div>
+
+        <!-- ElevenLabs settings -->
+        <div class="settings-section" id="tts-elevenlabs-settings" style="display:none;">
+          <span class="field-label">ElevenLabs API Key</span>
+          <div class="input-group">
+            <input type="password" id="input-elevenlabs-key" placeholder="Enter key..." autocomplete="off" />
+            <button id="btn-toggle-elevenlabs-key" class="icon-btn small" title="Show/Hide">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          </div>
+          <p class="hint">elevenlabs.io — Premium quality</p>
+          <div class="field" style="margin-top: 8px;">
+            <span class="field-label">Voice</span>
+            <select id="select-tts-voice">
+              <option value="21m00Tcm4TlvDq8ikWAM">Rachel — Female</option>
+              <option value="EXAVITQu4vr4xnSDxMaL">Sarah — Female</option>
+              <option value="onwK4e9ZLuTAKqWW03F9">Daniel — Male</option>
+              <option value="pNInz6obpgDQGcFmaJgB">Adam — Male</option>
+            </select>
           </div>
         </div>
       </div>
@@ -425,6 +466,7 @@
   <script type="module" src="/js/ui.js"></script>
   <script type="module" src="/js/soniox.js"></script>
   <script type="module" src="/js/elevenlabs-tts.js"></script>
+  <script type="module" src="/js/google-tts.js"></script>
   <script type="module" src="/js/audio-player.js"></script>
   <script type="module" src="/js/app.js"></script>
 </body>

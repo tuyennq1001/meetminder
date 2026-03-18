@@ -46,7 +46,7 @@ pub struct Settings {
     pub elevenlabs_api_key: String,
     /// Whether TTS narration is enabled
     pub tts_enabled: bool,
-    /// TTS provider: "edge" | "webspeech" | "elevenlabs"
+    /// TTS provider: "edge" | "elevenlabs" | "google"
     pub tts_provider: String,
     /// ElevenLabs voice ID
     pub tts_voice_id: String,
@@ -58,6 +58,12 @@ pub struct Settings {
     pub edge_tts_speed: i32,
     /// Auto-read new translations aloud
     pub tts_auto_read: bool,
+    /// Google Cloud TTS API key
+    pub google_tts_api_key: String,
+    /// Google TTS voice name
+    pub google_tts_voice: String,
+    /// Google TTS speaking rate
+    pub google_tts_speed: f64,
 }
 
 impl Default for Settings {
@@ -81,6 +87,9 @@ impl Default for Settings {
             edge_tts_voice: "vi-VN-HoaiMyNeural".to_string(),
             edge_tts_speed: 50,
             tts_auto_read: true,
+            google_tts_api_key: String::new(),
+            google_tts_voice: "vi-VN-Chirp3-HD-Aoede".to_string(),
+            google_tts_speed: 1.0,
         }
     }
 }
