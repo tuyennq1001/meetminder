@@ -9,138 +9,126 @@ Step-by-step guide to install and use **My Translator** on macOS.
 - macOS 13 or later (Apple Silicon — M1/M2/M3/M4)
 - **Cloud mode**: [Soniox](https://soniox.com) API key (pay-per-use, ~$0.12/hour)
 - **Local mode**: ~5 GB free disk space (for AI models, one-time download)
-- **TTS narration** (optional): [ElevenLabs](https://elevenlabs.io) API key (Starter plan $5/month)
+- **TTS narration** (optional): See [TTS Guide](tts_guide.md) for provider options
 
 ---
 
 ## Step 1 — Download
 
-Download the latest `.dmg` from: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/tag/v0.4.3)
+Download the latest `.dmg` from: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/latest)
+
+Choose the right file:
+- `My.Translator_x.x.x_aarch64.dmg` — Apple Silicon (M1/M2/M3/M4)
+- `My.Translator_x.x.x_x64.dmg` — Intel Mac
 
 ---
 
 ## Step 2 — Install
 
-Open the `.dmg` file → drag **My Translator** into the **Applications** folder.
-
-![Drag My Translator to Applications](user_manual/mytrans_01.png)
+1. Open the `.dmg` file
+2. Drag **My Translator** into the **Applications** folder
+3. Eject the DMG
 
 ---
 
-## Step 3 — Bypass Gatekeeper
+## Step 3 — First Launch
 
-> ⚠️ The app is not yet signed with an Apple Developer certificate (pending approval). macOS will block it on first open.
+Open My Translator from Applications. macOS may show a security warning since the app is signed but uses a free developer certificate.
 
-Open **Terminal** and run this command **once**:
+If blocked, open **Terminal** and run:
 
 ```bash
 xattr -cr /Applications/My\ Translator.app
 ```
 
-![Run xattr command in Terminal](user_manual/mytrans_02.png)
-
-Then open My Translator from Applications as usual.
+Then open the app again from Applications.
 
 ---
 
 ## Step 4 — Grant Screen Recording Permission
 
-On first launch, macOS will ask for **Screen & System Audio Recording** permission. This is required for the app to capture system audio.
+On first launch, macOS will ask for **Screen & System Audio Recording** permission:
 
-Click **Open System Settings** to go to the permission page.
+1. Click **Open System Settings** when prompted
+2. Find **My Translator** in the list
+3. **Toggle the switch ON**
+4. macOS will ask to **Quit & Reopen** — click that button
 
-![Screen Recording permission request](user_manual/mytrans_03.png)
-
----
-
-## Step 5 — Enable Permission in System Settings
-
-Find **My Translator** in the list and **toggle the switch** to ON.
-
-![Enable Screen & System Audio Recording](user_manual/mytrans_04.png)
-
-macOS will ask you to **Quit & Reopen** the app — click that button to restart with the new permissions.
-
-![Quit & Reopen to apply permission](user_manual/mytrans_05.png)
+> This permission is required for the app to capture system audio (YouTube, Zoom, podcasts, etc.)
 
 ---
 
-## Step 6 — Choose Translation Mode
+## Step 5 — Get a Soniox API Key
 
-After the app reopens, click ⚙️ (or press `⌘ ,`) to open **Settings**.
+Soniox provides real-time speech recognition and translation.
 
-First, choose your **Translation Engine**:
+1. Go to [console.soniox.com](https://console.soniox.com) → create an account
+2. Add billing:
+   - Click **Billing** in the left sidebar
+   - Add a payment method
+   - Add funds ($10 minimum — lasts ~80+ hours at $0.12/hour)
+3. Create API key:
+   - Click **API Keys** in the left sidebar
+   - Click **Create API Key**
+   - Copy the key (format: `soniox_...`)
+
+> 💡 Soniox charges ~$0.12/hour of audio processed. $10 ≈ 80+ hours of translation.
+
+---
+
+## Step 6 — Configure the App
+
+1. Click ⚙️ (or press `⌘ ,`) to open **Settings**
+2. Go to the **General** tab
+3. Paste your **Soniox API key**
+4. Choose **Source language** (language being spoken) and **Target language** (translation language)
+5. Choose Translation Engine:
 
 | Mode | Speed | Quality | Cost | Internet |
 |------|-------|---------|------|----------|
 | ☁️ **Soniox API (Cloud)** | Real-time (~2s) | 9/10 | ~$0.12/hr | Required |
 | 🖥️ **Local MLX (Offline)** | ~10s delay | 7/10 | Free | Not needed |
 
-### Option A: Cloud Mode (Soniox)
+6. Click **Save & Close**
 
-1. Select **☁️ Soniox API (Cloud)** as Translation Engine
-2. Paste your Soniox API key
-3. Choose Source & Target languages
-4. Click **Save & Close** (✓ button at top or bottom)
-
-![Settings — Soniox API key and languages](user_manual/mytrans_setting_1.png)
-
-> 💡 **Where to get a Soniox API key?**
-> 1. Go to [console.soniox.com](https://console.soniox.com) → create an account
-> 2. Add funds ($10 minimum, lasts a long time at ~$0.12/hour)
-> 3. Go to **API Keys** → create and copy your key
-
-![Soniox Console — Billing overview](user_manual/mytrans_key_1.png)
-
-### Option B: Local Mode (MLX — Apple Silicon only)
-
-1. Select **🖥️ Local MLX (Offline)** as Translation Engine
-2. Choose Source & Target languages
-3. Click **Save**
-4. On first use, the app will **automatically download** AI models (~5 GB, one-time)
-5. Model loading takes ~30-60 seconds on first start
-
-> ⚠️ Local mode requires Apple Silicon (M1/M2/M3/M4) and ~6-7 GB RAM.
-> It is not available on Intel Macs.
+> **Local MLX** requires Apple Silicon (M1+) and ~5 GB disk. Models are downloaded automatically on first use.
 
 ---
 
 ## Step 7 — Enable TTS Narration (Optional)
 
-Want translations **read aloud**? Enable TTS narration:
+Want translations **read aloud**? Three TTS providers are available:
 
-1. In Settings, scroll to **TTS Narration** section
-2. Check **"Enable narration (read translations aloud)"**
+| Provider | Cost | Quality | Setup |
+|----------|------|---------|-------|
+| 🎙️ **Edge TTS** | Free | Natural | None |
+| 🌐 **Google Chirp 3 HD** | Free 1M chars/mo | Near-human | Google Cloud API key |
+| ✨ **ElevenLabs** | ~$5/mo+ | Premium | ElevenLabs API key |
 
-![Settings — TTS disabled](user_manual/mytrans_setting_2.png)
+### Quick setup (Edge TTS — free):
 
-3. Enter your **ElevenLabs API key**
-4. Choose a **voice** (2 female, 2 male — all support Vietnamese)
-5. Click **Save & Close**
+1. Settings → **TTS** tab → Provider: **Edge TTS**
+2. Choose a voice → **Save & Close**
+3. On main screen, click the **TTS** button (or `⌘ T`) to enable
 
-![Settings — TTS enabled with API key and voice](user_manual/mytrans_setting_3.png)
+### For Google or ElevenLabs:
 
-> 💡 **Where to get an ElevenLabs API key?**
-> 1. Go to [elevenlabs.io](https://elevenlabs.io) → create an account
-> 2. Subscribe to the **Starter plan** ($5/month, ~60 min of TTS)
-> 3. Go to **Developers → API Keys** → create a key with "Text to Speech" access
-
-![ElevenLabs — Subscription plan](user_manual/mytrans_key_2.png)
-![ElevenLabs — Create API key](user_manual/mytrans_key_3.png)
-
-> 💡 TTS is optional. If disabled, the app works exactly like before — transcript & translate only.
+See [TTS Guide](tts_guide.md) for step-by-step API key instructions.
 
 ---
 
 ## Step 8 — Start Translating!
 
-Go back to the main screen → click ▶ (or press `⌘ Enter`) to start.
+1. Go back to the main screen
+2. Click ▶ (or press `⌘ Enter`) to start
+3. Play any audio on your Mac (YouTube, Zoom, podcasts...)
+4. Translations appear in real-time!
 
-The app will show **Listening...** — now play any audio on your Mac (YouTube, Zoom, podcasts...) and translations will appear in real-time!
+**View modes:**
+- **Single** (default): Translation text only
+- **Dual**: Source | Translation side-by-side (toggle with panel button, bottom-right)
 
-If TTS is enabled, you can toggle it on/off with the **TTS** button or `⌘ T`.
-
-![App translating with TTS enabled](user_manual/mytrans_tts_1.png)
+**Font size:** Use A-/A+ buttons (bottom-right on hover) to adjust
 
 ---
 
@@ -160,13 +148,16 @@ If TTS is enabled, you can toggle it on/off with the **TTS** button or `⌘ T`.
 ## Troubleshooting
 
 ### App says "damaged and can't be opened"
-→ Run `xattr -cr /Applications/My\ Translator.app` in Terminal (see Step 3).
+→ Run `xattr -cr /Applications/My\ Translator.app` in Terminal (see Step 3)
 
 ### No translation text appears
-→ Check that **Screen & System Audio Recording** is enabled in System Settings (see Step 5).
+→ Check **Screen & System Audio Recording** is enabled in System Settings (see Step 4)
 
 ### "No API key" error
-→ Open Settings (⚙️) and paste your API key (see Step 6).
+→ Open Settings (⚙️) and paste your Soniox API key (see Step 5)
 
 ### "No microphone found" error
-→ Mac Mini has no built-in microphone. Connect an external mic (USB, headset, or AirPods).
+→ Mac Mini has no built-in microphone. Connect an external mic (USB, headset, AirPods)
+
+### TTS not working
+→ See [TTS Guide — Troubleshooting](tts_guide.md#troubleshooting)
