@@ -33,15 +33,9 @@ Chọn đúng file:
 
 ## Bước 3 — Mở lần đầu
 
-Mở My Translator từ Applications. macOS có thể hiện cảnh báo bảo mật.
+Mở My Translator từ Applications.
 
-Nếu bị chặn, mở **Terminal** và chạy:
-
-```bash
-xattr -cr /Applications/My\ Translator.app
-```
-
-Sau đó mở app lại từ Applications.
+> ✅ App đã được ký và notarize — macOS sẽ cho phép mở mà không cảnh báo bảo mật.
 
 ---
 
@@ -146,9 +140,6 @@ Xem [Hướng dẫn TTS](tts_guide_vi.md) để biết cách lấy API key từn
 ---
 
 ## Xử lý sự cố
-
-### App báo "damaged and can't be opened"
-→ Chạy `xattr -cr /Applications/My\ Translator.app` trong Terminal (xem Bước 3)
 
 ### Không có bản dịch / không hiện text
 → Kiểm tra đã bật quyền **Screen & System Audio Recording** chưa (xem Bước 4)

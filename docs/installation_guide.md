@@ -33,15 +33,9 @@ Choose the right file:
 
 ## Step 3 — First Launch
 
-Open My Translator from Applications. macOS may show a security warning since the app is signed but uses a free developer certificate.
+Open My Translator from Applications.
 
-If blocked, open **Terminal** and run:
-
-```bash
-xattr -cr /Applications/My\ Translator.app
-```
-
-Then open the app again from Applications.
+> ✅ The app is signed and notarized — macOS should allow it without any security warnings.
 
 ---
 
@@ -146,9 +140,6 @@ See [TTS Guide](tts_guide.md) for step-by-step API key instructions.
 ---
 
 ## Troubleshooting
-
-### App says "damaged and can't be opened"
-→ Run `xattr -cr /Applications/My\ Translator.app` in Terminal (see Step 3)
 
 ### No translation text appears
 → Check **Screen & System Audio Recording** is enabled in System Settings (see Step 4)
