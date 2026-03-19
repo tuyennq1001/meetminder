@@ -76,7 +76,7 @@ class App {
         // Check for updates (non-blocking)
         this._checkForUpdates();
 
-        console.log('🌐 Personal Translator v0.5.0 initialized');
+        console.log('🌐 My Translator v0.5.0 initialized');
     }
 
     async _checkPlatformSupport() {

@@ -1,5 +1,5 @@
 [package]
-name = "personal-translator"
+name = "my-translator"
 version = "0.4.2"
 description = "Personal Real-time Speech Translator"
 authors = ["phucnt"]
