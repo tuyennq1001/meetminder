@@ -154,6 +154,16 @@ class App {
         document.getElementById('btn-font-up').addEventListener('click', () => this._adjustFontSize(4));
         document.getElementById('btn-font-down').addEventListener('click', () => this._adjustFontSize(-4));
 
+        // Color dot controls
+        document.querySelectorAll('.color-dot').forEach(dot => {
+            dot.addEventListener('click', () => {
+                document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+                dot.classList.add('active');
+                const color = dot.dataset.color;
+                this.transcriptUI.configure({ fontColor: color });
+            });
+        });
+
         // Start/Stop button
         document.getElementById('btn-start').addEventListener('click', async () => {
             if (this.isStarting) return; // Prevent re-entry

@@ -26,11 +26,15 @@ export class TranscriptUI {
     /**
      * Update display settings
      */
-    configure({ maxLines, showOriginal, fontSize, viewMode }) {
+    configure({ maxLines, showOriginal, fontSize, fontColor, viewMode }) {
         if (maxLines !== undefined) this.maxChars = maxLines * 160;
         if (fontSize !== undefined) {
             this.fontSize = fontSize;
             this.container.style.setProperty('--transcript-font-size', `${fontSize}px`);
+        }
+        if (fontColor !== undefined) {
+            this.fontColor = fontColor;
+            this.container.style.setProperty('--transcript-font-color', fontColor);
         }
         if (viewMode !== undefined) {
             this.viewMode = viewMode;
