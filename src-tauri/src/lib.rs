@@ -25,6 +25,11 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            Ok(())
+        })
         .manage(SettingsState(Mutex::new(initial_settings)))
         .manage(AudioState {
             system_audio: Mutex::new(SystemAudioCapture::new()),

@@ -20,6 +20,9 @@
     "core:window:allow-outer-position",
     "core:window:allow-outer-size",
     "core:window:allow-inner-position",
-    "core:window:allow-inner-size"
+    "core:window:allow-inner-size",
+    "updater:default",
+    "updater:allow-check",
+    "updater:allow-download-and-install"
   ]
 }

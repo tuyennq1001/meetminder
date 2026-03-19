@@ -10,6 +10,7 @@ import { elevenLabsTTS } from './elevenlabs-tts.js';
 import { googleTTS } from './google-tts.js';
 import { edgeTTSRust } from './edge-tts.js';
 import { audioPlayer } from './audio-player.js';
+import { updater } from './updater.js';
 
 const { invoke } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
@@ -72,7 +73,10 @@ class App {
         // Window position restore disabled — causes issues on Retina displays
         // await this._restoreWindowPosition();
 
-        console.log('🌐 Personal Translator v0.4.0 initialized');
+        // Check for updates (non-blocking)
+        this._checkForUpdates();
+
+        console.log('🌐 Personal Translator v0.4.5 initialized');
     }
 
     async _checkPlatformSupport() {
@@ -1317,6 +1321,57 @@ class App {
     }
 
     // ─── Toast ─────────────────────────────────────────────
+
+    async _checkForUpdates() {
+        updater.onUpdateFound = (version, notes) => {
+            this._showUpdateNotification(version, notes);
+        };
+        // Delay check slightly so app finishes loading first
+        setTimeout(() => updater.checkForUpdates(), 3000);
+    }
+
+    _showUpdateNotification(version, notes) {
+        // Remove existing toast
+        const existing = document.querySelector('.toast');
+        if (existing) existing.remove();
+
+        const toast = document.createElement('div');
+        toast.className = 'toast update-toast show';
+        toast.innerHTML = `
+            <span>🆕 Update v${version} available</span>
+            <button id="btn-update-now" style="margin-left:8px;padding:2px 10px;border-radius:4px;border:none;background:#4CAF50;color:#fff;cursor:pointer;font-size:12px;">Update now</button>
+            <button id="btn-update-dismiss" style="margin-left:4px;padding:2px 6px;border-radius:4px;border:none;background:rgba(255,255,255,0.15);color:#fff;cursor:pointer;font-size:12px;">✕</button>
+        `;
+        document.body.appendChild(toast);
+
+        document.getElementById('btn-update-dismiss').addEventListener('click', () => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        });
+
+        document.getElementById('btn-update-now').addEventListener('click', async () => {
+            const btn = document.getElementById('btn-update-now');
+            btn.textContent = 'Downloading...';
+            btn.disabled = true;
+
+            try {
+                await updater.downloadAndInstall((downloaded, total) => {
+                    if (total > 0) {
+                        const pct = Math.round((downloaded / total) * 100);
+                        btn.textContent = `${pct}%`;
+                    }
+                });
+                btn.textContent = 'Restarting...';
+            } catch (err) {
+                btn.textContent = 'Failed';
+                console.error('[Update]', err);
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                    setTimeout(() => toast.remove(), 300);
+                }, 3000);
+            }
+        });
+    }
 
     _showToast(message, type = 'success') {
         // Remove existing toast
