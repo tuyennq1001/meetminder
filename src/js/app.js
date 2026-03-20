@@ -77,7 +77,7 @@ class App {
         this._initAboutTab();
         this._checkForUpdates();
 
-        console.log('🌐 My Translator v0.5.1 initialized');
+        console.log('🌐 My Translator v0.5.0 initialized');
     }
 
     async _checkPlatformSupport() {
@@ -1452,7 +1452,10 @@ class App {
                 });
                 if (btnText) btnText.textContent = 'Restarting...';
             } catch (err) {
+                const errMsg = err?.message || String(err);
                 if (btnText) btnText.textContent = 'Failed — try again';
+                const statusText = document.getElementById('update-status-text');
+                if (statusText) statusText.textContent = `⚠️ Install error: ${errMsg}`;
                 if (btn) btn.disabled = false;
                 console.error('[Update]', err);
             }
