@@ -74,9 +74,10 @@ class App {
         // await this._restoreWindowPosition();
 
         // Check for updates (non-blocking)
+        this._initAboutTab();
         this._checkForUpdates();
 
-        console.log('🌐 My Translator v0.5.1 initialized');
+        console.log('🌐 My Translator v0.5.0 initialized');
     }
 
     async _checkPlatformSupport() {
@@ -1342,53 +1343,97 @@ class App {
 
     async _checkForUpdates() {
         updater.onUpdateFound = (version, notes) => {
-            this._showUpdateNotification(version, notes);
+            this._onUpdateAvailable(version, notes);
         };
         // Delay check slightly so app finishes loading first
         setTimeout(() => updater.checkForUpdates(), 3000);
     }
 
-    _showUpdateNotification(version, notes) {
-        // Remove existing toast
-        const existing = document.querySelector('.toast');
+    _onUpdateAvailable(version, notes) {
+        this._pendingUpdateVersion = version;
+
+        // 1. Show badge on settings gear
+        const badge = document.getElementById('settings-badge');
+        if (badge) badge.style.display = '';
+
+        // 2. Update About tab status
+        const statusEl = document.getElementById('update-status');
+        const statusText = document.getElementById('update-status-text');
+        const actions = document.getElementById('update-actions');
+        if (statusEl) statusEl.classList.add('has-update');
+        if (statusText) statusText.textContent = `🆕 Update v${version} available`;
+        if (actions) actions.style.display = '';
+
+        // 3. Show subtle hint on main screen
+        const existing = document.querySelector('.update-hint');
         if (existing) existing.remove();
+        const hint = document.createElement('div');
+        hint.className = 'update-hint';
+        hint.textContent = `Update v${version} available — go to Settings → About`;
+        hint.addEventListener('click', () => {
+            this._showView('settings');
+            // Switch to About tab
+            document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.settings-tab-content').forEach(t => t.classList.remove('active'));
+            const aboutTab = document.querySelector('[data-tab="tab-about"]');
+            const aboutContent = document.getElementById('tab-about');
+            if (aboutTab) aboutTab.classList.add('active');
+            if (aboutContent) aboutContent.classList.add('active');
+            hint.remove();
+        });
+        document.body.appendChild(hint);
 
-        const toast = document.createElement('div');
-        toast.className = 'toast update-toast show';
-        toast.innerHTML = `
-            <span>🆕 Update v${version} available</span>
-            <button id="btn-update-now" style="margin-left:8px;padding:2px 10px;border-radius:4px;border:none;background:#4CAF50;color:#fff;cursor:pointer;font-size:12px;">Update now</button>
-            <button id="btn-update-dismiss" style="margin-left:4px;padding:2px 6px;border-radius:4px;border:none;background:rgba(255,255,255,0.15);color:#fff;cursor:pointer;font-size:12px;">✕</button>
-        `;
-        document.body.appendChild(toast);
+        // Auto-hide hint after 8 seconds
+        setTimeout(() => hint.remove(), 8000);
+    }
 
-        document.getElementById('btn-update-dismiss').addEventListener('click', () => {
-            toast.classList.remove('show');
-            setTimeout(() => toast.remove(), 300);
+    _initAboutTab() {
+        // GitHub links
+        document.getElementById('link-github')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.__TAURI__?.opener?.openUrl('https://github.com/phuc-nt/my-translator');
+        });
+        document.getElementById('link-issues')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.__TAURI__?.opener?.openUrl('https://github.com/phuc-nt/my-translator/issues');
         });
 
-        document.getElementById('btn-update-now').addEventListener('click', async () => {
-            const btn = document.getElementById('btn-update-now');
-            btn.textContent = 'Downloading...';
-            btn.disabled = true;
+        // Update button
+        document.getElementById('btn-do-update')?.addEventListener('click', async () => {
+            const btnText = document.getElementById('update-btn-text');
+            const btn = document.getElementById('btn-do-update');
+            const progressDiv = document.getElementById('update-progress');
+            const progressFill = document.getElementById('update-progress-fill');
+            const progressPct = document.getElementById('update-progress-pct');
+
+            if (btn) btn.disabled = true;
+            if (btnText) btnText.textContent = 'Downloading...';
+            if (progressDiv) progressDiv.style.display = '';
 
             try {
                 await updater.downloadAndInstall((downloaded, total) => {
                     if (total > 0) {
                         const pct = Math.round((downloaded / total) * 100);
-                        btn.textContent = `${pct}%`;
+                        if (progressFill) progressFill.style.width = `${pct}%`;
+                        if (progressPct) progressPct.textContent = `${pct}%`;
+                        if (btnText) btnText.textContent = `Downloading ${pct}%...`;
                     }
                 });
-                btn.textContent = 'Restarting...';
+                if (btnText) btnText.textContent = 'Restarting...';
             } catch (err) {
-                btn.textContent = 'Failed';
+                if (btnText) btnText.textContent = 'Failed — try again';
+                if (btn) btn.disabled = false;
                 console.error('[Update]', err);
-                setTimeout(() => {
-                    toast.classList.remove('show');
-                    setTimeout(() => toast.remove(), 300);
-                }, 3000);
             }
         });
+
+        // If no update found after check, update status text
+        setTimeout(() => {
+            const statusText = document.getElementById('update-status-text');
+            if (statusText && !this._pendingUpdateVersion) {
+                statusText.textContent = '✅ App is up to date';
+            }
+        }, 5000);
     }
 
     _showToast(message, type = 'success') {

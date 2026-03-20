@@ -23,6 +23,7 @@
             <path
               d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
+          <span id="settings-badge" class="settings-badge" style="display:none"></span>
         </button>
 
         <div class="status-area" data-tauri-drag-region>
@@ -186,6 +187,7 @@
         <button class="settings-tab active" data-tab="tab-translation">Translation</button>
         <button class="settings-tab" data-tab="tab-display">Display</button>
         <button class="settings-tab" data-tab="tab-tts">TTS</button>
+        <button class="settings-tab" data-tab="tab-about">About</button>
       </div>
 
       <!-- Tab: Translation -->
@@ -397,6 +399,46 @@
               <option value="onwK4e9ZLuTAKqWW03F9">Daniel — Male</option>
               <option value="pNInz6obpgDQGcFmaJgB">Adam — Male</option>
             </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: About -->
+      <div class="settings-tab-content" id="tab-about">
+        <div class="settings-section about-info">
+          <div class="about-app-header">
+            <span class="about-app-name">My Translator</span>
+            <span class="about-app-version" id="about-version">v0.5.0</span>
+          </div>
+          <p class="hint">Real-time speech translator for macOS & Windows</p>
+        </div>
+
+        <div class="settings-section" id="section-update">
+          <span class="field-label">Updates</span>
+          <div id="update-status" class="update-status">
+            <span id="update-status-text">Checking for updates...</span>
+          </div>
+          <div id="update-actions" style="margin-top:8px;display:none;">
+            <button id="btn-do-update" class="primary-btn update-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              <span id="update-btn-text">Download & Install</span>
+            </button>
+          </div>
+          <div id="update-progress" class="update-progress" style="display:none;">
+            <div class="progress-bar"><div id="update-progress-fill" class="progress-fill"></div></div>
+            <span id="update-progress-pct" class="progress-pct">0%</span>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <span class="field-label">Links</span>
+          <div class="about-links">
+            <a href="#" id="link-github">GitHub Repository</a>
+            <a href="#" id="link-issues">Report a Bug</a>
           </div>
         </div>
       </div>
