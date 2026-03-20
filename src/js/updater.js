@@ -8,31 +8,31 @@ class Updater {
     constructor() {
         this.updateAvailable = null;
         this.onUpdateFound = null; // callback(version, notes)
+        this.onCheckComplete = null; // callback(hasUpdate)
+        this.onError = null; // callback(error)
     }
 
     /**
-     * Check if updater plugin is available
-     */
-    _getCheck() {
-        try {
-            return window.__TAURI__?.updater?.check;
-        } catch {
-            return null;
-        }
-    }
-
-    /**
-     * Check for updates silently on app launch
-     * Shows a non-intrusive notification if update found
+     * Check for updates
      */
     async checkForUpdates() {
-        const check = this._getCheck();
-        if (!check) {
-            console.log('[Updater] Skipped — plugin not available');
-            return;
-        }
-
         try {
+            // Try multiple access patterns for the updater
+            let check = null;
+
+            if (window.__TAURI__?.updater?.check) {
+                check = window.__TAURI__.updater.check;
+            } else if (window.__TAURI_INTERNALS__?.plugins?.updater?.check) {
+                check = window.__TAURI_INTERNALS__.plugins.updater.check;
+            }
+
+            if (!check) {
+                console.log('[Updater] Skipped — plugin not available');
+                console.log('[Updater] __TAURI__ keys:', Object.keys(window.__TAURI__ || {}));
+                if (this.onCheckComplete) this.onCheckComplete(false);
+                return;
+            }
+
             console.log('[Updater] Checking for updates...');
             const update = await check();
 
@@ -43,12 +43,15 @@ class Updater {
                 if (this.onUpdateFound) {
                     this.onUpdateFound(update.version, update.body || '');
                 }
+                if (this.onCheckComplete) this.onCheckComplete(true);
             } else {
                 console.log('[Updater] App is up to date');
+                if (this.onCheckComplete) this.onCheckComplete(false);
             }
         } catch (err) {
-            // Silently fail — don't interrupt user
             console.warn('[Updater] Check failed:', err.message || err);
+            if (this.onError) this.onError(err);
+            if (this.onCheckComplete) this.onCheckComplete(false);
         }
     }
 

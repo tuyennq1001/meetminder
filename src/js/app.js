@@ -77,7 +77,7 @@ class App {
         this._initAboutTab();
         this._checkForUpdates();
 
-        console.log('🌐 My Translator v0.5.1 initialized');
+        console.log('🌐 My Translator v0.5.0 initialized');
     }
 
     async _checkPlatformSupport() {
@@ -1345,8 +1345,34 @@ class App {
         updater.onUpdateFound = (version, notes) => {
             this._onUpdateAvailable(version, notes);
         };
+        updater.onError = (err) => {
+            const statusText = document.getElementById('update-status-text');
+            if (statusText) statusText.textContent = `⚠️ Check failed: ${err.message || err}`;
+        };
+        updater.onCheckComplete = (hasUpdate) => {
+            const checkBtn = document.getElementById('btn-check-update');
+            if (checkBtn) checkBtn.classList.remove('spinning');
+            if (!hasUpdate && !this._pendingUpdateVersion) {
+                const statusText = document.getElementById('update-status-text');
+                if (statusText) statusText.textContent = '✅ App is up to date';
+            }
+        };
         // Delay check slightly so app finishes loading first
-        setTimeout(() => updater.checkForUpdates(), 3000);
+        setTimeout(() => {
+            const statusText = document.getElementById('update-status-text');
+            const checkBtn = document.getElementById('btn-check-update');
+            if (statusText) statusText.textContent = 'Checking for updates...';
+            if (checkBtn) checkBtn.classList.add('spinning');
+            updater.checkForUpdates();
+        }, 3000);
+    }
+
+    _triggerUpdateCheck() {
+        const statusText = document.getElementById('update-status-text');
+        const checkBtn = document.getElementById('btn-check-update');
+        if (statusText) statusText.textContent = 'Checking for updates...';
+        if (checkBtn) checkBtn.classList.add('spinning');
+        updater.checkForUpdates();
     }
 
     _onUpdateAvailable(version, notes) {
@@ -1384,7 +1410,7 @@ class App {
         document.body.appendChild(hint);
 
         // Auto-hide hint after 8 seconds
-        setTimeout(() => hint.remove(), 8000);
+        setTimeout(() => { if (hint.parentNode) hint.remove(); }, 8000);
     }
 
     _initAboutTab() {
@@ -1398,7 +1424,12 @@ class App {
             window.__TAURI__?.opener?.openUrl('https://github.com/phuc-nt/my-translator/issues');
         });
 
-        // Update button
+        // Check for Updates button
+        document.getElementById('btn-check-update')?.addEventListener('click', () => {
+            this._triggerUpdateCheck();
+        });
+
+        // Download & Install button
         document.getElementById('btn-do-update')?.addEventListener('click', async () => {
             const btnText = document.getElementById('update-btn-text');
             const btn = document.getElementById('btn-do-update');
@@ -1426,14 +1457,6 @@ class App {
                 console.error('[Update]', err);
             }
         });
-
-        // If no update found after check, update status text
-        setTimeout(() => {
-            const statusText = document.getElementById('update-status-text');
-            if (statusText && !this._pendingUpdateVersion) {
-                statusText.textContent = '✅ App is up to date';
-            }
-        }, 5000);
     }
 
     _showToast(message, type = 'success') {
