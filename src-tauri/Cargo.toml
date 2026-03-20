@@ -6,7 +6,7 @@ authors = ["phucnt"]
 edition = "2021"
 
 [lib]
-name = "personal_translator_lib"
+name = "my_translator_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

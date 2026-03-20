@@ -765,11 +765,19 @@ class App {
     }
 
     _updateModeUI(mode) {
+        const isSoniox = mode === 'soniox';
+
+        // Toggle hints
         const hintSoniox = document.getElementById('hint-mode-soniox');
         const hintLocal = document.getElementById('hint-mode-local');
+        if (hintSoniox) hintSoniox.style.display = isSoniox ? '' : 'none';
+        if (hintLocal) hintLocal.style.display = !isSoniox ? '' : 'none';
 
-        if (hintSoniox) hintSoniox.style.display = mode === 'soniox' ? '' : 'none';
-        if (hintLocal) hintLocal.style.display = mode === 'local' ? '' : 'none';
+        // Toggle Soniox-only sections
+        const sectionApiKey = document.getElementById('section-api-key');
+        const sectionContext = document.getElementById('section-soniox-context');
+        if (sectionApiKey) sectionApiKey.style.display = isSoniox ? '' : 'none';
+        if (sectionContext) sectionContext.style.display = isSoniox ? '' : 'none';
     }
 
     // ─── Start/Stop ────────────────────────────────────────
@@ -779,8 +787,8 @@ class App {
         this.translationMode = settings.translation_mode || 'soniox';
         console.log('[App] start() called, translation_mode:', this.translationMode, 'settings:', JSON.stringify(settings));
 
-        // Always check Soniox API key (required for all modes)
-        if (!settings.soniox_api_key) {
+        // Check Soniox API key only for cloud mode
+        if (this.translationMode === 'soniox' && !settings.soniox_api_key) {
             this._showToast('Soniox API key is required. Add it in Settings.', 'error');
             this._showView('settings');
             return;
