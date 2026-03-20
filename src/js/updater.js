@@ -1,20 +1,8 @@
 /**
  * Auto-updater module
  * Checks for updates on app launch using Tauri updater plugin
+ * Uses window.__TAURI__ globals (no bundler needed)
  */
-
-let check, relaunch;
-
-try {
-    // Dynamic import — only works in Tauri context
-    const updaterModule = await import('@tauri-apps/plugin-updater');
-    check = updaterModule.check;
-    // relaunch via Tauri process API
-    const processModule = await import('@tauri-apps/api/core');
-    relaunch = processModule.relaunch;
-} catch (e) {
-    console.log('[Updater] Plugin not available (dev mode?)');
-}
 
 class Updater {
     constructor() {
@@ -23,12 +11,24 @@ class Updater {
     }
 
     /**
+     * Check if updater plugin is available
+     */
+    _getCheck() {
+        try {
+            return window.__TAURI__?.updater?.check;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Check for updates silently on app launch
      * Shows a non-intrusive notification if update found
      */
     async checkForUpdates() {
+        const check = this._getCheck();
         if (!check) {
-            console.log('[Updater] Skipped — plugin not loaded');
+            console.log('[Updater] Skipped — plugin not available');
             return;
         }
 
@@ -80,7 +80,6 @@ class Updater {
             });
 
             console.log('[Updater] Update installed, restarting...');
-            // App will restart automatically after install
         } catch (err) {
             console.error('[Updater] Install failed:', err);
             throw err;
