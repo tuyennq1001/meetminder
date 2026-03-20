@@ -45,3 +45,4 @@ windows = { version = "0.58", features = [
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-updater = "2.10.0"
+tauri-plugin-process = "2"
