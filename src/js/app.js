@@ -77,7 +77,7 @@ class App {
         this._initAboutTab();
         this._checkForUpdates();
 
-        console.log('🌐 My Translator v0.5.3 initialized');
+        console.log('🌐 My Translator v0.5.1 initialized');
     }
 
     async _checkPlatformSupport() {
@@ -1450,15 +1450,23 @@ class App {
                         if (btnText) btnText.textContent = `Downloading ${pct}%...`;
                     }
                 });
+                // Install succeeded! Try to restart
                 if (btnText) btnText.textContent = 'Restarting...';
-                // Relaunch the app to apply the update
-                const relaunch = window.__TAURI__?.process?.relaunch;
-                if (relaunch) {
-                    await relaunch();
-                } else {
-                    // Fallback: use invoke
-                    const invoke = window.__TAURI__?.core?.invoke;
-                    if (invoke) await invoke('plugin:process|restart');
+                try {
+                    const relaunch = window.__TAURI__?.process?.relaunch;
+                    if (relaunch) {
+                        await relaunch();
+                    } else {
+                        const invoke = window.__TAURI__?.core?.invoke;
+                        if (invoke) await invoke('plugin:process|restart');
+                    }
+                } catch (restartErr) {
+                    // Restart failed (e.g. process plugin not available) but update IS installed
+                    console.warn('[Update] Restart failed, update is installed:', restartErr);
+                    if (btnText) btnText.textContent = '✅ Updated! Restart app';
+                    const statusText = document.getElementById('update-status-text');
+                    if (statusText) statusText.textContent = '✅ Update installed — close and reopen the app';
+                    if (btn) btn.disabled = true;
                 }
             } catch (err) {
                 const errMsg = err?.message || String(err);
