@@ -714,6 +714,35 @@ body {
   margin-bottom: 2px;
 }
 
+/* Language badge — shown when detected language changes */
+.lang-badge {
+  display: inline-block;
+  font-size: 0.7em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(99, 140, 255, 0.12);
+  border: 1px solid rgba(99, 140, 255, 0.2);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+/* Low confidence text — highlighted for uncertain transcriptions */
+.low-confidence {
+  border-left: 2px solid rgba(251, 191, 36, 0.5);
+  padding-left: 6px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.low-confidence::after {
+  content: ' ⚠';
+  font-size: 0.7em;
+  color: var(--warning);
+  opacity: 0.6;
+}
+
 /* Provisional text — dimmed, in-progress */
 .seg-provisional {
   display: block;
@@ -926,6 +955,59 @@ body {
 .term-row .btn-remove-term:hover {
   color: var(--error);
   background: rgba(248, 113, 113, 0.1);
+}
+
+/* General context rows — key/value pairs */
+.general-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+  align-items: center;
+}
+.general-row input {
+  flex: 1;
+  min-width: 0;
+}
+.general-row .general-key {
+  flex: 0.4;
+}
+.general-row .general-value {
+  flex: 0.6;
+}
+.general-row .btn-remove-general {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.general-row .btn-remove-general:hover {
+  color: var(--error);
+  background: rgba(248, 113, 113, 0.1);
+}
+
+/* Context subsections */
+.context-subsection {
+  margin-bottom: 10px;
+}
+.context-subsection textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 36px;
+  margin-top: 4px;
+}
+
+/* Dim hint text */
+.hint-dim {
+  opacity: 0.5;
+  font-size: 0.9em;
 }
 
 /* ─── Settings Sections ────────────────────────────────── */

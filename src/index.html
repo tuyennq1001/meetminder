@@ -370,12 +370,37 @@
 
         <div class="settings-section" id="section-soniox-context">
           <span class="field-label">Context <span class="optional-badge">Optional</span></span>
-          <input type="text" id="input-context-domain" placeholder="e.g. Catholic sermon, Tech meeting..." style="margin-bottom: 8px;" />
-          <div class="terms-header">
-            <span class="hint" style="margin:0;">Translation terms</span>
-            <button type="button" id="btn-add-term" class="btn-icon-sm" title="Add term">+</button>
+          <p class="hint" style="margin-bottom: 8px;">Provide context to improve transcription and translation accuracy.</p>
+
+          <!-- General context (key-value pairs) -->
+          <div class="context-subsection">
+            <div class="terms-header">
+              <span class="hint" style="margin:0;">General context</span>
+              <button type="button" id="btn-add-general" class="btn-icon-sm" title="Add context pair">+</button>
+            </div>
+            <div id="context-general-list"></div>
           </div>
-          <div id="translation-terms-list"></div>
+
+          <!-- Transcription terms -->
+          <div class="context-subsection">
+            <span class="hint">Transcription terms <span class="hint-dim">(one per line — domain-specific words)</span></span>
+            <textarea id="input-context-terms" rows="2" placeholder="e.g.&#10;angioplasty&#10;echocardiogram"></textarea>
+          </div>
+
+          <!-- Background text -->
+          <div class="context-subsection">
+            <span class="hint">Background text <span class="hint-dim">(meeting notes, prior context)</span></span>
+            <textarea id="input-context-text" rows="2" placeholder="e.g. This is a follow-up meeting about Q3 results..."></textarea>
+          </div>
+
+          <!-- Translation terms -->
+          <div class="context-subsection">
+            <div class="terms-header">
+              <span class="hint" style="margin:0;">Translation terms <span class="hint-dim">(source → target)</span></span>
+              <button type="button" id="btn-add-term" class="btn-icon-sm" title="Add term">+</button>
+            </div>
+            <div id="translation-terms-list"></div>
+          </div>
         </div>
       </div>
 

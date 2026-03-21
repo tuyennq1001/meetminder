@@ -6,6 +6,8 @@
  * - Original text (pending translation): cyan/accent color  
  * - Provisional text (being recognized): dimmed
  * - Speaker labels: shown when speaker changes (e.g. "Speaker 1:")
+ * - Language badges: shown when detected language changes (e.g. "🇯🇵 JA")
+ * - Confidence: low-confidence segments highlighted
  */
 
 export class TranscriptUI {
@@ -16,11 +18,14 @@ export class TranscriptUI {
         this.fontSize = 16;
         this.viewMode = 'single'; // 'single' or 'dual'
 
-        // Segments: each has { original, translation, status, speaker }
+        // Segments: each has { original, translation, status, speaker, language, confidence }
         this.segments = [];
         this.provisionalText = '';
         this.provisionalSpeaker = null;
+        this.provisionalLanguage = null;
         this.currentSpeaker = null; // Track current speaker to detect changes
+        this.currentLanguage = null; // Track current language to detect changes
+        this.lastConfidence = null; // Last confidence score from Soniox
     }
 
     /**
@@ -49,16 +54,19 @@ export class TranscriptUI {
     /**
      * Add finalized original text (pending translation)
      */
-    addOriginal(text, speaker) {
+    addOriginal(text, speaker, language) {
         this._removeListening();
         this.segments.push({
             original: text,
             translation: null,
             status: 'original',
             speaker: speaker || null,
+            language: language || null,
+            confidence: this.lastConfidence,
             createdAt: Date.now(),
         });
         if (speaker) this.currentSpeaker = speaker;
+        if (language) this.currentLanguage = language;
         this._cleanupStaleOriginals();
         this._render();
     }
@@ -85,10 +93,11 @@ export class TranscriptUI {
     /**
      * Update provisional (in-progress) text
      */
-    setProvisional(text, speaker) {
+    setProvisional(text, speaker, language) {
         this._removeListening();
         this.provisionalText = text;
         this.provisionalSpeaker = speaker || null;
+        this.provisionalLanguage = language || null;
         this._render();
     }
 
@@ -98,6 +107,7 @@ export class TranscriptUI {
     clearProvisional() {
         this.provisionalText = '';
         this.provisionalSpeaker = null;
+        this.provisionalLanguage = null;
         this._render();
     }
 
@@ -128,7 +138,10 @@ export class TranscriptUI {
         this.segments = [];
         this.provisionalText = '';
         this.provisionalSpeaker = null;
+        this.provisionalLanguage = null;
         this.currentSpeaker = null;
+        this.currentLanguage = null;
+        this.lastConfidence = null;
         this.contentEl = null;
     }
 
@@ -240,8 +253,18 @@ export class TranscriptUI {
         this.segments = [];
         this.provisionalText = '';
         this.provisionalSpeaker = null;
+        this.provisionalLanguage = null;
         this.currentSpeaker = null;
+        this.currentLanguage = null;
+        this.lastConfidence = null;
         this.contentEl = null;
+    }
+
+    /**
+     * Update confidence score
+     */
+    setConfidence(confidence) {
+        this.lastConfidence = confidence;
     }
 
     // ─── Internal ──────────────────────────────────────────
@@ -274,16 +297,25 @@ export class TranscriptUI {
     _renderSingle() {
         let html = '';
         let lastRenderedSpeaker = null;
+        let lastRenderedLang = null;
 
         for (const seg of this.segments) {
+            // Speaker label
             if (seg.speaker && seg.speaker !== lastRenderedSpeaker) {
                 html += `<span class="speaker-label">Speaker ${seg.speaker}:</span> `;
                 lastRenderedSpeaker = seg.speaker;
             }
 
+            // Language badge
+            if (seg.language && seg.language !== lastRenderedLang) {
+                html += `<span class="lang-badge">${this._langEmoji(seg.language)}</span> `;
+                lastRenderedLang = seg.language;
+            }
+
             if (seg.status === 'translated' && seg.translation) {
+                const confidenceClass = (seg.confidence !== null && seg.confidence < 0.7) ? ' low-confidence' : '';
                 html += `<div class="seg-block">`;
-                html += `<div class="seg-translated">${this._esc(seg.translation)}</div>`;
+                html += `<div class="seg-translated${confidenceClass}">${this._esc(seg.translation)}</div>`;
                 html += `</div>`;
             }
             // Skip 'original' segments in single mode — wait for translation
@@ -292,6 +324,9 @@ export class TranscriptUI {
         if (this.provisionalText) {
             if (this.provisionalSpeaker && this.provisionalSpeaker !== lastRenderedSpeaker) {
                 html += `<span class="speaker-label">Speaker ${this.provisionalSpeaker}:</span> `;
+            }
+            if (this.provisionalLanguage && this.provisionalLanguage !== lastRenderedLang) {
+                html += `<span class="lang-badge">${this._langEmoji(this.provisionalLanguage)}</span> `;
             }
             html += `<div class="seg-block"><div class="seg-provisional">${this._esc(this.provisionalText)}</div></div>`;
         }
@@ -310,6 +345,7 @@ export class TranscriptUI {
         let srcHtml = '';
         let tgtHtml = '';
         let lastSpeaker = null;
+        let lastLang = null;
 
         for (const seg of this.segments) {
             let speakerHtml = '';
@@ -318,13 +354,20 @@ export class TranscriptUI {
                 lastSpeaker = seg.speaker;
             }
 
+            let langHtml = '';
+            if (seg.language && seg.language !== lastLang) {
+                langHtml = `<span class="lang-badge">${this._langEmoji(seg.language)}</span> `;
+                lastLang = seg.language;
+            }
+
             if (seg.status === 'translated' && seg.translation) {
-                srcHtml += speakerHtml;
+                const confidenceClass = (seg.confidence !== null && seg.confidence < 0.7) ? ' low-confidence' : '';
+                srcHtml += speakerHtml + langHtml;
                 srcHtml += `<div class="seg-text">${this._esc(seg.original || '')}</div>`;
                 tgtHtml += speakerHtml ? '<div class="speaker-label">&nbsp;</div>' : '';
-                tgtHtml += `<div class="seg-text">${this._esc(seg.translation)}</div>`;
+                tgtHtml += `<div class="seg-text${confidenceClass}">${this._esc(seg.translation)}</div>`;
             } else if (seg.status === 'original' && seg.original) {
-                srcHtml += speakerHtml;
+                srcHtml += speakerHtml + langHtml;
                 srcHtml += `<div class="seg-text pending">${this._esc(seg.original)}</div>`;
                 tgtHtml += speakerHtml ? '<div class="speaker-label">&nbsp;</div>' : '';
                 tgtHtml += `<div class="seg-text pending">...</div>`;
@@ -416,5 +459,23 @@ export class TranscriptUI {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    /**
+     * Get language flag emoji + code
+     */
+    _langEmoji(langCode) {
+        const flags = {
+            'en': '🇬🇧', 'ja': '🇯🇵', 'ko': '🇰🇷', 'zh': '🇨🇳',
+            'vi': '🇻🇳', 'fr': '🇫🇷', 'de': '🇩🇪', 'es': '🇪🇸',
+            'th': '🇹🇭', 'id': '🇮🇩', 'pt': '🇵🇹', 'ru': '🇷🇺',
+            'ar': '🇸🇦', 'hi': '🇮🇳', 'it': '🇮🇹', 'nl': '🇳🇱',
+            'pl': '🇵🇱', 'tr': '🇹🇷', 'sv': '🇸🇪', 'da': '🇩🇰',
+            'no': '🇳🇴', 'fi': '🇫🇮', 'el': '🇬🇷', 'cs': '🇨🇿',
+            'ro': '🇷🇴', 'hu': '🇭🇺', 'uk': '🇺🇦', 'he': '🇮🇱',
+            'ms': '🇲🇾', 'tl': '🇵🇭', 'bn': '🇧🇩', 'ta': '🇱🇰',
+        };
+        const flag = flags[langCode] || '🌐';
+        return `${flag} ${langCode.toUpperCase()}`;
     }
 }

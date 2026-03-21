@@ -340,14 +340,19 @@ class App {
             this._addTermRow('', '');
         });
 
+        // Add general context row
+        document.getElementById('btn-add-general')?.addEventListener('click', () => {
+            this._addGeneralRow('', '');
+        });
+
         // TTS toggle button in overlay
         document.getElementById('btn-tts').addEventListener('click', () => {
             this._toggleTTS();
         });
 
         // Wire Soniox callbacks
-        sonioxClient.onOriginal = (text, speaker) => {
-            this.transcriptUI.addOriginal(text, speaker);
+        sonioxClient.onOriginal = (text, speaker, language) => {
+            this.transcriptUI.addOriginal(text, speaker, language);
         };
 
         sonioxClient.onTranslation = (text) => {
@@ -355,9 +360,9 @@ class App {
             this._speakIfEnabled(text);
         };
 
-        sonioxClient.onProvisional = (text, speaker) => {
+        sonioxClient.onProvisional = (text, speaker, language) => {
             if (text) {
-                this.transcriptUI.setProvisional(text, speaker);
+                this.transcriptUI.setProvisional(text, speaker, language);
             } else {
                 this.transcriptUI.clearProvisional();
             }
@@ -369,6 +374,10 @@ class App {
 
         sonioxClient.onError = (error) => {
             this._showToast(error, 'error');
+        };
+
+        sonioxClient.onConfidence = (avgConfidence) => {
+            this.transcriptUI.setConfidence(avgConfidence);
         };
     }
 
@@ -503,9 +512,25 @@ class App {
 
         document.getElementById('check-show-original').checked = s.show_original !== false;
 
-        // Custom context
+        // Custom context (rich format)
         const ctx = s.custom_context;
-        document.getElementById('input-context-domain').value = ctx?.domain || '';
+        // General context rows
+        const generalList = document.getElementById('context-general-list');
+        if (generalList) {
+            generalList.innerHTML = '';
+            const generalPairs = ctx?.general || [];
+            generalPairs.forEach(g => this._addGeneralRow(g.key, g.value));
+        }
+        // Transcription terms
+        const termsInput = document.getElementById('input-context-terms');
+        if (termsInput) {
+            termsInput.value = (ctx?.terms || []).join('\n');
+        }
+        // Background text
+        const textInput = document.getElementById('input-context-text');
+        if (textInput) {
+            textInput.value = ctx?.text || '';
+        }
         // Load translation terms as rows
         const termsList = document.getElementById('translation-terms-list');
         if (termsList) {
@@ -559,8 +584,23 @@ class App {
             custom_context: null,
         };
 
-        // Parse custom context
-        const domain = document.getElementById('input-context-domain').value.trim();
+        // Parse custom context (rich format)
+        // General key-value pairs
+        const generalPairs = [];
+        document.querySelectorAll('#context-general-list .general-row').forEach(row => {
+            const key = row.querySelector('.general-key')?.value.trim();
+            const value = row.querySelector('.general-value')?.value.trim();
+            if (key && value) generalPairs.push({ key, value });
+        });
+
+        // Transcription terms
+        const termsRaw = document.getElementById('input-context-terms')?.value.trim() || '';
+        const terms = termsRaw ? termsRaw.split('\n').map(t => t.trim()).filter(t => t) : [];
+
+        // Background text
+        const contextText = document.getElementById('input-context-text')?.value.trim() || '';
+
+        // Translation terms
         const translationTerms = [];
         document.querySelectorAll('#translation-terms-list .term-row').forEach(row => {
             const source = row.querySelector('.term-source')?.value.trim();
@@ -568,9 +608,11 @@ class App {
             if (source && target) translationTerms.push({ source, target });
         });
 
-        if (domain || translationTerms.length > 0) {
+        if (generalPairs.length > 0 || terms.length > 0 || contextText || translationTerms.length > 0) {
             settings.custom_context = {
-                domain: domain || null,
+                general: generalPairs,
+                terms: terms,
+                text: contextText || null,
                 translation_terms: translationTerms,
             };
         }
@@ -701,6 +743,22 @@ class App {
             `<button type="button" class="btn-remove-term" title="Remove">×</button>`;
         row.querySelector('.btn-remove-term').addEventListener('click', () => row.remove());
         list.appendChild(row);
+    }
+
+    _addGeneralRow(key = '', value = '') {
+        const list = document.getElementById('context-general-list');
+        if (!list) return;
+        const row = document.createElement('div');
+        row.className = 'general-row';
+        row.innerHTML = `<input type="text" class="general-key" value="${this._escAttr(key)}" placeholder="Key (e.g. domain)" />` +
+            `<input type="text" class="general-value" value="${this._escAttr(value)}" placeholder="Value (e.g. Medical)" />` +
+            `<button type="button" class="btn-remove-general" title="Remove">×</button>`;
+        row.querySelector('.btn-remove-general').addEventListener('click', () => row.remove());
+        list.appendChild(row);
+    }
+
+    _escAttr(str) {
+        return str.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     _updateTTSProviderUI(provider) {

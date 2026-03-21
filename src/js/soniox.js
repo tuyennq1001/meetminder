@@ -5,8 +5,12 @@
  * Features:
  * - Auto-reconnect on transient errors
  * - Seamless session reset every SESSION_DURATION_MS (make-before-break)
- * - Context carryover: recent translations sent as domain context
+ * - Context carryover via context.text field
  * - Speaker diarization
+ * - Language identification (per-token language tags)
+ * - Connection keepalive (prevents timeout during silence)
+ * - Rich context support (general key-value, terms, text, translation_terms)
+ * - Confidence score pass-through
  */
 
 const SONIOX_ENDPOINT = 'wss://stt-rt.soniox.com/transcribe-websocket';
@@ -21,6 +25,9 @@ const SESSION_DURATION_MS = 3 * 60 * 1000;
 // Keep last N chars of translations for context carryover
 const CONTEXT_HISTORY_CHARS = 500;
 
+// Keepalive: send every 15s to prevent timeout when no audio
+const KEEPALIVE_INTERVAL_MS = 15000;
+
 export class SonioxClient {
     constructor() {
         this.ws = null;
@@ -30,14 +37,16 @@ export class SonioxClient {
         this._config = null;
         this._intentionalDisconnect = false;
         this._sessionTimer = null;
+        this._keepaliveTimer = null;
         this._recentTranslations = []; // Rolling buffer of recent translations
 
         // Callbacks
-        this.onOriginal = null;       // (text, speaker) => {}
+        this.onOriginal = null;       // (text, speaker, language) => {}
         this.onTranslation = null;    // (text) => {}
-        this.onProvisional = null;    // (text, speaker) => {}
+        this.onProvisional = null;    // (text, speaker, language) => {}
         this.onStatusChange = null;   // (status) => {}
         this.onError = null;          // (error) => {}
+        this.onConfidence = null;     // (avgConfidence) => {}
     }
 
     /**
@@ -90,6 +99,7 @@ export class SonioxClient {
                 enable_endpoint_detection: true,
                 max_endpoint_delay_ms: 3000,
                 enable_speaker_diarization: true,
+                enable_language_identification: true,
             };
 
             // Language hints
@@ -105,13 +115,10 @@ export class SonioxClient {
                 };
             }
 
-            // Context: merge user custom context + carryover context
-            const domain = this._buildDomain(customContext, carryoverContext);
-            const translationTerms = customContext?.translation_terms || [];
-            if (domain || translationTerms.length > 0) {
-                configMsg.context = {};
-                if (domain) configMsg.context.domain = domain;
-                if (translationTerms.length > 0) configMsg.context.translation_terms = translationTerms;
+            // Context: build using new API format (general, text, terms, translation_terms)
+            const context = this._buildContext(customContext, carryoverContext);
+            if (context) {
+                configMsg.context = context;
             }
 
             console.log('[Soniox] Sending config (model:', configMsg.model, ')');
@@ -139,8 +146,9 @@ export class SonioxClient {
             this._setStatus('connected');
             console.log('[Soniox] Connected and config sent');
 
-            // Start session timer
+            // Start session timer & keepalive
             this._startSessionTimer();
+            this._startKeepalive();
         };
 
         newWs.onmessage = (event) => {
@@ -222,6 +230,7 @@ export class SonioxClient {
     disconnect() {
         this._intentionalDisconnect = true;
         this._stopSessionTimer();
+        this._stopKeepalive();
 
         if (this.ws) {
             try {
@@ -249,6 +258,9 @@ export class SonioxClient {
         let provisionalText = '';
         let hasEnd = false;
         let speaker = null;
+        let language = null;
+        let confidenceSum = 0;
+        let confidenceCount = 0;
 
         for (const token of data.tokens) {
             if (token.text === '<end>') {
@@ -258,6 +270,17 @@ export class SonioxClient {
 
             if (token.speaker && token.translation_status === 'original') {
                 speaker = token.speaker;
+            }
+
+            // Capture language from original tokens
+            if (token.language && token.translation_status !== 'translation') {
+                language = token.language;
+            }
+
+            // Track confidence scores for original final tokens
+            if (token.confidence !== undefined && token.is_final && token.translation_status === 'original') {
+                confidenceSum += token.confidence;
+                confidenceCount++;
             }
 
             if (token.translation_status === 'original') {
@@ -273,9 +296,15 @@ export class SonioxClient {
             }
         }
 
-        // Emit finalized original text with speaker
+        // Emit average confidence for this batch
+        if (confidenceCount > 0) {
+            const avgConfidence = confidenceSum / confidenceCount;
+            this.onConfidence?.(avgConfidence);
+        }
+
+        // Emit finalized original text with speaker + language
         if (originalText.trim()) {
-            this.onOriginal?.(originalText, speaker);
+            this.onOriginal?.(originalText, speaker, language);
         }
 
         // Emit translation + store for context carryover
@@ -284,9 +313,9 @@ export class SonioxClient {
             this._addToHistory(translationText);
         }
 
-        // Emit provisional text with speaker
+        // Emit provisional text with speaker + language
         if (provisionalText.trim()) {
-            this.onProvisional?.(provisionalText, speaker);
+            this.onProvisional?.(provisionalText, speaker, language);
         } else if (originalText.trim() || translationText.trim() || hasEnd) {
             this.onProvisional?.('');
         }
@@ -324,6 +353,79 @@ export class SonioxClient {
         this._doConnect(this._config, carryover);
     }
 
+    // ─── Keepalive ────────────────────────────────────────────
+
+    _startKeepalive() {
+        this._stopKeepalive();
+        this._keepaliveTimer = setInterval(() => {
+            if (this.ws?.readyState === WebSocket.OPEN) {
+                this.ws.send(JSON.stringify({ type: 'keepalive' }));
+            }
+        }, KEEPALIVE_INTERVAL_MS);
+    }
+
+    _stopKeepalive() {
+        if (this._keepaliveTimer) {
+            clearInterval(this._keepaliveTimer);
+            this._keepaliveTimer = null;
+        }
+    }
+
+    // ─── Context Builder ─────────────────────────────────────
+
+    /**
+     * Build context object using Soniox API format:
+     * - general: array of {key, value} pairs (domain, topic, speakers...)
+     * - text: longer unstructured context (carryover, background)
+     * - terms: transcription terms (domain-specific words)
+     * - translation_terms: array of {source, target} pairs
+     */
+    _buildContext(customContext, carryoverContext) {
+        const context = {};
+        let hasContent = false;
+
+        // General key-value pairs
+        const general = [];
+        if (customContext?.general && Array.isArray(customContext.general)) {
+            // New format: array of {key, value}
+            general.push(...customContext.general);
+        } else if (customContext?.domain) {
+            // Legacy format: single domain string → convert to general
+            general.push({ key: 'domain', value: customContext.domain });
+        }
+        if (general.length > 0) {
+            context.general = general;
+            hasContent = true;
+        }
+
+        // Transcription terms (domain-specific words for accuracy)
+        if (customContext?.terms && customContext.terms.length > 0) {
+            context.terms = customContext.terms;
+            hasContent = true;
+        }
+
+        // Translation terms
+        if (customContext?.translation_terms && customContext.translation_terms.length > 0) {
+            context.translation_terms = customContext.translation_terms;
+            hasContent = true;
+        }
+
+        // Text context: user-provided background + carryover
+        const textParts = [];
+        if (customContext?.text) {
+            textParts.push(customContext.text);
+        }
+        if (carryoverContext) {
+            textParts.push(`Recent conversation: ${carryoverContext}`);
+        }
+        if (textParts.length > 0) {
+            context.text = textParts.join('\n\n');
+            hasContent = true;
+        }
+
+        return hasContent ? context : null;
+    }
+
     // ─── Context Carryover ────────────────────────────────────
 
     _addToHistory(text) {
@@ -339,17 +441,6 @@ export class SonioxClient {
     _getCarryoverContext() {
         if (this._recentTranslations.length === 0) return null;
         return this._recentTranslations.join(' ').trim();
-    }
-
-    _buildDomain(customContext, carryoverContext) {
-        const parts = [];
-        if (customContext?.domain) {
-            parts.push(customContext.domain);
-        }
-        if (carryoverContext) {
-            parts.push(`Recent conversation context: ${carryoverContext}`);
-        }
-        return parts.length > 0 ? parts.join('. ') : null;
     }
 
     // ─── Error Handling ──────────────────────────────────────
