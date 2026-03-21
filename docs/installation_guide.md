@@ -18,8 +18,8 @@ Step-by-step guide to install and use **My Translator** on macOS.
 Download the latest `.dmg` from: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/latest)
 
 Choose the right file:
-- `My.Translator_x.x.x_aarch64.dmg` — Apple Silicon (M1/M2/M3/M4)
-- `My.Translator_x.x.x_x64.dmg` — Intel Mac
+- `MyTranslator_x.x.x_aarch64.dmg` — Apple Silicon (M1/M2/M3/M4)
+- `MyTranslator_x.x.x_x64.dmg` — Intel Mac
 
 ---
 
@@ -152,3 +152,15 @@ See [TTS Guide](tts_guide.md) for step-by-step API key instructions.
 
 ### TTS not working
 → See [TTS Guide — Troubleshooting](tts_guide.md#troubleshooting)
+
+---
+
+## Updating
+
+My Translator includes **auto-update**. When a new version is available:
+
+1. A **green badge** appears on the ⚙️ settings icon
+2. Open Settings → **About** tab → click **Download & Install**
+3. The app will restart automatically with the new version
+
+No need to download DMG files manually for future updates!

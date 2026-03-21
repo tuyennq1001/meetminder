@@ -8,13 +8,13 @@ Step-by-step guide to install and use **My Translator** on Windows 10/11.
 
 - Windows 10 or later (x64 or ARM64)
 - [Soniox](https://soniox.com) API key (pay-per-use, ~$0.12/hour)
-- **TTS narration** (optional): [ElevenLabs](https://elevenlabs.io) API key (Starter plan $5/month)
+- **TTS narration** (optional): Edge TTS (free, no API key) or premium providers. See [TTS Guide](tts_guide.md)
 
 ---
 
 ## Step 1 — Download
 
-Download the latest `.exe` installer from: [**Releases — Windows**](https://github.com/phuc-nt/my-translator/releases/tag/v0.4.3)
+Download the latest `.exe` installer from: [**Releases — Windows**](https://github.com/phuc-nt/my-translator/releases/latest)
 
 Choose the right version:
 - **x64** — Most Windows PCs (Intel/AMD)  
@@ -166,3 +166,15 @@ If TTS is enabled, you can toggle it on/off with the **TTS** button or `Ctrl+T`.
 
 ### App doesn't start
 → Make sure WebView2 Runtime is installed. It comes with Windows 10/11, but on older versions you may need to install it from [Microsoft](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).
+
+---
+
+## Updating
+
+My Translator includes **auto-update**. When a new version is available:
+
+1. A **green badge** appears on the ⚙️ settings icon
+2. Open Settings → **About** tab → click **Download & Install**
+3. The app will restart automatically with the new version
+
+No need to download installers manually for future updates!

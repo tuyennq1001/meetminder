@@ -14,7 +14,7 @@ Hướng dẫn từng bước cài đặt và sử dụng **My Translator** trê
 
 ## Bước 1 — Tải xuống
 
-Tải file `.exe` mới nhất tại: [**Releases — Windows**](https://github.com/phuc-nt/my-translator/releases/tag/v0.4.3)
+Tải file `.exe` mới nhất tại: [**Releases — Windows**](https://github.com/phuc-nt/my-translator/releases/latest)
 
 Chọn phiên bản phù hợp:
 - **x64** — Đa số PC Windows (Intel/AMD)
@@ -166,3 +166,15 @@ Nếu TTS đã bật, bạn có thể bật/tắt bằng nút **TTS** hoặc `Ct
 
 ### Ứng dụng không mở
 → Đảm bảo WebView2 Runtime đã cài. Windows 10/11 thường có sẵn, nhưng phiên bản cũ cần cài từ [Microsoft](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).
+
+---
+
+## Cập nhật
+
+My Translator có tính năng **tự động cập nhật**. Khi có bản mới:
+
+1. **Badge xanh** xuất hiện trên icon ⚙️ Settings
+2. Mở Settings → tab **About** → bấm **Download & Install**
+3. App sẽ tự khởi động lại với bản mới
+
+Không cần tải installer thủ công cho các bản cập nhật sau!

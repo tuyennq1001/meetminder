@@ -18,8 +18,8 @@ Hướng dẫn từng bước cài đặt và sử dụng **My Translator** trê
 Tải file `.dmg` mới nhất tại: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/latest)
 
 Chọn đúng file:
-- `My.Translator_x.x.x_aarch64.dmg` — Apple Silicon (M1/M2/M3/M4)
-- `My.Translator_x.x.x_x64.dmg` — Intel Mac
+- `MyTranslator_x.x.x_aarch64.dmg` — Apple Silicon (M1/M2/M3/M4)
+- `MyTranslator_x.x.x_x64.dmg` — Intel Mac
 
 ---
 
@@ -152,3 +152,15 @@ Xem [Hướng dẫn TTS](tts_guide_vi.md) để biết cách lấy API key từn
 
 ### TTS không hoạt động
 → Xem [Hướng dẫn TTS — Xử lý sự cố](tts_guide_vi.md#xử-lý-sự-cố)
+
+---
+
+## Cập nhật
+
+My Translator có tính năng **tự động cập nhật**. Khi có bản mới:
+
+1. **Badge xanh** xuất hiện trên icon ⚙️ Settings
+2. Mở Settings → tab **About** → bấm **Download & Install**
+3. App sẽ tự khởi động lại với bản mới
+
+Không cần tải DMG thủ công cho các bản cập nhật sau!

@@ -33,6 +33,7 @@ System Audio / Mic → 16kHz PCM → Soniox API (STT + Translation) → Overlay 
 | **TTS** | 3 providers (Edge free, Google, ElevenLabs) |
 | **Platform** | macOS (ARM + Intel) · Windows |
 | **Signed** | ✅ macOS signed & notarized |
+| **Auto-Update** | ✅ Built-in, check & install from Settings |
 
 ---
 
