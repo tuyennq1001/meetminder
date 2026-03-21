@@ -290,6 +290,10 @@ class App {
             document.getElementById('max-lines-value').textContent = e.target.value;
         });
 
+        document.getElementById('range-endpoint-delay')?.addEventListener('input', (e) => {
+            document.getElementById('endpoint-delay-value').textContent = `${(e.target.value / 1000).toFixed(1)}s`;
+        });
+
         // Toggle ElevenLabs API key visibility
         document.getElementById('btn-toggle-elevenlabs-key')?.addEventListener('click', () => {
             const input = document.getElementById('input-elevenlabs-key');
@@ -511,6 +515,13 @@ class App {
         // Strict language detection
         document.getElementById('check-strict-lang').checked = s.language_hints_strict || false;
 
+        // Endpoint delay
+        const endpointDelay = s.endpoint_delay || 3000;
+        const delaySlider = document.getElementById('range-endpoint-delay');
+        if (delaySlider) delaySlider.value = endpointDelay;
+        const delayValue = document.getElementById('endpoint-delay-value');
+        if (delayValue) delayValue.textContent = `${(endpointDelay / 1000).toFixed(1)}s`;
+
         // Audio source radio
         const radioValue = s.audio_source || 'system';
         const radio = document.querySelector(`input[name="audio-source"][value="${radioValue}"]`);
@@ -597,6 +608,7 @@ class App {
             language_a: document.getElementById('select-lang-a')?.value || 'ja',
             language_b: document.getElementById('select-lang-b')?.value || 'vi',
             language_hints_strict: document.getElementById('check-strict-lang')?.checked || false,
+            endpoint_delay: parseInt(document.getElementById('range-endpoint-delay')?.value || 3000),
             audio_source: document.querySelector('input[name="audio-source"]:checked')?.value || 'system',
             overlay_opacity: parseInt(document.getElementById('range-opacity').value) / 100,
             font_size: parseInt(document.getElementById('range-font-size').value),
@@ -940,6 +952,7 @@ class App {
             languageA: settings.language_a,
             languageB: settings.language_b,
             languageHintsStrict: settings.language_hints_strict || false,
+            endpointDelay: settings.endpoint_delay || 3000,
         });
 
         // Start audio capture — Rust batches audio every 200ms, JS just forwards

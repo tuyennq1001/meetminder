@@ -71,7 +71,8 @@ export class SonioxClient {
 
     _doConnect(config, carryoverContext = null) {
         const { apiKey, sourceLanguage, targetLanguage, customContext,
-                translationType, languageA, languageB, languageHintsStrict } = config;
+                translationType, languageA, languageB, languageHintsStrict,
+                endpointDelay } = config;
 
         this._setStatus('connecting');
         console.log('[Soniox] Connecting to', SONIOX_ENDPOINT);
@@ -98,7 +99,7 @@ export class SonioxClient {
                 sample_rate: 16000,
                 num_channels: 1,
                 enable_endpoint_detection: true,
-                max_endpoint_delay_ms: 3000,
+                max_endpoint_delay_ms: endpointDelay || 3000,
                 enable_speaker_diarization: true,
                 enable_language_identification: true,
             };

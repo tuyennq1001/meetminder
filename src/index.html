@@ -412,6 +412,13 @@
             <input type="checkbox" id="check-strict-lang" />
             <span class="checkbox-label">Strict language detection <span class="hint-dim">(reduce false language matches)</span></span>
           </label>
+
+          <!-- Endpoint Delay -->
+          <div class="slider-field" id="section-endpoint-delay" style="margin-top: 12px;">
+            <span class="field-label" title="Time to wait after speech stops before translating">Endpoint Delay</span>
+            <input type="range" id="range-endpoint-delay" min="500" max="3000" step="100" value="3000" />
+            <span id="endpoint-delay-value" class="range-value">3.0s</span>
+          </div>
         </div>
 
         <div class="settings-section">
