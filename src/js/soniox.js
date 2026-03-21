@@ -70,7 +70,8 @@ export class SonioxClient {
     }
 
     _doConnect(config, carryoverContext = null) {
-        const { apiKey, sourceLanguage, targetLanguage, customContext } = config;
+        const { apiKey, sourceLanguage, targetLanguage, customContext,
+                translationType, languageA, languageB, languageHintsStrict } = config;
 
         this._setStatus('connecting');
         console.log('[Soniox] Connecting to', SONIOX_ENDPOINT);
@@ -107,8 +108,21 @@ export class SonioxClient {
                 configMsg.language_hints = [sourceLanguage];
             }
 
-            // Translation
-            if (targetLanguage) {
+            // Language hints strict mode (#4)
+            if (languageHintsStrict) {
+                configMsg.language_hints_strict = true;
+            }
+
+            // Translation config (#5: support one-way and two-way)
+            if (translationType === 'two_way' && languageA && languageB) {
+                configMsg.translation = {
+                    type: 'two_way',
+                    language_a: languageA,
+                    language_b: languageB,
+                };
+                // For two-way, set language hints to both languages
+                configMsg.language_hints = [languageA, languageB];
+            } else if (targetLanguage) {
                 configMsg.translation = {
                     type: 'one_way',
                     target_language: targetLanguage,
@@ -292,6 +306,13 @@ export class SonioxClient {
             } else if (token.translation_status === 'translation') {
                 if (token.is_final) {
                     translationText += token.text;
+                }
+            } else if (token.translation_status === 'none') {
+                // Third-language speech in two-way mode: treat as original (untranslated)
+                if (token.is_final) {
+                    originalText += token.text;
+                } else {
+                    provisionalText += token.text;
                 }
             }
         }

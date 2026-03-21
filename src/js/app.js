@@ -252,6 +252,11 @@ class App {
             this._updateModeUI(e.target.value);
         });
 
+        // Translation type toggle (one-way / two-way)
+        document.getElementById('select-translation-type')?.addEventListener('change', (e) => {
+            this._updateTranslationTypeUI(e.target.value);
+        });
+
         // Soniox link
         document.getElementById('link-soniox').addEventListener('click', (e) => {
             e.preventDefault();
@@ -494,6 +499,18 @@ class App {
         document.getElementById('select-translation-mode').value = s.translation_mode || 'soniox';
         this._updateModeUI(s.translation_mode || 'soniox');
 
+        // Translation type (one-way / two-way)
+        const translationType = s.translation_type || 'one_way';
+        document.getElementById('select-translation-type').value = translationType;
+        this._updateTranslationTypeUI(translationType);
+
+        // Two-way language selects
+        document.getElementById('select-lang-a').value = s.language_a || 'ja';
+        document.getElementById('select-lang-b').value = s.language_b || 'vi';
+
+        // Strict language detection
+        document.getElementById('check-strict-lang').checked = s.language_hints_strict || false;
+
         // Audio source radio
         const radioValue = s.audio_source || 'system';
         const radio = document.querySelector(`input[name="audio-source"][value="${radioValue}"]`);
@@ -576,6 +593,10 @@ class App {
             source_language: document.getElementById('select-source-lang').value,
             target_language: document.getElementById('select-target-lang').value,
             translation_mode: document.getElementById('select-translation-mode').value,
+            translation_type: document.getElementById('select-translation-type')?.value || 'one_way',
+            language_a: document.getElementById('select-lang-a')?.value || 'ja',
+            language_b: document.getElementById('select-lang-b')?.value || 'vi',
+            language_hints_strict: document.getElementById('check-strict-lang')?.checked || false,
             audio_source: document.querySelector('input[name="audio-source"]:checked')?.value || 'system',
             overlay_opacity: parseInt(document.getElementById('range-opacity').value) / 100,
             font_size: parseInt(document.getElementById('range-font-size').value),
@@ -780,6 +801,26 @@ class App {
         }
     }
 
+    _updateTranslationTypeUI(type) {
+        const oneway = document.getElementById('section-oneway-langs');
+        const twoway = document.getElementById('section-twoway-langs');
+        const hintTwoway = document.getElementById('hint-twoway');
+        const strictLang = document.getElementById('section-strict-lang');
+
+        if (type === 'two_way') {
+            if (oneway) oneway.style.display = 'none';
+            if (twoway) twoway.style.display = 'flex';
+            if (hintTwoway) hintTwoway.style.display = 'block';
+            // Hide strict lang in two-way mode (both languages are specified)
+            if (strictLang) strictLang.style.display = 'none';
+        } else {
+            if (oneway) oneway.style.display = 'flex';
+            if (twoway) twoway.style.display = 'none';
+            if (hintTwoway) hintTwoway.style.display = 'none';
+            if (strictLang) strictLang.style.display = 'flex';
+        }
+    }
+
     _updateTTSButton() {
         const btn = document.getElementById('btn-tts');
         const iconOff = document.getElementById('icon-tts-off');
@@ -895,6 +936,10 @@ class App {
             sourceLanguage: settings.source_language,
             targetLanguage: settings.target_language,
             customContext: settings.custom_context,
+            translationType: settings.translation_type || 'one_way',
+            languageA: settings.language_a,
+            languageB: settings.language_b,
+            languageHintsStrict: settings.language_hints_strict || false,
         });
 
         // Start audio capture — Rust batches audio every 200ms, JS just forwards
