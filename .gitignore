@@ -56,3 +56,8 @@ docs/windows_port_plan.md
 # Dev/benchmark scripts (private repo only)
 scripts/benchmark_*.py
 scripts/test_*.py
+
+# Private files (dev-logs, agent instructions, internal docs)
+.private/
+GEMINI.md
+CLAUDE.md
