@@ -19,7 +19,7 @@ class App {
     constructor() {
         this.isRunning = false;
         this.isStarting = false; // Guard against re-entry
-        this.currentSource = 'system'; // 'system' | 'microphone'
+        this.currentSource = 'system'; // 'system' | 'microphone' | 'both'
         this.translationMode = 'soniox'; // 'soniox' | 'local'
         this.transcriptUI = null;
         this.appWindow = getCurrentWindow();
@@ -195,6 +195,9 @@ class App {
 
         document.getElementById('btn-source-mic').addEventListener('click', () => {
             this._setSource('microphone');
+        });
+        document.getElementById('btn-source-both').addEventListener('click', () => {
+            this._setSource('both');
         });
 
         // Clear button — save transcript file then clear
@@ -454,6 +457,12 @@ class App {
                 this._setSource('microphone');
             }
 
+            // Cmd/Ctrl + 3: Switch to Both
+            if ((e.metaKey || e.ctrlKey) && e.key === '3') {
+                e.preventDefault();
+                this._setSource('both');
+            }
+
             // Cmd/Ctrl + T: Toggle TTS
             if ((e.metaKey || e.ctrlKey) && e.key === 't') {
                 e.preventDefault();
@@ -688,7 +697,7 @@ class App {
         }
 
         // Update current source button states
-        this.currentSource = settings.audio_source === 'both' ? 'system' : (settings.audio_source || 'system');
+        this.currentSource = settings.audio_source || 'system';
         this._updateSourceButtons();
 
         // TTS is always OFF on app start — user must toggle on each session
@@ -873,19 +882,21 @@ class App {
 
     _setSource(source) {
         const wasRunning = this.isRunning;
+        const labels = { system: 'System Audio', microphone: 'Microphone', both: 'System + Mic' };
+        const label = labels[source] || source;
 
         // If currently running, restart with new source
         if (wasRunning) {
             this.stop().then(() => {
                 this.currentSource = source;
                 this._updateSourceButtons();
-                this._showToast(`Switched to ${source === 'system' ? 'System Audio' : 'Microphone'}`, 'success');
+                this._showToast(`Switched to ${label}`, 'success');
                 this.start();
             });
         } else {
             this.currentSource = source;
             this._updateSourceButtons();
-            this._showToast(`Source: ${source === 'system' ? 'System Audio' : 'Microphone'}`, 'success');
+            this._showToast(`Source: ${label}`, 'success');
         }
     }
 
@@ -894,6 +905,8 @@ class App {
             this.currentSource === 'system');
         document.getElementById('btn-source-mic').classList.toggle('active',
             this.currentSource === 'microphone');
+        document.getElementById('btn-source-both').classList.toggle('active',
+            this.currentSource === 'both');
     }
 
     _updateModeUI(mode) {

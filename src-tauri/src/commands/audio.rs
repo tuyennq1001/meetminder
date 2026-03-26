@@ -49,6 +49,32 @@ pub fn start_capture(
             let mut mic = state.microphone.lock().map_err(|e| e.to_string())?;
             mic.start()?
         }
+        "both" => {
+            // Start both sources and merge into a single receiver
+            let sys = state.system_audio.lock().map_err(|e| e.to_string())?;
+            let sys_rx = sys.start()?;
+            let mut mic = state.microphone.lock().map_err(|e| e.to_string())?;
+            let mic_rx = mic.start()?;
+
+            let (merged_tx, merged_rx) = mpsc::channel::<Vec<u8>>();
+            let tx1 = merged_tx.clone();
+            let tx2 = merged_tx;
+
+            // Forward system audio to merged channel
+            std::thread::spawn(move || {
+                while let Ok(data) = sys_rx.recv() {
+                    if tx1.send(data).is_err() { break; }
+                }
+            });
+            // Forward mic audio to merged channel
+            std::thread::spawn(move || {
+                while let Ok(data) = mic_rx.recv() {
+                    if tx2.send(data).is_err() { break; }
+                }
+            });
+
+            merged_rx
+        }
         _ => return Err(format!("Unknown source: {}", source)),
     };
 
