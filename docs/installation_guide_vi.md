@@ -75,7 +75,9 @@ Soniox cung cấp nhận diện giọng nói và dịch real-time.
 1. Bấm ⚙️ (hoặc `⌘ ,`) để mở **Settings**
 2. Vào tab **General**
 3. Dán **Soniox API key**
-4. Chọn **Source language** (ngôn ngữ nguồn) và **Target language** (ngôn ngữ dịch)
+4. Chọn kiểu dịch:
+   - **One-way** (Một chiều): Chọn ngôn ngữ nguồn và ngôn ngữ đích
+   - **Two-way** (Hai chiều): Chọn Language A và Language B (dành cho meeting song ngữ — app tự nhận diện ai đang nói và dịch sang ngôn ngữ còn lại)
 5. Chọn Translation Engine:
 
 | Chế độ | Tốc độ | Chất lượng | Chi phí | Internet |

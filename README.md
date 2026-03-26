@@ -28,7 +28,7 @@ System Audio / Mic → 16kHz PCM → Soniox API (STT + Translation) → Overlay 
 | Feature | Detail |
 |---------|--------|
 | **Latency** | ~2–3s |
-| **Languages** | 70+ (source) → any target |
+| **Languages** | 70+ (source) → any target, one-way & two-way |
 | **Cost** | ~$0.12/hr (Soniox API) |
 | **TTS** | 3 providers (Edge free, Google, ElevenLabs) |
 | **Platform** | macOS (ARM + Intel) · Windows |
@@ -55,9 +55,23 @@ Auto-scroll only when you're at the bottom. Scroll up to read old content withou
 
 A- / A+ floating controls (bottom-right on hover). Font size adjustable up to 140px — great for presentations.
 
+### 🔄 Two-Way Translation
+
+Translate conversations between two languages simultaneously — ideal for bilingual meetings.
+
+- **One-way**: Source language → Target language (e.g., Japanese → Vietnamese)
+- **Two-way**: Language A ↔ Language B (e.g., Vietnamese ↔ Japanese) — the app detects who is speaking and translates to the other language automatically
+
+**Setup for video calls** (Zoom, Google Meet, MS Teams):
+1. Audio Source: **Both** (System + Mic)
+2. Translation Type: **Two-way**
+3. Set Language A and Language B
+
+> **Note**: TTS narration is automatically disabled in two-way mode to prevent audio feedback loops (TTS output → mic recapture → re-translation).
+
 ### 🎙️ TTS Narration
 
-Read translations aloud — 3 providers:
+Read translations aloud in one-way mode — 3 providers:
 
 | | Edge TTS ⭐ | Google Chirp 3 HD | ElevenLabs |
 |-|-------------|-------------------|------------|

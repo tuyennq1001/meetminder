@@ -115,6 +115,8 @@ ElevenLabs specializes in **AI voice technology**, known for extremely natural v
 3. When enabled, translations are read aloud as they appear
 4. Switch providers anytime in Settings → TTS
 
+> **Two-way mode**: TTS is automatically disabled when using two-way translation. This prevents audio feedback loops where TTS output gets recaptured by the microphone and re-translated. The TTS button will appear grayed out in two-way mode.
+
 ---
 
 ## Troubleshooting

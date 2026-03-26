@@ -75,7 +75,9 @@ Soniox provides real-time speech recognition and translation.
 1. Click ⚙️ (or press `⌘ ,`) to open **Settings**
 2. Go to the **General** tab
 3. Paste your **Soniox API key**
-4. Choose **Source language** (language being spoken) and **Target language** (translation language)
+4. Choose translation type:
+   - **One-way**: Select Source language and Target language
+   - **Two-way**: Select Language A and Language B (for bilingual meetings — the app auto-detects and translates both directions)
 5. Choose Translation Engine:
 
 | Mode | Speed | Quality | Cost | Internet |

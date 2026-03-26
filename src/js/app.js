@@ -702,6 +702,13 @@ class App {
         const settings = settingsManager.get();
         const provider = settings.tts_provider || 'edge';
 
+        // Block TTS in two-way mode to prevent audio feedback loop
+        const translationType = document.getElementById('select-translation-type')?.value;
+        if (translationType === 'two_way') {
+            this._showToast('TTS is disabled in two-way mode to prevent audio loop', 'error');
+            return;
+        }
+
         // Check API key for premium providers
         if (provider === 'elevenlabs' && !settings.elevenlabs_api_key) {
             this._showToast('Add ElevenLabs API key in Settings → TTS', 'error');
@@ -825,11 +832,19 @@ class App {
             if (hintTwoway) hintTwoway.style.display = 'block';
             // Hide strict lang in two-way mode (both languages are specified)
             if (strictLang) strictLang.style.display = 'none';
+            // Force-disable TTS in two-way mode to prevent audio feedback loop
+            if (this.ttsEnabled) {
+                this.ttsEnabled = false;
+                this._getActiveTTS().disconnect();
+                audioPlayer.stop();
+            }
+            this._updateTTSButton();
         } else {
             if (oneway) oneway.style.display = 'flex';
             if (twoway) twoway.style.display = 'none';
             if (hintTwoway) hintTwoway.style.display = 'none';
             if (strictLang) strictLang.style.display = 'flex';
+            this._updateTTSButton();
         }
     }
 
@@ -837,8 +852,13 @@ class App {
         const btn = document.getElementById('btn-tts');
         const iconOff = document.getElementById('icon-tts-off');
         const iconOn = document.getElementById('icon-tts-on');
+        const isTwoWay = document.getElementById('select-translation-type')?.value === 'two_way';
 
-        if (btn) btn.classList.toggle('active', this.ttsEnabled);
+        if (btn) {
+            btn.classList.toggle('active', this.ttsEnabled);
+            btn.classList.toggle('disabled', isTwoWay);
+            btn.title = isTwoWay ? 'TTS disabled in two-way mode' : 'Toggle TTS (Ctrl+T)';
+        }
         if (iconOff) iconOff.style.display = this.ttsEnabled ? 'none' : 'block';
         if (iconOn) iconOn.style.display = this.ttsEnabled ? 'block' : 'none';
     }

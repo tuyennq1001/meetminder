@@ -203,6 +203,12 @@ body {
   background: rgba(99, 140, 255, 0.25);
 }
 
+.tts-action-btn.disabled {
+  opacity: 0.35;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
 .tts-label {
   font-weight: 600;
   letter-spacing: 0.5px;
