@@ -112,7 +112,11 @@ class GoogleTTS {
             }
         } catch (err) {
             console.error('[Google TTS] Error:', err);
-            this.onError?.(`Google TTS: ${err.message}`);
+            let msg = err.message;
+            if (msg.includes('blocked')) {
+                msg = 'API blocked — enable "Cloud Text-to-Speech API" in Google Cloud Console';
+            }
+            this.onError?.(`Google TTS: ${msg}`);
         }
 
         this._processQueue();
