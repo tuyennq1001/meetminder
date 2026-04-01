@@ -50,6 +50,8 @@ pub fn run() {
             commands::audio::check_permissions,
             commands::transcript::save_transcript,
             commands::transcript::open_transcript_dir,
+            commands::transcript::list_transcripts,
+            commands::transcript::read_transcript,
             commands::local_pipeline::start_local_pipeline,
             commands::local_pipeline::send_audio_to_pipeline,
             commands::local_pipeline::stop_local_pipeline,

@@ -20,6 +20,8 @@ export class TranscriptUI {
 
         // Segments: each has { original, translation, status, speaker, language, confidence }
         this.segments = [];
+        // sessionLog: parallel array — never trimmed, holds complete session history
+        this.sessionLog = [];
         this.provisionalText = '';
         this.provisionalSpeaker = null;
         this.provisionalLanguage = null;
@@ -56,7 +58,7 @@ export class TranscriptUI {
      */
     addOriginal(text, speaker, language) {
         this._removeListening();
-        this.segments.push({
+        const seg = {
             original: text,
             translation: null,
             status: 'original',
@@ -64,6 +66,17 @@ export class TranscriptUI {
             language: language || null,
             confidence: this.lastConfidence,
             createdAt: Date.now(),
+        };
+        this.segments.push(seg);
+        // Also push a separate copy to sessionLog (never trimmed)
+        this.sessionLog.push({
+            original: text,
+            translation: null,
+            status: 'original',
+            speaker: speaker || null,
+            language: language || null,
+            confidence: this.lastConfidence,
+            createdAt: seg.createdAt,
         });
         if (speaker) this.currentSpeaker = speaker;
         if (language) this.currentLanguage = language;
@@ -79,13 +92,24 @@ export class TranscriptUI {
         if (seg) {
             seg.translation = text;
             seg.status = 'translated';
+            // Mirror update in sessionLog: find matching entry by createdAt
+            const logSeg = this.sessionLog.find(
+                s => s.status === 'original' && s.createdAt === seg.createdAt
+            );
+            if (logSeg) {
+                logSeg.translation = text;
+                logSeg.status = 'translated';
+            }
         } else {
-            this.segments.push({
+            const newSeg = {
                 original: '',
                 translation: text,
                 status: 'translated',
                 speaker: null,
-            });
+                createdAt: Date.now(),
+            };
+            this.segments.push(newSeg);
+            this.sessionLog.push({ ...newSeg });
         }
         this._render();
     }
@@ -136,6 +160,7 @@ export class TranscriptUI {
       </div>
     `;
         this.segments = [];
+        this.sessionLog = [];
         this.provisionalText = '';
         this.provisionalSpeaker = null;
         this.provisionalLanguage = null;
@@ -246,7 +271,57 @@ export class TranscriptUI {
     }
 
     /**
-     * Clear all
+     * Check if sessionLog has content (full session, not display buffer)
+     */
+    hasSessionContent() {
+        return this.sessionLog.length > 0;
+    }
+
+    /**
+     * Get full session text from sessionLog (never trimmed).
+     * Returns formatted markdown with all segments.
+     */
+    getFullSessionText(metadata = {}) {
+        if (this.sessionLog.length === 0) return null;
+
+        const lines = [];
+
+        // YAML frontmatter
+        lines.push('---');
+        const now = new Date();
+        lines.push(`date: ${now.toISOString().slice(0, 10)}`);
+        lines.push(`time: ${now.toTimeString().slice(0, 8)}`);
+        if (metadata.duration) lines.push(`duration: ${metadata.duration}`);
+        if (metadata.sourceLang) lines.push(`source_lang: ${metadata.sourceLang}`);
+        if (metadata.targetLang) lines.push(`target_lang: ${metadata.targetLang}`);
+        if (metadata.mode) lines.push(`mode: ${metadata.mode}`);
+        if (metadata.audioSource) lines.push(`audio_source: ${metadata.audioSource}`);
+        if (metadata.model) lines.push(`model: ${metadata.model}`);
+        lines.push(`segments: ${this.sessionLog.length}`);
+        lines.push('---');
+        lines.push('');
+
+        // Transcript entries
+        for (const seg of this.sessionLog) {
+            if (seg.speaker) lines.push(`**Speaker ${seg.speaker}:**`);
+            if (seg.original) lines.push(`> ${seg.original}`);
+            if (seg.translation) lines.push(seg.translation);
+            lines.push('');
+        }
+
+        return lines.join('\n').trim();
+    }
+
+    /**
+     * Clear session log (call after saving)
+     */
+    clearSession() {
+        this.sessionLog = [];
+    }
+
+    /**
+     * Clear display buffer only (segments array).
+     * sessionLog is NOT cleared — use clearSession() explicitly.
      */
     clear() {
         this.container.innerHTML = '';

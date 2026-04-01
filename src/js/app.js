@@ -26,6 +26,10 @@ class App {
         this.localPipelineChannel = null;
         this.localPipelineReady = false;
         this.recordingStartTime = null;
+        this.sessionStartTime = null;  // Session start timestamp (new Date())
+        this.sessionSourceLang = 'auto';
+        this.sessionTargetLang = 'vi';
+        this.sessionMode = 'one_way';
         this.ttsEnabled = false;  // TTS runtime toggle
         this.isPinned = true;     // Always-on-top state
         this.isCompact = false;   // Compact mode (hide control bar)
@@ -115,16 +119,38 @@ class App {
             this._showView('settings');
         });
 
+        // Sessions button
+        document.getElementById('btn-sessions').addEventListener('click', () => {
+            this._showView('sessions');
+        });
+
         // Back from settings
         document.getElementById('btn-back').addEventListener('click', () => {
             this._showView('overlay');
         });
 
+        // Back from sessions
+        document.getElementById('btn-sessions-back').addEventListener('click', () => {
+            this._showView('overlay');
+        });
+
+        // Back from session viewer to session list
+        document.getElementById('btn-session-back-to-list').addEventListener('click', () => {
+            document.getElementById('sessions-list-panel').style.display = '';
+            document.getElementById('session-viewer').style.display = 'none';
+        });
+
+        // Copy session content
+        document.getElementById('btn-session-copy').addEventListener('click', async () => {
+            const content = document.getElementById('session-viewer-content')?.textContent || '';
+            if (content) {
+                await navigator.clipboard.writeText(content);
+                this._showToast('Copied to clipboard', 'success');
+            }
+        });
+
         // Close button (overlay)
         document.getElementById('btn-close').addEventListener('click', async () => {
-            if (this.transcriptUI.hasSegments()) {
-                await this._saveTranscriptFile();
-            }
             await this._saveWindowPosition();
             await this.stop();
             await this.appWindow.close();
@@ -200,11 +226,8 @@ class App {
             this._setSource('both');
         });
 
-        // Clear button — save transcript file then clear
+        // Clear button — clears display only (auto-save happens on stop)
         document.getElementById('btn-clear').addEventListener('click', async () => {
-            if (this.transcriptUI.hasSegments()) {
-                await this._saveTranscriptFile();
-            }
             this.transcriptUI.clear();
             this.transcriptUI.showPlaceholder();
             this.recordingStartTime = null;
@@ -221,7 +244,7 @@ class App {
             }
         });
 
-        // Open saved transcripts folder
+        // Open saved transcripts folder (kept for Finder access)
         document.getElementById('btn-open-transcripts').addEventListener('click', async () => {
             try {
                 await invoke('open_transcript_dir');
@@ -495,9 +518,13 @@ class App {
     _showView(view) {
         document.getElementById('overlay-view').classList.toggle('active', view === 'overlay');
         document.getElementById('settings-view').classList.toggle('active', view === 'settings');
+        document.getElementById('sessions-view').classList.toggle('active', view === 'sessions');
 
         if (view === 'settings') {
             this._populateSettingsForm();
+        }
+        if (view === 'sessions') {
+            this._showSessions();
         }
     }
 
@@ -950,6 +977,20 @@ class App {
         this._updateStartButton();
         if (!this.recordingStartTime) this.recordingStartTime = Date.now();
 
+        // Record session metadata for auto-save
+        if (!this.sessionStartTime) {
+            this.sessionStartTime = new Date();
+            const translationType = settings.translation_type || 'one_way';
+            this.sessionMode = translationType;
+            if (translationType === 'two_way') {
+                this.sessionSourceLang = settings.language_a || 'ja';
+                this.sessionTargetLang = settings.language_b || 'vi';
+            } else {
+                this.sessionSourceLang = settings.source_language || 'auto';
+                this.sessionTargetLang = settings.target_language || 'vi';
+            }
+        }
+
         // Clear transcript only if nothing is showing
         if (!this.transcriptUI.hasContent()) {
             this.transcriptUI.showListening();
@@ -1311,10 +1352,14 @@ class App {
 
         audioPlayer.stop();
 
-        // Auto-save on stop (safety net)
-        if (this.transcriptUI.hasSegments()) {
+        // Auto-save on stop — use full sessionLog (not trimmed display buffer)
+        if (this.transcriptUI.hasSessionContent()) {
             await this._saveTranscriptFile();
+            this.transcriptUI.clearSession();
         }
+
+        // Reset session tracking
+        this.sessionStartTime = null;
     }
 
     _updateStartButton() {
@@ -1337,18 +1382,21 @@ class App {
     }
 
     async _saveTranscriptFile() {
-        const duration = this.recordingStartTime
-            ? this._formatDuration(Date.now() - this.recordingStartTime)
-            : 'unknown';
+        const startMs = this.recordingStartTime || Date.now();
+        const durationMs = Date.now() - startMs;
+        const duration = this._formatDuration(durationMs);
 
-        const sourceLang = document.getElementById('select-source-lang')?.value || 'auto';
-        const targetLang = document.getElementById('select-target-lang')?.value || 'vi';
+        // Use session metadata captured at start()
+        const sourceLang = this.sessionSourceLang || document.getElementById('select-source-lang')?.value || 'auto';
+        const targetLang = this.sessionTargetLang || document.getElementById('select-target-lang')?.value || 'vi';
+        const mode = this.sessionMode || 'one_way';
 
-        const content = this.transcriptUI.getFormattedContent({
+        const content = this.transcriptUI.getFullSessionText({
             model: this.translationMode === 'soniox' ? 'Soniox Cloud API' : 'Local MLX Whisper',
             sourceLang,
             targetLang,
             duration,
+            mode,
             audioSource: this.currentSource,
         });
 
@@ -1489,6 +1537,82 @@ class App {
     }
 
     // ─── Toast ─────────────────────────────────────────────
+
+    // ─── Session History ───────────────────────────────────
+
+    async _showSessions() {
+        const listEl = document.getElementById('sessions-list');
+        const listPanel = document.getElementById('sessions-list-panel');
+        const viewer = document.getElementById('session-viewer');
+
+        if (listPanel) listPanel.style.display = '';
+        if (viewer) viewer.style.display = 'none';
+        if (!listEl) return;
+
+        listEl.innerHTML = '<div class="sessions-loading">Loading...</div>';
+
+        try {
+            const sessions = await invoke('list_transcripts');
+            if (sessions.length === 0) {
+                listEl.innerHTML = '<div class="sessions-empty">No saved sessions yet.</div>';
+                return;
+            }
+
+            listEl.innerHTML = sessions.map(s => {
+                const meta = this._parseSessionMeta(s);
+                return `<div class="session-item" data-filename="${this._escAttr(s.filename)}">
+                    <div class="session-item-date">${meta.date}</div>
+                    <div class="session-item-meta">
+                        <span class="session-item-time">${meta.time}</span>
+                        ${meta.duration ? `<span class="session-item-duration">${meta.duration}</span>` : ''}
+                        ${meta.langPair ? `<span class="session-item-langs">${meta.langPair}</span>` : ''}
+                    </div>
+                    <div class="session-item-size">${this._formatBytes(s.size_bytes)}</div>
+                </div>`;
+            }).join('');
+
+            listEl.querySelectorAll('.session-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    this._openSession(item.dataset.filename);
+                });
+            });
+        } catch (err) {
+            listEl.innerHTML = `<div class="sessions-empty">Error: ${err}</div>`;
+        }
+    }
+
+    async _openSession(filename) {
+        const listPanel = document.getElementById('sessions-list-panel');
+        const viewer = document.getElementById('session-viewer');
+        const title = document.getElementById('session-viewer-title');
+        const content = document.getElementById('session-viewer-content');
+
+        if (listPanel) listPanel.style.display = 'none';
+        if (viewer) viewer.style.display = '';
+        if (title) title.textContent = filename.replace('.md', '').replace('_', ' ');
+        if (content) content.textContent = 'Loading...';
+
+        try {
+            const text = await invoke('read_transcript', { filename });
+            if (content) content.textContent = text;
+        } catch (err) {
+            if (content) content.textContent = `Error loading session: ${err}`;
+        }
+    }
+
+    _parseSessionMeta(session) {
+        // created_at format: "2026-03-27 10:21:05"
+        const parts = (session.created_at || '').split(' ');
+        const date = parts[0] || '';
+        const time = parts[1] ? parts[1].slice(0, 5) : '';
+        return { date, time, duration: '', langPair: '' };
+    }
+
+    _formatBytes(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    }
 
     async _checkForUpdates() {
         updater.onUpdateFound = (version, notes) => {
