@@ -255,11 +255,39 @@ jobs:
           echo "Generated latest.json:"
           cat artifacts/latest.json
 
+      - name: Extract release notes from changelog
+        id: notes
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          CHANGELOG="docs/project-changelog.md"
+          OUT="release-notes.md"
+
+          # Extract section between "## v${VERSION}" and the next "## v" heading
+          awk -v tag="## v${VERSION}" '
+            $0 ~ "^" tag " " || $0 ~ "^" tag "$" { flag=1; next }
+            /^## v/ { flag=0 }
+            flag { print }
+          ' "$CHANGELOG" > "$OUT"
+
+          # Fallback if section is empty (missing entry)
+          if [ ! -s "$OUT" ]; then
+            echo "Release v${VERSION}" > "$OUT"
+            echo "" >> "$OUT"
+            echo "See commits: https://github.com/phuc-nt/my-translator/compare/...v${VERSION}" >> "$OUT"
+          fi
+
+          # Append auto-generated full changelog link
+          echo "" >> "$OUT"
+          echo "**Full Changelog**: https://github.com/phuc-nt/my-translator/compare/...v${VERSION}" >> "$OUT"
+
+          echo "--- Release notes preview ---"
+          cat "$OUT"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          generate_release_notes: true
+          body_path: release-notes.md
           files: |
             artifacts/**/*.dmg
             artifacts/**/*.exe
