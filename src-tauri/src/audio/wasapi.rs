@@ -96,7 +96,7 @@ use windows::Win32::Media::Audio::{
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED,
 };
-use windows::core::{implement, IUnknown, PCWSTR};
+use windows::core::{implement, IUnknown, Interface, PCWSTR};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COM completion handler for ActivateAudioInterfaceAsync
