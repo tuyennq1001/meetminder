@@ -115,7 +115,7 @@ impl IActivateAudioInterfaceCompletionHandler_Impl for CompletionHandler_Impl {
         let result: Result<IAudioClient, String> = (|| {
             let op =
                 activate_operation.ok_or_else(|| "No operation provided".to_string())?;
-            let mut hr = windows::Win32::Foundation::HRESULT(0);
+            let mut hr = windows::core::HRESULT(0);
             let mut activated: Option<IUnknown> = None;
             unsafe {
                 op.GetActivateResult(&mut hr, &mut activated)

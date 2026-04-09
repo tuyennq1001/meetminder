@@ -1,6 +1,6 @@
 [package]
 name = "my-translator"
-version = "0.5.1"
+version = "0.5.2"
 description = "Personal Real-time Speech Translator"
 authors = ["phucnt"]
 edition = "2021"
@@ -37,6 +37,7 @@ screencapturekit = "1.5"
 
 # Windows: WASAPI for system audio (ALAC + legacy loopback)
 [target.'cfg(target_os = "windows")'.dependencies]
+windows-core = "0.58"
 windows = { version = "0.58", features = [
   "implement",
   "Win32_Media_Audio",
