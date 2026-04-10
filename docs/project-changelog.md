@@ -7,6 +7,18 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## v0.5.3 - 2026-04-10
+
+### Bug Fixes
+
+- **Windows**: Fix app crashing a few seconds after pressing Play. The Application Loopback (ALAC) path introduced in v0.5.2 had an incorrect stream setup that caused an access violation during capture. Reverted to the v0.5.1 legacy WASAPI loopback path, which is known to be stable.
+
+### Known Limitation (reintroduced)
+
+- Windows system audio capture will include the app's own TTS output. In one-way mode, use headphones to avoid feedback. Two-way mode already disables TTS, so no change there. Self-exclusion will be revisited once it can be properly tested on a real Windows machine.
+
+---
+
 ## v0.5.2 - 2026-04-09
 
 ### New Features

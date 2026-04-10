@@ -1,6 +1,6 @@
 [package]
 name = "my-translator"
-version = "0.5.2"
+version = "0.5.3"
 description = "Personal Real-time Speech Translator"
 authors = ["phucnt"]
 edition = "2021"
@@ -35,15 +35,11 @@ rand = "0.8"
 tauri = { version = "2", features = ["macos-private-api"] }
 screencapturekit = "1.5"
 
-# Windows: WASAPI for system audio (ALAC + legacy loopback)
+# Windows: WASAPI for system audio (legacy loopback only)
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-core = "0.58"
 windows = { version = "0.58", features = [
-  "implement",
   "Win32_Media_Audio",
   "Win32_System_Com",
-  "Win32_System_Com_StructuredStorage",
-  "Win32_System_Variant",
   "Win32_Foundation",
 ] }
 
