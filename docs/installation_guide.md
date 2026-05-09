@@ -7,9 +7,10 @@ Step-by-step guide to install and use **My Translator** on macOS.
 ## Requirements
 
 - macOS 13 or later (Apple Silicon — M1/M2/M3/M4)
-- **Cloud mode**: [Soniox](https://soniox.com) API key (pay-per-use, ~$0.12/hour)
+- **Soniox mode** (recommended): [Soniox](https://soniox.com) API key (pay-per-use, ~$0.12/hour)
+- **OpenAI Realtime mode** (premium): [OpenAI](https://platform.openai.com) API key (~$4/hour — much pricier, but returns native translated voice)
 - **Local mode**: ~5 GB free disk space (for AI models, one-time download)
-- **TTS narration** (optional): See [TTS Guide](tts_guide.md) for provider options
+- **TTS narration** (optional, text engines only): See [TTS Guide](tts_guide.md) for provider options
 
 ---
 
@@ -70,24 +71,49 @@ Soniox provides real-time speech recognition and translation.
 
 ---
 
+## Step 5b — Get an OpenAI API Key (Optional)
+
+Skip this step if you only plan to use Soniox or Local mode.
+
+OpenAI Realtime is the **premium** engine — it returns translated text **and** translated speech audio over a single stream, so no separate TTS provider is needed. The trade-off is cost: about **$4/hour** vs Soniox's $0.12/hour (~34× more expensive at provider list rates).
+
+1. Go to [platform.openai.com](https://platform.openai.com) → create an account
+2. Add billing:
+   - Click **Settings → Billing**
+   - Add a payment method and add credits ($10 ≈ ~2.5 hours of translation)
+3. Create API key:
+   - Click **API keys** → **Create new secret key**
+   - Copy the key (format: `sk-...`)
+
+> ⚠️ **Cost warning**: OpenAI Realtime is roughly 34× pricier than Soniox. Use it for high-stakes meetings where translation quality and native voice matter. For general use, Soniox is the better default.
+>
+> 📊 See [**OpenAI Realtime vs Soniox benchmark**](benchmark_openai_vs_soniox.md) for a real-world comparison.
+
+---
+
 ## Step 6 — Configure the App
 
 1. Click ⚙️ (or press `⌘ ,`) to open **Settings**
 2. Go to the **General** tab
-3. Paste your **Soniox API key**
+3. Paste your **Soniox API key** and/or **OpenAI API key** (whichever engines you want enabled)
+   - A green dot ✓ next to each key field means the key format looks valid; click **Test** to ping the provider live
+   - Engines without a valid key are greyed out in the dropdown
 4. Choose translation type:
    - **One-way**: Select Source language and Target language
-   - **Two-way**: Select Language A and Language B (for bilingual meetings — the app auto-detects and translates both directions)
+   - **Two-way**: Select Language A and Language B (for bilingual meetings — the app auto-detects and translates both directions). *Two-way is unavailable on OpenAI Realtime — use Soniox or Local for two-way.*
 5. Choose Translation Engine:
 
-| Mode | Speed | Quality | Cost | Internet |
-|------|-------|---------|------|----------|
-| ☁️ **Soniox API (Cloud)** | Real-time (~2s) | 9/10 | ~$0.12/hr | Required |
-| 🖥️ **Local MLX (Offline)** | ~10s delay | 7/10 | Free | Not needed |
+| Mode | Speed | Quality | Cost | Voice output | Internet |
+|------|-------|---------|------|--------------|----------|
+| ☁️ **Soniox** | ~2 s | 9/10 | ~$0.12/hr | Via TTS (free–$8/hr) | Required |
+| ⚡ **OpenAI Realtime** | ~1.5 s | 9.5/10, very idiomatic | **~$4/hr** | ✅ Native, included | Required |
+| 🖥️ **Local MLX** | ~10 s | 7/10 | Free | Via TTS | Not needed |
 
 6. Click **Save & Close**
 
 > **Local MLX** requires Apple Silicon (M1+) and ~5 GB disk. Models are downloaded automatically on first use.
+>
+> **OpenAI Realtime** supports 13 target languages: en, es, pt, fr, de, it, ru, hi, id, vi, ja, ko, zh. For Thai or other languages, use Soniox. The custom TTS toggle is automatically disabled while OpenAI Realtime is selected (audio comes from the model itself).
 
 ---
 
@@ -147,7 +173,16 @@ See [TTS Guide](tts_guide.md) for step-by-step API key instructions.
 → Check **Screen & System Audio Recording** is enabled in System Settings (see Step 4)
 
 ### "No API key" error
-→ Open Settings (⚙️) and paste your Soniox API key (see Step 5)
+→ Open Settings (⚙️) and paste a Soniox key (Step 5) and/or an OpenAI key (Step 5b) for whichever engine you selected
+
+### OpenAI Realtime: engine option is greyed out
+→ The OpenAI key field is empty or the key format is invalid (must start with `sk-`). Paste a fresh key, then click **Test** to verify
+
+### OpenAI Realtime: "Two-way" toggle is hidden
+→ This is expected. Two-way mode is only available on Soniox and Local MLX. Switch engines if you need it
+
+### Translation cost is much higher than expected
+→ Confirm which engine you're using. OpenAI Realtime is ~$4/hour vs Soniox's ~$0.12/hour. The engine indicator shows under the dropdown in Settings
 
 ### "No microphone found" error
 → Mac Mini has no built-in microphone. Connect an external mic (USB, headset, AirPods)

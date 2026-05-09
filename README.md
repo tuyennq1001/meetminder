@@ -20,20 +20,27 @@
 ## How It Works
 
 ```
-System Audio / Mic → 16kHz PCM → Soniox API (STT + Translation) → Overlay UI
-                                                                    ↓ (optional)
-                                                            TTS (Edge/Google/ElevenLabs) → 🔊
+                                    ┌── ☁️  Soniox  (text)         ──┐
+System Audio / Mic → 16kHz PCM ─────┼── ⚡ OpenAI Realtime (text+🔊)─┼─→ Overlay UI
+                                    └── 🖥️  Local MLX  (text, offline) ┘
+                                                                       ↓ (optional, text engines)
+                                                  TTS (Edge / Google / ElevenLabs) → 🔊
 ```
+
+Three translation engines, pick what fits your call:
 
 | Feature | Detail |
 |---------|--------|
-| **Latency** | ~2–3s |
-| **Languages** | 70+ (source) → any target, one-way & two-way |
-| **Cost** | ~$0.12/hr (Soniox API) |
-| **TTS** | 3 providers (Edge free, Google, ElevenLabs) |
-| **Platform** | macOS (ARM + Intel) · Windows |
+| **Engines** | ☁️ Soniox · ⚡ OpenAI Realtime · 🖥️ Local MLX |
+| **Latency** | ~2–3 s (Soniox / OpenAI) · ~10 s (Local) |
+| **Languages** | 70+ source → any target (Soniox), 13 targets (OpenAI), JA/EN/ZH/KO → VI/EN (Local) |
+| **Cost** | ~$0.12/hr (Soniox) · ~$4/hr (OpenAI, includes native voice) · Free (Local) |
+| **TTS** | 3 providers for text engines (Edge free, Google, ElevenLabs) — OpenAI streams its own voice |
+| **Platform** | macOS (ARM + Intel) · Windows · Local mode = Apple Silicon only |
 | **Signed** | ✅ macOS signed & notarized |
 | **Auto-Update** | ✅ Built-in, check & install from Settings |
+
+> 📊 Detailed head-to-head: [**OpenAI Realtime vs Soniox benchmark**](docs/benchmark_openai_vs_soniox.md) — speed, quality, cost, and translation-mechanism comparison from a 5-min real-world test.
 
 ---
 
@@ -97,6 +104,12 @@ Pneumonia = Viêm phổi
 
 Add terms in Settings → Translation → Translation terms. Great for religious, medical, or technical content.
 
+### ⚡ OpenAI Realtime Mode
+
+Single-call streaming translation via OpenAI's `gpt-realtime-translate` (May 2026 GA). Returns **translated text *and* translated speech audio** over one WebSocket — no separate TTS step, lower end-to-end latency, more idiomatic output. Trade-off: **~$4/hr**, charged to your own OpenAI account. 13 target languages: en, es, pt, fr, de, it, ru, hi, id, vi, ja, ko, zh.
+
+Two-way mode and the custom TTS toggle are unavailable while OpenAI Realtime is selected (audio is native).
+
 ### 🖥️ Local Mode (Apple Silicon only)
 
 Experimental offline mode using MLX + Whisper + Gemma — runs 100% on-device. JA/EN/ZH/KO → VI/EN.
@@ -121,6 +134,8 @@ Experimental offline mode using MLX + Whisper + Gemma — runs 100% on-device. J
 - **[WASAPI](https://learn.microsoft.com/en-us/windows/win32/coreaudio/wasapi)** — Windows system audio
 - **[cpal](https://github.com/RustAudio/cpal)** — Cross-platform microphone
 - **[Soniox](https://soniox.com)** — Real-time STT + translation
+- **[OpenAI Realtime Translate](https://platform.openai.com/docs/guides/realtime)** — `gpt-realtime-translate` (text + native voice)
+- **[MLX](https://github.com/ml-explore/mlx)** — On-device Whisper + Gemma for offline mode
 - **[Edge TTS](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/index-text-to-speech)** — Free neural TTS (default)
 - **[Google Cloud TTS](https://cloud.google.com/text-to-speech)** — Chirp 3 HD (near-human quality)
 - **[ElevenLabs](https://elevenlabs.io)** — Premium TTS

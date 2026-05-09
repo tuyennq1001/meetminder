@@ -6,6 +6,7 @@ use audio::microphone::MicCapture;
 use audio::SystemAudioCapture;
 use commands::audio::AudioState;
 use commands::local_pipeline::LocalPipelineState;
+use commands::openai_realtime::OpenAiState;
 use settings::{Settings, SettingsState};
 use std::sync::Mutex;
 
@@ -42,6 +43,7 @@ pub fn run() {
         .manage(LocalPipelineState {
             process: Mutex::new(None),
         })
+        .manage(OpenAiState::default())
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_settings,
             commands::settings::save_settings,
@@ -52,12 +54,24 @@ pub fn run() {
             commands::transcript::open_transcript_dir,
             commands::transcript::list_transcripts,
             commands::transcript::read_transcript,
+            commands::session_store::save_session,
+            commands::session_store::list_sessions,
+            commands::session_store::read_session,
+            commands::session_store::read_legacy_session,
+            commands::session_store::delete_session,
+            commands::session_store::update_session_title,
+            commands::session_store::export_session_srt,
+            commands::session_store::export_session_txt,
+            commands::session_store::search_sessions,
             commands::local_pipeline::start_local_pipeline,
             commands::local_pipeline::send_audio_to_pipeline,
             commands::local_pipeline::stop_local_pipeline,
             commands::local_pipeline::check_mlx_setup,
             commands::local_pipeline::run_mlx_setup,
             commands::edge_tts::edge_tts_speak,
+            commands::openai_realtime::openai_realtime_start,
+            commands::openai_realtime::openai_realtime_send_audio,
+            commands::openai_realtime::openai_realtime_stop,
             get_platform_info,
         ])
         .run(tauri::generate_context!())

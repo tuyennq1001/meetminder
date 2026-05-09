@@ -61,3 +61,6 @@ scripts/test_*.py
 .private/
 GEMINI.md
 CLAUDE.md
+
+# Local test fixtures (large media)
+live-test/

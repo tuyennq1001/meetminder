@@ -7,9 +7,10 @@ Hướng dẫn từng bước cài đặt và sử dụng **My Translator** trê
 ## Yêu cầu
 
 - macOS 13 trở lên (Apple Silicon — chip M1/M2/M3/M4)
-- **Chế độ Cloud**: API key của [Soniox](https://soniox.com) (trả theo dùng, ~$0.12/giờ)
+- **Soniox** (khuyên dùng): API key của [Soniox](https://soniox.com) (trả theo dùng, ~$0.12/giờ)
+- **OpenAI Realtime** (cao cấp): API key của [OpenAI](https://platform.openai.com) (~$4/giờ — đắt hơn nhiều, nhưng có sẵn giọng nói dịch)
 - **Chế độ Local**: ~5 GB dung lượng ổ cứng (cho mô hình AI, tải một lần)
-- **Thuyết minh TTS** (tuỳ chọn): Xem [Hướng dẫn TTS](tts_guide_vi.md)
+- **Thuyết minh TTS** (tuỳ chọn, dành cho engine text): Xem [Hướng dẫn TTS](tts_guide_vi.md)
 
 ---
 
@@ -70,24 +71,49 @@ Soniox cung cấp nhận diện giọng nói và dịch real-time.
 
 ---
 
+## Bước 5b — Lấy API Key OpenAI (Tuỳ chọn)
+
+Bỏ qua bước này nếu chỉ định dùng Soniox hoặc Local mode.
+
+OpenAI Realtime là engine **cao cấp** — trả về cả văn bản dịch **và giọng nói dịch** trên cùng một stream, không cần TTS riêng. Đánh đổi: chi phí khoảng **$4/giờ**, đắt hơn Soniox khoảng **34 lần**.
+
+1. Vào [platform.openai.com](https://platform.openai.com) → tạo tài khoản
+2. Nạp tiền:
+   - Click **Settings → Billing**
+   - Thêm phương thức thanh toán và nạp credit ($10 ≈ ~2.5 giờ dịch)
+3. Tạo API key:
+   - Click **API keys** → **Create new secret key**
+   - Copy key (dạng `sk-...`)
+
+> ⚠️ **Cảnh báo chi phí**: OpenAI Realtime đắt hơn Soniox khoảng 34 lần. Phù hợp cho cuộc họp quan trọng cần chất lượng dịch và giọng nói tốt nhất. Dùng hàng ngày, Soniox vẫn là lựa chọn mặc định tốt hơn.
+>
+> 📊 Xem [**Benchmark OpenAI Realtime vs Soniox**](benchmark_openai_vs_soniox_vi.md) để so sánh thực tế.
+
+---
+
 ## Bước 6 — Cấu hình App
 
 1. Bấm ⚙️ (hoặc `⌘ ,`) để mở **Settings**
 2. Vào tab **General**
-3. Dán **Soniox API key**
+3. Dán **Soniox API key** và/hoặc **OpenAI API key** (tuỳ engine bạn muốn bật)
+   - Dấu chấm xanh ✓ cạnh ô key nghĩa là định dạng key hợp lệ; bấm **Test** để ping thật tới provider
+   - Engine không có key hợp lệ sẽ bị mờ trong dropdown
 4. Chọn kiểu dịch:
    - **One-way** (Một chiều): Chọn ngôn ngữ nguồn và ngôn ngữ đích
-   - **Two-way** (Hai chiều): Chọn Language A và Language B (dành cho meeting song ngữ — app tự nhận diện ai đang nói và dịch sang ngôn ngữ còn lại)
+   - **Two-way** (Hai chiều): Chọn Language A và Language B (dành cho meeting song ngữ — app tự nhận diện ai đang nói và dịch sang ngôn ngữ còn lại). *Two-way không khả dụng với OpenAI Realtime — dùng Soniox hoặc Local nếu cần two-way.*
 5. Chọn Translation Engine:
 
-| Chế độ | Tốc độ | Chất lượng | Chi phí | Internet |
-|--------|--------|------------|---------|----------|
-| ☁️ **Soniox API (Cloud)** | Real-time (~2 giây) | 9/10 | ~$0.12/giờ | Cần |
-| 🖥️ **Local MLX (Offline)** | ~10 giây delay | 7/10 | Miễn phí | Không cần |
+| Chế độ | Tốc độ | Chất lượng | Chi phí | Giọng nói | Internet |
+|--------|--------|------------|---------|-----------|----------|
+| ☁️ **Soniox** | ~2 giây | 9/10 | ~$0.12/giờ | Qua TTS (miễn phí–$8/giờ) | Cần |
+| ⚡ **OpenAI Realtime** | ~1.5 giây | 9.5/10, dịch rất tự nhiên | **~$4/giờ** | ✅ Có sẵn | Cần |
+| 🖥️ **Local MLX** | ~10 giây | 7/10 | Miễn phí | Qua TTS | Không cần |
 
 6. Bấm **Save & Close**
 
 > **Local MLX** yêu cầu Apple Silicon (M1+) và ~5 GB ổ cứng. Model tự tải lần đầu.
+>
+> **OpenAI Realtime** hỗ trợ 13 ngôn ngữ đích: en, es, pt, fr, de, it, ru, hi, id, vi, ja, ko, zh. Cho tiếng Thái hoặc các ngôn ngữ khác, dùng Soniox. Tuỳ chọn TTS tự động bị tắt khi chọn OpenAI Realtime (giọng nói đã có sẵn từ model).
 
 ---
 
@@ -147,7 +173,16 @@ Xem [Hướng dẫn TTS](tts_guide_vi.md) để biết cách lấy API key từn
 → Kiểm tra đã bật quyền **Screen & System Audio Recording** chưa (xem Bước 4)
 
 ### Lỗi "No API key"
-→ Vào Settings (⚙️) và dán API key Soniox (xem Bước 5)
+→ Vào Settings (⚙️) và dán Soniox key (Bước 5) và/hoặc OpenAI key (Bước 5b) tuỳ theo engine đang chọn
+
+### OpenAI Realtime: option engine bị mờ
+→ Chưa nhập OpenAI key hoặc key sai định dạng (phải bắt đầu bằng `sk-`). Dán key mới rồi bấm **Test** để xác nhận
+
+### OpenAI Realtime: nút "Two-way" biến mất
+→ Đây là hành vi mong đợi. Two-way chỉ khả dụng với Soniox và Local MLX. Đổi engine nếu cần
+
+### Chi phí cao hơn dự tính
+→ Kiểm tra engine đang dùng. OpenAI Realtime ~$4/giờ vs Soniox ~$0.12/giờ. Engine hiện tại hiển thị dưới dropdown trong Settings
 
 ### Lỗi "No microphone found"
 → Mac Mini không có mic tích hợp. Cần kết nối mic ngoài (USB, headset, AirPods)
