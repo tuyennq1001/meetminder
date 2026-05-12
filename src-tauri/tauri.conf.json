@@ -45,7 +45,8 @@
     "macOS": {
       "entitlements": "Entitlements.plist",
       "frameworks": [],
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "Developer ID Application: Trong Phuc Nguyen (75EN938B6L)"
     },
     "createUpdaterArtifacts": true
   },

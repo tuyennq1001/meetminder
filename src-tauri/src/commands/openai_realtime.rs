@@ -298,6 +298,22 @@ fn handle_server_event(text: &str, event_ch: &Channel<OpenAiEvent>, audio_output
                 });
             }
         }
+        "session.input_transcript.done" | "session.input_audio_transcription.completed" => {
+            // Whisper-side final for the input chunk. The `transcript` field
+            // carries the full source text — use it as the authoritative source
+            // (deltas can arrive at a different cadence than output translation
+            // deltas, so accumulating deltas alone misaligns source/target pairs).
+            let final_text = value
+                .get("transcript")
+                .and_then(|v| v.as_str())
+                .or_else(|| value.get("text").and_then(|v| v.as_str()));
+            if let Some(t) = final_text {
+                let _ = event_ch.send(OpenAiEvent::SourceTranscript {
+                    text: t.into(),
+                    is_final: true,
+                });
+            }
+        }
         "session.output_transcript.delta" => {
             if let Some(delta) = value.get("delta").and_then(|v| v.as_str()) {
                 let _ = event_ch.send(OpenAiEvent::Transcript {

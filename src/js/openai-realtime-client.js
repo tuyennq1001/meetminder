@@ -21,6 +21,10 @@ export class OpenAiRealtimeClient {
 
         this._provisionalBuffer = '';
         this._sourceBuffer = '';
+        // Finalized source-language transcripts (from session.input_transcript.done)
+        // waiting to be paired with the next translated target final. Whisper and
+        // translation finalize on independent cadences, so a queue keeps pairs aligned.
+        this._pendingSourceFinals = [];
         this._muted = false;
     }
 
@@ -72,12 +76,21 @@ export class OpenAiRealtimeClient {
      * persisted instead of lost. Safe to call multiple times.
      */
     flushPending() {
-        const tgt = this._provisionalBuffer;
-        const src = this._sourceBuffer;
-        if (!tgt && !src) return;
-        this._provisionalBuffer = '';
-        this._sourceBuffer = '';
-        try { this.onSegment(src, tgt); } catch (e) { console.error('[OpenAI flush]', e); }
+        // Emit any queued source finals as source-only segments (no translation
+        // arrived for them yet). Then emit a final pair using whatever in-flight
+        // buffers remain — keeps stop-mid-sentence text from being silently dropped.
+        try {
+            while (this._pendingSourceFinals.length > 1) {
+                this.onSegment(this._pendingSourceFinals.shift(), '');
+            }
+            const tgt = this._provisionalBuffer;
+            const src = this._pendingSourceFinals.shift() || this._sourceBuffer;
+            this._provisionalBuffer = '';
+            this._sourceBuffer = '';
+            if (tgt || src) this.onSegment(src, tgt);
+        } catch (e) {
+            console.error('[OpenAI flush]', e);
+        }
     }
 
     async disconnect() {
@@ -97,9 +110,10 @@ export class OpenAiRealtimeClient {
                 break;
             case 'transcript':
                 if (evt.is_final) {
-                    // Pair the captured source buffer with this translated final.
-                    // Both buffers reset for the next sentence.
-                    const sourceText = this._sourceBuffer;
+                    // Prefer the next queued source final (authoritative, full text
+                    // from whisper). Fall back to accumulated deltas if the source
+                    // .done event hasn't arrived yet.
+                    const sourceText = this._pendingSourceFinals.shift() || this._sourceBuffer;
                     this._provisionalBuffer = '';
                     this._sourceBuffer = '';
                     this.onSegment(sourceText, evt.text);
@@ -109,8 +123,17 @@ export class OpenAiRealtimeClient {
                 }
                 break;
             case 'source_transcript':
-                this._sourceBuffer += evt.text;
-                this.onSourceProvisional(this._sourceBuffer);
+                if (evt.is_final) {
+                    // Whisper finalized the input chunk — queue the full transcript
+                    // for pairing with the next translated final. Drop the delta
+                    // buffer since we now have the authoritative text.
+                    this._pendingSourceFinals.push(evt.text);
+                    this._sourceBuffer = '';
+                    this.onSourceProvisional(evt.text);
+                } else {
+                    this._sourceBuffer += evt.text;
+                    this.onSourceProvisional(this._sourceBuffer);
+                }
                 break;
             case 'audio_chunk':
                 if (!this._muted) this.outputQueue?.push(evt.pcm_base64);
