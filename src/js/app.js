@@ -850,6 +850,13 @@ class App {
 
         // Update current source button states
         this.currentSource = settings.audio_source || 'system';
+        // OpenAI mode is mic-only — force-correct stale persisted source so
+        // app doesn't silently start system capture in openai mode.
+        const mode = settings.translation_mode || 'soniox';
+        if (mode === 'openai' && this.currentSource !== 'microphone') {
+            this.currentSource = 'microphone';
+            settingsManager.save({ audio_source: 'microphone' });
+        }
         this._updateSourceButtons();
 
         // TTS is always OFF on app start — user must toggle on each session
@@ -1120,6 +1127,15 @@ class App {
             nextMode = (currentMode === 'soniox' || currentMode === 'local')
                 ? currentMode : 'soniox';
         }
+
+        // OpenAI mode is mic-only (presenter/speaker use case). Auto-switch
+        // source to mic when entering openai mode — native confirm() is
+        // unreliable inside Tauri webview, so we just warn via toast.
+        if (klass === 'openai' && (this.currentSource === 'system' || this.currentSource === 'both')) {
+            this._setSource('microphone');
+            this._showToast('OpenAI mode dùng Microphone (đã tự chuyển source)', 'success');
+        }
+
         settingsManager.save({ translation_mode: nextMode });
         const select = document.getElementById('select-translation-mode');
         if (select) select.value = nextMode;
@@ -1218,6 +1234,21 @@ class App {
         if (btnOpenAiAudio) {
             btnOpenAiAudio.style.display = isOpenAi ? '' : 'none';
             this._refreshOpenAiAudioIcon();
+        }
+
+        // OpenAI mode is locked to Microphone source — hide system/both and
+        // keep mic visible but disabled so user can see capture is on mic.
+        const btnSourceSystem = document.getElementById('btn-source-system');
+        const btnSourceMic = document.getElementById('btn-source-mic');
+        const btnSourceBoth = document.getElementById('btn-source-both');
+        if (btnSourceSystem) btnSourceSystem.style.display = isOpenAi ? 'none' : '';
+        if (btnSourceBoth) btnSourceBoth.style.display = isOpenAi ? 'none' : '';
+        if (btnSourceMic) {
+            btnSourceMic.disabled = isOpenAi;
+            btnSourceMic.classList.toggle('locked', isOpenAi);
+            btnSourceMic.title = isOpenAi
+                ? 'Microphone (locked — OpenAI mode uses mic only)'
+                : 'Microphone (⌘2)';
         }
 
         // Restrict target language list to 13 OpenAI-supported in openai mode
@@ -1493,15 +1524,22 @@ class App {
         }
 
         try {
+            let audioBatchCount = 0;
             const channel = new window.__TAURI__.core.Channel();
             channel.onmessage = (pcmData) => {
+                audioBatchCount++;
+                if (audioBatchCount <= 3 || audioBatchCount % 50 === 0) {
+                    console.log(`[OpenAI capture] batch #${audioBatchCount}, size:`, pcmData?.length || 0);
+                }
                 const bytes = new Uint8Array(pcmData);
                 this.openAiClient.sendAudio(bytes.buffer);
             };
+            console.log('[OpenAI] Starting audio capture, source:', this.currentSource);
             await invoke('start_capture', {
                 source: this.currentSource,
                 channel,
             });
+            console.log('[OpenAI] start_capture invoked OK');
         } catch (err) {
             console.error('Failed to start audio capture:', err);
             this._showToast(`Audio error: ${err}`, 'error');

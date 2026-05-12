@@ -427,6 +427,15 @@ body {
   color: var(--accent);
 }
 
+/* OpenAI mode locks source to mic — show it active but dimmed/disabled. */
+.source-btn.locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+.source-btn.locked:hover { color: var(--accent); }
+
 /* Action Button (Start/Stop) */
 .action-btn {
   display: flex;
