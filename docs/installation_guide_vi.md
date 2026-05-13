@@ -89,6 +89,10 @@ OpenAI Realtime là engine **cao cấp** — trả về cả văn bản dịch *
 >
 > 📊 Xem [**Benchmark OpenAI Realtime vs Soniox**](benchmark_openai_vs_soniox_vi.md) để so sánh thực tế.
 
+Sau khi dán OpenAI key vào Settings, engine **OpenAI Realtime** sẽ chọn được:
+
+![Settings — Chọn engine OpenAI Realtime kèm API key](user_manual/openai_setting.png)
+
 ---
 
 ## Bước 6 — Cấu hình App
@@ -151,6 +155,20 @@ Xem [Hướng dẫn TTS](tts_guide_vi.md) để biết cách lấy API key từn
 - **Dual**: Nguồn | Bản dịch song song (bật bằng nút panel, góc dưới phải)
 
 **Cỡ chữ:** Dùng nút A-/A+ (góc dưới phải khi hover) để chỉnh
+
+### Chọn chế độ dịch
+
+Nếu đã cấu hình cả Soniox và OpenAI key, lần đầu bắt đầu phiên dịch, app sẽ hỏi chọn engine nào:
+
+![Chọn chế độ dịch — Standard vs OpenAI Realtime](user_manual/openao_entry.png)
+
+Bạn có thể đổi engine bất cứ lúc nào qua nút engine ở thanh toolbar.
+
+### Chế độ Dual-panel với OpenAI Realtime
+
+Ở chế độ **Dual**, transcript nguồn hiển thị bên trái, bản dịch bên phải — whisper transcription và bản dịch của OpenAI chạy song song:
+
+![Dual-panel chạy với OpenAI Realtime](user_manual/openai_translate.png)
 
 ---
 

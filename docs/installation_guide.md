@@ -89,6 +89,10 @@ OpenAI Realtime is the **premium** engine — it returns translated text **and**
 >
 > 📊 See [**OpenAI Realtime vs Soniox benchmark**](benchmark_openai_vs_soniox.md) for a real-world comparison.
 
+After pasting the OpenAI key in Settings, the **OpenAI Realtime** engine becomes selectable:
+
+![Settings — OpenAI Realtime engine selected with API key](user_manual/openai_setting.png)
+
 ---
 
 ## Step 6 — Configure the App
@@ -151,6 +155,20 @@ See [TTS Guide](tts_guide.md) for step-by-step API key instructions.
 - **Dual**: Source | Translation side-by-side (toggle with panel button, bottom-right)
 
 **Font size:** Use A-/A+ buttons (bottom-right on hover) to adjust
+
+### Choosing the translation mode
+
+If you have both a Soniox and an OpenAI key configured, the first time you start a session the app asks which engine to use:
+
+![Choose translation mode — Standard vs OpenAI Realtime](user_manual/openao_entry.png)
+
+You can switch any time from the engine pill in the toolbar.
+
+### Dual-panel view with OpenAI Realtime
+
+In **Dual** view the source transcript appears on the left and the translated text on the right — OpenAI's whisper transcription and translated output stream side-by-side:
+
+![Dual-panel translation running with OpenAI Realtime](user_manual/openai_translate.png)
 
 ---
 

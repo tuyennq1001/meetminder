@@ -7,24 +7,33 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
-## v0.6.0 - 2026-05-08
+## v0.6.0 - 2026-05-13
 
 ### New Features
 
 - **OpenAI Realtime translation provider**: added `gpt-realtime-translate` (May 2026 GA) as a third translation engine alongside Soniox and Local MLX. The model streams translated text **and** translated speech audio over a single WebSocket — no separate TTS step required, and lower end-to-end latency than text-only providers.
 - **13 output languages supported**: en, es, pt, fr, de, it, ru, hi, id, vi, ja, ko, zh.
+- **Signed + notarized macOS DMG**: builds are now signed with Developer ID and notarized through Apple's notary service — installs without the `xattr` workaround on first launch.
+
+### Bug Fixes
+
+- **Dual-panel routing**: in dual view, the OpenAI source transcript now reliably lands in the left (source) column and the translation in the right column. Previous heuristic-based routing dropped the translation into the source column when whisper transcription lagged behind translation output.
+- **Source/target final pairing**: whisper transcription and translation streams finalize at different cadences. A queue now pairs each source final with its matching translation final so the saved transcript stays aligned.
 
 ### Caveats
 
 - **Cost**: ~$0.07/min (~$4/hr) — about 34× Soniox at provider list rates (measured on a 5-min Japanese→Vietnamese test against the GA endpoint). Charged to your own OpenAI account; a cost warning is shown in Settings.
 - **Two-way mode** and the **custom TTS provider toggle** are unavailable while OpenAI Realtime is selected (audio comes natively from the model).
 - **Thai** is not in the supported output set; Thai users should stay on Soniox or Local MLX.
+- **Source transcript may pause** during long speaker pauses (e.g. applause breaks) — translation keeps working but the source column can stall. Under investigation.
 
 ### Technical
 
 - Added a `rubato`-based 16k → 24k polyphase upsampler in the Rust audio pipeline so the existing 16kHz capture path can feed the model's 24kHz s16le input requirement.
 - New Tauri commands: `openai_realtime_start`, `openai_realtime_send_audio`, `openai_realtime_stop` — the WebSocket lives in Rust because browsers can't set the `Authorization` header on WebSocket handshakes.
 - New JS modules `openai-realtime-client.js` (mirrors the Soniox client callback shape) and `openai-audio-output-queue.js` (Web Audio API streaming player for the 24kHz output stream).
+- Explicit `provider` flag on transcript UI replaces the previous heuristic detection, fixing the dual-panel routing regression.
+- Added `scripts/build-notarized.sh` for local notarized builds (reads `APPLE_*` env vars from a gitignored `.env`).
 
 ---
 

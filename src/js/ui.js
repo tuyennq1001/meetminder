@@ -28,6 +28,11 @@ export class TranscriptUI {
         // Source-side provisional (OpenAI Realtime: source ASR is separate from target).
         // Soniox leaves this empty; its provisionalText carries the source-language ASR.
         this.sourceProvisionalText = '';
+        // Provider hint — Soniox puts source-language in provisionalText; OpenAI
+        // splits source/target streams. Without this flag, the dual renderer
+        // can't tell which panel target deltas belong to when source hasn't
+        // arrived yet (whisper is slower than translation in some turns).
+        this.provider = 'soniox';
         this.currentSpeaker = null; // Track current speaker to detect changes
         this.currentLanguage = null; // Track current language to detect changes
         this.lastConfidence = null; // Last confidence score from Soniox
@@ -475,9 +480,10 @@ export class TranscriptUI {
         // Two providers feed provisional text differently:
         // - Soniox: provisionalText is the source-language ASR (no separate source channel).
         // - OpenAI Realtime: sourceProvisionalText is source ASR; provisionalText is target.
-        // Detect OpenAI by presence of sourceProvisionalText.
+        // Use explicit provider flag — checking !!sourceProvisionalText fails when
+        // whisper lags behind translation, dumping target deltas into the source panel.
         if (this.sourceProvisionalText || this.provisionalText) {
-            const usingOpenAi = !!this.sourceProvisionalText;
+            const usingOpenAi = this.provider === 'openai';
             const srcText = usingOpenAi ? this.sourceProvisionalText : this.provisionalText;
             const tgtText = usingOpenAi ? this.provisionalText : '';
             if (srcText) srcHtml += `<div class="seg-text pending">${this._esc(srcText)}</div>`;

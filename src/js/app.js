@@ -1471,6 +1471,10 @@ class App {
         const { OpenAiRealtimeClient } = await import('./openai-realtime-client.js');
         const { OpenAiAudioOutputQueue } = await import('./openai-audio-output-queue.js');
 
+        // Tell the UI which provider is active so dual-panel rendering routes
+        // provisional text to the correct panel (source vs target).
+        this.transcriptUI.provider = 'openai';
+
         this.openAiOutputQueue = new OpenAiAudioOutputQueue();
         this.openAiClient = new OpenAiRealtimeClient();
 
@@ -1550,6 +1554,7 @@ class App {
     async _startSonioxMode(settings) {
         // Connect to Soniox
         console.log('[App] Connecting to Soniox...');
+        this.transcriptUI.provider = 'soniox';
         this._updateStatus('connecting');
         sonioxClient.connect({
             apiKey: settings.soniox_api_key,
@@ -1593,6 +1598,7 @@ class App {
 
     async _startLocalMode(settings) {
         console.log('[App] Starting Local mode (MLX models)...');
+        this.transcriptUI.provider = 'soniox';
         this._updateStatus('connecting');
 
         // Step 0: Check audio permission FIRST (before loading models)

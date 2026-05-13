@@ -286,6 +286,10 @@ fn handle_server_event(text: &str, event_ch: &Channel<OpenAiEvent>, audio_output
         None => return,
     };
 
+    // Dev trace: log every event type (not the full payload — that's noisy)
+    // so we can see the lifecycle around speech pauses and turn boundaries.
+    eprintln!("[openai-realtime] event: {}", evt_type);
+
     match evt_type {
         "session.created" | "session.updated" => {
             // ack only
@@ -358,6 +362,10 @@ fn handle_server_event(text: &str, event_ch: &Channel<OpenAiEvent>, audio_output
                 .to_string();
             let _ = event_ch.send(OpenAiEvent::Error { code, message: msg });
         }
-        _ => {}
+        other => {
+            // Log unknown event types so we can discover server-side names we
+            // haven't mapped yet (e.g. turn lifecycle around speech pauses).
+            eprintln!("[openai-realtime] unhandled event type: {} | payload: {}", other, text);
+        }
     }
 }

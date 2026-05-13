@@ -105,6 +105,10 @@ Nhấn **Save & Close** khi xong.
 >
 > ⚠️ **Cảnh báo chi phí**: OpenAI Realtime đắt hơn Soniox khoảng 34 lần. Phù hợp cho cuộc họp quan trọng cần chất lượng tốt nhất; dùng hàng ngày nên chọn Soniox. Xem [**Benchmark OpenAI vs Soniox**](benchmark_openai_vs_soniox_vi.md) để có chi tiết.
 
+Sau khi lưu OpenAI key hợp lệ, engine **OpenAI Realtime** sẽ chọn được trong dropdown:
+
+![Settings — Engine OpenAI Realtime kèm API key](user_manual/openai_setting.png)
+
 ---
 
 ## Bước 5 — Bật Thuyết Minh TTS (Tuỳ chọn)
@@ -143,6 +147,20 @@ Giờ phát bất kỳ âm thanh nào trên PC (YouTube, Zoom, podcast...) và b
 Nếu TTS đã bật, bạn có thể bật/tắt bằng nút **TTS** hoặc `Ctrl+T`.
 
 ![App đang dịch với TTS bật](user_manual/mytrans_tts_1.png)
+
+### Chọn chế độ dịch
+
+Nếu đã cấu hình cả Soniox và OpenAI key, lần đầu bắt đầu phiên dịch, app sẽ hỏi chọn engine nào:
+
+![Chọn chế độ dịch — Standard vs OpenAI Realtime](user_manual/openao_entry.png)
+
+Bạn có thể đổi engine bất cứ lúc nào qua nút engine ở thanh toolbar.
+
+### Chế độ Dual-panel với OpenAI Realtime
+
+Ở chế độ **Dual**, transcript nguồn hiển thị bên trái, bản dịch bên phải — whisper transcription và bản dịch của OpenAI chạy song song:
+
+![Dual-panel chạy với OpenAI Realtime](user_manual/openai_translate.png)
 
 ---
 

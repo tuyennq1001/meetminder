@@ -105,6 +105,10 @@ Click **Save & Close** when done.
 >
 > ⚠️ **Cost warning**: OpenAI Realtime is ~34× pricier than Soniox at provider list rates. Use it for high-stakes meetings; for everyday use, Soniox is the better default. See the [**OpenAI vs Soniox benchmark**](benchmark_openai_vs_soniox.md) for details.
 
+Once a valid OpenAI key is saved, the **OpenAI Realtime** engine becomes selectable in the dropdown:
+
+![Settings — OpenAI Realtime engine with API key](user_manual/openai_setting.png)
+
 ---
 
 ## Step 5 — Enable TTS Narration (Optional)
@@ -143,6 +147,20 @@ Now play any audio on your PC (YouTube, Zoom, podcasts...) and translations appe
 If TTS is enabled, you can toggle it on/off with the **TTS** button or `Ctrl+T`.
 
 ![App translating with TTS enabled](user_manual/mytrans_tts_1.png)
+
+### Choosing the translation mode
+
+If you have both a Soniox and an OpenAI key configured, the first time you start a session the app asks which engine to use:
+
+![Choose translation mode — Standard vs OpenAI Realtime](user_manual/openao_entry.png)
+
+You can switch any time from the engine pill in the toolbar.
+
+### Dual-panel view with OpenAI Realtime
+
+In **Dual** view the source transcript appears on the left and the translated text on the right — OpenAI's whisper transcription and translated output stream side-by-side:
+
+![Dual-panel translation running with OpenAI Realtime](user_manual/openai_translate.png)
 
 ---
 
