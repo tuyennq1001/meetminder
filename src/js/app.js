@@ -94,7 +94,7 @@ class App {
         // Show engine picker on first launch
         this._maybeShowEnginePicker();
 
-        console.log('🌐 My Translator v0.5.0 initialized');
+        console.log('🌐 My Translator v0.7.1 initialized');
     }
 
     async _checkPlatformSupport() {
@@ -495,11 +495,6 @@ class App {
             this._toggleTTS();
         });
 
-        // OpenAI audio output toggle (text-only mode when off)
-        document.getElementById('btn-openai-audio')?.addEventListener('click', () => {
-            this._toggleOpenAiAudio();
-        });
-
         // Wire Soniox callbacks. Soniox emits original + translation as
         // separate finals; we FIFO-pair them into the session store so each
         // saved segment has both source and target text.
@@ -853,13 +848,6 @@ class App {
 
         // Update current source button states
         this.currentSource = settings.audio_source || 'system';
-        // OpenAI mode is mic-only — force-correct stale persisted source so
-        // app doesn't silently start system capture in openai mode.
-        const mode = settings.translation_mode || 'soniox';
-        if (mode === 'openai' && this.currentSource !== 'microphone') {
-            this.currentSource = 'microphone';
-            settingsManager.save({ audio_source: 'microphone' });
-        }
         this._updateSourceButtons();
 
         // TTS is always OFF on app start — user must toggle on each session
@@ -910,37 +898,6 @@ class App {
             audioPlayer.stop();
             this._showToast('TTS narration OFF 🔇', 'success');
         }
-    }
-
-    _toggleOpenAiAudio() {
-        const settings = settingsManager.get();
-        const next = !(settings.openai_audio_output !== false);
-        this._refreshOpenAiAudioIcon(next);
-        if (this.openAiClient) this.openAiClient.setMuted(!next);
-        if (this.qwenClient) this.qwenClient.setMuted(!next);
-        const blockedBySource = this.currentSource === 'system' || this.currentSource === 'both';
-        if (next && blockedBySource) {
-            this._showToast('Audio ON — use headphones to avoid echo loop with system audio capture', 'success');
-        } else {
-            this._showToast(next ? 'Audio ON 🔊' : 'Audio OFF 🔇', 'success');
-        }
-        settingsManager.save({ openai_audio_output: next, qwen_audio_output: next });
-    }
-
-    _refreshOpenAiAudioIcon(forced) {
-        const on = typeof forced === 'boolean'
-            ? forced
-            : settingsManager.get().openai_audio_output !== false;
-        const btn = document.getElementById('btn-openai-audio');
-        if (btn) {
-            btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-            btn.disabled = false;
-            btn.title = on
-                ? 'Audio narration ON — click to mute'
-                : 'Muted (text-only) — click to enable audio narration';
-        }
-        if (this.openAiClient) this.openAiClient.setMuted(!on);
-        if (this.qwenClient) this.qwenClient.setMuted(!on);
     }
 
     _getActiveTTS() {
@@ -1137,13 +1094,6 @@ class App {
                 ? currentMode : 'soniox';
         }
 
-        // OpenAI Realtime is mic-only (built-in turn-taking expects single speaker).
-        // Qwen supports any source — RMS-VAD works on system audio too.
-        if (klass === 'openai' && (this.currentSource === 'system' || this.currentSource === 'both')) {
-            this._setSource('microphone');
-            this._showToast('OpenAI mode dùng Microphone (đã tự chuyển source)', 'success');
-        }
-
         settingsManager.save({ translation_mode: nextMode });
         const select = document.getElementById('select-translation-mode');
         if (select) select.value = nextMode;
@@ -1232,10 +1182,8 @@ class App {
             }
         }
 
-        // Custom TTS toggle: realtime engines stream their own audio.
-        // OpenAI cannot be muted server-side; Qwen can (modalities=["text"]).
-        // Either way, the user manages playback via the in-toolbar audio icon
-        // — disable the custom TTS path to avoid double-playback.
+        // Custom TTS toggle: cloud realtime engines run text-only to prevent
+        // the speaker → mic feedback loop on shared devices.
         const ttsCheck = document.getElementById('check-tts-enabled');
         if (ttsCheck) {
             ttsCheck.disabled = isCloudRealtime;
@@ -1246,26 +1194,14 @@ class App {
         const btnTts = document.getElementById('btn-tts');
         if (btnTts) btnTts.style.display = isCloudRealtime ? 'none' : '';
         const btnOpenAiAudio = document.getElementById('btn-openai-audio');
-        if (btnOpenAiAudio) {
-            // Reused for Qwen too — same mute semantics, same icon.
-            btnOpenAiAudio.style.display = isCloudRealtime ? '' : 'none';
-            this._refreshOpenAiAudioIcon();
-        }
+        if (btnOpenAiAudio) btnOpenAiAudio.style.display = 'none';
 
-        // OpenAI Realtime is locked to Microphone (server-side turn detection
-        // assumes a single speaker). Qwen uses client-side RMS-VAD so it works
-        // with system audio and "both" too.
-        const btnSourceSystem = document.getElementById('btn-source-system');
+        // All engines now support any audio source (system / mic / both).
         const btnSourceMic = document.getElementById('btn-source-mic');
-        const btnSourceBoth = document.getElementById('btn-source-both');
-        if (btnSourceSystem) btnSourceSystem.style.display = isOpenAi ? 'none' : '';
-        if (btnSourceBoth) btnSourceBoth.style.display = isOpenAi ? 'none' : '';
         if (btnSourceMic) {
-            btnSourceMic.disabled = isOpenAi;
-            btnSourceMic.classList.toggle('locked', isOpenAi);
-            btnSourceMic.title = isOpenAi
-                ? 'Microphone (locked — OpenAI Realtime uses mic only)'
-                : 'Microphone (⌘2)';
+            btnSourceMic.disabled = false;
+            btnSourceMic.classList.remove('locked');
+            btnSourceMic.title = 'Microphone (⌘2)';
         }
 
         // Restrict target language list to 13 OpenAI-supported in openai mode.
@@ -1546,9 +1482,8 @@ class App {
                 apiKey: settings.openai_api_key,
                 sourceLanguage: settings.source_language || 'auto',
                 targetLanguage: settings.target_language,
-                audioOutput: settings.openai_audio_output !== false,
+                audioOutput: false,
             }, this.openAiOutputQueue);
-            this._refreshOpenAiAudioIcon();
         } catch (err) {
             this._showToast(`OpenAI connect failed: ${err}`, 'error');
             await this.stop();
@@ -1633,9 +1568,8 @@ class App {
                 apiKey: settings.qwen_api_key,
                 targetLanguage: settings.target_language,
                 targetLanguageName,
-                audioOutput: settings.qwen_audio_output !== false,
+                audioOutput: false,
             }, this.qwenOutputQueue);
-            this._refreshOpenAiAudioIcon();
         } catch (err) {
             this._showToast(`Qwen connect failed: ${err}`, 'error');
             await this.stop();

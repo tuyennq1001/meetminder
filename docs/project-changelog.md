@@ -7,6 +7,21 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## v0.7.1 - 2026-05-25
+
+### Changes
+
+- **OpenAI Realtime now supports System Audio and Both** alongside Microphone. Server-side turn detection handles non-mic sources fine in practice; the prior mic-only lock has been removed.
+- **Voice output (TTS) disabled by default on OpenAI and Qwen Realtime engines** to prevent the speaker → microphone feedback loop on shared devices (especially noticeable when capturing System Audio). Toolbar audio toggle removed for cloud-realtime engines — they now run text-only, matching the mobile app behaviour. Soniox/Local engines retain custom TTS as before.
+
+### Technical
+
+- `openai_audio_output` and `qwen_audio_output` defaults flipped from `true` → `false` in `src-tauri/src/settings.rs`. Both clients always request text-only modality at connect time.
+- `_updateModeUI` no longer hides/disables source buttons for OpenAI mode.
+- Helper `_toggleOpenAiAudio` and the `#btn-openai-audio` toolbar element removed.
+
+---
+
 ## v0.7.0 - 2026-05-24
 
 ### New Features

@@ -94,11 +94,6 @@
           <span class="tts-label">TTS</span>
         </button>
 
-        <button id="btn-openai-audio" class="toggle-btn" title="Toggle audio narration" style="display:none" aria-pressed="true">
-          <span class="toggle-label">Audio</span>
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-        </button>
-
         <div class="toolbar-group">
           <button id="btn-clear" class="icon-btn" title="Clear transcript">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -187,20 +182,20 @@
           <button class="engine-card" data-engine-class="openai" type="button">
             <div class="engine-card-icon">⚡</div>
             <div class="engine-card-name">OpenAI Realtime</div>
-            <div class="engine-card-meta">~$4/hr · voice included</div>
+            <div class="engine-card-meta">~$4/hr · text-only</div>
             <ul class="engine-card-feats">
               <li>13 languages</li>
-              <li>Native translated voice</li>
+              <li>Continuous delta captions</li>
               <li>Most idiomatic output</li>
             </ul>
           </button>
           <button class="engine-card" data-engine-class="qwen" type="button">
             <div class="engine-card-icon">🌏</div>
             <div class="engine-card-name">Qwen-Omni Realtime</div>
-            <div class="engine-card-meta">Free preview · voice included</div>
+            <div class="engine-card-meta">Free preview · text-only</div>
             <ul class="engine-card-feats">
               <li>Multilingual</li>
-              <li>Translated voice output</li>
+              <li>Fast first token (~7s)</li>
               <li>Alibaba DashScope</li>
             </ul>
           </button>
@@ -273,8 +268,8 @@
           </select>
           <p class="hint" id="hint-mode-soniox">Cloud · 70+ languages · ~$0.12/hr</p>
           <p class="hint" id="hint-mode-local" style="display:none">Offline · free · ~3–4s delay</p>
-          <p class="hint" id="hint-mode-openai" style="display:none">Cloud · 13 languages · voice output included</p>
-          <p class="hint" id="hint-mode-qwen" style="display:none">Cloud · multilingual · voice output · free preview</p>
+          <p class="hint" id="hint-mode-openai" style="display:none">Cloud · 13 languages · text-only captions</p>
+          <p class="hint" id="hint-mode-qwen" style="display:none">Cloud · multilingual · text-only · free preview</p>
           <div id="openai-cost-warning" class="cost-warning" style="display:none">
             ⚠️ ~$4/hr — much pricier than Soniox. Charged to your OpenAI account.
           </div>

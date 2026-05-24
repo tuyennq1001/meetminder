@@ -29,8 +29,9 @@ pub struct Settings {
     /// Alibaba Cloud DashScope API key (for Qwen-Omni Realtime)
     #[serde(default)]
     pub qwen_api_key: String,
-    /// Qwen Realtime: when true (default) request audio output modality.
-    #[serde(default = "default_true")]
+    /// Qwen Realtime: when true request audio output modality.
+    /// Default false — speaker → mic feedback loop on shared devices.
+    #[serde(default)]
     pub qwen_audio_output: bool,
     /// Source language: "auto" or ISO 639-1 code
     pub source_language: String,
@@ -72,13 +73,11 @@ pub struct Settings {
     pub google_tts_voice: String,
     /// Google TTS speaking rate
     pub google_tts_speed: f64,
-    /// OpenAI Realtime: when true (default) server generates translated audio.
-    /// When false, requests text-only output (no TTS audio).
-    #[serde(default = "default_true")]
+    /// OpenAI Realtime: when true server generates translated audio.
+    /// Default false — speaker → mic feedback loop on shared devices.
+    #[serde(default)]
     pub openai_audio_output: bool,
 }
-
-fn default_true() -> bool { true }
 
 impl Default for Settings {
     fn default() -> Self {
@@ -86,7 +85,7 @@ impl Default for Settings {
             soniox_api_key: String::new(),
             openai_api_key: String::new(),
             qwen_api_key: String::new(),
-            qwen_audio_output: true,
+            qwen_audio_output: false,
             source_language: "auto".to_string(),
             target_language: "vi".to_string(),
             audio_source: "system".to_string(),
@@ -107,7 +106,7 @@ impl Default for Settings {
             google_tts_api_key: String::new(),
             google_tts_voice: "vi-VN-Chirp3-HD-Aoede".to_string(),
             google_tts_speed: 1.0,
-            openai_audio_output: true,
+            openai_audio_output: false,
         }
     }
 }
