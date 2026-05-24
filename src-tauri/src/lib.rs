@@ -7,6 +7,7 @@ use audio::SystemAudioCapture;
 use commands::audio::AudioState;
 use commands::local_pipeline::LocalPipelineState;
 use commands::openai_realtime::OpenAiState;
+use commands::qwen_realtime::QwenState;
 use settings::{Settings, SettingsState};
 use std::sync::Mutex;
 
@@ -44,6 +45,7 @@ pub fn run() {
             process: Mutex::new(None),
         })
         .manage(OpenAiState::default())
+        .manage(QwenState::default())
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_settings,
             commands::settings::save_settings,
@@ -72,6 +74,9 @@ pub fn run() {
             commands::openai_realtime::openai_realtime_start,
             commands::openai_realtime::openai_realtime_send_audio,
             commands::openai_realtime::openai_realtime_stop,
+            commands::qwen_realtime::qwen_realtime_start,
+            commands::qwen_realtime::qwen_realtime_send_audio,
+            commands::qwen_realtime::qwen_realtime_stop,
             get_platform_info,
         ])
         .run(tauri::generate_context!())

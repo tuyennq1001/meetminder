@@ -657,6 +657,8 @@ class App {
         document.getElementById('input-api-key').value = s.soniox_api_key || '';
         const openaiKeyInput = document.getElementById('input-openai-key');
         if (openaiKeyInput) openaiKeyInput.value = s.openai_api_key || '';
+        const qwenKeyInput = document.getElementById('input-qwen-key');
+        if (qwenKeyInput) qwenKeyInput.value = s.qwen_api_key || '';
         document.getElementById('select-source-lang').value = s.source_language || 'auto';
         document.getElementById('select-target-lang').value = s.target_language || 'vi';
         document.getElementById('select-translation-mode').value = s.translation_mode || 'soniox';
@@ -762,6 +764,7 @@ class App {
         const settings = {
             soniox_api_key: document.getElementById('input-api-key').value.trim(),
             openai_api_key: document.getElementById('input-openai-key')?.value.trim() || '',
+            qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
             source_language: document.getElementById('select-source-lang').value,
             target_language: document.getElementById('select-target-lang').value,
             translation_mode: document.getElementById('select-translation-mode').value,
@@ -914,13 +917,14 @@ class App {
         const next = !(settings.openai_audio_output !== false);
         this._refreshOpenAiAudioIcon(next);
         if (this.openAiClient) this.openAiClient.setMuted(!next);
+        if (this.qwenClient) this.qwenClient.setMuted(!next);
         const blockedBySource = this.currentSource === 'system' || this.currentSource === 'both';
         if (next && blockedBySource) {
             this._showToast('Audio ON — use headphones to avoid echo loop with system audio capture', 'success');
         } else {
             this._showToast(next ? 'Audio ON 🔊' : 'Audio OFF 🔇', 'success');
         }
-        settingsManager.save({ openai_audio_output: next });
+        settingsManager.save({ openai_audio_output: next, qwen_audio_output: next });
     }
 
     _refreshOpenAiAudioIcon(forced) {
@@ -936,6 +940,7 @@ class App {
                 : 'Muted (text-only) — click to enable audio narration';
         }
         if (this.openAiClient) this.openAiClient.setMuted(!on);
+        if (this.qwenClient) this.qwenClient.setMuted(!on);
     }
 
     _getActiveTTS() {
@@ -1112,7 +1117,9 @@ class App {
     // — they share the same UX shape (text-only, optional TTS, two-way, etc.).
 
     _engineClassFromMode(mode) {
-        return mode === 'openai' ? 'openai' : 'standard';
+        if (mode === 'openai') return 'openai';
+        if (mode === 'qwen') return 'qwen';
+        return 'standard';
     }
 
     _selectEngineClass(klass) {
@@ -1121,16 +1128,17 @@ class App {
         let nextMode = currentMode;
         if (klass === 'openai') {
             nextMode = 'openai';
+        } else if (klass === 'qwen') {
+            nextMode = 'qwen';
         } else if (klass === 'standard') {
             // Stay on whatever standard sub-engine was configured before, or
-            // default to soniox if previously openai.
+            // default to soniox if previously a cloud realtime engine.
             nextMode = (currentMode === 'soniox' || currentMode === 'local')
                 ? currentMode : 'soniox';
         }
 
-        // OpenAI mode is mic-only (presenter/speaker use case). Auto-switch
-        // source to mic when entering openai mode — native confirm() is
-        // unreliable inside Tauri webview, so we just warn via toast.
+        // OpenAI Realtime is mic-only (built-in turn-taking expects single speaker).
+        // Qwen supports any source — RMS-VAD works on system audio too.
         if (klass === 'openai' && (this.currentSource === 'system' || this.currentSource === 'both')) {
             this._setSource('microphone');
             this._showToast('OpenAI mode dùng Microphone (đã tự chuyển source)', 'success');
@@ -1180,64 +1188,73 @@ class App {
         const isSoniox = mode === 'soniox';
         const isLocal = mode === 'local';
         const isOpenAi = mode === 'openai';
+        const isQwen = mode === 'qwen';
+        // Cloud-realtime engines that share the OpenAI-style audio toggle,
+        // mic-only capture, and dual-panel routing. Used in place of bare
+        // `isOpenAi` checks below so Qwen inherits the same UI shape.
+        const isCloudRealtime = isOpenAi || isQwen;
         this._updatePillState(mode);
 
         const hintSoniox = document.getElementById('hint-mode-soniox');
         const hintLocal = document.getElementById('hint-mode-local');
         const hintOpenAi = document.getElementById('hint-mode-openai');
+        const hintQwen = document.getElementById('hint-mode-qwen');
         if (hintSoniox) hintSoniox.style.display = isSoniox ? '' : 'none';
         if (hintLocal) hintLocal.style.display = isLocal ? '' : 'none';
         if (hintOpenAi) hintOpenAi.style.display = isOpenAi ? '' : 'none';
+        if (hintQwen) hintQwen.style.display = isQwen ? '' : 'none';
 
         const costWarning = document.getElementById('openai-cost-warning');
         if (costWarning) costWarning.style.display = isOpenAi ? '' : 'none';
 
-        // Both cloud-engine key fields stay visible at all times so users can
-        // paste keys before picking an engine (avoids "add key first" catch-22).
-        // Only Local mode hides both since it doesn't need any cloud key.
+        // Cloud key sections stay visible across cloud engines so users can
+        // paste keys before picking; only Local hides them all.
         const sectionApiKey = document.getElementById('section-api-key');
         const sectionOpenAiKey = document.getElementById('section-openai-key');
+        const sectionQwenKey = document.getElementById('section-qwen-key');
         if (sectionApiKey) sectionApiKey.style.display = isLocal ? 'none' : '';
         if (sectionOpenAiKey) sectionOpenAiKey.style.display = isLocal ? 'none' : '';
+        if (sectionQwenKey) sectionQwenKey.style.display = isLocal ? 'none' : '';
 
         // Soniox custom-context block is Soniox-specific.
         const sectionContext = document.getElementById('section-soniox-context');
         if (sectionContext) sectionContext.style.display = isSoniox ? '' : 'none';
 
-        // Two-way mode incompatible with OpenAI v1 — force one-way + disable
+        // Two-way mode incompatible with realtime translation engines — force
+        // one-way + disable the option for any cloud-realtime mode.
         const typeSelect = document.getElementById('select-translation-type');
         if (typeSelect) {
             const twoWayOpt = typeSelect.querySelector('option[value="two_way"]');
-            if (twoWayOpt) twoWayOpt.disabled = isOpenAi;
-            if (isOpenAi && typeSelect.value === 'two_way') {
+            if (twoWayOpt) twoWayOpt.disabled = isCloudRealtime;
+            if (isCloudRealtime && typeSelect.value === 'two_way') {
                 typeSelect.value = 'one_way';
                 this._updateTranslationTypeUI('one_way');
             }
         }
 
-        // Custom TTS toggle disabled in OpenAI mode (audio is built-in and
-        // cannot be disabled — OpenAI Realtime Translation endpoint always
-        // emits PCM16 audio, no `modalities: ["text"]` support there).
+        // Custom TTS toggle: realtime engines stream their own audio.
+        // OpenAI cannot be muted server-side; Qwen can (modalities=["text"]).
+        // Either way, the user manages playback via the in-toolbar audio icon
+        // — disable the custom TTS path to avoid double-playback.
         const ttsCheck = document.getElementById('check-tts-enabled');
         if (ttsCheck) {
-            ttsCheck.disabled = isOpenAi;
-            if (isOpenAi) ttsCheck.checked = false;
+            ttsCheck.disabled = isCloudRealtime;
+            if (isCloudRealtime) ttsCheck.checked = false;
             const ttsDetail = document.getElementById('tts-settings-detail');
-            if (ttsDetail) ttsDetail.style.display = (isOpenAi || !ttsCheck.checked) ? 'none' : '';
+            if (ttsDetail) ttsDetail.style.display = (isCloudRealtime || !ttsCheck.checked) ? 'none' : '';
         }
-        // Toolbar TTS button is meaningless in OpenAI mode — hide entirely
-        // rather than just disabling it. OpenAI uses its own audio toggle
-        // (text-only modality) which is shown only in that mode.
         const btnTts = document.getElementById('btn-tts');
-        if (btnTts) btnTts.style.display = isOpenAi ? 'none' : '';
+        if (btnTts) btnTts.style.display = isCloudRealtime ? 'none' : '';
         const btnOpenAiAudio = document.getElementById('btn-openai-audio');
         if (btnOpenAiAudio) {
-            btnOpenAiAudio.style.display = isOpenAi ? '' : 'none';
+            // Reused for Qwen too — same mute semantics, same icon.
+            btnOpenAiAudio.style.display = isCloudRealtime ? '' : 'none';
             this._refreshOpenAiAudioIcon();
         }
 
-        // OpenAI mode is locked to Microphone source — hide system/both and
-        // keep mic visible but disabled so user can see capture is on mic.
+        // OpenAI Realtime is locked to Microphone (server-side turn detection
+        // assumes a single speaker). Qwen uses client-side RMS-VAD so it works
+        // with system audio and "both" too.
         const btnSourceSystem = document.getElementById('btn-source-system');
         const btnSourceMic = document.getElementById('btn-source-mic');
         const btnSourceBoth = document.getElementById('btn-source-both');
@@ -1247,11 +1264,12 @@ class App {
             btnSourceMic.disabled = isOpenAi;
             btnSourceMic.classList.toggle('locked', isOpenAi);
             btnSourceMic.title = isOpenAi
-                ? 'Microphone (locked — OpenAI mode uses mic only)'
+                ? 'Microphone (locked — OpenAI Realtime uses mic only)'
                 : 'Microphone (⌘2)';
         }
 
-        // Restrict target language list to 13 OpenAI-supported in openai mode
+        // Restrict target language list to 13 OpenAI-supported in openai mode.
+        // Qwen supports the full Soniox-list, so leave the picker untouched.
         this._refreshTargetLangList(mode);
     }
 
@@ -1406,6 +1424,13 @@ class App {
             return;
         }
 
+        // Check Qwen API key for qwen mode
+        if (this.translationMode === 'qwen' && !settings.qwen_api_key) {
+            this._showToast('Qwen (DashScope) API key is required. Add it in Settings.', 'error');
+            this._showView('settings');
+            return;
+        }
+
         // Check ElevenLabs key only if TTS is enabled AND provider is elevenlabs
         if (this.ttsEnabled && settings.tts_provider === 'elevenlabs' && !settings.elevenlabs_api_key) {
             this._showToast('TTS is ON but ElevenLabs API key is missing. Add it in Settings or disable TTS.', 'error');
@@ -1453,12 +1478,14 @@ class App {
             await this._startLocalMode(settings);
         } else if (this.translationMode === 'openai') {
             await this._startOpenAiMode(settings);
+        } else if (this.translationMode === 'qwen') {
+            await this._startQwenMode(settings);
         } else {
             await this._startSonioxMode(settings);
         }
 
-        // Start TTS if enabled — skipped in openai mode (built-in audio)
-        if (this.ttsEnabled && this.translationMode !== 'openai') {
+        // Start TTS if enabled — skipped in realtime modes (built-in audio)
+        if (this.ttsEnabled && this.translationMode !== 'openai' && this.translationMode !== 'qwen') {
             const tts = this._getActiveTTS();
             this._configureTTS(tts, settings);
             tts.connect();
@@ -1497,6 +1524,7 @@ class App {
             // OpenAI gives us both texts in one event.
             sessionStore.addSegment(sourceText || '', translatedText || '');
             this.transcriptUI.clearSourceProvisional?.();
+            this.transcriptUI.clearProvisional();
         };
         this.openAiClient.onError = (code, msg) => {
             console.error('[OpenAI Realtime]', code, msg);
@@ -1544,6 +1572,93 @@ class App {
                 channel,
             });
             console.log('[OpenAI] start_capture invoked OK');
+        } catch (err) {
+            console.error('Failed to start audio capture:', err);
+            this._showToast(`Audio error: ${err}`, 'error');
+            await this.stop();
+        }
+    }
+
+    async _startQwenMode(settings) {
+        this._updateStatus('connecting');
+        const { QwenRealtimeClient } = await import('./qwen-realtime-client.js');
+        const { OpenAiAudioOutputQueue } = await import('./openai-audio-output-queue.js');
+
+        // Dual-panel routing key is the same as OpenAI (source/target separation).
+        this.transcriptUI.provider = 'openai';
+
+        this.qwenOutputQueue = new OpenAiAudioOutputQueue();
+        this.qwenClient = new QwenRealtimeClient();
+
+        const targetSelect = document.getElementById('select-target-lang');
+        const targetLanguageName =
+            targetSelect?.options?.[targetSelect.selectedIndex]?.textContent?.trim() || 'Vietnamese';
+
+        this.qwenClient.onStatusChange = (state) => {
+            if (state === 'ready') this._updateStatus('connected');
+            else if (state === 'connecting') this._updateStatus('connecting');
+        };
+        this.qwenClient.onProvisional = (text) => {
+            this.transcriptUI.setProvisional(text, null, null);
+        };
+        this.qwenClient.onSourceProvisional = (text) => {
+            this.transcriptUI.setSourceProvisional?.(text);
+        };
+        this.qwenClient.onSegment = (sourceText, translatedText) => {
+            if (sourceText) this.transcriptUI.addOriginal(sourceText, null, null);
+            this.transcriptUI.addTranslation(translatedText);
+            sessionStore.addSegment(sourceText || '', translatedText || '');
+            this.transcriptUI.clearSourceProvisional?.();
+            // Clear target-side provisional too — without this, the just-finalized
+            // text remains in provisionalText and renders a duplicate tail line.
+            this.transcriptUI.clearProvisional();
+        };
+        this.qwenClient.onError = (code, msg) => {
+            console.error('[Qwen Realtime]', code, msg);
+            this._showToast(`${code}: ${msg}`, 'error');
+            this._updateStatus('error');
+        };
+        this.qwenClient.onClosed = (reason) => {
+            console.warn('[Qwen Realtime] closed:', reason);
+            if (this.isRunning) {
+                this._showToast('Qwen session closed — reconnecting…', 'success');
+                setTimeout(() => {
+                    if (this.isRunning) this._startQwenMode(settingsManager.get());
+                }, 1000);
+            }
+        };
+
+        try {
+            await this.qwenClient.connect({
+                apiKey: settings.qwen_api_key,
+                targetLanguage: settings.target_language,
+                targetLanguageName,
+                audioOutput: settings.qwen_audio_output !== false,
+            }, this.qwenOutputQueue);
+            this._refreshOpenAiAudioIcon();
+        } catch (err) {
+            this._showToast(`Qwen connect failed: ${err}`, 'error');
+            await this.stop();
+            return;
+        }
+
+        try {
+            let audioBatchCount = 0;
+            const channel = new window.__TAURI__.core.Channel();
+            channel.onmessage = (pcmData) => {
+                audioBatchCount++;
+                if (audioBatchCount <= 3 || audioBatchCount % 50 === 0) {
+                    console.log(`[Qwen capture] batch #${audioBatchCount}, size:`, pcmData?.length || 0);
+                }
+                const bytes = new Uint8Array(pcmData);
+                this.qwenClient.sendAudio(bytes.buffer);
+            };
+            console.log('[Qwen] Starting audio capture, source:', this.currentSource);
+            await invoke('start_capture', {
+                source: this.currentSource,
+                channel,
+            });
+            console.log('[Qwen] start_capture invoked OK');
         } catch (err) {
             console.error('Failed to start audio capture:', err);
             this._showToast(`Audio error: ${err}`, 'error');
@@ -1891,6 +2006,17 @@ class App {
                 this.openAiOutputQueue.close();
                 this.openAiOutputQueue = null;
             }
+            this._updateStatus('disconnected');
+        } else if (this.translationMode === 'qwen') {
+            if (this.qwenClient) {
+                try { await this.qwenClient.disconnect(); } catch {}
+                this.qwenClient = null;
+            }
+            if (this.qwenOutputQueue) {
+                this.qwenOutputQueue.close();
+                this.qwenOutputQueue = null;
+            }
+            try { await invoke('stop_capture'); } catch {}
             this._updateStatus('disconnected');
         } else {
             // Disconnect Soniox

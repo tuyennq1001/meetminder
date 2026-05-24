@@ -7,6 +7,33 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## v0.7.0 - 2026-05-24
+
+### New Features
+
+- **Qwen-Omni Realtime translation provider**: added Alibaba DashScope `qwen3.5-omni-plus-realtime` as a fourth engine. Free preview tier, streams translated text + voice, supports the full Soniox language list (not capped at 13 like OpenAI).
+- **Engine picker**: third card on the onboarding screen + 🌏 Qwen pill in the toolbar for quick switching.
+- **System audio + Both source modes for Qwen**: unlike OpenAI Realtime (mic-only), Qwen runs with system audio capture because turn-taking is client-side RMS-VAD rather than server-side speaker detection.
+
+### Bug Fixes
+
+- **Duplicate tail line on final segment**: `provisionalText` was not cleared after `addTranslation`, leaving a stale copy of the just-finalized text rendered as a pending "..." row beneath it. Affected OpenAI Realtime too; both engines now clear provisional on every `onSegment`.
+
+### Technical
+
+- New Rust module `src-tauri/src/commands/qwen_realtime.rs` (~400 lines): WebSocket bridge to DashScope international endpoint, client-side RMS-VAD turn control (threshold 500 int16, 400ms silence, 2-7s window), single-flight `response_in_flight` guard to avoid `response.create` races, dedup on `last_done_response_id` for `response.text.done` vs `response.audio_transcript.done` collisions.
+- New JS module `src/js/qwen-realtime-client.js` mirrors `openai-realtime-client.js` callback shape so app.js wiring stays symmetric.
+- Hardened session instructions enforce pronoun consistency and full-translate guarantee (Qwen sometimes returned partial translations without the instruction prefix).
+- Settings: added `qwen_api_key`, `qwen_audio_output` (default true).
+- Source/target source-final queue (`_pendingSourceFinals`) pairs ASR finals with translation finals when their cadences diverge.
+
+### Caveats
+
+- DashScope international keys must be created at https://bailian.console.alibabacloud.com (Singapore region). China-Mainland keys hit a different endpoint.
+- Audio modality requires audio_output=true; muting at the toolbar sends `modalities=["text"]` so DashScope skips audio generation entirely (saves billable seconds).
+
+---
+
 ## v0.6.0 - 2026-05-13
 
 ### New Features

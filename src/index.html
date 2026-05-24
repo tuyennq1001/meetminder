@@ -42,6 +42,10 @@
             <span class="engine-pill-icon">⚡</span>
             <span class="engine-pill-label">OpenAI</span>
           </button>
+          <button class="engine-pill-btn" data-engine-class="qwen" type="button">
+            <span class="engine-pill-icon">🌏</span>
+            <span class="engine-pill-label">Qwen</span>
+          </button>
         </div>
 
         <div class="source-controls">
@@ -190,6 +194,16 @@
               <li>Most idiomatic output</li>
             </ul>
           </button>
+          <button class="engine-card" data-engine-class="qwen" type="button">
+            <div class="engine-card-icon">🌏</div>
+            <div class="engine-card-name">Qwen-Omni Realtime</div>
+            <div class="engine-card-meta">Free preview · voice included</div>
+            <ul class="engine-card-feats">
+              <li>Multilingual</li>
+              <li>Translated voice output</li>
+              <li>Alibaba DashScope</li>
+            </ul>
+          </button>
         </div>
         <p class="engine-picker-hint">Switch any time from the engine pill in the toolbar.</p>
       </div>
@@ -255,10 +269,12 @@
             <option value="soniox">☁️ Soniox</option>
             <option value="local">🖥️ Local MLX</option>
             <option value="openai">⚡ OpenAI Realtime</option>
+            <option value="qwen">🌏 Qwen-Omni Realtime</option>
           </select>
           <p class="hint" id="hint-mode-soniox">Cloud · 70+ languages · ~$0.12/hr</p>
           <p class="hint" id="hint-mode-local" style="display:none">Offline · free · ~3–4s delay</p>
           <p class="hint" id="hint-mode-openai" style="display:none">Cloud · 13 languages · voice output included</p>
+          <p class="hint" id="hint-mode-qwen" style="display:none">Cloud · multilingual · voice output · free preview</p>
           <div id="openai-cost-warning" class="cost-warning" style="display:none">
             ⚠️ ~$4/hr — much pricier than Soniox. Charged to your OpenAI account.
           </div>
@@ -296,6 +312,22 @@
             <button id="btn-test-openai" class="btn-secondary small" title="Test connection">Test</button>
           </div>
           <p class="hint">Get key at <a href="#" id="link-openai">platform.openai.com</a></p>
+        </div>
+
+        <div class="settings-section" id="section-qwen-key" style="display:none">
+          <span class="field-label">
+            Qwen (DashScope) API Key
+            <span id="key-status-qwen" class="key-status"></span>
+          </span>
+          <div class="input-group">
+            <input type="password" id="input-qwen-key" placeholder="sk-..." autocomplete="off" />
+            <button id="btn-toggle-qwen-key" class="icon-btn small" title="Show/Hide">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          </div>
+          <p class="hint">Get DashScope key at <a href="#" id="link-qwen">bailian.console.alibabacloud.com</a> · free preview</p>
         </div>
 
         <div class="settings-section" id="section-languages">
