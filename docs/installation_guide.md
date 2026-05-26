@@ -69,6 +69,10 @@ Soniox provides real-time speech recognition and translation.
 
 > 💡 Soniox charges ~$0.12/hour of audio processed. $10 ≈ 80+ hours of translation.
 
+After pasting the Soniox key in Settings, the **Soniox** engine becomes the active option:
+
+![Settings — Soniox engine selected with API key](user_manual/setting_soniox.png)
+
 ---
 
 ## Step 5b — Get an OpenAI API Key (Optional)
@@ -91,7 +95,39 @@ OpenAI Realtime is the **premium** engine — it returns translated text **and**
 
 After pasting the OpenAI key in Settings, the **OpenAI Realtime** engine becomes selectable:
 
-![Settings — OpenAI Realtime engine selected with API key](user_manual/openai_setting.png)
+![Settings — OpenAI Realtime engine selected with API key](user_manual/setting_openai.png)
+
+---
+
+## Step 5c — Get a Qwen LiveTranslate Flash API Key (Optional, free preview)
+
+Qwen LiveTranslate Flash (Alibaba DashScope) is the **free preview** engine — fastest of the three (~4 s first token), supports **60+ languages**, returns translated text only (no native voice, no source-transcript panel).
+
+> ⚠️ **IMPORTANT — must pick Singapore region.** The app connects to the international endpoint `dashscope-intl.aliyuncs.com`. Keys created in other regions (China Beijing, Hong Kong, US Virginia, Germany Frankfurt) are rejected and the app raises `WebSocket error` the moment you press Start.
+
+1. Open <https://bailian.console.alibabacloud.com> (Alibaba Cloud Model Studio).
+2. **Before sign-in / sign-up**, click the region dropdown in the top-right and pick **Singapore**. If you've already signed in to another region, switch to Singapore — you may need to register a separate workspace for this region.
+3. Once inside the Console (top-right still shows "Singapore"), activate the **Model Studio (DashScope)** service if prompted.
+4. Go to **API Keys**, click **Create API Key**, name it anything.
+5. **Copy the key immediately** — it's only shown in full once.
+6. In Settings → pick the **Qwen LiveTranslate Flash** engine → paste the key.
+
+![Settings — Qwen LiveTranslate Flash engine selected with API key](user_manual/setting_qwen.png)
+
+> **Qwen Live Flash notes:**
+> - **Must pick a source language** before Start. Unlike Soniox/OpenAI which auto-detect, Qwen Live needs the source language up front — the source picker automatically hides "Auto-detect" when this engine is selected.
+> - **No dual-panel view** (the model returns translation only, no source transcript). Translation-only display.
+> - **No native voice output / custom TTS** — avoids the speaker → mic feedback loop.
+> - Currently in **free preview**. Pricing may change once it leaves preview — watch Alibaba Cloud announcements.
+
+### Troubleshooting `WebSocket error` with Qwen
+
+| Symptom | Common cause | Fix |
+| --- | --- | --- |
+| `WebSocket error` immediately on Start | Key created in a non-Singapore region | Recreate the key in Singapore (see step 2 above) |
+| Error after ~5–10 seconds | Right region but Qwen Live model not enabled | Model Studio → Model Square → enable `qwen3-livetranslate-flash-realtime` |
+| Translates one sentence then stalls | Source language left on "auto" | Settings → Source language → pick the actual language (e.g. Japanese) |
+| Flaky errors | Network blocks `dashscope-intl.aliyuncs.com` (corp firewall / VPN) | Try a different network (4G/5G) or disable VPN |
 
 ---
 
@@ -107,11 +143,12 @@ After pasting the OpenAI key in Settings, the **OpenAI Realtime** engine becomes
    - **Two-way**: Select Language A and Language B (for bilingual meetings — the app auto-detects and translates both directions). *Two-way is unavailable on OpenAI Realtime — use Soniox or Local for two-way.*
 5. Choose Translation Engine:
 
-| Mode | Speed | Quality | Cost | Voice output | Internet |
-|------|-------|---------|------|--------------|----------|
-| ☁️ **Soniox** | ~2 s | 9/10 | ~$0.12/hr | Via TTS (free–$8/hr) | Required |
-| ⚡ **OpenAI Realtime** | ~1.5 s | 9.5/10, very idiomatic | **~$4/hr** | ✅ Native, included | Required |
-| 🖥️ **Local MLX** | ~10 s | 7/10 | Free | Via TTS | Not needed |
+| Mode | Speed | Quality | Cost | Voice output | Source transcript | Internet |
+|------|-------|---------|------|--------------|-------------------|----------|
+| ☁️ **Soniox** | ~2 s | 9/10 | ~$0.12/hr | Via TTS (free–$8/hr) | ✅ Yes (dual panel) | Required |
+| ⚡ **OpenAI Realtime** | ~1.5 s | 9.5/10, very idiomatic | **~$4/hr** | Off by default | ✅ Yes (dual panel) | Required |
+| 🌏 **Qwen LiveTranslate Flash** | ~4 s | 8/10, 60+ languages | **Free (preview)** | ❌ None | ❌ None (translation only) | Required |
+| 🖥️ **Local MLX** | ~10 s | 7/10 | Free | Via TTS | ✅ Yes | Not needed |
 
 6. Click **Save & Close**
 

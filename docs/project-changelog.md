@@ -7,6 +7,36 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## v0.7.2 - 2026-05-26
+
+### Changes
+
+- **Qwen engine migrated from Omni Plus to LiveTranslate Flash** (`qwen3-livetranslate-flash-realtime`). Server-side VAD replaces the prior RMS-based client VAD; text-only modality; 60+ supported languages via an explicit picker (mirrors mobile v0.4.3). Free preview tier on DashScope international (Singapore region only).
+- **Settings reorganized per engine** (mobile parity): only the active engine's API key section is shown. Soniox-only features (Custom Context, Strict language detection, Endpoint delay) hide when engine ≠ Soniox. TTS tab hides when engine is cloud-realtime (OpenAI/Qwen). Engine hints collapsed into a single dynamic line.
+- **Qwen single-panel transcript**: Live Flash returns translation only (no source ASR channel), so the dual-panel view is force-collapsed to single when Qwen is active — no more empty source pane with grey provisional noise.
+- **Source picker hides "Auto-detect" on Qwen**: Live Flash stalls when source language is "auto" on real mic input. Source language now defaults to English and snaps to a real entry when switching to Qwen.
+- **Two-way mode disabled on Qwen** (already disabled on OpenAI). Cloud realtime engines are one-way only.
+
+### Documentation
+
+- Installation guides (macOS + Windows, EN + VI) updated with 3 new engine-specific Settings screenshots (`setting_soniox.png`, `setting_openai.png`, `setting_qwen.png`). EN macOS guide gained the previously VI-only Qwen setup section.
+
+### Technical
+
+- `src-tauri/src/commands/qwen_realtime.rs` rewritten 486 → 264 LOC. URL switched to `qwen3-livetranslate-flash-realtime`. RMS-VAD state, `commit_turn`, `rms_int16` all removed. New session payload requests `modalities=["text"]`, sets `input_audio_transcription.language` + `translation.language`, and disables turn-detection (server handles it). `response.text.text` snapshots emit as provisional; `response.text.done` emits final with dedupe on `response_id`.
+- `src/js/qwen-realtime-client.js` rewritten 148 → 90 LOC. Provisional buffer is full snapshot assignment (Live Flash sends `text + stash` every tick, not deltas). `connect({ apiKey, sourceLanguage, targetLanguage })` — output queue and source provisional callback dropped.
+- `src/js/qwen-langs.js` (new): 60-entry language list shared shape with mobile's `QWEN_LANGS`. No "auto" option.
+- `_updateModeUI` in `src/js/app.js`: per-engine visibility for key sections, Soniox-only blocks, and the TTS tab (with active-tab fallback to Translation).
+- `TranscriptUI.provider` converted to getter/setter so changing provider live-strips the `.dual-view` CSS class. `_render()` forces `_renderSingle` when provider='qwen'. `_renderSingle` treats Qwen provisional as a target stream (`seg-translated` class) instead of dim italic.
+- Removed `qwen_audio_output` from settings (struct, defaults, JS DEFAULT_SETTINGS). `#[serde(default)]` at struct level handles existing settings.json without migration.
+
+### Caveats
+
+- DashScope keys must be created in **Singapore region**; other regions hit a different endpoint and fail with `WebSocket error` on Start.
+- Existing Qwen-Omni users will need to switch source-language picker off "Auto" and may need to re-confirm target language (the auto-snap defaults to Vietnamese if their previous code isn't in the 60-language list).
+
+---
+
 ## v0.7.1 - 2026-05-25
 
 ### Changes

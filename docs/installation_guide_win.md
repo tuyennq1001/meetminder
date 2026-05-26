@@ -107,7 +107,7 @@ Click **Save & Close** when done.
 
 Once a valid OpenAI key is saved, the **OpenAI Realtime** engine becomes selectable in the dropdown:
 
-![Settings — OpenAI Realtime engine with API key](user_manual/openai_setting.png)
+![Settings — OpenAI Realtime engine with API key](user_manual/setting_openai.png)
 
 ---
 

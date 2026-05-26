@@ -29,13 +29,27 @@ export class TranscriptUI {
         // Soniox leaves this empty; its provisionalText carries the source-language ASR.
         this.sourceProvisionalText = '';
         // Provider hint — Soniox puts source-language in provisionalText; OpenAI
-        // splits source/target streams. Without this flag, the dual renderer
-        // can't tell which panel target deltas belong to when source hasn't
-        // arrived yet (whisper is slower than translation in some turns).
-        this.provider = 'soniox';
+        // splits source/target streams; Qwen Live Flash emits target-only.
+        // Backing field for the `provider` getter/setter below.
+        this._provider = 'soniox';
         this.currentSpeaker = null; // Track current speaker to detect changes
         this.currentLanguage = null; // Track current language to detect changes
         this.lastConfidence = null; // Last confidence score from Soniox
+    }
+
+    get provider() {
+        return this._provider;
+    }
+
+    set provider(value) {
+        this._provider = value;
+        // Qwen Live Flash has no source channel — strip the dual-view CSS class
+        // so the overlay reverts to single-column layout even if viewMode='dual'.
+        const overlay = document.getElementById('overlay-view');
+        if (overlay) {
+            const wantsDual = this.viewMode === 'dual' && value !== 'qwen';
+            overlay.classList.toggle('dual-view', wantsDual);
+        }
     }
 
     /**
@@ -55,7 +69,8 @@ export class TranscriptUI {
             this.viewMode = viewMode;
             const overlay = document.getElementById('overlay-view');
             if (overlay) {
-                overlay.classList.toggle('dual-view', viewMode === 'dual');
+                const wantsDual = viewMode === 'dual' && this._provider !== 'qwen';
+                overlay.classList.toggle('dual-view', wantsDual);
             }
             this._render();
         }
@@ -385,7 +400,10 @@ export class TranscriptUI {
         this._ensureContent();
         this._trimSegments();
 
-        if (this.viewMode === 'dual') {
+        // Qwen Live Flash is translation-only (no source transcript channel),
+        // so force single-panel even when the user picked dual view — otherwise
+        // the source panel sits empty / shows dim provisional noise.
+        if (this.viewMode === 'dual' && this.provider !== 'qwen') {
             this._renderDual();
         } else {
             this._renderSingle();
@@ -428,9 +446,11 @@ export class TranscriptUI {
             }
             // OpenAI splits source/target streams: when sourceProvisionalText is
             // present, provisionalText is already the translated stream → render
-            // as bright translated text. Soniox uses provisionalText for source
-            // ASR → keep dim italic.
-            const cls = this.sourceProvisionalText ? 'seg-translated' : 'seg-provisional';
+            // as bright translated text. Qwen Live Flash is translation-only —
+            // provisionalText is the target language too. Soniox uses
+            // provisionalText for source ASR → keep dim italic.
+            const isTargetStream = this.sourceProvisionalText || this.provider === 'qwen';
+            const cls = isTargetStream ? 'seg-translated' : 'seg-provisional';
             html += `<div class="seg-block"><div class="${cls}">${this._esc(this.provisionalText)}</div></div>`;
         }
 

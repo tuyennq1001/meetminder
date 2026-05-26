@@ -9,6 +9,7 @@ Hướng dẫn từng bước cài đặt và sử dụng **My Translator** trê
 - macOS 13 trở lên (Apple Silicon — chip M1/M2/M3/M4)
 - **Soniox** (khuyên dùng): API key của [Soniox](https://soniox.com) (trả theo dùng, ~$0.12/giờ)
 - **OpenAI Realtime** (cao cấp): API key của [OpenAI](https://platform.openai.com) (~$4/giờ — đắt hơn nhiều, nhưng có sẵn giọng nói dịch)
+- **Qwen LiveTranslate Flash** (miễn phí preview): API key DashScope từ [Alibaba Cloud Model Studio](https://bailian.console.alibabacloud.com) (region **Singapore**, 60+ ngôn ngữ, nhanh nhất, text-only)
 - **Chế độ Local**: ~5 GB dung lượng ổ cứng (cho mô hình AI, tải một lần)
 - **Thuyết minh TTS** (tuỳ chọn, dành cho engine text): Xem [Hướng dẫn TTS](tts_guide_vi.md)
 
@@ -69,6 +70,10 @@ Soniox cung cấp nhận diện giọng nói và dịch real-time.
 
 > 💡 Soniox tính ~$0.12/giờ audio. $10 ≈ 80+ giờ dịch.
 
+Sau khi dán Soniox key vào Settings, engine **Soniox** sẽ là lựa chọn đang hoạt động:
+
+![Settings — Engine Soniox được chọn kèm API key](user_manual/setting_soniox.png)
+
 ---
 
 ## Bước 5b — Lấy API Key OpenAI (Tuỳ chọn)
@@ -91,7 +96,39 @@ OpenAI Realtime là engine **cao cấp** — trả về cả văn bản dịch *
 
 Sau khi dán OpenAI key vào Settings, engine **OpenAI Realtime** sẽ chọn được:
 
-![Settings — Chọn engine OpenAI Realtime kèm API key](user_manual/openai_setting.png)
+![Settings — Chọn engine OpenAI Realtime kèm API key](user_manual/setting_openai.png)
+
+---
+
+## Bước 5c — Lấy API Key Qwen LiveTranslate Flash (Tuỳ chọn, miễn phí)
+
+Qwen LiveTranslate Flash (Alibaba DashScope) là engine **miễn phí trong giai đoạn preview** — nhanh nhất trong ba engine (~4 giây), hỗ trợ **60+ ngôn ngữ**, chỉ trả về văn bản dịch (không có giọng nói, không có dual-panel source).
+
+> ⚠️ **QUAN TRỌNG — phải chọn region Singapore.** App kết nối tới endpoint quốc tế `dashscope-intl.aliyuncs.com`. Key tạo ở region khác (China Beijing, Hong Kong, US Virginia, Germany Frankfurt) sẽ bị reject và app báo `WebSocket error` ngay khi bấm Start.
+
+1. Mở <https://bailian.console.alibabacloud.com> (Alibaba Cloud Model Studio).
+2. **Trước khi đăng nhập / đăng ký**, bấm dropdown region ở góc trên bên phải và chọn **Singapore**. Nếu lỡ login ở region khác rồi, switch sang Singapore — có thể phải đăng ký workspace riêng cho region này.
+3. Sau khi vào Console (đảm bảo góc trên vẫn hiển thị "Singapore"), kích hoạt dịch vụ **Model Studio (DashScope)** nếu được nhắc.
+4. Vào mục **API Keys**, bấm **Create API Key**, đặt tên bất kỳ.
+5. **Sao chép key ngay** — chỉ hiển thị đầy đủ một lần.
+6. Vào Settings → chọn engine **Qwen LiveTranslate Flash** → dán key.
+
+![Settings — Engine Qwen LiveTranslate Flash kèm API key](user_manual/setting_qwen.png)
+
+> **Lưu ý Qwen Live Flash:**
+> - **Phải chọn source language** trước khi Start. Không như Soniox/OpenAI có auto-detect, Qwen Live cần biết rõ ngôn ngữ nguồn — picker source language sẽ tự động ẩn option "Auto-detect" khi chọn engine này.
+> - **Không có dual panel** (model chỉ trả về translation, không có source transcript). Chỉ hiển thị bản dịch.
+> - **Không có TTS giọng nói** — tránh feedback loop (loa → mic → loa…).
+> - Hiện ở giai đoạn **preview (miễn phí)**. Giá có thể thay đổi khi rời preview — theo dõi thông báo của Alibaba Cloud.
+
+### Khắc phục lỗi `WebSocket error` khi dùng Qwen
+
+| Triệu chứng | Nguyên nhân thường gặp | Cách sửa |
+| --- | --- | --- |
+| Báo `WebSocket error` ngay khi bấm Start | Key tạo ở region khác Singapore | Tạo lại key ở region Singapore (xem mục 2 ở trên) |
+| Báo lỗi sau ~5–10 giây | Key đúng region nhưng chưa kích hoạt model Qwen Live | Vào Model Studio → Model Square → bật `qwen3-livetranslate-flash-realtime` |
+| Dịch được 1 câu rồi stall | Source language để "auto" thay vì chọn rõ ngôn ngữ | Settings → Source language → chọn cụ thể (vd: Japanese) |
+| Báo lỗi không ổn định | Mạng chặn `dashscope-intl.aliyuncs.com` (firewall công ty / VPN) | Thử mạng khác (4G/5G) hoặc tắt VPN |
 
 ---
 
@@ -107,11 +144,12 @@ Sau khi dán OpenAI key vào Settings, engine **OpenAI Realtime** sẽ chọn đ
    - **Two-way** (Hai chiều): Chọn Language A và Language B (dành cho meeting song ngữ — app tự nhận diện ai đang nói và dịch sang ngôn ngữ còn lại). *Two-way không khả dụng với OpenAI Realtime — dùng Soniox hoặc Local nếu cần two-way.*
 5. Chọn Translation Engine:
 
-| Chế độ | Tốc độ | Chất lượng | Chi phí | Giọng nói | Internet |
-|--------|--------|------------|---------|-----------|----------|
-| ☁️ **Soniox** | ~2 giây | 9/10 | ~$0.12/giờ | Qua TTS (miễn phí–$8/giờ) | Cần |
-| ⚡ **OpenAI Realtime** | ~1.5 giây | 9.5/10, dịch rất tự nhiên | **~$4/giờ** | ✅ Có sẵn | Cần |
-| 🖥️ **Local MLX** | ~10 giây | 7/10 | Miễn phí | Qua TTS | Không cần |
+| Chế độ | Tốc độ | Chất lượng | Chi phí | Giọng nói | Source transcript | Internet |
+|--------|--------|------------|---------|-----------|-------------------|----------|
+| ☁️ **Soniox** | ~2 giây | 9/10 | ~$0.12/giờ | Qua TTS (miễn phí–$8/giờ) | ✅ Có (dual panel) | Cần |
+| ⚡ **OpenAI Realtime** | ~1.5 giây | 9.5/10, dịch rất tự nhiên | **~$4/giờ** | Tắt mặc định | ✅ Có (dual panel) | Cần |
+| 🌏 **Qwen LiveTranslate Flash** | ~4 giây | 8/10, 60+ ngôn ngữ | **Miễn phí (preview)** | ❌ Không có | ❌ Không có (chỉ dịch) | Cần |
+| 🖥️ **Local MLX** | ~10 giây | 7/10 | Miễn phí | Qua TTS | ✅ Có | Không cần |
 
 6. Bấm **Save & Close**
 

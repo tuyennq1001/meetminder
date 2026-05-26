@@ -107,7 +107,7 @@ Nhấn **Save & Close** khi xong.
 
 Sau khi lưu OpenAI key hợp lệ, engine **OpenAI Realtime** sẽ chọn được trong dropdown:
 
-![Settings — Engine OpenAI Realtime kèm API key](user_manual/openai_setting.png)
+![Settings — Engine OpenAI Realtime kèm API key](user_manual/setting_openai.png)
 
 ---
 

@@ -12,6 +12,7 @@ import { edgeTTSRust } from './edge-tts.js';
 import { audioPlayer } from './audio-player.js';
 import { updater } from './updater.js';
 import { sessionStore } from './session-store.js';
+import { QWEN_LANGS } from './qwen-langs.js';
 
 const { invoke } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
@@ -1145,30 +1146,47 @@ class App {
         const isCloudRealtime = isOpenAi || isQwen;
         this._updatePillState(mode);
 
+        // Single dynamic hint line per engine (mobile parity). Only #hint-mode-soniox
+        // stays visible as the live container; the other hint nodes are kept hidden
+        // so existing IDs remain wired but don't clutter the panel.
         const hintSoniox = document.getElementById('hint-mode-soniox');
         const hintLocal = document.getElementById('hint-mode-local');
         const hintOpenAi = document.getElementById('hint-mode-openai');
         const hintQwen = document.getElementById('hint-mode-qwen');
-        if (hintSoniox) hintSoniox.style.display = isSoniox ? '' : 'none';
-        if (hintLocal) hintLocal.style.display = isLocal ? '' : 'none';
-        if (hintOpenAi) hintOpenAi.style.display = isOpenAi ? '' : 'none';
-        if (hintQwen) hintQwen.style.display = isQwen ? '' : 'none';
+        const ENGINE_HINTS = {
+            soniox: 'Cloud · 70+ languages · ~$0.12/hr',
+            local: 'Offline · free · ~3–4s delay',
+            openai: 'Cloud · 13 languages · text-only captions',
+            qwen: 'Cloud · 60+ languages · text-only · free preview · pick a source language',
+        };
+        if (hintSoniox) {
+            hintSoniox.textContent = ENGINE_HINTS[mode] || '';
+            hintSoniox.style.display = '';
+        }
+        if (hintLocal) hintLocal.style.display = 'none';
+        if (hintOpenAi) hintOpenAi.style.display = 'none';
+        if (hintQwen) hintQwen.style.display = 'none';
 
         const costWarning = document.getElementById('openai-cost-warning');
         if (costWarning) costWarning.style.display = isOpenAi ? '' : 'none';
 
-        // Cloud key sections stay visible across cloud engines so users can
-        // paste keys before picking; only Local hides them all.
+        // Mobile-parity: show only the key section for the active engine.
+        // Local hides them all (no key needed).
         const sectionApiKey = document.getElementById('section-api-key');
         const sectionOpenAiKey = document.getElementById('section-openai-key');
         const sectionQwenKey = document.getElementById('section-qwen-key');
-        if (sectionApiKey) sectionApiKey.style.display = isLocal ? 'none' : '';
-        if (sectionOpenAiKey) sectionOpenAiKey.style.display = isLocal ? 'none' : '';
-        if (sectionQwenKey) sectionQwenKey.style.display = isLocal ? 'none' : '';
+        if (sectionApiKey) sectionApiKey.style.display = isSoniox ? '' : 'none';
+        if (sectionOpenAiKey) sectionOpenAiKey.style.display = isOpenAi ? '' : 'none';
+        if (sectionQwenKey) sectionQwenKey.style.display = isQwen ? '' : 'none';
 
-        // Soniox custom-context block is Soniox-specific.
+        // Soniox-only features: Custom context, Strict language detection,
+        // Endpoint delay. The realtime engines manage these internally.
         const sectionContext = document.getElementById('section-soniox-context');
         if (sectionContext) sectionContext.style.display = isSoniox ? '' : 'none';
+        const sectionStrictLang = document.getElementById('section-strict-lang');
+        if (sectionStrictLang) sectionStrictLang.style.display = isSoniox ? '' : 'none';
+        const sectionEndpointDelay = document.getElementById('section-endpoint-delay');
+        if (sectionEndpointDelay) sectionEndpointDelay.style.display = isSoniox ? '' : 'none';
 
         // Two-way mode incompatible with realtime translation engines — force
         // one-way + disable the option for any cloud-realtime mode.
@@ -1193,6 +1211,20 @@ class App {
         }
         const btnTts = document.getElementById('btn-tts');
         if (btnTts) btnTts.style.display = isCloudRealtime ? 'none' : '';
+
+        // Mobile-parity: hide the entire TTS tab when engine is cloud-realtime.
+        // If the user is currently viewing TTS, snap them back to Translation.
+        const ttsTabBtn = document.querySelector('.settings-tab[data-tab="tab-tts"]');
+        const ttsTabContent = document.getElementById('tab-tts');
+        if (ttsTabBtn) ttsTabBtn.style.display = isCloudRealtime ? 'none' : '';
+        if (isCloudRealtime && ttsTabBtn?.classList.contains('active')) {
+            ttsTabBtn.classList.remove('active');
+            if (ttsTabContent) ttsTabContent.classList.remove('active');
+            const translationTabBtn = document.querySelector('.settings-tab[data-tab="tab-translation"]');
+            const translationTabContent = document.getElementById('tab-translation');
+            translationTabBtn?.classList.add('active');
+            translationTabContent?.classList.add('active');
+        }
         const btnOpenAiAudio = document.getElementById('btn-openai-audio');
         if (btnOpenAiAudio) btnOpenAiAudio.style.display = 'none';
 
@@ -1205,8 +1237,11 @@ class App {
         }
 
         // Restrict target language list to 13 OpenAI-supported in openai mode.
-        // Qwen supports the full Soniox-list, so leave the picker untouched.
+        // Qwen LiveTranslate Flash has its own 60-language list (mirrors mobile
+        // v0.4.3); Qwen also hides Auto on the source picker because the model
+        // rejects "auto" on real mic input.
         this._refreshTargetLangList(mode);
+        this._refreshSourceLangList(mode);
     }
 
     _refreshTargetLangList(mode) {
@@ -1224,9 +1259,34 @@ class App {
             select.innerHTML = OPENAI_LANGS
                 .map(([c, n]) => `<option value="${c}">${n}</option>`).join('');
             select.value = OPENAI_LANGS.some(([c]) => c === current) ? current : 'vi';
+        } else if (mode === 'qwen') {
+            if (!this._fullTargetLangHTML) this._fullTargetLangHTML = select.innerHTML;
+            const langs = QWEN_LANGS;
+            select.innerHTML = langs
+                .map((l) => `<option value="${l.code}">${l.name}</option>`).join('');
+            select.value = langs.some((l) => l.code === current) ? current : 'vi';
         } else if (this._fullTargetLangHTML) {
             select.innerHTML = this._fullTargetLangHTML;
             select.value = current || 'vi';
+        }
+    }
+
+    _refreshSourceLangList(mode) {
+        const select = document.getElementById('select-source-lang');
+        if (!select) return;
+        const current = select.value;
+        if (mode === 'qwen') {
+            if (!this._fullSourceLangHTML) this._fullSourceLangHTML = select.innerHTML;
+            const langs = QWEN_LANGS;
+            // No "Auto" — Live Flash stalls after one segment on real mic when
+            // source isn't explicit (verified iPhone v0.4.2, 2026-05-25).
+            select.innerHTML = langs
+                .map((l) => `<option value="${l.code}">${l.name}</option>`).join('');
+            const validCurrent = langs.some((l) => l.code === current) && current !== 'auto';
+            select.value = validCurrent ? current : 'en';
+        } else if (this._fullSourceLangHTML) {
+            select.innerHTML = this._fullSourceLangHTML;
+            select.value = current || 'auto';
         }
     }
 
@@ -1517,17 +1577,13 @@ class App {
     async _startQwenMode(settings) {
         this._updateStatus('connecting');
         const { QwenRealtimeClient } = await import('./qwen-realtime-client.js');
-        const { OpenAiAudioOutputQueue } = await import('./openai-audio-output-queue.js');
 
-        // Dual-panel routing key is the same as OpenAI (source/target separation).
-        this.transcriptUI.provider = 'openai';
+        // Live Flash is translation-only (no source transcript). Force the
+        // single-panel translation view; dual-panel would render an empty
+        // source column.
+        this.transcriptUI.provider = 'qwen';
 
-        this.qwenOutputQueue = new OpenAiAudioOutputQueue();
         this.qwenClient = new QwenRealtimeClient();
-
-        const targetSelect = document.getElementById('select-target-lang');
-        const targetLanguageName =
-            targetSelect?.options?.[targetSelect.selectedIndex]?.textContent?.trim() || 'Vietnamese';
 
         this.qwenClient.onStatusChange = (state) => {
             if (state === 'ready') this._updateStatus('connected');
@@ -1536,16 +1592,9 @@ class App {
         this.qwenClient.onProvisional = (text) => {
             this.transcriptUI.setProvisional(text, null, null);
         };
-        this.qwenClient.onSourceProvisional = (text) => {
-            this.transcriptUI.setSourceProvisional?.(text);
-        };
         this.qwenClient.onSegment = (sourceText, translatedText) => {
-            if (sourceText) this.transcriptUI.addOriginal(sourceText, null, null);
             this.transcriptUI.addTranslation(translatedText);
-            sessionStore.addSegment(sourceText || '', translatedText || '');
-            this.transcriptUI.clearSourceProvisional?.();
-            // Clear target-side provisional too — without this, the just-finalized
-            // text remains in provisionalText and renders a duplicate tail line.
+            sessionStore.addSegment('', translatedText || '');
             this.transcriptUI.clearProvisional();
         };
         this.qwenClient.onError = (code, msg) => {
@@ -1564,12 +1613,18 @@ class App {
         };
 
         try {
+            // Live Flash rejects "auto" — fall back to English. UI also
+            // strips the "auto" option when engine = qwen (see
+            // _refreshSourceLangList), so this is belt-and-suspenders.
+            const sourceLang =
+                settings.source_language && settings.source_language !== 'auto'
+                    ? settings.source_language
+                    : 'en';
             await this.qwenClient.connect({
                 apiKey: settings.qwen_api_key,
+                sourceLanguage: sourceLang,
                 targetLanguage: settings.target_language,
-                targetLanguageName,
-                audioOutput: false,
-            }, this.qwenOutputQueue);
+            });
         } catch (err) {
             this._showToast(`Qwen connect failed: ${err}`, 'error');
             await this.stop();
@@ -1945,10 +2000,6 @@ class App {
             if (this.qwenClient) {
                 try { await this.qwenClient.disconnect(); } catch {}
                 this.qwenClient = null;
-            }
-            if (this.qwenOutputQueue) {
-                this.qwenOutputQueue.close();
-                this.qwenOutputQueue = null;
             }
             try { await invoke('stop_capture'); } catch {}
             this._updateStatus('disconnected');

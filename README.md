@@ -22,7 +22,7 @@
 ```
                                     ┌── ☁️  Soniox  (text)              ──┐
 System Audio / Mic → 16kHz PCM ─────┼── ⚡ OpenAI Realtime (text+🔊)      ─┼─→ Overlay UI
-                                    ├── 🌏 Qwen-Omni Realtime (text+🔊)   │
+                                    ├── 🌏 Qwen LiveTranslate Flash (text only) │
                                     └── 🖥️  Local MLX  (text, offline)   ─┘
                                                                             ↓ (optional, text engines)
                                                   TTS (Edge / Google / ElevenLabs) → 🔊
@@ -32,11 +32,11 @@ Four translation engines, pick what fits your call:
 
 | Feature | Detail |
 |---------|--------|
-| **Engines** | ☁️ Soniox · ⚡ OpenAI Realtime · 🌏 Qwen-Omni Realtime · 🖥️ Local MLX |
-| **Latency** | ~2–3 s (Soniox / OpenAI / Qwen) · ~10 s (Local) |
-| **Languages** | 70+ source → any target (Soniox / Qwen), 13 targets (OpenAI), JA/EN/ZH/KO → VI/EN (Local) |
-| **Cost** | ~$0.12/hr (Soniox) · ~$4/hr (OpenAI, includes voice) · Free preview (Qwen, includes voice) · Free (Local) |
-| **TTS** | 3 providers for text engines (Edge free, Google, ElevenLabs) — OpenAI & Qwen stream their own voice |
+| **Engines** | ☁️ Soniox · ⚡ OpenAI Realtime · 🌏 Qwen LiveTranslate Flash · 🖥️ Local MLX |
+| **Latency** | ~2 s (Soniox / OpenAI) · ~4 s (Qwen) · ~10 s (Local) |
+| **Languages** | 70+ source → any target (Soniox), 13 targets (OpenAI), 60+ source+target (Qwen), JA/EN/ZH/KO → VI/EN (Local) |
+| **Cost** | ~$0.12/hr (Soniox) · ~$4/hr (OpenAI, includes voice) · Free preview (Qwen, text-only) · Free (Local) |
+| **TTS** | 3 providers for Soniox / Local (Edge free, Google, ElevenLabs) — OpenAI streams its own voice (off by default), Qwen text-only |
 | **Platform** | macOS (ARM + Intel) · Windows · Local mode = Apple Silicon only |
 | **Signed** | ✅ macOS signed & notarized |
 | **Auto-Update** | ✅ Built-in, check & install from Settings |
@@ -111,9 +111,11 @@ Single-call streaming translation via OpenAI's `gpt-realtime-translate` (May 202
 
 Two-way mode and the custom TTS toggle are unavailable while OpenAI Realtime is selected (audio is native).
 
-### 🌏 Qwen-Omni Realtime Mode
+### 🌏 Qwen LiveTranslate Flash Mode
 
-Alibaba DashScope `qwen3.5-omni-plus-realtime` — streams **translated text + voice** like OpenAI but on Qwen's **free preview tier**, with the **full Soniox language list** (not capped at 13). Uses client-side RMS-VAD for turn detection so it works with **system audio and Both source modes** (OpenAI Realtime is mic-only). Get a key from [Alibaba Cloud Bailian](https://bailian.console.alibabacloud.com) (Singapore region, not China-Mainland).
+Alibaba DashScope `qwen3-livetranslate-flash-realtime` — streams **translated text** (no native voice) on Qwen's **free preview tier**, with a **60-language picker** matching the mobile app. Server-side VAD handles turn detection, so it works with mic / system audio / both. Translation-only display (no source-transcript panel; the model doesn't expose ASR). Get a key from [Alibaba Cloud Bailian](https://bailian.console.alibabacloud.com) (Singapore region only — other regions hit a different endpoint and fail).
+
+Source language must be picked explicitly (auto-detect is disabled on this engine — Live Flash stalls on real mic input when source is "auto"). Two-way mode and the custom TTS toggle are also disabled while Qwen is selected.
 
 ### 🖥️ Local Mode (Apple Silicon only)
 
