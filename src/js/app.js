@@ -11,6 +11,8 @@ import { googleTTS } from './google-tts.js';
 import { edgeTTSRust } from './edge-tts.js';
 import { audioPlayer } from './audio-player.js';
 import { updater } from './updater.js';
+import { sessionStore } from './session-store.js';
+import { QWEN_LANGS } from './qwen-langs.js';
 
 const { invoke } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
@@ -42,6 +44,15 @@ class App {
         // Init transcript UI
         const transcriptContainer = document.getElementById('transcript-content');
         this.transcriptUI = new TranscriptUI(transcriptContainer);
+
+        // Init session store — single session per app launch (auto-resumes
+        // across Start/Stop cycles; persists on every Stop).
+        const initSettings = settingsManager.get();
+        sessionStore.init({
+            engine: initSettings.translation_mode || 'soniox',
+            sourceLang: initSettings.source_language || 'auto',
+            targetLang: initSettings.target_language || 'vi',
+        });
 
         // Check platform — hide Local MLX on non-Apple-Silicon
         await this._checkPlatformSupport();
@@ -81,7 +92,10 @@ class App {
         this._initAboutTab();
         this._checkForUpdates();
 
-        console.log('🌐 My Translator v0.5.0 initialized');
+        // Show engine picker on first launch
+        this._maybeShowEnginePicker();
+
+        console.log('🌐 My Translator v0.7.1 initialized');
     }
 
     async _checkPlatformSupport() {
@@ -149,10 +163,66 @@ class App {
             }
         });
 
+        // New session button — flush current and start fresh
+        document.getElementById('btn-new-session')?.addEventListener('click', async () => {
+            if (this.isRunning) {
+                this._showToast('Stop the current session first', 'error');
+                return;
+            }
+            try { await sessionStore.endSession(); } catch {}
+            const settings = settingsManager.get();
+            sessionStore.init({
+                engine: settings.translation_mode || 'soniox',
+                sourceLang: settings.source_language || 'auto',
+                targetLang: settings.target_language || 'vi',
+            });
+            this.transcriptUI.clearSession();
+            this.transcriptUI.clear();
+            this._showToast('New session started', 'success');
+            await this._showSessions();
+        });
+
+        // Session search box (debounced)
+        const searchInput = document.getElementById('input-session-search');
+        if (searchInput) {
+            let t;
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(t);
+                const q = e.target.value;
+                t = setTimeout(() => this._showSessions(q), 200);
+            });
+        }
+
+        // Edit session title (inline prompt)
+        document.getElementById('btn-session-edit-title')?.addEventListener('click', async () => {
+            const cur = this._currentViewedSession;
+            if (!cur || cur.isLegacy) {
+                this._showToast('Cannot rename legacy sessions', 'error');
+                return;
+            }
+            const titleEl = document.getElementById('session-viewer-title');
+            const oldTitle = titleEl?.textContent || '';
+            const newTitle = prompt('Rename session:', oldTitle);
+            if (newTitle == null || newTitle === oldTitle) return;
+            try {
+                await invoke('update_session_title', { id: cur.id, title: newTitle });
+                if (titleEl) titleEl.textContent = newTitle;
+                this._showToast('Renamed', 'success');
+            } catch (err) {
+                this._showToast(`Rename failed: ${err}`, 'error');
+            }
+        });
+
+        // Export session
+        document.getElementById('btn-session-export-srt')?.addEventListener('click', () => this._exportCurrentSession('srt'));
+        document.getElementById('btn-session-export-txt')?.addEventListener('click', () => this._exportCurrentSession('txt'));
+
         // Close button (overlay)
         document.getElementById('btn-close').addEventListener('click', async () => {
             await this._saveWindowPosition();
             await this.stop();
+            // Mark session ended so resume-on-restart only fires for crashes
+            try { await sessionStore.endSession(); } catch {}
             await this.appWindow.close();
         });
 
@@ -273,9 +343,50 @@ class App {
             input.type = input.type === 'password' ? 'text' : 'password';
         });
 
+        document.getElementById('btn-toggle-openai-key')?.addEventListener('click', () => {
+            const input = document.getElementById('input-openai-key');
+            if (input) input.type = input.type === 'password' ? 'text' : 'password';
+        });
+
+        document.getElementById('link-openai')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.__TAURI__.opener.openUrl('https://platform.openai.com/api-keys');
+        });
+
+        // Inline key format validation + engine-option enable/disable
+        const sonioxInput = document.getElementById('input-api-key');
+        const openaiInput = document.getElementById('input-openai-key');
+        sonioxInput?.addEventListener('input', () => this._refreshKeyStatus());
+        openaiInput?.addEventListener('input', () => this._refreshKeyStatus());
+
+        // Test-connection buttons
+        document.getElementById('btn-test-soniox')?.addEventListener('click', () => this._testConnection('soniox'));
+        document.getElementById('btn-test-openai')?.addEventListener('click', () => this._testConnection('openai'));
+
         // Translation mode toggle
         document.getElementById('select-translation-mode').addEventListener('change', (e) => {
             this._updateModeUI(e.target.value);
+        });
+
+        // Welcome-screen engine cards: pick a class (standard / openai),
+        // remember it, hide the picker, sync the rest of the UI.
+        document.querySelectorAll('#engine-picker .engine-card').forEach(card => {
+            card.addEventListener('click', () => {
+                this._selectEngineClass(card.dataset.engineClass);
+                this._hideEnginePicker();
+            });
+        });
+
+        // Toolbar engine pill: same switch, available any time the session isn't
+        // running. While running, the pill is locked (visual feedback only).
+        document.querySelectorAll('#engine-pill .engine-pill-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (this.isRunning || this.isStarting) {
+                    this._showToast('Stop the session before switching engine', 'error');
+                    return;
+                }
+                this._selectEngineClass(btn.dataset.engineClass);
+            });
         });
 
         // Translation type toggle (one-way / two-way)
@@ -385,13 +496,19 @@ class App {
             this._toggleTTS();
         });
 
-        // Wire Soniox callbacks
+        // Wire Soniox callbacks. Soniox emits original + translation as
+        // separate finals; we FIFO-pair them into the session store so each
+        // saved segment has both source and target text.
+        this._sonioxOriginalQueue = [];
         sonioxClient.onOriginal = (text, speaker, language) => {
             this.transcriptUI.addOriginal(text, speaker, language);
+            this._sonioxOriginalQueue.push(text);
         };
 
         sonioxClient.onTranslation = (text) => {
             this.transcriptUI.addTranslation(text);
+            const src = this._sonioxOriginalQueue.shift() || '';
+            sessionStore.addSegment(src, text);
             this._speakIfEnabled(text);
         };
 
@@ -534,10 +651,15 @@ class App {
         const s = settingsManager.get();
 
         document.getElementById('input-api-key').value = s.soniox_api_key || '';
+        const openaiKeyInput = document.getElementById('input-openai-key');
+        if (openaiKeyInput) openaiKeyInput.value = s.openai_api_key || '';
+        const qwenKeyInput = document.getElementById('input-qwen-key');
+        if (qwenKeyInput) qwenKeyInput.value = s.qwen_api_key || '';
         document.getElementById('select-source-lang').value = s.source_language || 'auto';
         document.getElementById('select-target-lang').value = s.target_language || 'vi';
         document.getElementById('select-translation-mode').value = s.translation_mode || 'soniox';
         this._updateModeUI(s.translation_mode || 'soniox');
+        this._refreshKeyStatus();
 
         // Translation type (one-way / two-way)
         const translationType = s.translation_type || 'one_way';
@@ -637,6 +759,8 @@ class App {
     async _saveSettingsFromForm() {
         const settings = {
             soniox_api_key: document.getElementById('input-api-key').value.trim(),
+            openai_api_key: document.getElementById('input-openai-key')?.value.trim() || '',
+            qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
             source_language: document.getElementById('select-source-lang').value,
             target_language: document.getElementById('select-target-lang').value,
             translation_mode: document.getElementById('select-translation-mode').value,
@@ -834,7 +958,14 @@ class App {
     }
 
     _escAttr(str) {
-        return str.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return String(str ?? '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    _esc(str) {
+        return String(str ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
     }
 
     _updateTTSProviderUI(provider) {
@@ -911,8 +1042,9 @@ class App {
         const wasRunning = this.isRunning;
         const labels = { system: 'System Audio', microphone: 'Microphone', both: 'System + Mic' };
         const label = labels[source] || source;
+        // Persist so subsequent settings notifications don't reset us back.
+        settingsManager.save({ audio_source: source });
 
-        // If currently running, restart with new source
         if (wasRunning) {
             this.stop().then(() => {
                 this.currentSource = source;
@@ -936,20 +1068,335 @@ class App {
             this.currentSource === 'both');
     }
 
+    // ─── Engine picker (Standard vs OpenAI) ──────────────────
+    // OpenAI Realtime is structurally different (text+voice fused, no two-way,
+    // no custom TTS), so we surface the choice as a top-level decision rather
+    // than burying it in Settings. "Standard" represents the Soniox/Local pair
+    // — they share the same UX shape (text-only, optional TTS, two-way, etc.).
+
+    _engineClassFromMode(mode) {
+        if (mode === 'openai') return 'openai';
+        if (mode === 'qwen') return 'qwen';
+        return 'standard';
+    }
+
+    _selectEngineClass(klass) {
+        const settings = settingsManager.get();
+        const currentMode = settings.translation_mode || 'soniox';
+        let nextMode = currentMode;
+        if (klass === 'openai') {
+            nextMode = 'openai';
+        } else if (klass === 'qwen') {
+            nextMode = 'qwen';
+        } else if (klass === 'standard') {
+            // Stay on whatever standard sub-engine was configured before, or
+            // default to soniox if previously a cloud realtime engine.
+            nextMode = (currentMode === 'soniox' || currentMode === 'local')
+                ? currentMode : 'soniox';
+        }
+
+        settingsManager.save({ translation_mode: nextMode });
+        const select = document.getElementById('select-translation-mode');
+        if (select) select.value = nextMode;
+        this._updateModeUI(nextMode);
+    }
+
+    _updatePillState(mode) {
+        const klass = this._engineClassFromMode(mode);
+        document.querySelectorAll('#engine-pill .engine-pill-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.engineClass === klass);
+        });
+    }
+
+    _setEnginePillLocked(locked) {
+        const pill = document.getElementById('engine-pill');
+        if (!pill) return;
+        pill.dataset.locked = locked ? 'true' : 'false';
+        pill.querySelectorAll('.engine-pill-btn').forEach(btn => { btn.disabled = locked; });
+    }
+
+    _showEnginePicker() {
+        const picker = document.getElementById('engine-picker');
+        if (picker) picker.style.display = '';
+    }
+
+    _hideEnginePicker() {
+        const picker = document.getElementById('engine-picker');
+        if (picker) picker.style.display = 'none';
+        this._enginePickerDismissed = true;
+    }
+
+    _maybeShowEnginePicker() {
+        // Show on each fresh launch until first dismissal (click on a card or
+        // first Start). Once dismissed, the toolbar pill is the only switcher.
+        if (this._enginePickerDismissed) return;
+        if (this.isRunning || this.isStarting) return;
+        if (this.transcriptUI && this.transcriptUI.hasContent()) return;
+        this._showEnginePicker();
+    }
+
     _updateModeUI(mode) {
         const isSoniox = mode === 'soniox';
+        const isLocal = mode === 'local';
+        const isOpenAi = mode === 'openai';
+        const isQwen = mode === 'qwen';
+        // Cloud-realtime engines that share the OpenAI-style audio toggle,
+        // mic-only capture, and dual-panel routing. Used in place of bare
+        // `isOpenAi` checks below so Qwen inherits the same UI shape.
+        const isCloudRealtime = isOpenAi || isQwen;
+        this._updatePillState(mode);
 
-        // Toggle hints
+        // Single dynamic hint line per engine (mobile parity). Only #hint-mode-soniox
+        // stays visible as the live container; the other hint nodes are kept hidden
+        // so existing IDs remain wired but don't clutter the panel.
         const hintSoniox = document.getElementById('hint-mode-soniox');
         const hintLocal = document.getElementById('hint-mode-local');
-        if (hintSoniox) hintSoniox.style.display = isSoniox ? '' : 'none';
-        if (hintLocal) hintLocal.style.display = !isSoniox ? '' : 'none';
+        const hintOpenAi = document.getElementById('hint-mode-openai');
+        const hintQwen = document.getElementById('hint-mode-qwen');
+        const ENGINE_HINTS = {
+            soniox: 'Cloud · 70+ languages · ~$0.12/hr',
+            local: 'Offline · free · ~3–4s delay',
+            openai: 'Cloud · 13 languages · text-only captions',
+            qwen: 'Cloud · 60+ languages · text-only · free preview · pick a source language',
+        };
+        if (hintSoniox) {
+            hintSoniox.textContent = ENGINE_HINTS[mode] || '';
+            hintSoniox.style.display = '';
+        }
+        if (hintLocal) hintLocal.style.display = 'none';
+        if (hintOpenAi) hintOpenAi.style.display = 'none';
+        if (hintQwen) hintQwen.style.display = 'none';
 
-        // Toggle Soniox-only sections
+        const costWarning = document.getElementById('openai-cost-warning');
+        if (costWarning) costWarning.style.display = isOpenAi ? '' : 'none';
+
+        // Mobile-parity: show only the key section for the active engine.
+        // Local hides them all (no key needed).
         const sectionApiKey = document.getElementById('section-api-key');
-        const sectionContext = document.getElementById('section-soniox-context');
+        const sectionOpenAiKey = document.getElementById('section-openai-key');
+        const sectionQwenKey = document.getElementById('section-qwen-key');
         if (sectionApiKey) sectionApiKey.style.display = isSoniox ? '' : 'none';
+        if (sectionOpenAiKey) sectionOpenAiKey.style.display = isOpenAi ? '' : 'none';
+        if (sectionQwenKey) sectionQwenKey.style.display = isQwen ? '' : 'none';
+
+        // Soniox-only features: Custom context, Strict language detection,
+        // Endpoint delay. The realtime engines manage these internally.
+        const sectionContext = document.getElementById('section-soniox-context');
         if (sectionContext) sectionContext.style.display = isSoniox ? '' : 'none';
+        const sectionStrictLang = document.getElementById('section-strict-lang');
+        if (sectionStrictLang) sectionStrictLang.style.display = isSoniox ? '' : 'none';
+        const sectionEndpointDelay = document.getElementById('section-endpoint-delay');
+        if (sectionEndpointDelay) sectionEndpointDelay.style.display = isSoniox ? '' : 'none';
+
+        // Two-way mode incompatible with realtime translation engines — force
+        // one-way + disable the option for any cloud-realtime mode.
+        const typeSelect = document.getElementById('select-translation-type');
+        if (typeSelect) {
+            const twoWayOpt = typeSelect.querySelector('option[value="two_way"]');
+            if (twoWayOpt) twoWayOpt.disabled = isCloudRealtime;
+            if (isCloudRealtime && typeSelect.value === 'two_way') {
+                typeSelect.value = 'one_way';
+                this._updateTranslationTypeUI('one_way');
+            }
+        }
+
+        // Custom TTS toggle: cloud realtime engines run text-only to prevent
+        // the speaker → mic feedback loop on shared devices.
+        const ttsCheck = document.getElementById('check-tts-enabled');
+        if (ttsCheck) {
+            ttsCheck.disabled = isCloudRealtime;
+            if (isCloudRealtime) ttsCheck.checked = false;
+            const ttsDetail = document.getElementById('tts-settings-detail');
+            if (ttsDetail) ttsDetail.style.display = (isCloudRealtime || !ttsCheck.checked) ? 'none' : '';
+        }
+        const btnTts = document.getElementById('btn-tts');
+        if (btnTts) btnTts.style.display = isCloudRealtime ? 'none' : '';
+
+        // Mobile-parity: hide the entire TTS tab when engine is cloud-realtime.
+        // If the user is currently viewing TTS, snap them back to Translation.
+        const ttsTabBtn = document.querySelector('.settings-tab[data-tab="tab-tts"]');
+        const ttsTabContent = document.getElementById('tab-tts');
+        if (ttsTabBtn) ttsTabBtn.style.display = isCloudRealtime ? 'none' : '';
+        if (isCloudRealtime && ttsTabBtn?.classList.contains('active')) {
+            ttsTabBtn.classList.remove('active');
+            if (ttsTabContent) ttsTabContent.classList.remove('active');
+            const translationTabBtn = document.querySelector('.settings-tab[data-tab="tab-translation"]');
+            const translationTabContent = document.getElementById('tab-translation');
+            translationTabBtn?.classList.add('active');
+            translationTabContent?.classList.add('active');
+        }
+        const btnOpenAiAudio = document.getElementById('btn-openai-audio');
+        if (btnOpenAiAudio) btnOpenAiAudio.style.display = 'none';
+
+        // All engines now support any audio source (system / mic / both).
+        const btnSourceMic = document.getElementById('btn-source-mic');
+        if (btnSourceMic) {
+            btnSourceMic.disabled = false;
+            btnSourceMic.classList.remove('locked');
+            btnSourceMic.title = 'Microphone (⌘2)';
+        }
+
+        // Restrict target language list to 13 OpenAI-supported in openai mode.
+        // Qwen LiveTranslate Flash has its own 60-language list (mirrors mobile
+        // v0.4.3); Qwen also hides Auto on the source picker because the model
+        // rejects "auto" on real mic input.
+        this._refreshTargetLangList(mode);
+        this._refreshSourceLangList(mode);
+    }
+
+    _refreshTargetLangList(mode) {
+        const select = document.getElementById('select-target-lang');
+        if (!select) return;
+        const OPENAI_LANGS = [
+            ['en','English'], ['es','Spanish'], ['pt','Portuguese'], ['fr','French'],
+            ['de','German'], ['it','Italian'], ['ru','Russian'], ['hi','Hindi'],
+            ['id','Indonesian'], ['vi','Vietnamese'], ['ja','Japanese'],
+            ['ko','Korean'], ['zh','Chinese'],
+        ];
+        const current = select.value;
+        if (mode === 'openai') {
+            if (!this._fullTargetLangHTML) this._fullTargetLangHTML = select.innerHTML;
+            select.innerHTML = OPENAI_LANGS
+                .map(([c, n]) => `<option value="${c}">${n}</option>`).join('');
+            select.value = OPENAI_LANGS.some(([c]) => c === current) ? current : 'vi';
+        } else if (mode === 'qwen') {
+            if (!this._fullTargetLangHTML) this._fullTargetLangHTML = select.innerHTML;
+            const langs = QWEN_LANGS;
+            select.innerHTML = langs
+                .map((l) => `<option value="${l.code}">${l.name}</option>`).join('');
+            select.value = langs.some((l) => l.code === current) ? current : 'vi';
+        } else if (this._fullTargetLangHTML) {
+            select.innerHTML = this._fullTargetLangHTML;
+            select.value = current || 'vi';
+        }
+    }
+
+    _refreshSourceLangList(mode) {
+        const select = document.getElementById('select-source-lang');
+        if (!select) return;
+        const current = select.value;
+        if (mode === 'qwen') {
+            if (!this._fullSourceLangHTML) this._fullSourceLangHTML = select.innerHTML;
+            const langs = QWEN_LANGS;
+            // No "Auto" — Live Flash stalls after one segment on real mic when
+            // source isn't explicit (verified iPhone v0.4.2, 2026-05-25).
+            select.innerHTML = langs
+                .map((l) => `<option value="${l.code}">${l.name}</option>`).join('');
+            const validCurrent = langs.some((l) => l.code === current) && current !== 'auto';
+            select.value = validCurrent ? current : 'en';
+        } else if (this._fullSourceLangHTML) {
+            select.innerHTML = this._fullSourceLangHTML;
+            select.value = current || 'auto';
+        }
+    }
+
+    // ─── API key validation & connection test ─────────────
+
+    // Inline format check — runs on every keystroke. Cheap, no network.
+    // Updates: per-field status badge + engine dropdown option enable/disable.
+    _refreshKeyStatus() {
+        const sonioxKey = document.getElementById('input-api-key')?.value.trim() || '';
+        const openaiKey = document.getElementById('input-openai-key')?.value.trim() || '';
+
+        // Soniox keys are opaque hex-like strings, ~32+ chars. Be lenient.
+        const sonioxOk = sonioxKey.length >= 20;
+        // OpenAI keys start with sk- and are ~50+ chars.
+        const openaiOk = /^sk-[A-Za-z0-9_\-]{20,}$/.test(openaiKey);
+
+        const sonioxStatus = document.getElementById('key-status-soniox');
+        if (sonioxStatus) {
+            sonioxStatus.className = 'key-status ' + (sonioxKey === '' ? '' : sonioxOk ? 'ok' : 'bad');
+            sonioxStatus.textContent = sonioxKey === '' ? '' : sonioxOk ? '✓ format ok' : '✗ check format';
+        }
+        const openaiStatus = document.getElementById('key-status-openai');
+        if (openaiStatus) {
+            openaiStatus.className = 'key-status ' + (openaiKey === '' ? '' : openaiOk ? 'ok' : 'bad');
+            openaiStatus.textContent = openaiKey === '' ? '' : openaiOk ? '✓ format ok' : '✗ should start with sk-';
+        }
+
+        // Disable engine options whose key is missing/invalid.
+        const select = document.getElementById('select-translation-mode');
+        if (select) {
+            const sonioxOpt = select.querySelector('option[value="soniox"]');
+            const openaiOpt = select.querySelector('option[value="openai"]');
+            if (sonioxOpt) {
+                sonioxOpt.disabled = !sonioxOk;
+                sonioxOpt.textContent = sonioxOk ? '☁️ Soniox' : '☁️ Soniox — add key first';
+            }
+            if (openaiOpt) {
+                openaiOpt.disabled = !openaiOk;
+                openaiOpt.textContent = openaiOk ? '⚡ OpenAI Realtime' : '⚡ OpenAI Realtime — add key first';
+            }
+        }
+    }
+
+    // Live ping the provider to verify key actually works.
+    async _testConnection(provider) {
+        const statusEl = document.getElementById(`key-status-${provider}`);
+        const btn = document.getElementById(`btn-test-${provider}`);
+        if (!statusEl || !btn) return;
+
+        const inputId = provider === 'soniox' ? 'input-api-key' : 'input-openai-key';
+        const key = document.getElementById(inputId)?.value.trim() || '';
+        if (!key) {
+            statusEl.className = 'key-status bad';
+            statusEl.textContent = '✗ empty';
+            return;
+        }
+
+        btn.disabled = true;
+        statusEl.className = 'key-status checking';
+        statusEl.textContent = '… testing';
+
+        try {
+            const ok = provider === 'soniox'
+                ? await this._pingSoniox(key)
+                : await this._pingOpenAi(key);
+            statusEl.className = 'key-status ' + (ok ? 'ok' : 'bad');
+            statusEl.textContent = ok ? '✓ connected' : '✗ rejected';
+        } catch (e) {
+            statusEl.className = 'key-status bad';
+            statusEl.textContent = '✗ ' + (e?.message || 'failed');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // Soniox: open WS, send config, wait for first response, close.
+    _pingSoniox(apiKey) {
+        return new Promise((resolve) => {
+            const ws = new WebSocket('wss://stt-rt.soniox.com/transcribe-websocket');
+            const timer = setTimeout(() => { try { ws.close(); } catch {} resolve(false); }, 5000);
+            ws.onopen = () => {
+                ws.send(JSON.stringify({ api_key: apiKey, model: 'stt-rt-v4', audio_format: 'pcm_s16le', sample_rate: 16000, num_channels: 1 }));
+            };
+            ws.onmessage = (e) => {
+                clearTimeout(timer);
+                try {
+                    const v = JSON.parse(e.data);
+                    resolve(!v.error_code);
+                } catch { resolve(true); }
+                try { ws.close(); } catch {}
+            };
+            ws.onerror = () => { clearTimeout(timer); resolve(false); };
+        });
+    }
+
+    // OpenAI: cheap HTTP GET /v1/models with the key.
+    async _pingOpenAi(apiKey) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 5000);
+        try {
+            const r = await fetch('https://api.openai.com/v1/models', {
+                headers: { Authorization: `Bearer ${apiKey}` },
+                signal: ctrl.signal,
+            });
+            return r.ok;
+        } catch {
+            return false;
+        } finally {
+            clearTimeout(timer);
+        }
     }
 
     // ─── Start/Stop ────────────────────────────────────────
@@ -966,6 +1413,20 @@ class App {
             return;
         }
 
+        // Check OpenAI API key for openai mode
+        if (this.translationMode === 'openai' && !settings.openai_api_key) {
+            this._showToast('OpenAI API key is required. Add it in Settings.', 'error');
+            this._showView('settings');
+            return;
+        }
+
+        // Check Qwen API key for qwen mode
+        if (this.translationMode === 'qwen' && !settings.qwen_api_key) {
+            this._showToast('Qwen (DashScope) API key is required. Add it in Settings.', 'error');
+            this._showView('settings');
+            return;
+        }
+
         // Check ElevenLabs key only if TTS is enabled AND provider is elevenlabs
         if (this.ttsEnabled && settings.tts_provider === 'elevenlabs' && !settings.elevenlabs_api_key) {
             this._showToast('TTS is ON but ElevenLabs API key is missing. Add it in Settings or disable TTS.', 'error');
@@ -975,6 +1436,8 @@ class App {
 
         this.isRunning = true;
         this._updateStartButton();
+        this._hideEnginePicker();
+        this._setEnginePillLocked(true);
         if (!this.recordingStartTime) this.recordingStartTime = Date.now();
 
         // Record session metadata for auto-save
@@ -991,6 +1454,15 @@ class App {
             }
         }
 
+        // Begin a session chunk — every Start/Stop cycle becomes one chunk in
+        // the persistent SessionStore. Engine/lang may have changed since
+        // last chunk, so pass them in.
+        sessionStore.beginChunk({
+            engine: this.translationMode,
+            sourceLang: this.sessionSourceLang,
+            targetLang: this.sessionTargetLang,
+        });
+
         // Clear transcript only if nothing is showing
         if (!this.transcriptUI.hasContent()) {
             this.transcriptUI.showListening();
@@ -1000,12 +1472,16 @@ class App {
 
         if (this.translationMode === 'local') {
             await this._startLocalMode(settings);
+        } else if (this.translationMode === 'openai') {
+            await this._startOpenAiMode(settings);
+        } else if (this.translationMode === 'qwen') {
+            await this._startQwenMode(settings);
         } else {
             await this._startSonioxMode(settings);
         }
 
-        // Start TTS if enabled
-        if (this.ttsEnabled) {
+        // Start TTS if enabled — skipped in realtime modes (built-in audio)
+        if (this.ttsEnabled && this.translationMode !== 'openai' && this.translationMode !== 'qwen') {
             const tts = this._getActiveTTS();
             this._configureTTS(tts, settings);
             tts.connect();
@@ -1013,9 +1489,176 @@ class App {
         }
     }
 
+    async _startOpenAiMode(settings) {
+        this._updateStatus('connecting');
+        const { OpenAiRealtimeClient } = await import('./openai-realtime-client.js');
+        const { OpenAiAudioOutputQueue } = await import('./openai-audio-output-queue.js');
+
+        // Tell the UI which provider is active so dual-panel rendering routes
+        // provisional text to the correct panel (source vs target).
+        this.transcriptUI.provider = 'openai';
+
+        this.openAiOutputQueue = new OpenAiAudioOutputQueue();
+        this.openAiClient = new OpenAiRealtimeClient();
+
+        this.openAiClient.onStatusChange = (state) => {
+            if (state === 'ready') this._updateStatus('connected');
+            else if (state === 'connecting') this._updateStatus('connecting');
+        };
+        this.openAiClient.onProvisional = (text) => {
+            this.transcriptUI.setProvisional(text, null, null);
+        };
+        this.openAiClient.onSourceProvisional = (text) => {
+            // Source-side provisional: keep dual panel responsive while ASR runs.
+            this.transcriptUI.setSourceProvisional?.(text);
+        };
+        this.openAiClient.onSegment = (sourceText, translatedText) => {
+            // Pair source + translation atomically so FIFO matching in addTranslation works.
+            if (sourceText) this.transcriptUI.addOriginal(sourceText, null, null);
+            this.transcriptUI.addTranslation(translatedText);
+            // Atomic write to session store — bypass UI's loose FIFO since
+            // OpenAI gives us both texts in one event.
+            sessionStore.addSegment(sourceText || '', translatedText || '');
+            this.transcriptUI.clearSourceProvisional?.();
+            this.transcriptUI.clearProvisional();
+        };
+        this.openAiClient.onError = (code, msg) => {
+            console.error('[OpenAI Realtime]', code, msg);
+            this._showToast(`${code}: ${msg}`, 'error');
+            this._updateStatus('error');
+        };
+        this.openAiClient.onClosed = (reason) => {
+            console.warn('[OpenAI Realtime] closed:', reason);
+            if (this.isRunning) {
+                this._showToast('OpenAI session closed — reconnecting…', 'success');
+                setTimeout(() => {
+                    if (this.isRunning) this._startOpenAiMode(settingsManager.get());
+                }, 1000);
+            }
+        };
+
+        try {
+            await this.openAiClient.connect({
+                apiKey: settings.openai_api_key,
+                sourceLanguage: settings.source_language || 'auto',
+                targetLanguage: settings.target_language,
+                audioOutput: false,
+            }, this.openAiOutputQueue);
+        } catch (err) {
+            this._showToast(`OpenAI connect failed: ${err}`, 'error');
+            await this.stop();
+            return;
+        }
+
+        try {
+            let audioBatchCount = 0;
+            const channel = new window.__TAURI__.core.Channel();
+            channel.onmessage = (pcmData) => {
+                audioBatchCount++;
+                if (audioBatchCount <= 3 || audioBatchCount % 50 === 0) {
+                    console.log(`[OpenAI capture] batch #${audioBatchCount}, size:`, pcmData?.length || 0);
+                }
+                const bytes = new Uint8Array(pcmData);
+                this.openAiClient.sendAudio(bytes.buffer);
+            };
+            console.log('[OpenAI] Starting audio capture, source:', this.currentSource);
+            await invoke('start_capture', {
+                source: this.currentSource,
+                channel,
+            });
+            console.log('[OpenAI] start_capture invoked OK');
+        } catch (err) {
+            console.error('Failed to start audio capture:', err);
+            this._showToast(`Audio error: ${err}`, 'error');
+            await this.stop();
+        }
+    }
+
+    async _startQwenMode(settings) {
+        this._updateStatus('connecting');
+        const { QwenRealtimeClient } = await import('./qwen-realtime-client.js');
+
+        // Live Flash is translation-only (no source transcript). Force the
+        // single-panel translation view; dual-panel would render an empty
+        // source column.
+        this.transcriptUI.provider = 'qwen';
+
+        this.qwenClient = new QwenRealtimeClient();
+
+        this.qwenClient.onStatusChange = (state) => {
+            if (state === 'ready') this._updateStatus('connected');
+            else if (state === 'connecting') this._updateStatus('connecting');
+        };
+        this.qwenClient.onProvisional = (text) => {
+            this.transcriptUI.setProvisional(text, null, null);
+        };
+        this.qwenClient.onSegment = (sourceText, translatedText) => {
+            this.transcriptUI.addTranslation(translatedText);
+            sessionStore.addSegment('', translatedText || '');
+            this.transcriptUI.clearProvisional();
+        };
+        this.qwenClient.onError = (code, msg) => {
+            console.error('[Qwen Realtime]', code, msg);
+            this._showToast(`${code}: ${msg}`, 'error');
+            this._updateStatus('error');
+        };
+        this.qwenClient.onClosed = (reason) => {
+            console.warn('[Qwen Realtime] closed:', reason);
+            if (this.isRunning) {
+                this._showToast('Qwen session closed — reconnecting…', 'success');
+                setTimeout(() => {
+                    if (this.isRunning) this._startQwenMode(settingsManager.get());
+                }, 1000);
+            }
+        };
+
+        try {
+            // Live Flash rejects "auto" — fall back to English. UI also
+            // strips the "auto" option when engine = qwen (see
+            // _refreshSourceLangList), so this is belt-and-suspenders.
+            const sourceLang =
+                settings.source_language && settings.source_language !== 'auto'
+                    ? settings.source_language
+                    : 'en';
+            await this.qwenClient.connect({
+                apiKey: settings.qwen_api_key,
+                sourceLanguage: sourceLang,
+                targetLanguage: settings.target_language,
+            });
+        } catch (err) {
+            this._showToast(`Qwen connect failed: ${err}`, 'error');
+            await this.stop();
+            return;
+        }
+
+        try {
+            let audioBatchCount = 0;
+            const channel = new window.__TAURI__.core.Channel();
+            channel.onmessage = (pcmData) => {
+                audioBatchCount++;
+                if (audioBatchCount <= 3 || audioBatchCount % 50 === 0) {
+                    console.log(`[Qwen capture] batch #${audioBatchCount}, size:`, pcmData?.length || 0);
+                }
+                const bytes = new Uint8Array(pcmData);
+                this.qwenClient.sendAudio(bytes.buffer);
+            };
+            console.log('[Qwen] Starting audio capture, source:', this.currentSource);
+            await invoke('start_capture', {
+                source: this.currentSource,
+                channel,
+            });
+            console.log('[Qwen] start_capture invoked OK');
+        } catch (err) {
+            console.error('Failed to start audio capture:', err);
+            this._showToast(`Audio error: ${err}`, 'error');
+            await this.stop();
+        }
+    }
+
     async _startSonioxMode(settings) {
         // Connect to Soniox
         console.log('[App] Connecting to Soniox...');
+        this.transcriptUI.provider = 'soniox';
         this._updateStatus('connecting');
         sonioxClient.connect({
             apiKey: settings.soniox_api_key,
@@ -1059,6 +1702,7 @@ class App {
 
     async _startLocalMode(settings) {
         console.log('[App] Starting Local mode (MLX models)...');
+        this.transcriptUI.provider = 'soniox';
         this._updateStatus('connecting');
 
         // Step 0: Check audio permission FIRST (before loading models)
@@ -1184,6 +1828,9 @@ class App {
                     this._speakIfEnabled(data.translated);
                 }
                 }, 80);
+                // Persist atomically — Local pipeline gives both texts in
+                // one event so we don't need FIFO pairing.
+                sessionStore.addSegment(data.original || '', data.translated || '');
                 break;
             case 'status':
                 const msg = data.message || 'Loading...';
@@ -1320,6 +1967,7 @@ class App {
     async stop() {
         this.isRunning = false;
         this._updateStartButton();
+        this._setEnginePillLocked(false);
 
         // Stop audio capture
         try {
@@ -1338,6 +1986,23 @@ class App {
             this.localPipelineReady = false;
             this.transcriptUI.removeStatusMessage();
             this._updateStatus('disconnected');
+        } else if (this.translationMode === 'openai') {
+            if (this.openAiClient) {
+                try { await this.openAiClient.disconnect(); } catch {}
+                this.openAiClient = null;
+            }
+            if (this.openAiOutputQueue) {
+                this.openAiOutputQueue.close();
+                this.openAiOutputQueue = null;
+            }
+            this._updateStatus('disconnected');
+        } else if (this.translationMode === 'qwen') {
+            if (this.qwenClient) {
+                try { await this.qwenClient.disconnect(); } catch {}
+                this.qwenClient = null;
+            }
+            try { await invoke('stop_capture'); } catch {}
+            this._updateStatus('disconnected');
         } else {
             // Disconnect Soniox
             sonioxClient.disconnect();
@@ -1352,14 +2017,22 @@ class App {
 
         audioPlayer.stop();
 
-        // Auto-save on stop — use full sessionLog (not trimmed display buffer)
-        if (this.transcriptUI.hasSessionContent()) {
-            await this._saveTranscriptFile();
-            this.transcriptUI.clearSession();
+        // Drain any leftover Soniox originals that didn't get paired
+        if (this._sonioxOriginalQueue) this._sonioxOriginalQueue.length = 0;
+
+        // Close the chunk and persist the whole session (md + json sidecar).
+        // Transcript stays on screen — clearSession is no longer called here
+        // so user can review & continue in next chunk.
+        sessionStore.endChunk();
+        const hadContent = !sessionStore.isEmpty();
+        await sessionStore.persist();
+        if (hadContent) {
+            const n = sessionStore.totalSegmentCount();
+            this._showToast(`Saved ${n} segment${n === 1 ? '' : 's'}`, 'success');
         }
 
-        // Reset session tracking
-        this.sessionStartTime = null;
+        // sessionStartTime stays — single session per app launch lives across
+        // many Start/Stop cycles. Reset only on "New Session" or app close.
     }
 
     _updateStartButton() {
@@ -1540,7 +2213,7 @@ class App {
 
     // ─── Session History ───────────────────────────────────
 
-    async _showSessions() {
+    async _showSessions(query) {
         const listEl = document.getElementById('sessions-list');
         const listPanel = document.getElementById('sessions-list-panel');
         const viewer = document.getElementById('session-viewer');
@@ -1552,28 +2225,35 @@ class App {
         listEl.innerHTML = '<div class="sessions-loading">Loading...</div>';
 
         try {
-            const sessions = await invoke('list_transcripts');
+            const cmd = query && query.trim() ? 'search_sessions' : 'list_sessions';
+            const args = query && query.trim() ? { query: query.trim() } : {};
+            const sessions = await invoke(cmd, args);
             if (sessions.length === 0) {
                 listEl.innerHTML = '<div class="sessions-empty">No saved sessions yet.</div>';
                 return;
             }
 
-            listEl.innerHTML = sessions.map(s => {
-                const meta = this._parseSessionMeta(s);
-                return `<div class="session-item" data-filename="${this._escAttr(s.filename)}">
-                    <div class="session-item-date">${meta.date}</div>
-                    <div class="session-item-meta">
-                        <span class="session-item-time">${meta.time}</span>
-                        ${meta.duration ? `<span class="session-item-duration">${meta.duration}</span>` : ''}
-                        ${meta.langPair ? `<span class="session-item-langs">${meta.langPair}</span>` : ''}
-                    </div>
-                    <div class="session-item-size">${this._formatBytes(s.size_bytes)}</div>
-                </div>`;
-            }).join('');
+            listEl.innerHTML = sessions.map(s => this._renderSessionItem(s)).join('');
 
             listEl.querySelectorAll('.session-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    this._openSession(item.dataset.filename);
+                item.addEventListener('click', (e) => {
+                    if (e.target.closest('.session-delete-btn')) return;
+                    const id = item.dataset.id;
+                    const legacy = item.dataset.legacy === '1';
+                    this._openSession(id, legacy);
+                });
+            });
+            listEl.querySelectorAll('.session-delete-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const id = btn.dataset.id;
+                    if (!confirm('Delete this session permanently?')) return;
+                    try {
+                        await invoke('delete_session', { id });
+                        await this._showSessions();
+                    } catch (err) {
+                        this._showToast(`Delete failed: ${err}`, 'error');
+                    }
                 });
             });
         } catch (err) {
@@ -1581,7 +2261,37 @@ class App {
         }
     }
 
-    async _openSession(filename) {
+    _renderSessionItem(s) {
+        const title = this._esc(s.title || 'Untitled session');
+        const created = this._esc(s.created_at || '').slice(0, 16);
+        const duration = this._formatSeconds(s.duration_sec || 0);
+        const engine = s.engine || 'unknown';
+        const engineBadge = s.has_legacy_only
+            ? `<span class="session-badge badge-legacy">legacy</span>`
+            : `<span class="session-badge badge-engine">${this._esc(engine)}</span>`;
+        const langPair = s.source_lang && s.target_lang
+            ? `<span class="session-badge">${this._esc(s.source_lang)} → ${this._esc(s.target_lang)}</span>`
+            : '';
+        const segCount = s.segment_count > 0 ? `<span class="session-meta-dim">${s.segment_count} segments</span>` : '';
+        const chunks = s.chunk_count > 1 ? `<span class="session-meta-dim">${s.chunk_count} chunks</span>` : '';
+        const delBtn = `<button class="session-delete-btn" title="Delete" data-id="${this._escAttr(s.id)}">×</button>`;
+        return `<div class="session-item" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}">
+            <div class="session-item-row1">
+                <span class="session-item-title">${title}</span>
+                ${delBtn}
+            </div>
+            <div class="session-item-row2">
+                ${engineBadge}
+                ${langPair}
+                <span class="session-meta-dim">${created}</span>
+                ${duration ? `<span class="session-meta-dim">${duration}</span>` : ''}
+                ${segCount}
+                ${chunks}
+            </div>
+        </div>`;
+    }
+
+    async _openSession(id, isLegacy = false) {
         const listPanel = document.getElementById('sessions-list-panel');
         const viewer = document.getElementById('session-viewer');
         const title = document.getElementById('session-viewer-title');
@@ -1589,29 +2299,56 @@ class App {
 
         if (listPanel) listPanel.style.display = 'none';
         if (viewer) viewer.style.display = '';
-        if (title) title.textContent = filename.replace('.md', '').replace('_', ' ');
+        if (title) title.textContent = id;
         if (content) content.textContent = 'Loading...';
+        this._currentViewedSession = { id, isLegacy };
 
         try {
-            const text = await invoke('read_transcript', { filename });
-            if (content) content.textContent = text;
+            if (isLegacy) {
+                const text = await invoke('read_legacy_session', { id });
+                if (content) content.textContent = text;
+                if (title) title.textContent = id;
+            } else {
+                const result = await invoke('read_session', { id });
+                if (content) content.textContent = result.md;
+                if (title) title.textContent = result.json.title || id;
+            }
         } catch (err) {
             if (content) content.textContent = `Error loading session: ${err}`;
         }
     }
 
-    _parseSessionMeta(session) {
-        // created_at format: "2026-03-27 10:21:05"
-        const parts = (session.created_at || '').split(' ');
-        const date = parts[0] || '';
-        const time = parts[1] ? parts[1].slice(0, 5) : '';
-        return { date, time, duration: '', langPair: '' };
+    _formatSeconds(sec) {
+        if (!sec) return '';
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        if (h > 0) return `${h}h ${m}m`;
+        if (m > 0) return `${m}m`;
+        return `${sec}s`;
     }
 
-    _formatBytes(bytes) {
-        if (bytes < 1024) return `${bytes} B`;
-        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-        return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    async _exportCurrentSession(format) {
+        const cur = this._currentViewedSession;
+        if (!cur || cur.isLegacy) {
+            this._showToast('Cannot export legacy sessions', 'error');
+            return;
+        }
+        try {
+            const cmd = format === 'srt' ? 'export_session_srt' : 'export_session_txt';
+            const text = await invoke(cmd, { id: cur.id });
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${cur.id}.${format}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            this._showToast(`Exported .${format}`, 'success');
+        } catch (err) {
+            this._showToast(`Export failed: ${err}`, 'error');
+        }
     }
 
     async _checkForUpdates() {

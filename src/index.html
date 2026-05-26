@@ -31,6 +31,23 @@
           <span id="status-text" class="status-text">Ready</span>
         </div>
 
+        <!-- Engine pill: persistent indicator + quick switch. Disabled while
+             a session is running (user must Stop first). -->
+        <div class="engine-pill" id="engine-pill" title="Click to switch engine">
+          <button class="engine-pill-btn active" data-engine-class="standard" type="button">
+            <span class="engine-pill-icon">☁️</span>
+            <span class="engine-pill-label">Standard</span>
+          </button>
+          <button class="engine-pill-btn" data-engine-class="openai" type="button">
+            <span class="engine-pill-icon">⚡</span>
+            <span class="engine-pill-label">OpenAI</span>
+          </button>
+          <button class="engine-pill-btn" data-engine-class="qwen" type="button">
+            <span class="engine-pill-icon">🌏</span>
+            <span class="engine-pill-label">Qwen</span>
+          </button>
+        </div>
+
         <div class="source-controls">
           <button id="btn-source-system" class="source-btn active" title="System Audio (⌘1)">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -92,12 +109,6 @@
             </svg>
           </button>
 
-          <button id="btn-open-transcripts" class="icon-btn" title="Open saved transcripts folder">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            </svg>
-          </button>
-
           <button id="btn-sessions" class="icon-btn" title="View saved sessions">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10" />
@@ -150,6 +161,46 @@
           </svg>
           <p>Press ▶ to start translating</p>
         </div>
+      </div>
+
+      <!-- Engine picker — shown before the first session each launch.
+           Two cards because OpenAI Realtime is structurally different from
+           Soniox/Local (text+voice fused, no two-way, no custom TTS). -->
+      <div id="engine-picker" class="engine-picker" style="display:none">
+        <p class="engine-picker-title">Choose translation mode</p>
+        <div class="engine-cards">
+          <button class="engine-card" data-engine-class="standard" type="button">
+            <div class="engine-card-icon">☁️</div>
+            <div class="engine-card-name">Standard</div>
+            <div class="engine-card-meta">Soniox / Local · ~$0.12/hr</div>
+            <ul class="engine-card-feats">
+              <li>70+ languages</li>
+              <li>Two-way mode</li>
+              <li>Custom TTS</li>
+            </ul>
+          </button>
+          <button class="engine-card" data-engine-class="openai" type="button">
+            <div class="engine-card-icon">⚡</div>
+            <div class="engine-card-name">OpenAI Realtime</div>
+            <div class="engine-card-meta">~$4/hr · text-only</div>
+            <ul class="engine-card-feats">
+              <li>13 languages</li>
+              <li>Continuous delta captions</li>
+              <li>Most idiomatic output</li>
+            </ul>
+          </button>
+          <button class="engine-card" data-engine-class="qwen" type="button">
+            <div class="engine-card-icon">🌏</div>
+            <div class="engine-card-name">Qwen LiveTranslate Flash</div>
+            <div class="engine-card-meta">Free preview · text-only</div>
+            <ul class="engine-card-feats">
+              <li>60+ languages</li>
+              <li>Fastest first token (~4s)</li>
+              <li>Alibaba DashScope (Singapore)</li>
+            </ul>
+          </button>
+        </div>
+        <p class="engine-picker-hint">Switch any time from the engine pill in the toolbar.</p>
       </div>
     </div>
 
@@ -210,15 +261,25 @@
         <div class="settings-section">
           <span class="field-label">Engine</span>
           <select id="select-translation-mode">
-            <option value="soniox">☁️ Soniox API (Cloud)</option>
-            <option value="local">🖥️ Local MLX (Offline)</option>
+            <option value="soniox">☁️ Soniox</option>
+            <option value="local">🖥️ Local MLX</option>
+            <option value="openai">⚡ OpenAI Realtime</option>
+            <option value="qwen">🌏 Qwen LiveTranslate Flash</option>
           </select>
-          <p class="hint" id="hint-mode-soniox">Real-time, 70+ languages, ~$0.12/hr</p>
-          <p class="hint" id="hint-mode-local" style="display:none">Offline, free, ~3-4s delay</p>
+          <p class="hint" id="hint-mode-soniox">Cloud · 70+ languages · ~$0.12/hr</p>
+          <p class="hint" id="hint-mode-local" style="display:none">Offline · free · ~3–4s delay</p>
+          <p class="hint" id="hint-mode-openai" style="display:none">Cloud · 13 languages · text-only captions</p>
+          <p class="hint" id="hint-mode-qwen" style="display:none">Cloud · 60+ languages · text-only · free preview · pick a source language</p>
+          <div id="openai-cost-warning" class="cost-warning" style="display:none">
+            ⚠️ ~$4/hr — much pricier than Soniox. Charged to your OpenAI account.
+          </div>
         </div>
 
         <div class="settings-section" id="section-api-key">
-          <span class="field-label">Soniox API Key <span class="required-badge">Required</span></span>
+          <span class="field-label">
+            Soniox API Key
+            <span id="key-status-soniox" class="key-status"></span>
+          </span>
           <div class="input-group">
             <input type="password" id="input-api-key" placeholder="Enter your Soniox API key..." autocomplete="off" />
             <button id="btn-toggle-key" class="icon-btn small" title="Show/Hide">
@@ -226,8 +287,42 @@
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
               </svg>
             </button>
+            <button id="btn-test-soniox" class="btn-secondary small" title="Test connection">Test</button>
           </div>
           <p class="hint">Get key at <a href="#" id="link-soniox">console.soniox.com</a></p>
+        </div>
+
+        <div class="settings-section" id="section-openai-key">
+          <span class="field-label">
+            OpenAI API Key
+            <span id="key-status-openai" class="key-status"></span>
+          </span>
+          <div class="input-group">
+            <input type="password" id="input-openai-key" placeholder="sk-..." autocomplete="off" />
+            <button id="btn-toggle-openai-key" class="icon-btn small" title="Show/Hide">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+            <button id="btn-test-openai" class="btn-secondary small" title="Test connection">Test</button>
+          </div>
+          <p class="hint">Get key at <a href="#" id="link-openai">platform.openai.com</a></p>
+        </div>
+
+        <div class="settings-section" id="section-qwen-key" style="display:none">
+          <span class="field-label">
+            Qwen (DashScope) API Key
+            <span id="key-status-qwen" class="key-status"></span>
+          </span>
+          <div class="input-group">
+            <input type="password" id="input-qwen-key" placeholder="sk-..." autocomplete="off" />
+            <button id="btn-toggle-qwen-key" class="icon-btn small" title="Show/Hide">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          </div>
+          <p class="hint">Get DashScope key at <a href="#" id="link-qwen">bailian.console.alibabacloud.com</a> · free preview</p>
         </div>
 
         <div class="settings-section" id="section-languages">
@@ -680,10 +775,21 @@
         </svg>
       </button>
       <span class="sessions-title">Sessions</span>
+      <div class="sessions-header-actions">
+        <button id="btn-open-transcripts" class="icon-btn small" title="Open saved transcripts folder in Finder">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+        <button id="btn-new-session" class="btn-secondary small" title="Start a fresh session (current is saved)">+ New session</button>
+      </div>
     </div>
 
     <!-- Session list panel -->
     <div id="sessions-list-panel" class="sessions-body">
+      <div class="sessions-search-row">
+        <input id="input-session-search" type="text" placeholder="Search sessions..." class="sessions-search-input" />
+      </div>
       <div id="sessions-list"></div>
     </div>
 
@@ -697,6 +803,14 @@
           </svg>
         </button>
         <span id="session-viewer-title" class="session-viewer-title-text"></span>
+        <button id="btn-session-edit-title" class="icon-btn small" title="Rename session">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+        </button>
+        <button id="btn-session-export-srt" class="btn-secondary small" title="Export as .srt">.srt</button>
+        <button id="btn-session-export-txt" class="btn-secondary small" title="Export as .txt">.txt</button>
         <button id="btn-session-copy" class="session-copy-btn" title="Copy content">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />

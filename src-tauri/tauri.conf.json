@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "MyTranslator",
-  "version": "0.5.3",
+  "version": "0.7.2",
   "identifier": "com.personal.translator",
   "build": {
     "frontendDist": "../src"
@@ -13,10 +13,10 @@
       {
         "label": "main",
         "title": "My Translator",
-        "width": 600,
-        "height": 400,
-        "minWidth": 400,
-        "minHeight": 200,
+        "width": 900,
+        "height": 500,
+        "minWidth": 820,
+        "minHeight": 240,
         "center": true,
         "transparent": false,
         "decorations": false,
@@ -45,7 +45,8 @@
     "macOS": {
       "entitlements": "Entitlements.plist",
       "frameworks": [],
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "Developer ID Application: Trong Phuc Nguyen (75EN938B6L)"
     },
     "createUpdaterArtifacts": true
   },

@@ -7,8 +7,9 @@ Step-by-step guide to install and use **My Translator** on Windows 10/11.
 ## Requirements
 
 - Windows 10 or later (x64 or ARM64)
-- [Soniox](https://soniox.com) API key (pay-per-use, ~$0.12/hour)
-- **TTS narration** (optional): Edge TTS (free, no API key) or premium providers. See [TTS Guide](tts_guide.md)
+- **Soniox mode** (recommended): [Soniox](https://soniox.com) API key (pay-per-use, ~$0.12/hour)
+- **OpenAI Realtime mode** (premium): [OpenAI](https://platform.openai.com) API key (~$4/hour — much pricier, but returns native translated voice — no separate TTS needed)
+- **TTS narration** (optional, text engines only): Edge TTS (free, no API key) or premium providers. See [TTS Guide](tts_guide.md)
 
 ---
 
@@ -66,10 +67,16 @@ The app opens. Click ⚙️ to open **Settings**.
 
 Configure:
 
-1. **SONIOX API KEY** — Paste your API key (Required)
-2. **Source** — Choose the source language (or leave as Auto-detect)
-3. **Target** — Choose the target language (e.g., Vietnamese, English...)
-4. **Audio Source** — Choose System Audio (computer sound) or Microphone
+1. **API KEYS** — Paste at least one of:
+   - **Soniox API key** — recommended default (~$0.12/hr)
+   - **OpenAI API key** — premium engine with native translated voice (~$4/hr — see warning below)
+   - A green dot ✓ next to each field means the key format looks valid; click **Test** to ping the provider live. Engines without a valid key are greyed out in the engine dropdown.
+2. **Translation Engine** — choose between:
+   - ☁️ **Soniox** (cloud, ~$0.12/hr, ~2 s latency, supports two-way mode)
+   - ⚡ **OpenAI Realtime** (cloud, ~$4/hr, ~1.5 s latency, **native voice included** — two-way and custom TTS unavailable)
+3. **Source** — Choose the source language (or leave as Auto-detect)
+4. **Target** — Choose the target language (e.g., Vietnamese, English...)
+5. **Audio Source** — Choose System Audio (computer sound) or Microphone
 
 ![Settings — API Key and Languages](user_manual/mytrans_setting_1.png)
 
@@ -90,6 +97,17 @@ Click **Save & Close** when done.
 > 3. Go to **API Keys** → create and copy your key
 
 ![Soniox Console — Billing overview](user_manual/mytrans_key_1.png)
+
+> 💡 **Where to get an OpenAI API key?**
+> 1. Go to [platform.openai.com](https://platform.openai.com) → create an account
+> 2. **Settings → Billing** → add a payment method and credits ($10 ≈ ~2.5 hours)
+> 3. **API keys** → **Create new secret key** → copy the key (`sk-...`)
+>
+> ⚠️ **Cost warning**: OpenAI Realtime is ~34× pricier than Soniox at provider list rates. Use it for high-stakes meetings; for everyday use, Soniox is the better default. See the [**OpenAI vs Soniox benchmark**](benchmark_openai_vs_soniox.md) for details.
+
+Once a valid OpenAI key is saved, the **OpenAI Realtime** engine becomes selectable in the dropdown:
+
+![Settings — OpenAI Realtime engine with API key](user_manual/setting_openai.png)
 
 ---
 
@@ -130,6 +148,20 @@ If TTS is enabled, you can toggle it on/off with the **TTS** button or `Ctrl+T`.
 
 ![App translating with TTS enabled](user_manual/mytrans_tts_1.png)
 
+### Choosing the translation mode
+
+If you have both a Soniox and an OpenAI key configured, the first time you start a session the app asks which engine to use:
+
+![Choose translation mode — Standard vs OpenAI Realtime](user_manual/openao_entry.png)
+
+You can switch any time from the engine pill in the toolbar.
+
+### Dual-panel view with OpenAI Realtime
+
+In **Dual** view the source transcript appears on the left and the translated text on the right — OpenAI's whisper transcription and translated output stream side-by-side:
+
+![Dual-panel translation running with OpenAI Realtime](user_manual/openai_translate.png)
+
 ---
 
 ## Tips
@@ -159,7 +191,16 @@ If TTS is enabled, you can toggle it on/off with the **TTS** button or `Ctrl+T`.
 → Click **"More info"** → **"Run anyway"** (see Step 2).
 
 ### No translation text appears
-→ Check that your Soniox API key is correct in Settings (⚙️).
+→ Check that the API key for your selected engine is correct in Settings (⚙️). Click **Test** to verify connection.
+
+### OpenAI Realtime: engine option is greyed out
+→ The OpenAI key field is empty or the key format is invalid (must start with `sk-`). Paste a fresh key, then click **Test**.
+
+### OpenAI Realtime: "Two-way" toggle is hidden
+→ This is expected. Two-way mode is only available on Soniox. Switch engines if you need it.
+
+### Translation cost is much higher than expected
+→ Confirm which engine you selected. OpenAI Realtime is ~$4/hour vs Soniox's ~$0.12/hour.
 
 ### No system audio captured
 → Make sure audio is playing on your PC. Some apps use exclusive audio mode — try a different source.

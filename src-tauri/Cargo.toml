@@ -1,6 +1,6 @@
 [package]
 name = "my-translator"
-version = "0.5.3"
+version = "0.7.2"
 description = "Personal Real-time Speech Translator"
 authors = ["phucnt"]
 edition = "2021"
@@ -29,6 +29,8 @@ http = "1"
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
+tokio = { version = "1", features = ["sync", "rt", "macros", "time"] }
+rubato = "0.16"
 
 # macOS: ScreenCaptureKit for system audio
 [target.'cfg(target_os = "macos")'.dependencies]

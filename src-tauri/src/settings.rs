@@ -24,6 +24,11 @@ pub struct CustomContext {
 pub struct Settings {
     /// Soniox API key
     pub soniox_api_key: String,
+    /// OpenAI API key (for gpt-realtime-translate)
+    pub openai_api_key: String,
+    /// Alibaba Cloud DashScope API key (for Qwen LiveTranslate Flash)
+    #[serde(default)]
+    pub qwen_api_key: String,
     /// Source language: "auto" or ISO 639-1 code
     pub source_language: String,
     /// Target language: ISO 639-1 code
@@ -38,7 +43,7 @@ pub struct Settings {
     pub max_lines: u32,
     /// Whether to show original text alongside translation
     pub show_original: bool,
-    /// Translation mode: "soniox" (cloud API) or "local" (MLX models)
+    /// Translation mode: "soniox" | "local" | "openai"
     pub translation_mode: String,
     /// Optional custom context for better transcription
     pub custom_context: Option<CustomContext>,
@@ -64,12 +69,18 @@ pub struct Settings {
     pub google_tts_voice: String,
     /// Google TTS speaking rate
     pub google_tts_speed: f64,
+    /// OpenAI Realtime: when true server generates translated audio.
+    /// Default false — speaker → mic feedback loop on shared devices.
+    #[serde(default)]
+    pub openai_audio_output: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             soniox_api_key: String::new(),
+            openai_api_key: String::new(),
+            qwen_api_key: String::new(),
             source_language: "auto".to_string(),
             target_language: "vi".to_string(),
             audio_source: "system".to_string(),
@@ -90,6 +101,7 @@ impl Default for Settings {
             google_tts_api_key: String::new(),
             google_tts_voice: "vi-VN-Chirp3-HD-Aoede".to_string(),
             google_tts_speed: 1.0,
+            openai_audio_output: false,
         }
     }
 }

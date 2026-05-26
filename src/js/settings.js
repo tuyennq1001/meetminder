@@ -7,6 +7,8 @@ const { invoke } = window.__TAURI__.core;
 // Default settings shape
 const DEFAULT_SETTINGS = {
   soniox_api_key: '',
+  openai_api_key: '',
+  qwen_api_key: '',
   source_language: 'auto',
   target_language: 'vi',
   audio_source: 'system',
