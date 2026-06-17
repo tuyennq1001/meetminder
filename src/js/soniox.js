@@ -94,7 +94,7 @@ export class SonioxClient {
             // Build config message
             const configMsg = {
                 api_key: apiKey,
-                model: 'stt-rt-v4',
+                model: 'stt-rt-v5',
                 audio_format: 'pcm_s16le',
                 sample_rate: 16000,
                 num_channels: 1,

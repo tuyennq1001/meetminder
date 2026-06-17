@@ -7,6 +7,33 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## v0.7.3 - 2026-06-17
+
+### Changes
+
+- **Soniox engine upgraded `stt-rt-v4` → `stt-rt-v5`.** Drop-in model swap (config field only) with measurably better Vietnamese output. The legacy `stt-rt-v4` model retires 2026-06-30, so this also keeps the engine working past that date.
+
+### Benchmark
+
+Apples-to-apples run (same harness, same 302s JA→VI audio, both models streamed simultaneously at real-time pace):
+
+| Metric | stt-rt-v4 | stt-rt-v5 |
+|---|---:|---:|
+| Connect | 2445 ms | 2450 ms |
+| First final | 16597 ms | 16084 ms (~0.5s faster) |
+| Final segments | 109 | 109 |
+| Errors | 0 | 0 |
+| Cost (302s @ $0.12/hr) | $0.0102 | $0.0102 |
+
+Latency, cost, and segmentation are effectively identical — v5's win is **translation quality**: correct proper nouns (e.g. "Akabira" vs v4's "Akahira"), more precise terminology ("vũ trụ", "vệ tinh nhân tạo"), and smoother clause joining with fewer choppy fragments.
+
+### Technical
+
+- `src/js/soniox.js`: config `model` field `stt-rt-v4` → `stt-rt-v5`.
+- `src/js/app.js`: API-key connectivity ping (`_pingSoniox`) model string updated to match.
+
+---
+
 ## v0.7.2 - 2026-05-26
 
 ### Changes

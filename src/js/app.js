@@ -1368,7 +1368,7 @@ class App {
             const ws = new WebSocket('wss://stt-rt.soniox.com/transcribe-websocket');
             const timer = setTimeout(() => { try { ws.close(); } catch {} resolve(false); }, 5000);
             ws.onopen = () => {
-                ws.send(JSON.stringify({ api_key: apiKey, model: 'stt-rt-v4', audio_format: 'pcm_s16le', sample_rate: 16000, num_channels: 1 }));
+                ws.send(JSON.stringify({ api_key: apiKey, model: 'stt-rt-v5', audio_format: 'pcm_s16le', sample_rate: 16000, num_channels: 1 }));
             };
             ws.onmessage = (e) => {
                 clearTimeout(timer);
