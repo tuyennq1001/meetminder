@@ -7,25 +7,25 @@
 // Legacy `.md`-only files from the old `save_transcript` command are still
 // listed (with `has_legacy_only: true`) but not editable.
 
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Segment {
-    pub ts: String,        // "HH:MM:SS"
+    pub ts: String, // "HH:MM:SS"
     pub src: String,
     pub tgt: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Chunk {
-    pub started_at: String,             // ISO8601
-    pub ended_at: Option<String>,       // None until chunk closes
+    pub started_at: String,       // ISO8601
+    pub ended_at: Option<String>, // None until chunk closes
     pub segments: Vec<Segment>,
 }
 
@@ -77,21 +77,30 @@ fn sessions_dir(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn session_paths(dir: &Path, id: &str) -> (PathBuf, PathBuf) {
     let base = format!("session-{}", id);
-    (dir.join(format!("{}.md", base)), dir.join(format!("{}.json", base)))
+    (
+        dir.join(format!("{}.md", base)),
+        dir.join(format!("{}.json", base)),
+    )
 }
 
 fn validate_id(id: &str) -> Result<(), String> {
     if id.is_empty() || id.len() > 64 {
         return Err("Invalid session id length".into());
     }
-    if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         return Err("Invalid session id characters".into());
     }
     Ok(())
 }
 
 fn sanitize_title(s: &str) -> String {
-    s.chars().filter(|c| !c.is_control() || *c == '\n').take(200).collect()
+    s.chars()
+        .filter(|c| !c.is_control() || *c == '\n')
+        .take(200)
+        .collect()
 }
 
 // ─── Atomic write ────────────────────────────────────────────────────────
@@ -102,9 +111,9 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
         path.extension().and_then(|s| s.to_str()).unwrap_or("")
     ));
     {
-        let mut f = fs::File::create(&tmp)
-            .map_err(|e| format!("Failed to create tmp: {}", e))?;
-        f.write_all(bytes).map_err(|e| format!("Write failed: {}", e))?;
+        let mut f = fs::File::create(&tmp).map_err(|e| format!("Failed to create tmp: {}", e))?;
+        f.write_all(bytes)
+            .map_err(|e| format!("Write failed: {}", e))?;
         f.sync_all().map_err(|e| format!("fsync failed: {}", e))?;
     }
     fs::rename(&tmp, path).map_err(|e| format!("Rename failed: {}", e))?;
@@ -147,11 +156,19 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
     // Pass 1: parse all .json sidecars
     for entry in &entries {
         let name = entry.file_name().to_string_lossy().to_string();
-        let Some(stem) = name.strip_suffix(".json") else { continue };
-        let Some(id) = stem.strip_prefix("session-") else { continue };
+        let Some(stem) = name.strip_suffix(".json") else {
+            continue;
+        };
+        let Some(id) = stem.strip_prefix("session-") else {
+            continue;
+        };
         let path = entry.path();
-        let Ok(content) = fs::read_to_string(&path) else { continue };
-        let Ok(data) = serde_json::from_str::<SessionData>(&content) else { continue };
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(data) = serde_json::from_str::<SessionData>(&content) else {
+            continue;
+        };
         let segment_count: usize = data.chunks.iter().map(|c| c.segments.len()).sum();
         seen_new_ids.insert(id.to_string());
         items.push(SessionListItem {
@@ -172,10 +189,14 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
     // Pass 2: legacy .md-only files (old save_transcript output, no sidecar)
     for entry in &entries {
         let name = entry.file_name().to_string_lossy().to_string();
-        let Some(stem) = name.strip_suffix(".md") else { continue };
+        let Some(stem) = name.strip_suffix(".md") else {
+            continue;
+        };
         // Skip new format files we already counted in pass 1
         if let Some(id) = stem.strip_prefix("session-") {
-            if seen_new_ids.contains(id) { continue; }
+            if seen_new_ids.contains(id) {
+                continue;
+            }
         }
         // Legacy filename pattern: 2026-03-27_10-21-05.md
         let created_at = stem.replace('_', " ");
@@ -205,9 +226,10 @@ pub fn read_session(app: AppHandle, id: String) -> Result<SessionReadResult, Str
     let dir = sessions_dir(&app)?;
     let (md_path, json_path) = session_paths(&dir, &id);
     let md = fs::read_to_string(&md_path).map_err(|e| format!("Read md failed: {}", e))?;
-    let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
-    let json: SessionData = serde_json::from_str(&json_str)
-        .map_err(|e| format!("Parse json failed: {}", e))?;
+    let json_str =
+        fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
+    let json: SessionData =
+        serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
     Ok(SessionReadResult { md, json })
 }
 
@@ -237,21 +259,17 @@ pub fn delete_session(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn update_session_title(
-    app: AppHandle,
-    id: String,
-    title: String,
-) -> Result<(), String> {
+pub fn update_session_title(app: AppHandle, id: String, title: String) -> Result<(), String> {
     validate_id(&id)?;
     let title = sanitize_title(&title);
     let dir = sessions_dir(&app)?;
     let (md_path, json_path) = session_paths(&dir, &id);
     let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read failed: {}", e))?;
-    let mut data: SessionData = serde_json::from_str(&json_str)
-        .map_err(|e| format!("Parse failed: {}", e))?;
+    let mut data: SessionData =
+        serde_json::from_str(&json_str).map_err(|e| format!("Parse failed: {}", e))?;
     data.title = title.clone();
-    let json_bytes = serde_json::to_vec_pretty(&data)
-        .map_err(|e| format!("Serialize failed: {}", e))?;
+    let json_bytes =
+        serde_json::to_vec_pretty(&data).map_err(|e| format!("Serialize failed: {}", e))?;
     write_atomic(&json_path, &json_bytes)?;
 
     // Re-render markdown header: replace first "# ..." line, leave body alone
@@ -271,8 +289,8 @@ pub fn export_session_srt(app: AppHandle, id: String) -> Result<String, String> 
     let dir = sessions_dir(&app)?;
     let (_, json_path) = session_paths(&dir, &id);
     let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read failed: {}", e))?;
-    let data: SessionData = serde_json::from_str(&json_str)
-        .map_err(|e| format!("Parse failed: {}", e))?;
+    let data: SessionData =
+        serde_json::from_str(&json_str).map_err(|e| format!("Parse failed: {}", e))?;
 
     let mut out = String::new();
     let mut idx: u32 = 1;
@@ -301,9 +319,11 @@ pub fn export_session_txt(app: AppHandle, id: String) -> Result<String, String> 
     let dir = sessions_dir(&app)?;
     let (_, json_path) = session_paths(&dir, &id);
     let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read failed: {}", e))?;
-    let data: SessionData = serde_json::from_str(&json_str)
-        .map_err(|e| format!("Parse failed: {}", e))?;
-    let lines: Vec<String> = data.chunks.iter()
+    let data: SessionData =
+        serde_json::from_str(&json_str).map_err(|e| format!("Parse failed: {}", e))?;
+    let lines: Vec<String> = data
+        .chunks
+        .iter()
         .flat_map(|c| c.segments.iter())
         .map(|s| s.tgt.clone())
         .collect();
@@ -311,10 +331,7 @@ pub fn export_session_txt(app: AppHandle, id: String) -> Result<String, String> 
 }
 
 #[tauri::command]
-pub fn search_sessions(
-    app: AppHandle,
-    query: String,
-) -> Result<Vec<SessionListItem>, String> {
+pub fn search_sessions(app: AppHandle, query: String) -> Result<Vec<SessionListItem>, String> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {
         return list_sessions(app);
@@ -338,7 +355,9 @@ pub fn search_sessions(
             continue;
         }
         let (_, json_path) = session_paths(&dir, &item.id);
-        let Ok(json_str) = fs::read_to_string(&json_path) else { continue };
+        let Ok(json_str) = fs::read_to_string(&json_path) else {
+            continue;
+        };
         if json_str.to_lowercase().contains(&q) {
             hits.push(item);
         }
@@ -349,7 +368,9 @@ pub fn search_sessions(
 // "HH:MM:SS" + N seconds → new "HH:MM:SS" (saturating at 99:59:59)
 fn add_seconds_hms(ts: &str, add: u64) -> String {
     let parts: Vec<u64> = ts.split(':').filter_map(|p| p.parse().ok()).collect();
-    if parts.len() != 3 { return ts.to_string(); }
+    if parts.len() != 3 {
+        return ts.to_string();
+    }
     let total = parts[0] * 3600 + parts[1] * 60 + parts[2] + add;
     let h = (total / 3600).min(99);
     let m = (total % 3600) / 60;

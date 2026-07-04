@@ -34,7 +34,9 @@ pub struct OpenAiRealtimeConfig {
     pub audio_output: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -345,7 +347,9 @@ fn handle_server_event(text: &str, event_ch: &Channel<OpenAiEvent>, audio_output
             }
         }
         "session.closed" => {
-            let _ = event_ch.send(OpenAiEvent::Closed { reason: "session.closed".into() });
+            let _ = event_ch.send(OpenAiEvent::Closed {
+                reason: "session.closed".into(),
+            });
         }
         "error" => {
             let code = value
@@ -365,7 +369,10 @@ fn handle_server_event(text: &str, event_ch: &Channel<OpenAiEvent>, audio_output
         other => {
             // Log unknown event types so we can discover server-side names we
             // haven't mapped yet (e.g. turn lifecycle around speech pauses).
-            eprintln!("[openai-realtime] unhandled event type: {} | payload: {}", other, text);
+            eprintln!(
+                "[openai-realtime] unhandled event type: {} | payload: {}",
+                other, text
+            );
         }
     }
 }

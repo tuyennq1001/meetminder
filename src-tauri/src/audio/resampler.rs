@@ -1,7 +1,9 @@
 // 16kHz → 24kHz polyphase upsampler for OpenAI Realtime.
 // OpenAI Realtime expects 24kHz s16le PCM; our capture pipeline produces 16kHz.
 
-use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
 
 const INPUT_RATE: usize = 16_000;
 const OUTPUT_RATE: usize = 24_000;

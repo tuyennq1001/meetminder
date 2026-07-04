@@ -4,10 +4,7 @@ use tauri::State;
 /// Get current settings
 #[tauri::command]
 pub fn get_settings(state: State<'_, SettingsState>) -> Result<Settings, String> {
-    let settings = state
-        .0
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let settings = state.0.lock().map_err(|e| format!("Lock error: {}", e))?;
     Ok(settings.clone())
 }
 
@@ -17,10 +14,7 @@ pub fn save_settings(
     new_settings: Settings,
     state: State<'_, SettingsState>,
 ) -> Result<(), String> {
-    let mut settings = state
-        .0
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let mut settings = state.0.lock().map_err(|e| format!("Lock error: {}", e))?;
 
     // Save to disk
     new_settings.save()?;

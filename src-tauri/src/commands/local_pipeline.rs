@@ -14,9 +14,7 @@ fn log_to_file(msg: &str) {
         .create(true)
         .append(true)
         .open("/tmp/personal_translator_pipeline.log")
-        .and_then(|mut f| {
-            writeln!(f, "[{}] {}", chrono_now(), msg)
-        });
+        .and_then(|mut f| writeln!(f, "[{}] {}", chrono_now(), msg));
     eprintln!("[local-pipeline] {}", msg);
 }
 
@@ -36,7 +34,10 @@ pub fn start_local_pipeline(
     channel: Channel<String>,
     state: tauri::State<'_, LocalPipelineState>,
 ) -> Result<(), String> {
-    log_to_file(&format!("start_local_pipeline called: src={}, tgt={}", source_lang, target_lang));
+    log_to_file(&format!(
+        "start_local_pipeline called: src={}, tgt={}",
+        source_lang, target_lang
+    ));
 
     // Send status to frontend
     let _ = channel.send(r#"{"type":"status","message":"Stopping old pipeline..."}"#.to_string());
@@ -57,7 +58,8 @@ pub fn start_local_pipeline(
     let script_path = {
         let candidates = vec![
             // Dev: project root (when running from src-tauri/)
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../scripts/local_pipeline.py"),
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../scripts/local_pipeline.py"),
             // Dev: relative to current working directory
             std::path::PathBuf::from("scripts/local_pipeline.py"),
             // Production: relative to executable
@@ -68,20 +70,30 @@ pub fn start_local_pipeline(
                 .join("../Resources/scripts/local_pipeline.py"),
         ];
 
-        log_to_file(&format!("Checking candidates: {:?}", candidates.iter().map(|p| format!("{:?} exists={}", p, p.exists())).collect::<Vec<_>>()));
+        log_to_file(&format!(
+            "Checking candidates: {:?}",
+            candidates
+                .iter()
+                .map(|p| format!("{:?} exists={}", p, p.exists()))
+                .collect::<Vec<_>>()
+        ));
 
-        candidates
-            .into_iter()
-            .find(|p| p.exists())
-            .ok_or_else(|| "Pipeline script not found. Ensure scripts/local_pipeline.py exists.".to_string())?
+        candidates.into_iter().find(|p| p.exists()).ok_or_else(|| {
+            "Pipeline script not found. Ensure scripts/local_pipeline.py exists.".to_string()
+        })?
     };
 
     log_to_file(&format!("Using script: {:?}", script_path));
-    let _ = channel.send(format!(r#"{{"type":"status","message":"Starting Python pipeline..."}}"#));
+    let _ = channel.send(format!(
+        r#"{{"type":"status","message":"Starting Python pipeline..."}}"#
+    ));
 
     // Use venv python if MLX setup is complete, otherwise fall back to system python
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/phucnt".to_string());
-    let venv_python = format!("{}/Library/Application Support/My Translator/mlx-env/bin/python3", home);
+    let venv_python = format!(
+        "{}/Library/Application Support/My Translator/mlx-env/bin/python3",
+        home
+    );
 
     let python = if std::path::Path::new(&venv_python).exists() {
         log_to_file(&format!("Using venv python: {}", venv_python));
@@ -117,14 +129,15 @@ pub fn start_local_pipeline(
         })?;
 
     log_to_file(&format!("Python process spawned, PID={}", child.id()));
-    let _ = channel.send(format!(r#"{{"type":"status","message":"Python started (PID={}), loading models..."}}"#, child.id()));
+    let _ = channel.send(format!(
+        r#"{{"type":"status","message":"Python started (PID={}), loading models..."}}"#,
+        child.id()
+    ));
 
     // Read stdout in a background thread and forward JSON to frontend
-    let stdout = child.stdout.take()
-        .ok_or("Failed to get stdout")?;
+    let stdout = child.stdout.take().ok_or("Failed to get stdout")?;
 
-    let stderr = child.stderr.take()
-        .ok_or("Failed to get stderr")?;
+    let stderr = child.stderr.take().ok_or("Failed to get stderr")?;
 
     // Forward stdout (JSON results) to frontend
     let channel_clone = channel.clone();
@@ -158,9 +171,8 @@ pub fn start_local_pipeline(
                     log_to_file(&format!("stderr: {}", line));
                     // Forward pipeline status to frontend
                     let escaped = line.replace('"', r#"\""#);
-                    let _ = channel_clone2.send(
-                        format!(r#"{{"type":"status","message":"{}"}}"#, escaped)
-                    );
+                    let _ = channel_clone2
+                        .send(format!(r#"{{"type":"status","message":"{}"}}"#, escaped));
                 }
                 Err(_) => break,
             }
@@ -196,9 +208,7 @@ pub fn send_audio_to_pipeline(
 
 /// Stop the local pipeline
 #[tauri::command]
-pub fn stop_local_pipeline(
-    state: tauri::State<'_, LocalPipelineState>,
-) -> Result<(), String> {
+pub fn stop_local_pipeline(state: tauri::State<'_, LocalPipelineState>) -> Result<(), String> {
     log_to_file("stop_local_pipeline called");
     stop_local_pipeline_inner(&state);
     Ok(())
@@ -223,13 +233,22 @@ fn stop_local_pipeline_inner(state: &LocalPipelineState) {
 #[tauri::command]
 pub fn check_mlx_setup() -> Result<String, String> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/phucnt".to_string());
-    let marker = format!("{}/Library/Application Support/My Translator/mlx-env/.setup_complete", home);
-    let venv_python = format!("{}/Library/Application Support/My Translator/mlx-env/bin/python3", home);
+    let marker = format!(
+        "{}/Library/Application Support/My Translator/mlx-env/.setup_complete",
+        home
+    );
+    let venv_python = format!(
+        "{}/Library/Application Support/My Translator/mlx-env/bin/python3",
+        home
+    );
 
     if std::path::Path::new(&marker).exists() && std::path::Path::new(&venv_python).exists() {
         // Read marker to get details
         let content = std::fs::read_to_string(&marker).unwrap_or_default();
-        Ok(format!(r#"{{"ready":true,"python":"{}","details":{}}}"#, venv_python, content))
+        Ok(format!(
+            r#"{{"ready":true,"python":"{}","details":{}}}"#,
+            venv_python, content
+        ))
     } else {
         Ok(r#"{"ready":false}"#.to_string())
     }
@@ -237,9 +256,7 @@ pub fn check_mlx_setup() -> Result<String, String> {
 
 /// Run MLX setup (install venv + packages + download models)
 #[tauri::command]
-pub fn run_mlx_setup(
-    channel: Channel<String>,
-) -> Result<(), String> {
+pub fn run_mlx_setup(channel: Channel<String>) -> Result<(), String> {
     log_to_file("run_mlx_setup called");
 
     // Find setup script
@@ -308,9 +325,8 @@ pub fn run_mlx_setup(
                 Ok(line) => {
                     log_to_file(&format!("setup stderr: {}", line));
                     let escaped = line.replace('"', r#"\""#);
-                    let _ = channel_clone2.send(
-                        format!(r#"{{"type":"log","message":"{}"}}"#, escaped)
-                    );
+                    let _ =
+                        channel_clone2.send(format!(r#"{{"type":"log","message":"{}"}}"#, escaped));
                 }
                 Err(_) => break,
             }

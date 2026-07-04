@@ -4,7 +4,10 @@
   "version": "0.7.3",
   "type": "module",
   "scripts": {
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "lint": "cd src-tauri && cargo clippy",
+    "format": "cd src-tauri && cargo fmt"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

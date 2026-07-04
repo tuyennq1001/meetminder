@@ -135,11 +135,12 @@ impl Settings {
 
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {}", e))?;
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create config dir: {}", e))?;
         }
 
-        let json =
-            serde_json::to_string_pretty(self).map_err(|e| format!("Failed to serialize: {}", e))?;
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| format!("Failed to serialize: {}", e))?;
 
         fs::write(&path, json).map_err(|e| format!("Failed to write settings: {}", e))?;
 

@@ -1,7 +1,7 @@
 use screencapturekit::prelude::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::TARGET_SAMPLE_RATE;
 
@@ -90,8 +90,12 @@ impl SystemAudioCapture {
         }
 
         // Get available displays
-        let content = SCShareableContent::get()
-            .map_err(|e| format!("Failed to get shareable content (Screen Recording permission needed): {}", e))?;
+        let content = SCShareableContent::get().map_err(|e| {
+            format!(
+                "Failed to get shareable content (Screen Recording permission needed): {}",
+                e
+            )
+        })?;
 
         let display = content
             .displays()
@@ -108,7 +112,7 @@ impl SystemAudioCapture {
         // Configure: audio only, 48kHz stereo (ScreenCaptureKit native rate)
         // Downsampling to 16kHz mono happens in AudioHandler
         let config = SCStreamConfiguration::new()
-            .with_width(2)      // minimal video (required by API)
+            .with_width(2) // minimal video (required by API)
             .with_height(2)
             .with_captures_audio(true)
             .with_excludes_current_process_audio(true) // Prevent TTS audio feedback loop
@@ -124,7 +128,8 @@ impl SystemAudioCapture {
         let mut stream = SCStream::new(&filter, &config);
         stream.add_output_handler(handler, SCStreamOutputType::Audio);
 
-        stream.start_capture()
+        stream
+            .start_capture()
             .map_err(|e| format!("Failed to start system audio capture: {}", e))?;
 
         self.is_capturing.store(true, Ordering::SeqCst);
