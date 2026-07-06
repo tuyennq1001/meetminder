@@ -26,10 +26,26 @@ if (!window.__TAURI__ && location.port === '3111') {
         microsoft_v2_voice: 'vi-VN-HoaiMyNeural',
         microsoft_v2_speed: 20,
         google_free_voice: 'vi-VN',
+        google_free_speed: 1.0,
         tiktok_voice: 'BV074_streaming',
+        tiktok_speed: 1.0,
         tiktok_session_id: '',
+        local_tts_voice: 'vi_VN-vais1000-medium',
+        local_tts_speed: 1.0,
+        local_tts_models_dir: '',
         font_size: 16,
     };
+
+    // Sample local (Piper) voice catalog so the download/delete UI can be exercised.
+    const mockLocalVoices = [
+        { id: 'vi_VN-vais1000-medium', display: 'Tiếng Việt — VAIS1000 (medium)', lang: 'vi', url: '', approxSizeBytes: 67154040, sampleRate: 22050, installed: true, installedBytes: 67154040, imported: false },
+        { id: 'vi_VN-25hours_single-low', display: 'Tiếng Việt — 25 hours (low)', lang: 'vi', url: '', approxSizeBytes: 67059380, sampleRate: 16000, installed: false, installedBytes: null, imported: false },
+        { id: 'en_US-ryan-medium', display: 'English (US) — Ryan (medium)', lang: 'en', url: '', approxSizeBytes: 63000000, sampleRate: 22050, installed: true, installedBytes: 63000000, imported: false },
+        { id: 'en_US-lessac-medium', display: 'English (US) — Lessac (medium)', lang: 'en', url: '', approxSizeBytes: 67230653, sampleRate: 22050, installed: false, installedBytes: null, imported: false },
+        // Sample imported (local) voices — always shown regardless of language filter.
+        { id: 'tranthanh3870', display: 'tranthanh3870', lang: '', url: '', approxSizeBytes: 0, sampleRate: 0, installed: true, installedBytes: 63000000, imported: true },
+        { id: 'mytam2', display: 'mytam2', lang: '', url: '', approxSizeBytes: 0, sampleRate: 0, installed: true, installedBytes: 63000000, imported: true },
+    ];
 
     // Sample voices so the Microsoft v2 dynamic-populate path can be exercised in-browser.
     const mockMsVoices = JSON.stringify([
@@ -54,10 +70,35 @@ if (!window.__TAURI__ && location.port === '3111') {
                         return { os: 'macos', arch: 'aarch64' };
                     case 'microsoft_list_voices':
                         return mockMsVoices;
+                    case 'local_tts_list_models':
+                        return mockLocalVoices;
+                    case 'local_tts_models_dir_path':
+                        return mockSettings.local_tts_models_dir ||
+                            '/Users/dev/Library/Application Support/com.personal.translator/piper-models';
+                    case 'local_tts_download_model': {
+                        // Simulate progress then mark installed.
+                        const ch = args?.onProgress;
+                        const id = args?.id;
+                        if (ch && typeof ch.onmessage === 'function') {
+                            [25, 50, 75, 100].forEach((pct) =>
+                                ch.onmessage({ id, phase: 'downloading', received: pct, total: 100, message: null })
+                            );
+                            ch.onmessage({ id, phase: 'done', received: 100, total: 100, message: null });
+                        }
+                        const v = mockLocalVoices.find((m) => m.id === id);
+                        if (v) v.installed = true;
+                        return null;
+                    }
+                    case 'local_tts_delete_model': {
+                        const v = mockLocalVoices.find((m) => m.id === args?.id);
+                        if (v) v.installed = false;
+                        return null;
+                    }
                     // TTS synth commands: no audio in browser mode, return empty base64.
                     case 'edge_tts_speak':
                     case 'google_free_tts_speak':
                     case 'tiktok_tts_speak':
+                    case 'local_tts_speak':
                         return '';
                     case 'start_capture':
                     case 'stop_capture':
@@ -76,6 +117,10 @@ if (!window.__TAURI__ && location.port === '3111') {
             Channel: class {
                 constructor() { this.onmessage = null; }
             },
+        },
+        dialog: {
+            // Browser dev: pretend the user picked a folder (null would mean "cancelled").
+            open: async () => '/Users/dev/piper-models',
         },
         window: {
             getCurrentWindow: () => ({

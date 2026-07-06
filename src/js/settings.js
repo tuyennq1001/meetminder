@@ -34,8 +34,14 @@ const DEFAULT_SETTINGS = {
   microsoft_v2_voice: 'vi-VN-HoaiMyNeural',
   microsoft_v2_speed: 20,
   google_free_voice: 'vi-VN',
+  google_free_speed: 1.0,
   tiktok_voice: 'BV074_streaming',
+  tiktok_speed: 1.0,
   tiktok_session_id: '',
+  // Local offline (Piper/sherpa-onnx)
+  local_tts_voice: 'vi_VN-vais1000-medium',
+  local_tts_speed: 1.0,
+  local_tts_models_dir: '',
 };
 
 class SettingsManager {

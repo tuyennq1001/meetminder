@@ -75,10 +75,25 @@ pub struct Settings {
     pub microsoft_v2_speed: i32,
     /// Google Free (android-tts) language token, e.g. "vi-VN" | "en-US"
     pub google_free_voice: String,
+    /// Google Free client-side playback speed (endpoint has no rate param). 1.0 = normal.
+    #[serde(default = "default_local_tts_speed")]
+    pub google_free_speed: f32,
     /// TikTok TTS speaker code, e.g. "BV074_streaming"
     pub tiktok_voice: String,
+    /// TikTok client-side playback speed (endpoint has no rate param). 1.0 = normal.
+    #[serde(default = "default_local_tts_speed")]
+    pub tiktok_speed: f32,
     /// TikTok sessionid cookie (user-supplied; required by the endpoint)
     pub tiktok_session_id: String,
+    /// Local offline (Piper/sherpa-onnx) selected voice id, e.g. "vi_VN-vais1000-medium"
+    #[serde(default)]
+    pub local_tts_voice: String,
+    /// Local offline TTS speed (1.0 = normal). Piper length-scale is applied inversely.
+    #[serde(default = "default_local_tts_speed")]
+    pub local_tts_speed: f32,
+    /// Folder where local TTS models are stored; empty = default app-data location.
+    #[serde(default)]
+    pub local_tts_models_dir: String,
     /// OpenAI Realtime: when true server generates translated audio.
     /// Default false — speaker → mic feedback loop on shared devices.
     #[serde(default)]
@@ -114,11 +129,21 @@ impl Default for Settings {
             microsoft_v2_voice: "vi-VN-HoaiMyNeural".to_string(),
             microsoft_v2_speed: 20,
             google_free_voice: "vi-VN".to_string(),
+            google_free_speed: 1.0,
             tiktok_voice: "BV074_streaming".to_string(),
+            tiktok_speed: 1.0,
             tiktok_session_id: String::new(),
+            local_tts_voice: "vi_VN-vais1000-medium".to_string(),
+            local_tts_speed: 1.0,
+            local_tts_models_dir: String::new(),
             openai_audio_output: false,
         }
     }
+}
+
+/// Serde default for `local_tts_speed` (field-level default would give 0.0).
+fn default_local_tts_speed() -> f32 {
+    1.0
 }
 
 /// Get the settings file path

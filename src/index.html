@@ -611,6 +611,7 @@
               <option value="microsoft">🪟 Microsoft v2 — Free</option>
               <option value="google-free">🌐 Google TTS — Free</option>
               <option value="tiktok">🎵 TikTok TTS — Free</option>
+              <option value="local">🔊 Local (Offline) — Free</option>
             </optgroup>
             <optgroup label="Premium">
               <option value="google">🌐 Google Chirp 3 HD — Premium</option>
@@ -673,6 +674,11 @@
               <option value="en-US">English 🇺🇸</option>
             </select>
           </div>
+          <div class="slider-field" style="margin-top: 8px;">
+            <span class="field-label">Speed</span>
+            <input type="range" id="range-google-free-speed" min="0.5" max="2.0" step="0.1" value="1.0" />
+            <span id="google-free-speed-value" class="range-value">1.0x</span>
+          </div>
           <p class="hint">Experimental — free Google voice, may stop working anytime. Text is sent to Google.</p>
         </div>
 
@@ -691,6 +697,11 @@
               </optgroup>
             </select>
           </div>
+          <div class="slider-field" style="margin-top: 8px;">
+            <span class="field-label">Speed</span>
+            <input type="range" id="range-tiktok-speed" min="0.5" max="2.0" step="0.1" value="1.0" />
+            <span id="tiktok-speed-value" class="range-value">1.0x</span>
+          </div>
           <div style="margin-top: 8px;">
             <span class="field-label">TikTok sessionid</span>
             <input type="password" id="input-tiktok-session" placeholder="sessionid cookie from tiktok.com" autocomplete="off" />
@@ -700,6 +711,35 @@
             <span class="field-label">…or paste cURL (auto-extract sessionid)</span>
             <textarea id="input-tiktok-curl" rows="3" placeholder="DevTools → Network → right-click a tiktok.com request → Copy → Copy as cURL, then paste here" autocomplete="off" style="width:100%; resize:vertical; font-family:monospace; font-size:11px;"></textarea>
             <p class="hint">Only the <code>sessionid</code> is read from it and filled above; the cURL itself is not saved or sent anywhere.</p>
+          </div>
+        </div>
+
+        <!-- Local offline (Piper/sherpa-onnx) settings -->
+        <div class="settings-section" id="tts-local-settings" style="display:none;">
+          <div class="field">
+            <span class="field-label">Language</span>
+            <select id="select-local-lang">
+              <option value="vi">Vietnamese — Tiếng Việt</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <div class="field" style="margin-top: 8px;">
+            <span class="field-label">Voices</span>
+            <div id="local-voice-list"><p class="hint">Loading…</p></div>
+          </div>
+          <div class="slider-field" style="margin-top: 8px;">
+            <span class="field-label">Speed</span>
+            <input type="range" id="range-local-speed" min="0.5" max="3.0" step="0.1" value="1.0" />
+            <span id="local-speed-value" class="range-value">1.0x</span>
+          </div>
+          <div style="margin-top: 10px;">
+            <span class="field-label">Model folder</span>
+            <div class="input-group">
+              <input type="text" id="input-local-models-dir" placeholder="Resolving…" readonly title="Full path where voice models are stored" />
+              <button id="btn-local-change-dir" class="icon-btn small" title="Change location" type="button">📁</button>
+              <button id="btn-local-reset-dir" class="icon-btn small" title="Reset to default app location" type="button">↺</button>
+            </div>
+            <p class="hint">Where downloaded voice models are stored. 100% offline once downloaded.</p>
           </div>
         </div>
 

@@ -1,6 +1,6 @@
 [package]
 name = "my-translator"
-version = "0.7.3"
+version = "0.8.0"
 description = "Personal Real-time Speech Translator"
 authors = ["phucnt"]
 edition = "2021"
@@ -12,6 +12,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# Enabled only for dev builds (via scripts/tauri-with-env.mjs) to expose the WebView
+# inspector. Release builds (npm run build / tauri build) never enable this.
+devtools = ["tauri/devtools"]
+
 [dependencies]
 tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-opener = "2"
@@ -20,7 +25,7 @@ serde_json = "1"
 dirs = "6"
 chrono = "0.4"
 cpal = "0.15"
-reqwest = { version = "0.12", features = ["rustls-tls"] }
+reqwest = { version = "0.12", features = ["rustls-tls", "stream"] }
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
@@ -31,6 +36,12 @@ hex = "0.4"
 rand = "0.8"
 tokio = { version = "1", features = ["sync", "rt", "macros", "time"] }
 rubato = "0.16"
+# Local offline TTS: Piper (VITS) via sherpa-onnx (static-linked, no dylib bundling).
+sherpa-onnx = "1.13.3"
+tauri-plugin-dialog = "2"
+# Model archive extraction (.tar.bz2) for downloaded Piper voices.
+tar = "0.4"
+bzip2 = "0.4"
 
 # macOS: ScreenCaptureKit for system audio
 [target.'cfg(target_os = "macos")'.dependencies]

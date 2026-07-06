@@ -12,6 +12,13 @@ class AudioPlayer {
         this._enabled = true;
         this._currentSource = null; // Currently playing AudioBufferSourceNode
         this._maxQueueSize = 10;    // Max buffers in queue before dropping old ones
+        this._playbackRate = 1.0;   // Client-side speed for providers without server-side rate
+    }
+
+    /** Set client-side playback speed (1.0 = normal). Used by Google-free / TikTok TTS. */
+    setPlaybackRate(rate) {
+        const r = Number(rate);
+        this._playbackRate = r > 0 ? r : 1.0;
     }
 
     /**
@@ -88,14 +95,15 @@ class AudioPlayer {
         const buffer = this._queue.shift();
         const source = this.audioContext.createBufferSource();
         source.buffer = buffer;
+        source.playbackRate.value = this._playbackRate;
         source.connect(this.audioContext.destination);
 
-        // Schedule seamlessly after previous chunk
+        // Schedule seamlessly after previous chunk (duration scales with playback rate)
         const currentTime = this.audioContext.currentTime;
         const startTime = Math.max(currentTime, this._nextStartTime);
 
         source.start(startTime);
-        this._nextStartTime = startTime + buffer.duration;
+        this._nextStartTime = startTime + buffer.duration / this._playbackRate;
         this._currentSource = source;
         this._isPlaying = true;
 

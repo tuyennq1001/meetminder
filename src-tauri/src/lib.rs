@@ -6,6 +6,7 @@ use audio::microphone::MicCapture;
 use audio::SystemAudioCapture;
 use commands::audio::AudioState;
 use commands::local_pipeline::LocalPipelineState;
+use commands::local_tts::LocalTtsState;
 use commands::openai_realtime::OpenAiState;
 use commands::qwen_realtime::QwenState;
 use settings::{Settings, SettingsState};
@@ -27,12 +28,22 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             #[cfg(desktop)]
             {
                 app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
                 app.handle().plugin(tauri_plugin_process::init())?;
+            }
+            // Dev builds (compiled with the `devtools` feature): auto-open the WebView
+            // inspector so JS/console errors are visible. Never compiled into release.
+            #[cfg(feature = "devtools")]
+            {
+                use tauri::Manager;
+                if let Some(win) = app.get_webview_window("main") {
+                    win.open_devtools();
+                }
             }
             Ok(())
         })
@@ -45,6 +56,7 @@ pub fn run() {
         .manage(LocalPipelineState {
             process: Mutex::new(None),
         })
+        .manage(LocalTtsState::default())
         .manage(OpenAiState::default())
         .manage(QwenState::default())
         .invoke_handler(tauri::generate_handler![
@@ -75,6 +87,11 @@ pub fn run() {
             commands::microsoft_tts::microsoft_list_voices,
             commands::google_free_tts::google_free_tts_speak,
             commands::tiktok_tts::tiktok_tts_speak,
+            commands::local_tts::local_tts_speak,
+            commands::local_tts::local_tts_list_models,
+            commands::local_tts::local_tts_models_dir_path,
+            commands::local_tts::local_tts_download_model,
+            commands::local_tts::local_tts_delete_model,
             commands::openai_realtime::openai_realtime_start,
             commands::openai_realtime::openai_realtime_send_audio,
             commands::openai_realtime::openai_realtime_stop,

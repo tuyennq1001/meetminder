@@ -7,6 +7,19 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## v0.8.0 - 2026-07-06
+
+### Added
+
+- **Local (Offline) TTS provider — Piper neural voices, 100% on-device.** A new TTS provider that synthesizes speech locally via Piper (VITS) models running through sherpa-onnx — no network, no API key, nothing sent anywhere. Runs on CPU (macOS + Windows), ~15× faster than real-time.
+  - Vietnamese + English voices, downloaded on demand from an in-app catalog (Settings → TTS → Local). Each voice is user-**downloaded** (with progress) and **deletable** (real on-device removal).
+  - Choose where models are stored: default app location or a custom folder (prompted before the first download, changeable anytime).
+  - Downloads are SHA-256 verified before install; phonemization uses espeak-ng data bundled inside each model (fully offline).
+
+### Notes
+
+- sherpa-onnx is statically linked, so no extra native libraries are bundled; the app binary grows ~23 MB.
+
 ## v0.7.3 - 2026-06-17
 
 ### Changes

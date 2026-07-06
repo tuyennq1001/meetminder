@@ -143,6 +143,7 @@ Experimental offline mode using MLX + Whisper + Gemma — runs 100% on-device. J
 - **[Soniox](https://soniox.com)** — Real-time STT + translation
 - **[OpenAI Realtime Translate](https://platform.openai.com/docs/guides/realtime)** — `gpt-realtime-translate` (text + native voice)
 - **[MLX](https://github.com/ml-explore/mlx)** — On-device Whisper + Gemma for offline mode
+- **[Piper](https://github.com/rhasspy/piper) via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)** — Local offline neural TTS (on-device, no network)
 - **[Edge TTS](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/index-text-to-speech)** — Free neural TTS (default)
 - **[Google Cloud TTS](https://cloud.google.com/text-to-speech)** — Chirp 3 HD (near-human quality)
 - **[ElevenLabs](https://elevenlabs.io)** — Premium TTS

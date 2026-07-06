@@ -12,12 +12,13 @@ import { edgeTTSRust } from './edge-tts.js';
 import { microsoftTTS } from './microsoft-tts.js';
 import { googleFreeTTS } from './google-free-tts.js';
 import { tiktokTTS } from './tiktok-tts.js';
+import { localTTS } from './local-tts.js';
 import { audioPlayer } from './audio-player.js';
 import { updater } from './updater.js';
 import { sessionStore } from './session-store.js';
 import { QWEN_LANGS } from './qwen-langs.js';
 
-const { invoke } = window.__TAURI__.core;
+const { invoke, Channel } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
 
 // Static fallback for Microsoft v2 voices when the live list endpoint is unreachable.
@@ -85,7 +86,7 @@ class App {
 
         // Wire TTS audio callbacks for every provider (single source of registration
         // so a new provider can never be silently left unwired).
-        this._allTTS = [elevenLabsTTS, edgeTTSRust, googleTTS, microsoftTTS, googleFreeTTS, tiktokTTS];
+        this._allTTS = [elevenLabsTTS, edgeTTSRust, googleTTS, microsoftTTS, googleFreeTTS, tiktokTTS, localTTS];
         for (const tts of this._allTTS) {
             tts.onAudioChunk = (base64Audio, isFinal) => {
                 audioPlayer.enqueue(base64Audio);
@@ -504,6 +505,37 @@ class App {
             this._fillMicrosoftVoices(e.target.value);
         });
 
+        // Local offline: language filter re-renders the voice list
+        document.getElementById('select-local-lang')?.addEventListener('change', (e) => {
+            this._fillLocalVoices(e.target.value);
+        });
+
+        // Local offline: speed slider (0.5x–2.0x)
+        document.getElementById('range-local-speed')?.addEventListener('input', (e) => {
+            const label = document.getElementById('local-speed-value');
+            if (label) label.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
+        });
+
+        // Google-free / TikTok: client-side speed sliders (0.5x–2.0x)
+        document.getElementById('range-google-free-speed')?.addEventListener('input', (e) => {
+            const label = document.getElementById('google-free-speed-value');
+            if (label) label.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
+        });
+        document.getElementById('range-tiktok-speed')?.addEventListener('input', (e) => {
+            const label = document.getElementById('tiktok-speed-value');
+            if (label) label.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
+        });
+
+        // Local offline: change model storage folder
+        document.getElementById('btn-local-change-dir')?.addEventListener('click', () => {
+            this._maybePickModelsDir();
+        });
+
+        // Local offline: reset model folder back to the default app location
+        document.getElementById('btn-local-reset-dir')?.addEventListener('click', () => {
+            this._resetModelsDir();
+        });
+
         // TikTok: paste a "Copy as cURL" and auto-extract the sessionid cookie into the field
         document.getElementById('input-tiktok-curl')?.addEventListener('input', (e) => {
             const m = e.target.value.match(/sessionid=([^;"'\s\\]+)/i);
@@ -793,12 +825,22 @@ class App {
         // Google Free settings
         const gfVoiceSelect = document.getElementById('select-google-free-voice');
         if (gfVoiceSelect) gfVoiceSelect.value = s.google_free_voice || 'vi-VN';
+        const gfSpeed = s.google_free_speed || 1.0;
+        const gfSpeedSlider = document.getElementById('range-google-free-speed');
+        const gfSpeedLabel = document.getElementById('google-free-speed-value');
+        if (gfSpeedSlider) gfSpeedSlider.value = gfSpeed;
+        if (gfSpeedLabel) gfSpeedLabel.textContent = parseFloat(gfSpeed).toFixed(1) + 'x';
 
         // TikTok settings
         const ttVoiceSelect = document.getElementById('select-tiktok-voice');
         if (ttVoiceSelect) ttVoiceSelect.value = s.tiktok_voice || 'BV074_streaming';
         const ttSession = document.getElementById('input-tiktok-session');
         if (ttSession) ttSession.value = s.tiktok_session_id || '';
+        const ttSpeed = s.tiktok_speed || 1.0;
+        const ttSpeedSlider = document.getElementById('range-tiktok-speed');
+        const ttSpeedLabel = document.getElementById('tiktok-speed-value');
+        if (ttSpeedSlider) ttSpeedSlider.value = ttSpeed;
+        if (ttSpeedLabel) ttSpeedLabel.textContent = parseFloat(ttSpeed).toFixed(1) + 'x';
 
         // TTS provider
         const providerSelect = document.getElementById('select-tts-provider');
@@ -875,8 +917,11 @@ class App {
         settings.microsoft_v2_voice = document.getElementById('select-microsoft-voice')?.value || 'vi-VN-HoaiMyNeural';
         settings.microsoft_v2_speed = parseInt(document.getElementById('range-microsoft-speed')?.value || 20);
         settings.google_free_voice = document.getElementById('select-google-free-voice')?.value || 'vi-VN';
+        settings.google_free_speed = parseFloat(document.getElementById('range-google-free-speed')?.value || 1.0);
         settings.tiktok_voice = document.getElementById('select-tiktok-voice')?.value || 'BV074_streaming';
+        settings.tiktok_speed = parseFloat(document.getElementById('range-tiktok-speed')?.value || 1.0);
         settings.tiktok_session_id = document.getElementById('input-tiktok-session')?.value.trim() || '';
+        settings.local_tts_speed = parseFloat(document.getElementById('range-local-speed')?.value || 1.0);
         settings.tts_enabled = false;
 
         try {
@@ -925,7 +970,7 @@ class App {
 
     // ─── TTS Control ──────────────────────────────────────
 
-    _toggleTTS() {
+    async _toggleTTS() {
         const settings = settingsManager.get();
         const provider = settings.tts_provider || 'edge';
 
@@ -934,6 +979,17 @@ class App {
         if (translationType === 'two_way') {
             this._showToast('TTS is disabled in two-way mode to prevent audio loop', 'error');
             return;
+        }
+
+        // Local provider: the selected voice must actually be downloaded (async check).
+        // Only gate when turning ON (turning off never needs a model).
+        if (provider === 'local' && !this.ttsEnabled) {
+            const installed = await this._isLocalVoiceInstalled(settings.local_tts_voice);
+            if (!installed) {
+                this._showToast('Download a voice in Settings → TTS → Local', 'error');
+                this._showView('settings');
+                return;
+            }
         }
 
         // Check credentials for providers that require them (free providers need none)
@@ -969,6 +1025,7 @@ class App {
                 microsoft: 'Microsoft v2 (Free)',
                 'google-free': 'Google TTS (Free)',
                 tiktok: 'TikTok TTS (Free)',
+                local: 'Local Offline',
                 google: 'Google Chirp 3 HD',
                 elevenlabs: 'ElevenLabs',
             }[provider] || provider;
@@ -987,6 +1044,7 @@ class App {
             microsoft: microsoftTTS,
             'google-free': googleFreeTTS,
             tiktok: tiktokTTS,
+            local: localTTS,
             google: googleTTS,
             elevenlabs: elevenLabsTTS,
         };
@@ -1000,6 +1058,12 @@ class App {
 
     _configureTTS(tts, settings) {
         const provider = settings.tts_provider || 'edge';
+        // Client-side playback speed ONLY for providers whose endpoint has no rate param
+        // (Google-free, TikTok). Others apply speed server-side / in the engine → keep 1.0.
+        const clientRate =
+            provider === 'google-free' ? (settings.google_free_speed || 1.0) :
+            provider === 'tiktok' ? (settings.tiktok_speed || 1.0) : 1.0;
+        audioPlayer.setPlaybackRate(clientRate);
         if (provider === 'elevenlabs') {
             tts.configure({
                 apiKey: settings.elevenlabs_api_key,
@@ -1025,6 +1089,11 @@ class App {
             tts.configure({
                 voice: settings.tiktok_voice || 'BV074_streaming',
                 sessionId: settings.tiktok_session_id || '',
+            });
+        } else if (provider === 'local') {
+            tts.configure({
+                voice: settings.local_tts_voice || 'vi_VN-vais1000-medium',
+                speed: settings.local_tts_speed || 1.0,
             });
         } else {
             tts.configure({
@@ -1076,6 +1145,7 @@ class App {
             microsoft: 'tts-microsoft-settings',
             'google-free': 'tts-google-free-settings',
             tiktok: 'tts-tiktok-settings',
+            local: 'tts-local-settings',
             google: 'tts-google-settings',
             elevenlabs: 'tts-elevenlabs-settings',
         };
@@ -1091,6 +1161,7 @@ class App {
                 microsoft: 'Free — full Microsoft voice list (vi + en), sent to Microsoft',
                 'google-free': 'Free — experimental, may stop working anytime. Text sent to Google',
                 tiktok: 'Free — needs a TikTok sessionid. Text sent to TikTok',
+                local: 'Free & 100% offline — download a voice below; nothing is sent anywhere',
                 google: 'Near-human quality — requires Google Cloud API key (1M chars/month free)',
                 elevenlabs: 'Premium quality — requires ElevenLabs API key',
             };
@@ -1098,6 +1169,8 @@ class App {
         }
         // Microsoft v2: populate the full voice list dynamically (fallback stays in HTML).
         if (provider === 'microsoft') this._populateMicrosoftVoices();
+        // Local: fetch catalog + install state and render the downloadable voice list.
+        if (provider === 'local') this._populateLocalVoices();
     }
 
     /**
@@ -1141,6 +1214,200 @@ class App {
         // Keep the saved voice if it belongs to this language, else pick the first.
         if (saved && list.some(v => v.short_name === saved)) select.value = saved;
         else if (select.options.length) select.selectedIndex = 0;
+    }
+
+    // ─── Local offline (Piper) voice manager ──────────────
+
+    /** Fetch the catalog + install state once per open, then render the list. */
+    async _populateLocalVoices() {
+        const langSel = document.getElementById('select-local-lang');
+        const saved = settingsManager.get().local_tts_voice || 'vi_VN-vais1000-medium';
+        if (langSel && !langSel.dataset.init) {
+            langSel.value = saved.startsWith('en') ? 'en' : 'vi';
+            langSel.dataset.init = 'true';
+        }
+        // Show the real resolved models folder (per-OS absolute path) so the user can
+        // find the files themselves. Falls back to the raw setting if the query fails.
+        const dirInput = document.getElementById('input-local-models-dir');
+        if (dirInput) {
+            try {
+                dirInput.value = await invoke('local_tts_models_dir_path');
+            } catch {
+                dirInput.value = settingsManager.get().local_tts_models_dir || 'Default app location';
+            }
+        }
+        // Speed slider from saved setting.
+        const speedSlider = document.getElementById('range-local-speed');
+        const speedLabel = document.getElementById('local-speed-value');
+        const speed = settingsManager.get().local_tts_speed || 1.0;
+        if (speedSlider) speedSlider.value = speed;
+        if (speedLabel) speedLabel.textContent = parseFloat(speed).toFixed(1) + 'x';
+        await this._refreshLocalVoices();
+        this._fillLocalVoices(langSel ? langSel.value : 'vi');
+    }
+
+    /** (Re)load the catalog + install state from the backend into a cache. */
+    async _refreshLocalVoices() {
+        try {
+            const list = await invoke('local_tts_list_models');
+            this._localVoices = Array.isArray(list) ? list : [];
+        } catch (err) {
+            console.warn('[Local TTS] list failed:', err);
+            this._localVoices = [];
+        }
+        this._localInstalled = new Set(
+            (this._localVoices || []).filter(v => v.installed).map(v => v.id)
+        );
+    }
+
+    /** True if `id` is currently installed (fresh backend check). */
+    async _isLocalVoiceInstalled(id) {
+        if (!id) return false;
+        await this._refreshLocalVoices();
+        return this._localInstalled.has(id);
+    }
+
+    /** Render the voice rows for `lang` ("vi"|"en") with download/delete controls. */
+    _fillLocalVoices(lang) {
+        const container = document.getElementById('local-voice-list');
+        if (!container) return;
+        const saved = settingsManager.get().local_tts_voice;
+        const all = this._localVoices || [];
+        // Catalog voices filter by the selected language; imported (local) voices are shown
+        // regardless of language (their language is unknown).
+        const catalogList = all.filter(v => !v.imported && v.lang === lang);
+        const importedList = all.filter(v => v.imported);
+        container.innerHTML = '';
+        if (!catalogList.length && !importedList.length) {
+            container.innerHTML = '<p class="hint">No voices for this language.</p>';
+            return;
+        }
+
+        const addRow = (v) => {
+            const row = document.createElement('div');
+            row.className = 'local-voice-row';
+            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;';
+            const sizeMb = (v.approxSizeBytes / 1e6).toFixed(0);
+            if (v.installed) {
+                const checked = saved === v.id ? 'checked' : '';
+                row.innerHTML =
+                    `<label style="flex:1;display:flex;align-items:center;gap:6px;cursor:pointer;">` +
+                    `<input type="radio" name="local-voice" value="${v.id}" ${checked} />` +
+                    `<span>${this._esc(v.display)}</span></label>` +
+                    `<button type="button" class="icon-btn small btn-local-delete" data-id="${v.id}" title="Delete">🗑️</button>`;
+            } else {
+                row.innerHTML =
+                    `<span style="flex:1;color:var(--text-muted,#888);">${this._esc(v.display)} · ${sizeMb} MB</span>` +
+                    `<span class="local-progress" data-id="${v.id}" style="min-width:64px;text-align:right;"></span>` +
+                    `<button type="button" class="icon-btn small btn-local-download" data-id="${v.id}" title="Download">⬇️</button>`;
+            }
+            container.appendChild(row);
+        };
+
+        catalogList.forEach(addRow);
+        if (importedList.length) {
+            const hdr = document.createElement('p');
+            hdr.className = 'hint';
+            hdr.style.cssText = 'margin:8px 0 2px;font-weight:600;';
+            hdr.textContent = `Imported (local) — ${importedList.length}`;
+            container.appendChild(hdr);
+            importedList.forEach(addRow);
+        }
+
+        container.querySelectorAll('.btn-local-download').forEach(btn =>
+            btn.addEventListener('click', () => this._downloadLocalVoice(btn.dataset.id))
+        );
+        container.querySelectorAll('.btn-local-delete').forEach(btn =>
+            btn.addEventListener('click', () => this._deleteLocalVoice(btn.dataset.id))
+        );
+        container.querySelectorAll('input[name="local-voice"]').forEach(radio =>
+            radio.addEventListener('change', () => {
+                if (radio.checked) settingsManager.save({ local_tts_voice: radio.value });
+            })
+        );
+    }
+
+    /** Download a voice model with live progress, then re-render as installed. */
+    async _downloadLocalVoice(id) {
+        // Prompt for a save location on the first ever download if none chosen.
+        if (!settingsManager.get().local_tts_models_dir && !this._localDirPrompted) {
+            this._localDirPrompted = true;
+            const custom = await this._maybePickModelsDir();
+            if (custom === null) return; // user cancelled
+        }
+        const progressEl = document.querySelector(`.local-progress[data-id="${id}"]`);
+        const btn = document.querySelector(`.btn-local-download[data-id="${id}"]`);
+        if (btn) btn.disabled = true;
+        const onProgress = new Channel();
+        onProgress.onmessage = (msg) => {
+            if (!progressEl) return;
+            if (msg.phase === 'downloading' && msg.total > 0) {
+                progressEl.textContent = `${Math.floor((msg.received / msg.total) * 100)}%`;
+            } else if (msg.phase === 'extracting') {
+                progressEl.textContent = '…';
+            }
+        };
+        try {
+            await invoke('local_tts_download_model', { id, onProgress });
+            this._showToast('Voice downloaded ✓', 'success');
+            await this._refreshLocalVoices();
+            this._fillLocalVoices(document.getElementById('select-local-lang')?.value || 'vi');
+        } catch (err) {
+            this._showToast(`Download failed: ${err}`, 'error');
+            if (btn) btn.disabled = false;
+            if (progressEl) progressEl.textContent = '';
+        }
+    }
+
+    /** Delete an installed voice (real on-device removal), then re-render. */
+    async _deleteLocalVoice(id) {
+        try {
+            await invoke('local_tts_delete_model', { id });
+            this._showToast('Voice deleted', 'success');
+            await this._refreshLocalVoices();
+            this._fillLocalVoices(document.getElementById('select-local-lang')?.value || 'vi');
+        } catch (err) {
+            this._showToast(`Delete failed: ${err}`, 'error');
+        }
+    }
+
+    /**
+     * Open the folder picker; on pick, persist as models dir and refresh.
+     * Returns the chosen path, or null if the user cancelled (so callers can abort),
+     * or '' if the picker itself failed.
+     */
+    async _maybePickModelsDir() {
+        try {
+            const { open } = window.__TAURI__.dialog;
+            const picked = await open({ directory: true, multiple: false, title: 'Choose model folder' });
+            if (picked === null || picked === undefined) return null; // cancelled
+            const dir = Array.isArray(picked) ? picked[0] : picked;
+            await settingsManager.save({ local_tts_models_dir: dir });
+            const dirInput = document.getElementById('input-local-models-dir');
+            if (dirInput) dirInput.value = dir;
+            await this._refreshLocalVoices();
+            this._fillLocalVoices(document.getElementById('select-local-lang')?.value || 'vi');
+            return dir;
+        } catch (err) {
+            console.warn('[Local TTS] folder pick failed:', err);
+            return '';
+        }
+    }
+
+    /** Reset the model folder back to the default app location and refresh the list. */
+    async _resetModelsDir() {
+        await settingsManager.save({ local_tts_models_dir: '' });
+        const dirInput = document.getElementById('input-local-models-dir');
+        if (dirInput) {
+            try {
+                dirInput.value = await invoke('local_tts_models_dir_path');
+            } catch {
+                dirInput.value = 'Default app location';
+            }
+        }
+        await this._refreshLocalVoices();
+        this._fillLocalVoices(document.getElementById('select-local-lang')?.value || 'vi');
+        this._showToast('Model folder reset to default', 'success');
     }
 
     _updateTranslationTypeUI(type) {
