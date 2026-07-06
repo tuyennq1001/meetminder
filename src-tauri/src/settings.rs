@@ -51,7 +51,7 @@ pub struct Settings {
     pub elevenlabs_api_key: String,
     /// Whether TTS narration is enabled
     pub tts_enabled: bool,
-    /// TTS provider: "edge" | "elevenlabs" | "google"
+    /// TTS provider: "edge" | "microsoft" | "google-free" | "tiktok" | "google" | "elevenlabs"
     pub tts_provider: String,
     /// ElevenLabs voice ID
     pub tts_voice_id: String,
@@ -69,6 +69,16 @@ pub struct Settings {
     pub google_tts_voice: String,
     /// Google TTS speaking rate
     pub google_tts_speed: f64,
+    /// Microsoft v2 (Edge endpoint, dynamic voice list) selected voice
+    pub microsoft_v2_voice: String,
+    /// Microsoft v2 speed percentage (reuses edge synth)
+    pub microsoft_v2_speed: i32,
+    /// Google Free (android-tts) language token, e.g. "vi-VN" | "en-US"
+    pub google_free_voice: String,
+    /// TikTok TTS speaker code, e.g. "BV074_streaming"
+    pub tiktok_voice: String,
+    /// TikTok sessionid cookie (user-supplied; required by the endpoint)
+    pub tiktok_session_id: String,
     /// OpenAI Realtime: when true server generates translated audio.
     /// Default false — speaker → mic feedback loop on shared devices.
     #[serde(default)]
@@ -101,6 +111,11 @@ impl Default for Settings {
             google_tts_api_key: String::new(),
             google_tts_voice: "vi-VN-Chirp3-HD-Aoede".to_string(),
             google_tts_speed: 1.0,
+            microsoft_v2_voice: "vi-VN-HoaiMyNeural".to_string(),
+            microsoft_v2_speed: 20,
+            google_free_voice: "vi-VN".to_string(),
+            tiktok_voice: "BV074_streaming".to_string(),
+            tiktok_session_id: String::new(),
             openai_audio_output: false,
         }
     }

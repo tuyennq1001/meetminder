@@ -71,3 +71,4 @@ live-test/
 # Secrets (never commit)
 .env
 .env.local
+_drafts

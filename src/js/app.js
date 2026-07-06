@@ -9,6 +9,9 @@ import { sonioxClient } from './soniox.js';
 import { elevenLabsTTS } from './elevenlabs-tts.js';
 import { googleTTS } from './google-tts.js';
 import { edgeTTSRust } from './edge-tts.js';
+import { microsoftTTS } from './microsoft-tts.js';
+import { googleFreeTTS } from './google-free-tts.js';
+import { tiktokTTS } from './tiktok-tts.js';
 import { audioPlayer } from './audio-player.js';
 import { updater } from './updater.js';
 import { sessionStore } from './session-store.js';
@@ -16,6 +19,14 @@ import { QWEN_LANGS } from './qwen-langs.js';
 
 const { invoke } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
+
+// Static fallback for Microsoft v2 voices when the live list endpoint is unreachable.
+const MS_VOICE_FALLBACK = [
+    { short_name: 'vi-VN-HoaiMyNeural', friendly_name: 'HoaiMy', gender: 'Female', locale: 'vi-VN' },
+    { short_name: 'vi-VN-NamMinhNeural', friendly_name: 'NamMinh', gender: 'Male', locale: 'vi-VN' },
+    { short_name: 'en-US-JennyNeural', friendly_name: 'Jenny', gender: 'Female', locale: 'en-US' },
+    { short_name: 'en-US-GuyNeural', friendly_name: 'Guy', gender: 'Male', locale: 'en-US' },
+];
 
 class App {
     constructor() {
@@ -72,13 +83,13 @@ class App {
         // Init audio player for TTS
         audioPlayer.init();
 
-        // Wire TTS audio callbacks for providers that use audioPlayer
-        for (const tts of [elevenLabsTTS, edgeTTSRust, googleTTS]) {
+        // Wire TTS audio callbacks for every provider (single source of registration
+        // so a new provider can never be silently left unwired).
+        this._allTTS = [elevenLabsTTS, edgeTTSRust, googleTTS, microsoftTTS, googleFreeTTS, tiktokTTS];
+        for (const tts of this._allTTS) {
             tts.onAudioChunk = (base64Audio, isFinal) => {
                 audioPlayer.enqueue(base64Audio);
             };
-        }
-        for (const tts of [elevenLabsTTS, edgeTTSRust, googleTTS]) {
             tts.onError = (error) => {
                 console.error('[TTS]', error);
                 this._showToast(error, 'error');
@@ -481,6 +492,28 @@ class App {
             if (label) label.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
         });
 
+        // Microsoft v2 speed slider
+        document.getElementById('range-microsoft-speed')?.addEventListener('input', (e) => {
+            const label = document.getElementById('microsoft-speed-value');
+            const v = parseInt(e.target.value);
+            if (label) label.textContent = (v >= 0 ? '+' : '') + v + '%';
+        });
+
+        // Microsoft v2 language filter — re-fill the voice dropdown for the chosen language
+        document.getElementById('select-microsoft-lang')?.addEventListener('change', (e) => {
+            this._fillMicrosoftVoices(e.target.value);
+        });
+
+        // TikTok: paste a "Copy as cURL" and auto-extract the sessionid cookie into the field
+        document.getElementById('input-tiktok-curl')?.addEventListener('input', (e) => {
+            const m = e.target.value.match(/sessionid=([^;"'\s\\]+)/i);
+            const sidInput = document.getElementById('input-tiktok-session');
+            if (m && m[1] && sidInput && sidInput.value !== m[1]) {
+                sidInput.value = m[1];
+                this._showToast('sessionid extracted from cURL ✓', 'success');
+            }
+        });
+
         // Add translation term row
         document.getElementById('btn-add-term')?.addEventListener('click', () => {
             this._addTermRow('', '');
@@ -748,6 +781,25 @@ class App {
         if (googleSpeedSlider) googleSpeedSlider.value = googleSpeed;
         if (googleSpeedLabel) googleSpeedLabel.textContent = googleSpeed + 'x';
 
+        // Microsoft v2 settings (voice populated dynamically in _updateTTSProviderUI)
+        const msVoiceSelect = document.getElementById('select-microsoft-voice');
+        if (msVoiceSelect) msVoiceSelect.value = s.microsoft_v2_voice || 'vi-VN-HoaiMyNeural';
+        const msSpeedSlider = document.getElementById('range-microsoft-speed');
+        const msSpeedLabel = document.getElementById('microsoft-speed-value');
+        const msSpeed = s.microsoft_v2_speed !== undefined ? s.microsoft_v2_speed : 20;
+        if (msSpeedSlider) msSpeedSlider.value = msSpeed;
+        if (msSpeedLabel) msSpeedLabel.textContent = (msSpeed >= 0 ? '+' : '') + msSpeed + '%';
+
+        // Google Free settings
+        const gfVoiceSelect = document.getElementById('select-google-free-voice');
+        if (gfVoiceSelect) gfVoiceSelect.value = s.google_free_voice || 'vi-VN';
+
+        // TikTok settings
+        const ttVoiceSelect = document.getElementById('select-tiktok-voice');
+        if (ttVoiceSelect) ttVoiceSelect.value = s.tiktok_voice || 'BV074_streaming';
+        const ttSession = document.getElementById('input-tiktok-session');
+        if (ttSession) ttSession.value = s.tiktok_session_id || '';
+
         // TTS provider
         const providerSelect = document.getElementById('select-tts-provider');
         if (providerSelect) {
@@ -820,6 +872,11 @@ class App {
         settings.google_tts_api_key = document.getElementById('input-google-tts-key')?.value.trim() || '';
         settings.google_tts_voice = document.getElementById('select-google-voice')?.value || 'vi-VN-Chirp3-HD-Aoede';
         settings.google_tts_speed = parseFloat(document.getElementById('range-google-speed')?.value || 1.0);
+        settings.microsoft_v2_voice = document.getElementById('select-microsoft-voice')?.value || 'vi-VN-HoaiMyNeural';
+        settings.microsoft_v2_speed = parseInt(document.getElementById('range-microsoft-speed')?.value || 20);
+        settings.google_free_voice = document.getElementById('select-google-free-voice')?.value || 'vi-VN';
+        settings.tiktok_voice = document.getElementById('select-tiktok-voice')?.value || 'BV074_streaming';
+        settings.tiktok_session_id = document.getElementById('input-tiktok-session')?.value.trim() || '';
         settings.tts_enabled = false;
 
         try {
@@ -837,6 +894,16 @@ class App {
         // Update overlay opacity
         const overlayView = document.getElementById('overlay-view');
         overlayView.style.opacity = settings.overlay_opacity || 0.85;
+
+        // Note: saving settings turns TTS narration off (see end of this method), so the
+        // active provider is re-configured on the next TTS toggle — no mid-session re-sync
+        // needed here. Disconnect any non-active provider to drop stale queued audio.
+        if (this._allTTS) {
+            const active = this._getActiveTTS();
+            for (const tts of this._allTTS) {
+                if (tts !== active && tts.isConnected) tts.disconnect();
+            }
+        }
 
         // Update transcript UI
         if (this.transcriptUI) {
@@ -869,7 +936,7 @@ class App {
             return;
         }
 
-        // Check API key for premium providers
+        // Check credentials for providers that require them (free providers need none)
         if (provider === 'elevenlabs' && !settings.elevenlabs_api_key) {
             this._showToast('Add ElevenLabs API key in Settings → TTS', 'error');
             this._showView('settings');
@@ -877,6 +944,11 @@ class App {
         }
         if (provider === 'google' && !settings.google_tts_api_key) {
             this._showToast('Add Google TTS API key in Settings → TTS', 'error');
+            this._showView('settings');
+            return;
+        }
+        if (provider === 'tiktok' && !settings.tiktok_session_id) {
+            this._showToast('Add a TikTok sessionid in Settings → TTS', 'error');
             this._showView('settings');
             return;
         }
@@ -892,7 +964,14 @@ class App {
                 tts.connect();
                 audioPlayer.resume();
             }
-            const label = { edge: 'Edge TTS (Free)', google: 'Google Chirp 3 HD', elevenlabs: 'ElevenLabs' }[provider] || provider;
+            const label = {
+                edge: 'Edge TTS (Free)',
+                microsoft: 'Microsoft v2 (Free)',
+                'google-free': 'Google TTS (Free)',
+                tiktok: 'TikTok TTS (Free)',
+                google: 'Google Chirp 3 HD',
+                elevenlabs: 'ElevenLabs',
+            }[provider] || provider;
             this._showToast(`TTS narration ON 🔊 (${label})`, 'success');
         } else {
             tts.disconnect();
@@ -902,11 +981,21 @@ class App {
     }
 
     _getActiveTTS() {
-        const settings = settingsManager.get();
-        const provider = settings.tts_provider || 'edge';
-        if (provider === 'elevenlabs') return elevenLabsTTS;
-        if (provider === 'google') return googleTTS;
-        return edgeTTSRust;
+        const provider = settingsManager.get().tts_provider || 'edge';
+        const map = {
+            edge: edgeTTSRust,
+            microsoft: microsoftTTS,
+            'google-free': googleFreeTTS,
+            tiktok: tiktokTTS,
+            google: googleTTS,
+            elevenlabs: elevenLabsTTS,
+        };
+        const tts = map[provider];
+        if (!tts) {
+            console.warn(`[TTS] Unknown provider "${provider}", falling back to Edge`);
+            return edgeTTSRust;
+        }
+        return tts;
     }
 
     _configureTTS(tts, settings) {
@@ -924,6 +1013,18 @@ class App {
                 voice: voice,
                 languageCode: langCode,
                 speakingRate: settings.google_tts_speed || 1.0,
+            });
+        } else if (provider === 'microsoft') {
+            tts.configure({
+                voice: settings.microsoft_v2_voice || 'vi-VN-HoaiMyNeural',
+                speed: settings.microsoft_v2_speed !== undefined ? settings.microsoft_v2_speed : 20,
+            });
+        } else if (provider === 'google-free') {
+            tts.configure({ voice: settings.google_free_voice || 'vi-VN' });
+        } else if (provider === 'tiktok') {
+            tts.configure({
+                voice: settings.tiktok_voice || 'BV074_streaming',
+                sessionId: settings.tiktok_session_id || '',
             });
         } else {
             tts.configure({
@@ -969,22 +1070,77 @@ class App {
     }
 
     _updateTTSProviderUI(provider) {
-        const ed = document.getElementById('tts-edge-settings');
-        const go = document.getElementById('tts-google-settings');
-        const el = document.getElementById('tts-elevenlabs-settings');
-        if (ed) ed.style.display = provider === 'edge' ? '' : 'none';
-        if (go) go.style.display = provider === 'google' ? '' : 'none';
-        if (el) el.style.display = provider === 'elevenlabs' ? '' : 'none';
+        // Show only the active provider's settings panel.
+        const panels = {
+            edge: 'tts-edge-settings',
+            microsoft: 'tts-microsoft-settings',
+            'google-free': 'tts-google-free-settings',
+            tiktok: 'tts-tiktok-settings',
+            google: 'tts-google-settings',
+            elevenlabs: 'tts-elevenlabs-settings',
+        };
+        for (const [id, elId] of Object.entries(panels)) {
+            const el = document.getElementById(elId);
+            if (el) el.style.display = provider === id ? '' : 'none';
+        }
         // Update hint text
         const hint = document.getElementById('tts-provider-hint');
         if (hint) {
             const hints = {
                 edge: 'Free, natural voices — no API key needed',
+                microsoft: 'Free — full Microsoft voice list (vi + en), sent to Microsoft',
+                'google-free': 'Free — experimental, may stop working anytime. Text sent to Google',
+                tiktok: 'Free — needs a TikTok sessionid. Text sent to TikTok',
                 google: 'Near-human quality — requires Google Cloud API key (1M chars/month free)',
                 elevenlabs: 'Premium quality — requires ElevenLabs API key',
             };
             hint.textContent = hints[provider] || '';
         }
+        // Microsoft v2: populate the full voice list dynamically (fallback stays in HTML).
+        if (provider === 'microsoft') this._populateMicrosoftVoices();
+    }
+
+    /**
+     * Fetch Microsoft's vi+en voice list once (cached), then fill the voice dropdown
+     * filtered by the selected Language. The Language dropdown keeps the voice list short
+     * (Microsoft has ~50 English voices). Default language follows the saved voice's locale.
+     */
+    async _populateMicrosoftVoices() {
+        const langSel = document.getElementById('select-microsoft-lang');
+        const saved = settingsManager.get().microsoft_v2_voice || 'vi-VN-HoaiMyNeural';
+        // Initialize the Language dropdown from the saved voice's locale (once).
+        if (langSel && !langSel.dataset.init) {
+            langSel.value = saved.startsWith('en') ? 'en' : 'vi';
+            langSel.dataset.init = 'true';
+        }
+        if (!this._msVoices) {
+            try {
+                const voices = await microsoftTTS.listVoices();
+                this._msVoices = (Array.isArray(voices) && voices.length) ? voices : MS_VOICE_FALLBACK;
+            } catch (err) {
+                console.warn('[Microsoft v2] voice list fetch failed, using static fallback:', err);
+                this._msVoices = MS_VOICE_FALLBACK;
+            }
+        }
+        this._fillMicrosoftVoices(langSel ? langSel.value : 'vi');
+    }
+
+    /** Fill #select-microsoft-voice with cached voices for `lang` ("vi"|"en"), restoring saved. */
+    _fillMicrosoftVoices(lang) {
+        const select = document.getElementById('select-microsoft-voice');
+        if (!select) return;
+        const saved = settingsManager.get().microsoft_v2_voice;
+        const list = (this._msVoices || MS_VOICE_FALLBACK).filter(v => (v.locale || '').startsWith(lang));
+        select.innerHTML = '';
+        for (const v of list) {
+            const opt = document.createElement('option');
+            opt.value = v.short_name;
+            opt.textContent = `${v.friendly_name} (${v.gender})`;
+            select.appendChild(opt);
+        }
+        // Keep the saved voice if it belongs to this language, else pick the first.
+        if (saved && list.some(v => v.short_name === saved)) select.value = saved;
+        else if (select.options.length) select.selectedIndex = 0;
     }
 
     _updateTranslationTypeUI(type) {

@@ -606,9 +606,16 @@
         <div class="settings-section">
           <span class="field-label">Provider</span>
           <select id="select-tts-provider">
-            <option value="edge">🎙️ Edge TTS — Free</option>
-            <option value="google">🌐 Google Chirp 3 HD — Premium</option>
-            <option value="elevenlabs">✨ ElevenLabs — Premium</option>
+            <optgroup label="Free">
+              <option value="edge">🎙️ Edge TTS — Free</option>
+              <option value="microsoft">🪟 Microsoft v2 — Free</option>
+              <option value="google-free">🌐 Google TTS — Free</option>
+              <option value="tiktok">🎵 TikTok TTS — Free</option>
+            </optgroup>
+            <optgroup label="Premium">
+              <option value="google">🌐 Google Chirp 3 HD — Premium</option>
+              <option value="elevenlabs">✨ ElevenLabs — Premium</option>
+            </optgroup>
           </select>
           <p class="hint" id="tts-provider-hint">Free, natural voices — no API key needed</p>
         </div>
@@ -631,6 +638,68 @@
             <span class="field-label">Speed</span>
             <input type="range" id="range-edge-speed" min="-50" max="100" step="10" />
             <span id="edge-speed-value" class="range-value"></span>
+          </div>
+        </div>
+
+        <!-- Microsoft v2 settings (voice list populated dynamically, filtered by language) -->
+        <div class="settings-section" id="tts-microsoft-settings" style="display:none;">
+          <div class="field">
+            <span class="field-label">Language</span>
+            <select id="select-microsoft-lang">
+              <option value="vi">Vietnamese — Tiếng Việt</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <div class="field" style="margin-top: 8px;">
+            <span class="field-label">Voice</span>
+            <select id="select-microsoft-voice">
+              <option value="vi-VN-HoaiMyNeural">HoaiMy (Female)</option>
+              <option value="vi-VN-NamMinhNeural">NamMinh (Male)</option>
+            </select>
+          </div>
+          <div class="slider-field" style="margin-top: 8px;">
+            <span class="field-label">Speed</span>
+            <input type="range" id="range-microsoft-speed" min="-50" max="100" step="10" />
+            <span id="microsoft-speed-value" class="range-value"></span>
+          </div>
+        </div>
+
+        <!-- Google Free (android-tts) settings -->
+        <div class="settings-section" id="tts-google-free-settings" style="display:none;">
+          <div class="field">
+            <span class="field-label">Voice</span>
+            <select id="select-google-free-voice">
+              <option value="vi-VN">Tiếng Việt 🇻🇳</option>
+              <option value="en-US">English 🇺🇸</option>
+            </select>
+          </div>
+          <p class="hint">Experimental — free Google voice, may stop working anytime. Text is sent to Google.</p>
+        </div>
+
+        <!-- TikTok settings -->
+        <div class="settings-section" id="tts-tiktok-settings" style="display:none;">
+          <div class="field">
+            <span class="field-label">Voice</span>
+            <select id="select-tiktok-voice">
+              <optgroup label="🇻🇳 Vietnamese">
+                <option value="BV074_streaming">Nữ (vi)</option>
+                <option value="BV075_streaming">Nam (vi)</option>
+              </optgroup>
+              <optgroup label="🇺🇸 English">
+                <option value="en_us_001">Female (en)</option>
+                <option value="en_us_006">Male (en)</option>
+              </optgroup>
+            </select>
+          </div>
+          <div style="margin-top: 8px;">
+            <span class="field-label">TikTok sessionid</span>
+            <input type="password" id="input-tiktok-session" placeholder="sessionid cookie from tiktok.com" autocomplete="off" />
+            <p class="hint">Log in at tiktok.com → DevTools → Application → Cookies → copy <code>sessionid</code>. Text is sent to TikTok.</p>
+          </div>
+          <div style="margin-top: 8px;">
+            <span class="field-label">…or paste cURL (auto-extract sessionid)</span>
+            <textarea id="input-tiktok-curl" rows="3" placeholder="DevTools → Network → right-click a tiktok.com request → Copy → Copy as cURL, then paste here" autocomplete="off" style="width:100%; resize:vertical; font-family:monospace; font-size:11px;"></textarea>
+            <p class="hint">Only the <code>sessionid</code> is read from it and filled above; the cURL itself is not saved or sent anywhere.</p>
           </div>
         </div>
 
@@ -878,6 +947,7 @@
     </div>
   </div>
 
+  <script src="/js/tauri-mock.js"></script>
   <script type="module" src="/js/settings.js"></script>
   <script type="module" src="/js/ui.js"></script>
   <script type="module" src="/js/soniox.js"></script>

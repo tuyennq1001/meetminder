@@ -6,6 +6,7 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
+    "dev:web": "npx serve src -p 3111",
     "lint": "cd src-tauri && cargo clippy",
     "format": "cd src-tauri && cargo fmt"
   },
