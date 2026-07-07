@@ -61,6 +61,16 @@ class LocalTTS {
         this._processQueue();
     }
 
+    /** Read mode: synthesize one chunk → base64. Bypasses the live queue/callbacks. */
+    async synthesize(text) {
+        if (!text?.trim()) return null;
+        return await invoke('local_tts_speak', {
+            text: text.trim(),
+            voiceId: this.voice || 'vi_VN-vais1000-medium',
+            speed: this.speed || 1.0,
+        });
+    }
+
     disconnect() {
         this._queue = [];
         this._isSpeaking = false;

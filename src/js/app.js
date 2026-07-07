@@ -13,7 +13,8 @@ import { microsoftTTS } from './microsoft-tts.js';
 import { googleFreeTTS } from './google-free-tts.js';
 import { tiktokTTS } from './tiktok-tts.js';
 import { localTTS } from './local-tts.js';
-import { audioPlayer } from './audio-player.js';
+import { audioPlayer, readAudioPlayer } from './audio-player.js';
+import { Reader } from './reader.js';
 import { updater } from './updater.js';
 import { sessionStore } from './session-store.js';
 import { QWEN_LANGS } from './qwen-langs.js';
@@ -83,6 +84,12 @@ class App {
 
         // Init audio player for TTS
         audioPlayer.init();
+
+        // Read mode (in-overlay TTS reader). 'live' = capture→translate→speak; 'read' =
+        // paste text → read aloud. Default live. Reader is built lazily on Play.
+        this._readMode = 'live';
+        this._reader = null;
+        this._initReadMode();
 
         // Wire TTS audio callbacks for every provider (single source of registration
         // so a new provider can never be silently left unwired).
@@ -1457,6 +1464,229 @@ class App {
         if (this.ttsEnabled && text?.trim()) {
             this._getActiveTTS().speak(text);
         }
+    }
+
+    // ─── Read Mode (in-overlay TTS reader) ─────────────────
+
+    // Conservative per-provider chunk caps (chars). Local is offline (no endpoint cap);
+    // cloud providers use safe values; google-free/tiktok stay well under their real caps
+    // (TikTok's Rust command hard-caps at 280). Raise only after measuring a live call.
+    static get READ_MAX_LEN() {
+        return { local: 400, edge: 200, microsoft: 200, google: 200, 'google-free': 120, tiktok: 120 };
+    }
+
+    _initReadMode() {
+        const toggle = document.getElementById('mode-toggle');
+        toggle?.addEventListener('click', () => this._toggleMode());
+        document.getElementById('btn-read-play')?.addEventListener('click', () => {
+            // Play doubles as Resume when paused — do NOT rebuild the reader.
+            if (this._reader && this._reader.state === 'paused') this._reader.play();
+            else this._startRead();
+        });
+        document.getElementById('btn-read-pause')?.addEventListener('click', () => {
+            this._reader?.pause();
+        });
+        document.getElementById('btn-read-stop')?.addEventListener('click', () => this._stopRead());
+    }
+
+    _toggleMode() {
+        if (this._readMode === 'live') this._enterReadMode();
+        else this._exitReadMode();
+    }
+
+    async _enterReadMode() {
+        // Stop any running Live session AND drain the shared provider's queue so an in-flight
+        // Live synth cannot fire onAudioChunk into the Live context after the switch.
+        if (this.isRunning) await this.stop();
+        try { this._getActiveTTS().disconnect(); } catch { /* provider may be idle */ }
+
+        this._readMode = 'read';
+        document.getElementById('mode-toggle')?.classList.add('read-active');
+        // Hide live controls, show read panel.
+        this._setSel('.source-controls', 'none');
+        this._setEl('btn-start', 'none');
+        this._setEl('engine-pill', 'none');
+        this._setEl('btn-tts', 'none');
+        this._setEl('transcript-content', 'none');
+        this._setEl('read-panel', '');
+        this._resetReadUI();
+        this._showReadCapabilityHint();
+    }
+
+    _exitReadMode() {
+        this._stopRead();
+        this._readMode = 'live';
+        document.getElementById('mode-toggle')?.classList.remove('read-active');
+        this._setSel('.source-controls', '');
+        this._setEl('btn-start', '');
+        this._setEl('engine-pill', '');
+        this._setEl('btn-tts', '');
+        this._setEl('read-panel', 'none');
+        this._setEl('transcript-content', '');
+    }
+
+    _setEl(id, display) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = display;
+    }
+
+    _setSel(selector, display) {
+        const el = document.querySelector(selector);
+        if (el) el.style.display = display;
+    }
+
+    /** Capability = usability, not method existence. Returns {ok, reason, provider}. */
+    async _readCapability() {
+        const settings = settingsManager.get();
+        const provider = settings.tts_provider || 'edge';
+        const tts = this._getActiveTTS();
+        if (typeof tts.synthesize !== 'function') {
+            return { ok: false, reason: 'Nhà cung cấp TTS này không hỗ trợ chế độ Đọc. Hãy chọn Edge, Local, Microsoft, Google hoặc TikTok.' };
+        }
+        if (provider === 'google' && !settings.google_tts_api_key) {
+            return { ok: false, reason: 'Thiếu Google Cloud API key (Cài đặt → TTS → Google).' };
+        }
+        if (provider === 'tiktok' && !settings.tiktok_session_id) {
+            return { ok: false, reason: 'Thiếu TikTok sessionid (Cài đặt → TTS → TikTok).' };
+        }
+        if (provider === 'local') {
+            const installed = await this._isLocalVoiceInstalled(settings.local_tts_voice);
+            if (!installed) return { ok: false, reason: 'Chưa tải model giọng Local (Cài đặt → TTS → Local).' };
+        }
+        return { ok: true, provider };
+    }
+
+    async _showReadCapabilityHint() {
+        const hintEl = document.getElementById('read-hint');
+        const cap = await this._readCapability();
+        const playBtn = document.getElementById('btn-read-play');
+        if (this._readMode !== 'read') return;
+        if (hintEl) hintEl.textContent = cap.ok ? '' : cap.reason;
+        if (playBtn) playBtn.disabled = !cap.ok;
+    }
+
+    async _startRead() {
+        const cap = await this._readCapability();
+        if (!cap.ok) { this._showReadCapabilityHint(); return; }
+
+        const text = (document.getElementById('read-input')?.value || '').trim();
+        if (!text) { this._showToast('Nhập văn bản để đọc', 'error'); return; }
+
+        const settings = settingsManager.get();
+        const provider = cap.provider;
+        const tts = this._getActiveTTS();
+        this._configureTTS(tts, settings); // set voice/key/session + client rate
+
+        // Client-side rate: only providers without a server rate param.
+        const clientRate = provider === 'google-free' ? (settings.google_free_speed || 1.0)
+            : provider === 'tiktok' ? (settings.tiktok_speed || 1.0) : 1.0;
+        readAudioPlayer.setReadRate(clientRate);
+
+        const lookahead = provider === 'local' ? 2 : 1;
+        const interChunkDelayMs = (provider === 'google-free' || provider === 'tiktok') ? 250 : 0;
+        const maxLen = App.READ_MAX_LEN[provider] || 120;
+
+        this._reader?.stop(); // never leak a previous (e.g. paused) reader — it could race audio
+        readAudioPlayer.stop();
+        this._reader = new Reader({
+            synthesize: (t) => tts.synthesize(t),
+            player: readAudioPlayer,
+            lookahead,
+            interChunkDelayMs,
+        });
+        this._reader.onProgress = (n, total) => this._updateReadProgress(n, total);
+        this._reader.onSentence = (i) => this._highlightReadChunk(i);
+        this._reader.onChunkError = (i) => this._markReadChunkError(i);
+        this._reader.onError = (msg) => this._showToast(msg, 'error');
+        this._reader.onState = (state) => this._onReadState(state);
+
+        this._reader.load(text, maxLen);
+        if (this._reader.total === 0) { this._showToast('Không có nội dung để đọc', 'error'); return; }
+        this._renderReadChunks(this._reader.chunks);
+        this._reader.play();
+    }
+
+    _stopRead() {
+        this._reader?.stop();
+        this._reader = null;
+        this._resetReadUI();
+    }
+
+    _onReadState(state) {
+        if (state === 'playing') this._updateReadControls('playing');
+        else if (state === 'paused') this._updateReadControls('paused');
+        else if (state === 'done' || state === 'stopped') {
+            this._updateReadControls('idle');
+        }
+    }
+
+    _updateReadControls(mode) {
+        // mode: 'idle' | 'playing' | 'paused'
+        if (mode === 'idle') {
+            this._setEl('btn-read-play', '');
+            this._setEl('btn-read-pause', 'none');
+            this._setEl('btn-read-stop', 'none');
+            this._setEl('read-input', '');
+            this._setEl('read-output', 'none');
+        } else if (mode === 'playing') {
+            this._setEl('btn-read-play', 'none');
+            this._setEl('btn-read-pause', '');
+            this._setEl('btn-read-stop', '');
+            this._setEl('read-input', 'none');
+            this._setEl('read-output', '');
+        } else if (mode === 'paused') {
+            this._setEl('btn-read-play', ''); // play acts as resume
+            this._setEl('btn-read-pause', 'none');
+            this._setEl('btn-read-stop', '');
+        }
+    }
+
+    _resetReadUI() {
+        this._updateReadControls('idle');
+        const out = document.getElementById('read-output');
+        if (out) out.innerHTML = '';
+        const prog = document.getElementById('read-progress');
+        if (prog) prog.textContent = '';
+        const fill = document.getElementById('read-progress-fill');
+        if (fill) fill.style.width = '0%';
+    }
+
+    /** Build chunk spans with textContent (never innerHTML) — pasted text is untrusted. */
+    _renderReadChunks(chunks) {
+        const out = document.getElementById('read-output');
+        if (!out) return;
+        out.innerHTML = '';
+        chunks.forEach((c, i) => {
+            const span = document.createElement('span');
+            span.className = 'read-chunk';
+            span.dataset.index = String(i);
+            span.textContent = c + ' ';
+            out.appendChild(span);
+        });
+    }
+
+    _highlightReadChunk(index) {
+        const out = document.getElementById('read-output');
+        if (!out) return;
+        out.querySelectorAll('.read-chunk.active').forEach((el) => el.classList.remove('active'));
+        const span = out.querySelector(`.read-chunk[data-index="${index}"]`);
+        if (span) {
+            span.classList.add('active');
+            span.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+    }
+
+    _markReadChunkError(index) {
+        const span = document.getElementById('read-output')
+            ?.querySelector(`.read-chunk[data-index="${index}"]`);
+        if (span) span.classList.add('error');
+    }
+
+    _updateReadProgress(n, total) {
+        const prog = document.getElementById('read-progress');
+        if (prog) prog.textContent = `đoạn ${n}/${total}`;
+        const fill = document.getElementById('read-progress-fill');
+        if (fill) fill.style.width = total ? `${Math.round((n / total) * 100)}%` : '0%';
     }
 
     // ─── Source Control ────────────────────────────────────

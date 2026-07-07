@@ -71,6 +71,16 @@ class EdgeTTSRust {
         this._processQueue();
     }
 
+    /** Read mode: synthesize one chunk → base64. Bypasses the live queue/callbacks. */
+    async synthesize(text) {
+        if (!text?.trim()) return null;
+        return await invoke('edge_tts_speak', {
+            text: text.trim(),
+            voice: this.voice,
+            rate: this.speed,
+        });
+    }
+
     disconnect() {
         this._queue = [];
         this._isSpeaking = false;

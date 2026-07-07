@@ -73,6 +73,11 @@
           </button>
         </div>
 
+        <button id="mode-toggle" class="mode-toggle-btn" title="Toggle Live / Read">
+          <span class="mode-seg mode-live">🎙 Live</span>
+          <span class="mode-seg mode-read">📖 Read</span>
+        </button>
+
         <button id="btn-start" class="action-btn" title="Start/Stop (Space)">
           <svg id="icon-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <polygon points="5 3 19 12 5 21 5 3" />
@@ -161,6 +166,20 @@
           </svg>
           <p>Press ▶ to start translating</p>
         </div>
+      </div>
+
+      <!-- Read mode panel — paste Vietnamese text, hear it read aloud. Hidden by default. -->
+      <div id="read-panel" style="display:none">
+        <textarea id="read-input" placeholder="Dán hoặc gõ văn bản tiếng Việt để đọc to…"></textarea>
+        <div id="read-output" class="read-output" style="display:none"></div>
+        <div class="read-progress-bar"><div id="read-progress-fill"></div></div>
+        <div class="read-controls">
+          <button id="btn-read-play" class="read-btn read-btn-primary" type="button">▶ Đọc</button>
+          <button id="btn-read-pause" class="read-btn" type="button" style="display:none">⏸ Tạm dừng</button>
+          <button id="btn-read-stop" class="read-btn" type="button" style="display:none">⏹ Dừng</button>
+          <span id="read-progress" class="read-progress"></span>
+        </div>
+        <div id="read-hint" class="read-hint"></div>
       </div>
 
       <!-- Engine picker — shown before the first session each launch.

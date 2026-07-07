@@ -69,6 +69,16 @@ class MicrosoftTTS {
         this._processQueue();
     }
 
+    /** Read mode: synthesize one chunk → base64. Reuses edge_tts_speak like the live path. */
+    async synthesize(text) {
+        if (!text?.trim()) return null;
+        return await invoke('edge_tts_speak', {
+            text: text.trim(),
+            voice: this.voice || 'vi-VN-HoaiMyNeural',
+            rate: this.speed,
+        });
+    }
+
     disconnect() {
         this._queue = [];
         this._isSpeaking = false;

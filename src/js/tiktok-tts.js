@@ -60,6 +60,16 @@ class TikTokTTS {
         this._processQueue();
     }
 
+    /** Read mode: synthesize one chunk → base64. Bypasses the live queue/callbacks. */
+    async synthesize(text) {
+        if (!text?.trim()) return null;
+        return await invoke('tiktok_tts_speak', {
+            text: text.trim(),
+            voice: this.voice || 'BV074_streaming',
+            sessionId: this.sessionId || '',
+        });
+    }
+
     disconnect() {
         this._queue = [];
         this._isSpeaking = false;
