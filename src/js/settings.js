@@ -34,6 +34,7 @@ const DEFAULT_SETTINGS = {
   microsoft_v2_voice: 'vi-VN-HoaiMyNeural',
   microsoft_v2_speed: 20,
   google_free_voice: 'vi-VN',
+  google_free_api_key: '',
   google_free_speed: 1.0,
   tiktok_voice: 'BV074_streaming',
   tiktok_speed: 1.0,

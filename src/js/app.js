@@ -461,6 +461,11 @@ class App {
             input.type = input.type === 'password' ? 'text' : 'password';
         });
 
+        document.getElementById('btn-toggle-google-free-key')?.addEventListener('click', () => {
+            const input = document.getElementById('input-google-free-key');
+            input.type = input.type === 'password' ? 'text' : 'password';
+        });
+
         // Settings tab switching
         document.querySelectorAll('.settings-tab').forEach(tab => {
             tab.addEventListener('click', () => {
@@ -830,6 +835,8 @@ class App {
         if (msSpeedLabel) msSpeedLabel.textContent = (msSpeed >= 0 ? '+' : '') + msSpeed + '%';
 
         // Google Free settings
+        const gfKeyInput = document.getElementById('input-google-free-key');
+        if (gfKeyInput) gfKeyInput.value = s.google_free_api_key || '';
         const gfVoiceSelect = document.getElementById('select-google-free-voice');
         if (gfVoiceSelect) gfVoiceSelect.value = s.google_free_voice || 'vi-VN';
         const gfSpeed = s.google_free_speed || 1.0;
@@ -923,6 +930,7 @@ class App {
         settings.google_tts_speed = parseFloat(document.getElementById('range-google-speed')?.value || 1.0);
         settings.microsoft_v2_voice = document.getElementById('select-microsoft-voice')?.value || 'vi-VN-HoaiMyNeural';
         settings.microsoft_v2_speed = parseInt(document.getElementById('range-microsoft-speed')?.value || 20);
+        settings.google_free_api_key = document.getElementById('input-google-free-key')?.value.trim() || '';
         settings.google_free_voice = document.getElementById('select-google-free-voice')?.value || 'vi-VN';
         settings.google_free_speed = parseFloat(document.getElementById('range-google-free-speed')?.value || 1.0);
         settings.tiktok_voice = document.getElementById('select-tiktok-voice')?.value || 'BV074_streaming';
@@ -1091,7 +1099,10 @@ class App {
                 speed: settings.microsoft_v2_speed !== undefined ? settings.microsoft_v2_speed : 20,
             });
         } else if (provider === 'google-free') {
-            tts.configure({ voice: settings.google_free_voice || 'vi-VN' });
+            tts.configure({
+                voice: settings.google_free_voice || 'vi-VN',
+                apiKey: settings.google_free_api_key || '',
+            });
         } else if (provider === 'tiktok') {
             tts.configure({
                 voice: settings.tiktok_voice || 'BV074_streaming',

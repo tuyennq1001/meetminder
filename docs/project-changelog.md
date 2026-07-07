@@ -16,6 +16,8 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
   - No text is silently dropped: a chunk that fails synth/decode after a bounded retry is shown as a visible per-chunk error marker.
   - Read plays on its own audio path, fully isolated from Live capture→translate→speak (no regression). Nothing is written to disk — audio stays in memory and is freed as it plays.
 
+- **Google TTS — Free: optional user API key.** Settings → TTS → Google TTS — Free now has an optional Google API key field. If set, that key is used; otherwise the app's built-in key (if any). With neither key present the provider is unavailable — no hardcoded fallback. The key is stored locally and redacted from any error output.
+
 - **Local (Offline) TTS provider — Piper neural voices, 100% on-device.** A new TTS provider that synthesizes speech locally via Piper (VITS) models running through sherpa-onnx — no network, no API key, nothing sent anywhere. Runs on CPU (macOS + Windows), ~15× faster than real-time.
   - Vietnamese + English voices, downloaded on demand from an in-app catalog (Settings → TTS → Local). Each voice is user-**downloaded** (with progress) and **deletable** (real on-device removal).
   - Choose where models are stored: default app location or a custom folder (prompted before the first download, changeable anytime).

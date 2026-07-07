@@ -13,6 +13,7 @@ const MAX_QUEUE = 10;
 class GoogleFreeTTS {
     constructor() {
         this.lang = 'vi-VN'; // "voice" here IS the language token
+        this.apiKey = '';    // optional user key; overrides the build-time key when set
         this.isConnected = false;
         this._queue = [];
         this._isSpeaking = false;
@@ -22,8 +23,9 @@ class GoogleFreeTTS {
         this.onStatusChange = null;
     }
 
-    configure({ voice }) {
+    configure({ voice, apiKey }) {
         if (voice) this.lang = voice;
+        if (apiKey !== undefined) this.apiKey = apiKey;
     }
 
     connect() {
@@ -49,6 +51,7 @@ class GoogleFreeTTS {
             const base64Audio = await invoke('google_free_tts_speak', {
                 text,
                 lang: this.lang || 'vi-VN',
+                userKey: this.apiKey || null,
             });
             if (this.onAudioChunk) this.onAudioChunk(base64Audio, true);
         } catch (err) {
@@ -64,6 +67,7 @@ class GoogleFreeTTS {
         return await invoke('google_free_tts_speak', {
             text: text.trim(),
             lang: this.lang || 'vi-VN',
+            userKey: this.apiKey || null,
         });
     }
 

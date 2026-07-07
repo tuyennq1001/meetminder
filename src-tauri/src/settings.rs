@@ -75,6 +75,10 @@ pub struct Settings {
     pub microsoft_v2_speed: i32,
     /// Google Free (android-tts) language token, e.g. "vi-VN" | "en-US"
     pub google_free_voice: String,
+    /// Optional user Google API key for Google Free. When set, overrides the build-time
+    /// GOOGLE_FREE_TTS_KEY. Empty → fall back to the build-time key (if any).
+    #[serde(default)]
+    pub google_free_api_key: String,
     /// Google Free client-side playback speed (endpoint has no rate param). 1.0 = normal.
     #[serde(default = "default_local_tts_speed")]
     pub google_free_speed: f32,
@@ -129,6 +133,7 @@ impl Default for Settings {
             microsoft_v2_voice: "vi-VN-HoaiMyNeural".to_string(),
             microsoft_v2_speed: 20,
             google_free_voice: "vi-VN".to_string(),
+            google_free_api_key: String::new(),
             google_free_speed: 1.0,
             tiktok_voice: "BV074_streaming".to_string(),
             tiktok_speed: 1.0,

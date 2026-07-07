@@ -15,14 +15,26 @@ const API_KEY: Option<&str> = option_env!("GOOGLE_FREE_TTS_KEY");
 const ENDPOINT: &str = "https://www.google.com/speech-api/v2/synthesize";
 
 /// Synthesize `text` in `lang` (e.g. "vi-VN" / "en-US"). Returns base64 MP3.
+///
+/// Key resolution: a non-empty `user_key` (entered in Settings) takes priority; otherwise
+/// the build-time `GOOGLE_FREE_TTS_KEY` is used. If neither is present, the provider is
+/// unusable (no hardcoded fallback).
 #[tauri::command]
-pub async fn google_free_tts_speak(text: String, lang: String) -> Result<String, String> {
+pub async fn google_free_tts_speak(
+    text: String,
+    lang: String,
+    user_key: Option<String>,
+) -> Result<String, String> {
     if text.trim().is_empty() {
         return Err("Empty text".into());
     }
-    let key = API_KEY.ok_or(
-        "Google Free TTS not configured (GOOGLE_FREE_TTS_KEY missing at build time)",
-    )?;
+    let user_key = user_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
+    let key = user_key
+        .as_deref()
+        .or(API_KEY.filter(|k| !k.is_empty()))
+        .ok_or(
+            "Google Free TTS not configured — enter a Google API key in Settings (no build-time key).",
+        )?;
 
     // .query() percent-encodes every value — never format! untrusted text into the URL.
     let build_req = || {
@@ -37,6 +49,9 @@ pub async fn google_free_tts_speak(text: String, lang: String) -> Result<String,
             ])
             .send()
     };
+
+    // Strip whichever key is in use from any error before it reaches logs/UI.
+    let redact = |s: &str| s.replace(key, "***");
 
     // 1x retry on transport error only; a non-success status is terminal.
     let resp = match build_req().await {
@@ -67,12 +82,4 @@ pub async fn google_free_tts_speak(text: String, lang: String) -> Result<String,
         return Err("Google Free returned empty audio".into());
     }
     Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
-}
-
-/// Strip the API key from any error string before it reaches logs/UI.
-fn redact(s: &str) -> String {
-    match API_KEY {
-        Some(k) if !k.is_empty() => s.replace(k, "***"),
-        _ => s.to_string(),
-    }
 }

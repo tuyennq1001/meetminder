@@ -686,7 +686,17 @@
 
         <!-- Google Free (android-tts) settings -->
         <div class="settings-section" id="tts-google-free-settings" style="display:none;">
-          <div class="field">
+          <span class="field-label">Google API Key (optional)</span>
+          <div class="input-group">
+            <input type="password" id="input-google-free-key" placeholder="AIzaSy… (leave empty to use the built-in key)" autocomplete="off" />
+            <button id="btn-toggle-google-free-key" class="icon-btn small" title="Show/Hide">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          </div>
+          <p class="hint">If set, this key is used; otherwise the app's built-in key (if any). No key at all → provider unavailable.</p>
+          <div class="field" style="margin-top: 8px;">
             <span class="field-label">Voice</span>
             <select id="select-google-free-voice">
               <option value="vi-VN">Tiếng Việt 🇻🇳</option>
