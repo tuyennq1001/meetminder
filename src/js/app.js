@@ -1349,12 +1349,8 @@ class App {
 
     /** Download a voice model with live progress, then re-render as installed. */
     async _downloadLocalVoice(id) {
-        // Prompt for a save location on the first ever download if none chosen.
-        if (!settingsManager.get().local_tts_models_dir && !this._localDirPrompted) {
-            this._localDirPrompted = true;
-            const custom = await this._maybePickModelsDir();
-            if (custom === null) return; // user cancelled
-        }
+        // Download straight into the default app models folder — no folder prompt.
+        // Users who want a custom location can still set it via the Model folder field.
         const progressEl = document.querySelector(`.local-progress[data-id="${id}"]`);
         const btn = document.querySelector(`.btn-local-download[data-id="${id}"]`);
         if (btn) btn.disabled = true;
