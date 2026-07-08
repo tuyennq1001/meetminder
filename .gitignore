@@ -72,3 +72,4 @@ live-test/
 .env
 .env.local
 _drafts
+tts-models/

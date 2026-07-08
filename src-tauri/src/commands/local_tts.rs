@@ -32,15 +32,21 @@ use tauri::ipc::Channel;
 pub struct VoiceEntry {
     pub id: &'static str,
     pub display: &'static str,
-    pub lang: &'static str,    // "vi" | "en"
-    pub package: &'static str, // tarball stem on the tts-models release
-    pub sha256: &'static str,  // integrity check of the downloaded .tar.bz2
+    pub lang: &'static str,      // "vi" | "en"
+    pub package: &'static str,   // tarball stem on the release (`<package>.tar.bz2`)
+    pub base_url: &'static str,  // release base the tarball is hosted on
+    pub sha256: &'static str,    // integrity check of the downloaded .tar.bz2
     pub approx_size_bytes: u64,
     pub sample_rate: u32,
 }
 
-/// Base URL for the `tts-models` release assets.
+/// Base URL for the upstream sherpa-onnx `tts-models` release (public voices).
 pub const RELEASE_BASE: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models";
+
+/// Base URL for this project's custom Vietnamese voices (self-contained tarballs
+/// with bundled espeak-ng-data). Contributed by @quanhieu (nghimestudio/nghitts).
+pub const CUSTOM_VI_BASE: &str =
+    "https://github.com/phuc-nt/my-translator/releases/download/tts-models-vi";
 
 /// Static catalog — Vietnamese + English, license-verified free Piper voices.
 /// SHA-256 values pinned from the published release assets (integrity gate).
@@ -50,6 +56,7 @@ pub const CATALOG: &[VoiceEntry] = &[
         display: "Tiếng Việt — VAIS1000 (medium)",
         lang: "vi",
         package: "vits-piper-vi_VN-vais1000-medium",
+        base_url: RELEASE_BASE,
         sha256: "fa1367710767d36ed5cf13b4a449e20c35ffd12791c2e47c2e64142bfa55551a",
         approx_size_bytes: 67_154_040,
         sample_rate: 22_050,
@@ -59,6 +66,7 @@ pub const CATALOG: &[VoiceEntry] = &[
         display: "Tiếng Việt — 25 hours (low)",
         lang: "vi",
         package: "vits-piper-vi_VN-25hours_single-low",
+        base_url: RELEASE_BASE,
         sha256: "8aa8bbe88a1cb26ef4f33de56fced1720e72ec00491d23a3551de25a53c75149",
         approx_size_bytes: 67_059_380,
         sample_rate: 16_000,
@@ -68,6 +76,7 @@ pub const CATALOG: &[VoiceEntry] = &[
         display: "English (US) — Ryan (medium)",
         lang: "en",
         package: "vits-piper-en_US-ryan-medium",
+        base_url: RELEASE_BASE,
         sha256: "c546af78b6395b4e7c4ce1ed899438b64426a362f5d4ec5fecd090ded9ad7505",
         approx_size_bytes: 63_000_000,
         sample_rate: 22_050,
@@ -77,8 +86,61 @@ pub const CATALOG: &[VoiceEntry] = &[
         display: "English (US) — Lessac (medium)",
         lang: "en",
         package: "vits-piper-en_US-lessac-medium",
+        base_url: RELEASE_BASE,
         sha256: "9e3febfacf0abf4270172d2958bcec246032b7e88efc2720840cc80c93de334e",
         approx_size_bytes: 67_230_653,
+        sample_rate: 22_050,
+    },
+    // Custom Vietnamese voices (nghimestudio/nghitts) — self-contained tarballs
+    // hosted on this repo's `tts-models-vi` release. Contributed by @quanhieu.
+    VoiceEntry {
+        id: "adam1",
+        display: "Tiếng Việt — Adam (custom)",
+        lang: "vi",
+        package: "vits-piper-adam1",
+        base_url: CUSTOM_VI_BASE,
+        sha256: "4567253186404699da56fc3fdb7730dbdf8d4fca38ea792dde11a6277332e592",
+        approx_size_bytes: 67_243_654,
+        sample_rate: 22_050,
+    },
+    VoiceEntry {
+        id: "banmai",
+        display: "Tiếng Việt — Ban Mai (custom)",
+        lang: "vi",
+        package: "vits-piper-banmai",
+        base_url: CUSTOM_VI_BASE,
+        sha256: "ab100268af6059dc3003d5bb54246f73957082e6fbc5650371e6b77f27496ec5",
+        approx_size_bytes: 67_229_740,
+        sample_rate: 22_050,
+    },
+    VoiceEntry {
+        id: "minhkhang",
+        display: "Tiếng Việt — Minh Khang (custom)",
+        lang: "vi",
+        package: "vits-piper-minhkhang",
+        base_url: CUSTOM_VI_BASE,
+        sha256: "fc82d350cff501fc05e942302f746bfefdb861e4c7fd8044c4c598bbc5e86de4",
+        approx_size_bytes: 67_253_792,
+        sample_rate: 22_050,
+    },
+    VoiceEntry {
+        id: "minhquang",
+        display: "Tiếng Việt — Minh Quang (custom)",
+        lang: "vi",
+        package: "vits-piper-minhquang",
+        base_url: CUSTOM_VI_BASE,
+        sha256: "c113ac010cc474446e9aa0e81bf1faca55c73d507ef19682b74fca1f9a2a07f9",
+        approx_size_bytes: 67_246_724,
+        sample_rate: 22_050,
+    },
+    VoiceEntry {
+        id: "minhthu",
+        display: "Tiếng Việt — Minh Thư (custom)",
+        lang: "vi",
+        package: "vits-piper-minhthu",
+        base_url: CUSTOM_VI_BASE,
+        sha256: "7d73801e17eaa3980e7cb9232b2c6c29c68931aa5509fd2ceb2f899b75b0dec3",
+        approx_size_bytes: 67_224_534,
         sample_rate: 22_050,
     },
 ];
@@ -363,7 +425,7 @@ pub async fn local_tts_list_models(
                 id: v.id.to_string(),
                 display: v.display.to_string(),
                 lang: v.lang.to_string(),
-                url: format!("{RELEASE_BASE}/{}.tar.bz2", v.package),
+                url: format!("{}/{}.tar.bz2", v.base_url, v.package),
                 approx_size_bytes: v.approx_size_bytes,
                 sample_rate: v.sample_rate,
                 installed,
@@ -484,7 +546,7 @@ async fn download_and_extract(
         let _ = std::fs::remove_dir_all(&tmp);
     };
 
-    let url = format!("{RELEASE_BASE}/{}.tar.bz2", entry.package);
+    let url = format!("{}/{}.tar.bz2", entry.base_url, entry.package);
     // Dedicated client: NO total timeout (large download), but bound connect + per-read so a
     // stalled socket cannot hang the stream forever.
     let client = reqwest::Client::builder()

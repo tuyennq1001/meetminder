@@ -716,6 +716,12 @@ class App {
         if (view === 'sessions') {
             this._showSessions();
         }
+        // Returning to the overlay while in Read mode: a voice/provider may have been
+        // downloaded or selected in Settings, so re-evaluate the Read capability hint
+        // (else the Đọc button stays disabled until a Live↔Read toggle).
+        if (view === 'overlay' && this._readMode === 'read') {
+            this._showReadCapabilityHint();
+        }
     }
 
     // ─── Settings Form ─────────────────────────────────────
