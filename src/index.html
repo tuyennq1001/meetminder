@@ -73,12 +73,24 @@
           </button>
         </div>
 
-        <button id="btn-start" class="action-btn" title="Start/Stop (Space)">
+        <button id="mode-toggle" class="mode-toggle-btn" title="Toggle Live / Read">
+          <span class="mode-seg mode-live">🎙 Live</span>
+          <span class="mode-seg mode-read">📖 Read</span>
+        </button>
+
+        <button id="btn-start" class="action-btn" title="Start/Stop (⌘↩)">
           <svg id="icon-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <polygon points="5 3 19 12 5 21 5 3" />
           </svg>
           <svg id="icon-stop" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none">
             <rect x="4" y="4" width="16" height="16" rx="2" />
+          </svg>
+        </button>
+
+        <button id="btn-pause" class="action-btn" title="Pause (keep session)" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16" rx="1" />
+            <rect x="14" y="4" width="4" height="16" rx="1" />
           </svg>
         </button>
 
@@ -161,6 +173,20 @@
           </svg>
           <p>Press ▶ to start translating</p>
         </div>
+      </div>
+
+      <!-- Read mode panel — paste Vietnamese text, hear it read aloud. Hidden by default. -->
+      <div id="read-panel" style="display:none">
+        <textarea id="read-input" placeholder="Dán hoặc gõ văn bản tiếng Việt để đọc to…"></textarea>
+        <div id="read-output" class="read-output" style="display:none"></div>
+        <div class="read-progress-bar"><div id="read-progress-fill"></div></div>
+        <div class="read-controls">
+          <button id="btn-read-play" class="read-btn read-btn-primary" type="button">▶ Đọc</button>
+          <button id="btn-read-pause" class="read-btn" type="button" style="display:none">⏸ Tạm dừng</button>
+          <button id="btn-read-stop" class="read-btn" type="button" style="display:none">⏹ Dừng</button>
+          <span id="read-progress" class="read-progress"></span>
+        </div>
+        <div id="read-hint" class="read-hint"></div>
       </div>
 
       <!-- Engine picker — shown before the first session each launch.
@@ -606,9 +632,17 @@
         <div class="settings-section">
           <span class="field-label">Provider</span>
           <select id="select-tts-provider">
-            <option value="edge">🎙️ Edge TTS — Free</option>
-            <option value="google">🌐 Google Chirp 3 HD — Premium</option>
-            <option value="elevenlabs">✨ ElevenLabs — Premium</option>
+            <optgroup label="Free">
+              <option value="edge">🎙️ Edge TTS — Free</option>
+              <option value="microsoft">🪟 Microsoft v2 — Free</option>
+              <option value="google-free">🌐 Google TTS — Free</option>
+              <option value="tiktok">🎵 TikTok TTS — Free</option>
+              <option value="local">🔊 Local (Offline) — Free</option>
+            </optgroup>
+            <optgroup label="Premium">
+              <option value="google">🌐 Google Chirp 3 HD — Premium</option>
+              <option value="elevenlabs">✨ ElevenLabs — Premium</option>
+            </optgroup>
           </select>
           <p class="hint" id="tts-provider-hint">Free, natural voices — no API key needed</p>
         </div>
@@ -631,6 +665,117 @@
             <span class="field-label">Speed</span>
             <input type="range" id="range-edge-speed" min="-50" max="100" step="10" />
             <span id="edge-speed-value" class="range-value"></span>
+          </div>
+        </div>
+
+        <!-- Microsoft v2 settings (voice list populated dynamically, filtered by language) -->
+        <div class="settings-section" id="tts-microsoft-settings" style="display:none;">
+          <div class="field">
+            <span class="field-label">Language</span>
+            <select id="select-microsoft-lang">
+              <option value="vi">Vietnamese — Tiếng Việt</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <div class="field" style="margin-top: 8px;">
+            <span class="field-label">Voice</span>
+            <select id="select-microsoft-voice">
+              <option value="vi-VN-HoaiMyNeural">HoaiMy (Female)</option>
+              <option value="vi-VN-NamMinhNeural">NamMinh (Male)</option>
+            </select>
+          </div>
+          <div class="slider-field" style="margin-top: 8px;">
+            <span class="field-label">Speed</span>
+            <input type="range" id="range-microsoft-speed" min="-50" max="100" step="10" />
+            <span id="microsoft-speed-value" class="range-value"></span>
+          </div>
+        </div>
+
+        <!-- Google Free (android-tts) settings -->
+        <div class="settings-section" id="tts-google-free-settings" style="display:none;">
+          <span class="field-label">Google API Key (optional)</span>
+          <div class="input-group">
+            <input type="password" id="input-google-free-key" placeholder="AIzaSy… (leave empty to use the built-in key)" autocomplete="off" />
+            <button id="btn-toggle-google-free-key" class="icon-btn small" title="Show/Hide">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          </div>
+          <p class="hint">If set, this key is used; otherwise the app's built-in key (if any). No key at all → provider unavailable.</p>
+          <div class="field" style="margin-top: 8px;">
+            <span class="field-label">Voice</span>
+            <select id="select-google-free-voice">
+              <option value="vi-VN">Tiếng Việt 🇻🇳</option>
+              <option value="en-US">English 🇺🇸</option>
+            </select>
+          </div>
+          <div class="slider-field" style="margin-top: 8px;">
+            <span class="field-label">Speed</span>
+            <input type="range" id="range-google-free-speed" min="0.5" max="2.0" step="0.1" value="1.0" />
+            <span id="google-free-speed-value" class="range-value">1.0x</span>
+          </div>
+          <p class="hint">Experimental — free Google voice, may stop working anytime. Text is sent to Google.</p>
+        </div>
+
+        <!-- TikTok settings -->
+        <div class="settings-section" id="tts-tiktok-settings" style="display:none;">
+          <div class="field">
+            <span class="field-label">Voice</span>
+            <select id="select-tiktok-voice">
+              <optgroup label="🇻🇳 Vietnamese">
+                <option value="BV074_streaming">Nữ (vi)</option>
+                <option value="BV075_streaming">Nam (vi)</option>
+              </optgroup>
+              <optgroup label="🇺🇸 English">
+                <option value="en_us_001">Female (en)</option>
+                <option value="en_us_006">Male (en)</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="slider-field" style="margin-top: 8px;">
+            <span class="field-label">Speed</span>
+            <input type="range" id="range-tiktok-speed" min="0.5" max="2.0" step="0.1" value="1.0" />
+            <span id="tiktok-speed-value" class="range-value">1.0x</span>
+          </div>
+          <div style="margin-top: 8px;">
+            <span class="field-label">TikTok sessionid</span>
+            <input type="password" id="input-tiktok-session" placeholder="sessionid cookie from tiktok.com" autocomplete="off" />
+            <p class="hint">Log in at tiktok.com → DevTools → Application → Cookies → copy <code>sessionid</code>. Text is sent to TikTok.</p>
+          </div>
+          <div style="margin-top: 8px;">
+            <span class="field-label">…or paste cURL (auto-extract sessionid)</span>
+            <textarea id="input-tiktok-curl" rows="3" placeholder="DevTools → Network → right-click a tiktok.com request → Copy → Copy as cURL, then paste here" autocomplete="off" style="width:100%; resize:vertical; font-family:monospace; font-size:11px;"></textarea>
+            <p class="hint">Only the <code>sessionid</code> is read from it and filled above; the cURL itself is not saved or sent anywhere.</p>
+          </div>
+        </div>
+
+        <!-- Local offline (Piper/sherpa-onnx) settings -->
+        <div class="settings-section" id="tts-local-settings" style="display:none;">
+          <div class="field">
+            <span class="field-label">Language</span>
+            <select id="select-local-lang">
+              <option value="vi">Vietnamese — Tiếng Việt</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <div class="field" style="margin-top: 8px;">
+            <span class="field-label">Voices</span>
+            <div id="local-voice-list"><p class="hint">Loading…</p></div>
+          </div>
+          <div class="slider-field" style="margin-top: 8px;">
+            <span class="field-label">Speed</span>
+            <input type="range" id="range-local-speed" min="0.5" max="3.0" step="0.1" value="1.0" />
+            <span id="local-speed-value" class="range-value">1.0x</span>
+          </div>
+          <div style="margin-top: 10px;">
+            <span class="field-label">Model folder</span>
+            <div class="input-group">
+              <input type="text" id="input-local-models-dir" placeholder="Resolving…" readonly title="Full path where voice models are stored" />
+              <button id="btn-local-change-dir" class="icon-btn small" title="Change location" type="button">📁</button>
+              <button id="btn-local-reset-dir" class="icon-btn small" title="Reset to default app location" type="button">↺</button>
+            </div>
+            <p class="hint">Where downloaded voice models are stored. 100% offline once downloaded.</p>
           </div>
         </div>
 
@@ -781,7 +926,6 @@
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
         </button>
-        <button id="btn-new-session" class="btn-secondary small" title="Start a fresh session (current is saved)">+ New session</button>
       </div>
     </div>
 
@@ -878,6 +1022,7 @@
     </div>
   </div>
 
+  <script src="/js/tauri-mock.js"></script>
   <script type="module" src="/js/settings.js"></script>
   <script type="module" src="/js/ui.js"></script>
   <script type="module" src="/js/soniox.js"></script>

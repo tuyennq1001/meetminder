@@ -10,6 +10,7 @@
     "opener:default",
     "core:window:allow-start-dragging",
     "core:window:allow-close",
+    "core:window:allow-destroy",
     "core:window:allow-minimize",
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-size",
@@ -25,6 +26,7 @@
     "updater:allow-check",
     "updater:allow-download-and-install",
     "process:allow-restart",
-    "process:allow-exit"
+    "process:allow-exit",
+    "dialog:allow-open"
   ]
 }

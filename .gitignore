@@ -52,6 +52,8 @@ docs/experiment_mlx_whisper.md
 docs/mlx_optimization_plan.md
 docs/windows_handoff.md
 docs/windows_port_plan.md
+.claude
+plans
 
 # Dev/benchmark scripts (private repo only)
 scripts/benchmark_*.py
@@ -61,6 +63,7 @@ scripts/test_*.py
 .private/
 GEMINI.md
 CLAUDE.md
+CLAUDE.local.md
 
 # Local test fixtures (large media)
 live-test/
@@ -68,3 +71,4 @@ live-test/
 # Secrets (never commit)
 .env
 .env.local
+_drafts

@@ -20,7 +20,8 @@ pub struct AudioForwarder {
 
 impl AudioForwarder {
     fn stop(&self) {
-        self.stop_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.stop_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -63,13 +64,17 @@ pub fn start_capture(
             // Forward system audio to merged channel
             std::thread::spawn(move || {
                 while let Ok(data) = sys_rx.recv() {
-                    if tx1.send(data).is_err() { break; }
+                    if tx1.send(data).is_err() {
+                        break;
+                    }
                 }
             });
             // Forward mic audio to merged channel
             std::thread::spawn(move || {
                 while let Ok(data) = mic_rx.recv() {
-                    if tx2.send(data).is_err() { break; }
+                    if tx2.send(data).is_err() {
+                        break;
+                    }
                 }
             });
 

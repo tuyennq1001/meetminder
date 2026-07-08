@@ -122,6 +122,29 @@ class GoogleTTS {
         this._processQueue();
     }
 
+    /**
+     * Read mode: synthesize one chunk → base64. Fetch-based (unlike the invoke providers).
+     * Throws on HTTP error so the reader's retry/error path can handle it.
+     */
+    async synthesize(text) {
+        if (!text?.trim()) return null;
+        const response = await fetch(`${GOOGLE_TTS_ENDPOINT}?key=${this.apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                input: { text: text.trim() },
+                voice: { languageCode: this.languageCode, name: this.voice },
+                audioConfig: { audioEncoding: 'MP3', speakingRate: this.speakingRate },
+            }),
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error?.message || `HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        return data.audioContent || null;
+    }
+
     disconnect() {
         this._queue = [];
         this._isSpeaking = false;

@@ -18,6 +18,32 @@ My Translator có thể **đọc thành tiếng bản dịch** ngay khi xuất h
 
 ---
 
+## Local (Ngoại tuyến) — Miễn phí, chạy 100% trên máy
+
+### Là gì?
+
+Local TTS chạy giọng neural **Piper** hoàn toàn trên máy bạn qua sherpa-onnx — **không cần mạng, không cần API key, không gửi dữ liệu đi đâu cả**. Hợp cho quyền riêng tư hoặc dùng offline (vd: trên máy bay). Tổng hợp nhanh (~15× thời gian thực trên CPU), chạy được trên macOS và Windows.
+
+### Cài đặt
+
+1. Settings → TTS → Provider → **🔊 Local (Offline) — Free**.
+2. Chọn **Ngôn ngữ** (Tiếng Việt / English) để lọc danh sách.
+3. Bấm **⬇️** cạnh giọng để tải về. Lần đầu, app sẽ hỏi nơi lưu model — thư mục mặc định của app hoặc thư mục tùy chọn.
+4. Chọn giọng đã tải (nút radio), rồi bật TTS (`⌘ T`).
+
+### Quản lý giọng
+
+- **Tải** (⬇️): mỗi giọng ~65 MB, có thanh tiến trình khi tải.
+- **Xóa** (🗑️): xóa model khỏi ổ đĩa thật sự, giải phóng dung lượng.
+- **Thư mục model**: đổi nơi lưu bất kỳ lúc nào bằng nút 📁. Giọng đã tải ở thư mục cũ chỉ đơn giản không hiện nữa (không tự di chuyển).
+
+### Lưu ý
+
+- Sau khi tải xong, giọng chạy được **không cần internet**.
+- Là các model on-device miễn phí chính thức (Tiếng Việt: VAIS1000, 25 hours; English: Ryan, Lessac). Chất lượng tốt, rõ ràng — chưa bằng cloud cao cấp nhưng riêng tư và miễn phí hoàn toàn.
+
+---
+
 ## Edge TTS (Mặc định — Miễn phí)
 
 ### Edge TTS là gì?

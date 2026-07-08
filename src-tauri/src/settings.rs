@@ -51,7 +51,7 @@ pub struct Settings {
     pub elevenlabs_api_key: String,
     /// Whether TTS narration is enabled
     pub tts_enabled: bool,
-    /// TTS provider: "edge" | "elevenlabs" | "google"
+    /// TTS provider: "edge" | "microsoft" | "google-free" | "tiktok" | "google" | "elevenlabs"
     pub tts_provider: String,
     /// ElevenLabs voice ID
     pub tts_voice_id: String,
@@ -69,6 +69,35 @@ pub struct Settings {
     pub google_tts_voice: String,
     /// Google TTS speaking rate
     pub google_tts_speed: f64,
+    /// Microsoft v2 (Edge endpoint, dynamic voice list) selected voice
+    pub microsoft_v2_voice: String,
+    /// Microsoft v2 speed percentage (reuses edge synth)
+    pub microsoft_v2_speed: i32,
+    /// Google Free (android-tts) language token, e.g. "vi-VN" | "en-US"
+    pub google_free_voice: String,
+    /// Optional user Google API key for Google Free. When set, overrides the build-time
+    /// GOOGLE_FREE_TTS_KEY. Empty → fall back to the build-time key (if any).
+    #[serde(default)]
+    pub google_free_api_key: String,
+    /// Google Free client-side playback speed (endpoint has no rate param). 1.0 = normal.
+    #[serde(default = "default_local_tts_speed")]
+    pub google_free_speed: f32,
+    /// TikTok TTS speaker code, e.g. "BV074_streaming"
+    pub tiktok_voice: String,
+    /// TikTok client-side playback speed (endpoint has no rate param). 1.0 = normal.
+    #[serde(default = "default_local_tts_speed")]
+    pub tiktok_speed: f32,
+    /// TikTok sessionid cookie (user-supplied; required by the endpoint)
+    pub tiktok_session_id: String,
+    /// Local offline (Piper/sherpa-onnx) selected voice id, e.g. "vi_VN-vais1000-medium"
+    #[serde(default)]
+    pub local_tts_voice: String,
+    /// Local offline TTS speed (1.0 = normal). Piper length-scale is applied inversely.
+    #[serde(default = "default_local_tts_speed")]
+    pub local_tts_speed: f32,
+    /// Folder where local TTS models are stored; empty = default app-data location.
+    #[serde(default)]
+    pub local_tts_models_dir: String,
     /// OpenAI Realtime: when true server generates translated audio.
     /// Default false — speaker → mic feedback loop on shared devices.
     #[serde(default)]
@@ -101,9 +130,25 @@ impl Default for Settings {
             google_tts_api_key: String::new(),
             google_tts_voice: "vi-VN-Chirp3-HD-Aoede".to_string(),
             google_tts_speed: 1.0,
+            microsoft_v2_voice: "vi-VN-HoaiMyNeural".to_string(),
+            microsoft_v2_speed: 20,
+            google_free_voice: "vi-VN".to_string(),
+            google_free_api_key: String::new(),
+            google_free_speed: 1.0,
+            tiktok_voice: "BV074_streaming".to_string(),
+            tiktok_speed: 1.0,
+            tiktok_session_id: String::new(),
+            local_tts_voice: "vi_VN-vais1000-medium".to_string(),
+            local_tts_speed: 1.0,
+            local_tts_models_dir: String::new(),
             openai_audio_output: false,
         }
     }
+}
+
+/// Serde default for `local_tts_speed` (field-level default would give 0.0).
+fn default_local_tts_speed() -> f32 {
+    1.0
 }
 
 /// Get the settings file path
@@ -135,11 +180,12 @@ impl Settings {
 
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("Failed to create config dir: {}", e))?;
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create config dir: {}", e))?;
         }
 
-        let json =
-            serde_json::to_string_pretty(self).map_err(|e| format!("Failed to serialize: {}", e))?;
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| format!("Failed to serialize: {}", e))?;
 
         fs::write(&path, json).map_err(|e| format!("Failed to write settings: {}", e))?;
 

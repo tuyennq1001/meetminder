@@ -1,20 +1,24 @@
 /**
- * Edge TTS via Rust — Frontend module
- * Calls Rust backend to proxy Edge TTS WebSocket (avoids browser header limitations).
- * Returns base64 MP3 audio, played via audioPlayer.
+ * Microsoft v2 TTS — Trudio-style. Synthesis reuses the existing Rust `edge_tts_speak`
+ * command (same readaloud/edge/v1 endpoint); the difference from "Edge TTS — Free" is a
+ * dynamically-fetched full voice list (vi + en) via `microsoft_list_voices`.
+ *
+ * Same provider contract as edge-tts.js: configure/connect/speak/disconnect + callbacks.
+ * Queue is bounded with drop-oldest so a slow network can't lag a real-time overlay.
  */
 
 const { invoke } = window.__TAURI__.core;
 
-class EdgeTTSRust {
+const MAX_QUEUE = 10;
+
+class MicrosoftTTS {
     constructor() {
         this.voice = 'vi-VN-HoaiMyNeural';
-        this.speed = 20; // percentage: +20% default
+        this.speed = 20; // percent
         this.isConnected = false;
         this._queue = [];
         this._isSpeaking = false;
 
-        // Same callback interface as other TTS providers
         this.onAudioChunk = null;
         this.onError = null;
         this.onStatusChange = null;
@@ -28,15 +32,20 @@ class EdgeTTSRust {
     connect() {
         this.isConnected = true;
         this._setStatus('connected');
-        console.log('[Edge TTS] Ready via Rust proxy');
+    }
+
+    /** Fetch full vi+en voice list from Microsoft. Throws on failure (caller uses fallback). */
+    async listVoices() {
+        const json = await invoke('microsoft_list_voices');
+        return JSON.parse(json);
     }
 
     speak(text) {
         if (!text?.trim()) return;
         this._queue.push(text.trim());
-        if (!this._isSpeaking) {
-            this._processQueue();
-        }
+        // Drop-oldest: in a live overlay, stale lines are worse than skipped ones.
+        while (this._queue.length > MAX_QUEUE) this._queue.shift();
+        if (!this._isSpeaking) this._processQueue();
     }
 
     async _processQueue() {
@@ -44,39 +53,28 @@ class EdgeTTSRust {
             this._isSpeaking = false;
             return;
         }
-
         this._isSpeaking = true;
         const text = this._queue.shift();
-        const startTime = performance.now();
-
         try {
             const base64Audio = await invoke('edge_tts_speak', {
-                text: text,
-                voice: this.voice,
+                text,
+                voice: this.voice || 'vi-VN-HoaiMyNeural',
                 rate: this.speed,
             });
-
-            const elapsed = performance.now() - startTime;
-            console.log(`[Edge TTS] Audio received in ${elapsed.toFixed(0)}ms`);
-
-            if (this.onAudioChunk) {
-                this.onAudioChunk(base64Audio, true);
-            }
+            if (this.onAudioChunk) this.onAudioChunk(base64Audio, true);
         } catch (err) {
-            console.error('[Edge TTS] Error:', err);
-            this.onError?.(`Edge TTS: ${err}`);
+            console.error('[Microsoft v2 TTS] Error:', err);
+            this.onError?.(`Microsoft v2 TTS: ${err}`);
         }
-
-        // Process next in queue
         this._processQueue();
     }
 
-    /** Read mode: synthesize one chunk → base64. Bypasses the live queue/callbacks. */
+    /** Read mode: synthesize one chunk → base64. Reuses edge_tts_speak like the live path. */
     async synthesize(text) {
         if (!text?.trim()) return null;
         return await invoke('edge_tts_speak', {
             text: text.trim(),
-            voice: this.voice,
+            voice: this.voice || 'vi-VN-HoaiMyNeural',
             rate: this.speed,
         });
     }
@@ -93,4 +91,4 @@ class EdgeTTSRust {
     }
 }
 
-export const edgeTTSRust = new EdgeTTSRust();
+export const microsoftTTS = new MicrosoftTTS();

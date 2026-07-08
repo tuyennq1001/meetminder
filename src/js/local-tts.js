@@ -1,20 +1,23 @@
 /**
- * Edge TTS via Rust — Frontend module
- * Calls Rust backend to proxy Edge TTS WebSocket (avoids browser header limitations).
- * Returns base64 MP3 audio, played via audioPlayer.
+ * Local offline TTS — Piper (VITS) via Rust (`local_tts_speak`, sherpa-onnx).
+ * Fully on-device; the selected voice model must be downloaded first
+ * (Settings → TTS → Local). Returns base64 WAV.
+ *
+ * Same provider contract as the other TTS clients. Bounded queue, drop-oldest.
  */
 
 const { invoke } = window.__TAURI__.core;
 
-class EdgeTTSRust {
+const MAX_QUEUE = 10;
+
+class LocalTTS {
     constructor() {
-        this.voice = 'vi-VN-HoaiMyNeural';
-        this.speed = 20; // percentage: +20% default
+        this.voice = 'vi_VN-vais1000-medium';
+        this.speed = 1.0;
         this.isConnected = false;
         this._queue = [];
         this._isSpeaking = false;
 
-        // Same callback interface as other TTS providers
         this.onAudioChunk = null;
         this.onError = null;
         this.onStatusChange = null;
@@ -22,21 +25,19 @@ class EdgeTTSRust {
 
     configure({ voice, speed }) {
         if (voice) this.voice = voice;
-        if (speed !== undefined) this.speed = speed;
+        if (speed !== undefined && speed !== null) this.speed = speed;
     }
 
     connect() {
         this.isConnected = true;
         this._setStatus('connected');
-        console.log('[Edge TTS] Ready via Rust proxy');
     }
 
     speak(text) {
         if (!text?.trim()) return;
         this._queue.push(text.trim());
-        if (!this._isSpeaking) {
-            this._processQueue();
-        }
+        while (this._queue.length > MAX_QUEUE) this._queue.shift();
+        if (!this._isSpeaking) this._processQueue();
     }
 
     async _processQueue() {
@@ -44,40 +45,29 @@ class EdgeTTSRust {
             this._isSpeaking = false;
             return;
         }
-
         this._isSpeaking = true;
         const text = this._queue.shift();
-        const startTime = performance.now();
-
         try {
-            const base64Audio = await invoke('edge_tts_speak', {
-                text: text,
-                voice: this.voice,
-                rate: this.speed,
+            const base64Audio = await invoke('local_tts_speak', {
+                text,
+                voiceId: this.voice || 'vi_VN-vais1000-medium',
+                speed: this.speed || 1.0,
             });
-
-            const elapsed = performance.now() - startTime;
-            console.log(`[Edge TTS] Audio received in ${elapsed.toFixed(0)}ms`);
-
-            if (this.onAudioChunk) {
-                this.onAudioChunk(base64Audio, true);
-            }
+            if (base64Audio && this.onAudioChunk) this.onAudioChunk(base64Audio, true);
         } catch (err) {
-            console.error('[Edge TTS] Error:', err);
-            this.onError?.(`Edge TTS: ${err}`);
+            console.error('[Local TTS] Error:', err);
+            this.onError?.(`Local TTS: ${err}`);
         }
-
-        // Process next in queue
         this._processQueue();
     }
 
     /** Read mode: synthesize one chunk → base64. Bypasses the live queue/callbacks. */
     async synthesize(text) {
         if (!text?.trim()) return null;
-        return await invoke('edge_tts_speak', {
+        return await invoke('local_tts_speak', {
             text: text.trim(),
-            voice: this.voice,
-            rate: this.speed,
+            voiceId: this.voice || 'vi_VN-vais1000-medium',
+            speed: this.speed || 1.0,
         });
     }
 
@@ -93,4 +83,4 @@ class EdgeTTSRust {
     }
 }
 
-export const edgeTTSRust = new EdgeTTSRust();
+export const localTTS = new LocalTTS();

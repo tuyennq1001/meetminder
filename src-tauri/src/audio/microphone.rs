@@ -1,7 +1,7 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::TARGET_SAMPLE_RATE;
 
@@ -38,13 +38,16 @@ impl MicCapture {
         let host = cpal::default_host();
 
         // List available input devices for debugging
-        let input_devices: Vec<String> = host.input_devices()
+        let input_devices: Vec<String> = host
+            .input_devices()
             .map(|devs| devs.filter_map(|d| d.name().ok()).collect())
             .unwrap_or_default();
         println!("[Mic] Available input devices: {:?}", input_devices);
 
         if input_devices.is_empty() {
-            return Err("No microphone found. Connect an external microphone or headset.".to_string());
+            return Err(
+                "No microphone found. Connect an external microphone or headset.".to_string(),
+            );
         }
 
         let device = host
@@ -54,36 +57,46 @@ impl MicCapture {
         println!("[Mic] Device: {:?}", device.name().unwrap_or_default());
 
         // Try default config first, fallback to supported configs
-        let default_config = device.default_input_config()
+        let default_config = device
+            .default_input_config()
             .or_else(|e| {
-                println!("[Mic] default_input_config failed: {}, trying supported configs", e);
+                println!(
+                    "[Mic] default_input_config failed: {}, trying supported configs",
+                    e
+                );
                 // Fallback: find a supported config
-                let mut configs = device.supported_input_configs()
+                let mut configs = device
+                    .supported_input_configs()
                     .map_err(|e2| format!("No supported input configs: {}", e2))?;
                 // Prefer F32, then I16
                 configs
                     .find(|c| c.sample_format() == cpal::SampleFormat::F32)
                     .or_else(|| {
-                        device.supported_input_configs().ok()
+                        device
+                            .supported_input_configs()
+                            .ok()
                             .and_then(|mut c| c.next())
                     })
                     .map(|c| {
                         // Pick sample rate: prefer 48kHz, else max
-                        let rate = if c.min_sample_rate().0 <= 48000 && c.max_sample_rate().0 >= 48000 {
-                            cpal::SampleRate(48000)
-                        } else {
-                            c.max_sample_rate()
-                        };
+                        let rate =
+                            if c.min_sample_rate().0 <= 48000 && c.max_sample_rate().0 >= 48000 {
+                                cpal::SampleRate(48000)
+                            } else {
+                                c.max_sample_rate()
+                            };
                         c.with_sample_rate(rate)
                     })
                     .ok_or_else(|| format!("No suitable input config found (original: {})", e))
             })
             .map_err(|e| format!("Failed to get default input config: {}", e))?;
 
-        println!("[Mic] Config: rate={}, channels={}, format={:?}",
+        println!(
+            "[Mic] Config: rate={}, channels={}, format={:?}",
             default_config.sample_rate().0,
             default_config.channels(),
-            default_config.sample_format());
+            default_config.sample_format()
+        );
 
         let source_sample_rate = default_config.sample_rate().0;
         let source_channels = default_config.channels() as usize;
@@ -103,27 +116,25 @@ impl MicCapture {
         let err_fn = |err| eprintln!("Microphone input error: {}", err);
 
         let stream = match default_config.sample_format() {
-            cpal::SampleFormat::F32 => {
-                device.build_input_stream(
-                    &stream_config,
-                    move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                        if !is_capturing.load(Ordering::SeqCst) {
-                            return;
-                        }
-                        let pcm = convert_f32_to_pcm_s16le(
-                            data,
-                            source_channels,
-                            source_sample_rate,
-                            target_rate,
-                        );
-                        if !pcm.is_empty() {
-                            let _ = sender.send(pcm);
-                        }
-                    },
-                    err_fn,
-                    None,
-                )
-            }
+            cpal::SampleFormat::F32 => device.build_input_stream(
+                &stream_config,
+                move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    if !is_capturing.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    let pcm = convert_f32_to_pcm_s16le(
+                        data,
+                        source_channels,
+                        source_sample_rate,
+                        target_rate,
+                    );
+                    if !pcm.is_empty() {
+                        let _ = sender.send(pcm);
+                    }
+                },
+                err_fn,
+                None,
+            ),
             cpal::SampleFormat::I16 => {
                 let is_capturing = self.is_capturing.clone();
                 device.build_input_stream(
@@ -152,7 +163,9 @@ impl MicCapture {
         }
         .map_err(|e| format!("Failed to build input stream: {}", e))?;
 
-        stream.play().map_err(|e| format!("Failed to start mic stream: {}", e))?;
+        stream
+            .play()
+            .map_err(|e| format!("Failed to start mic stream: {}", e))?;
 
         // Store stream to keep it alive
         self._stream = Some(stream);
@@ -176,7 +189,6 @@ impl Default for MicCapture {
         Self::new()
     }
 }
-
 
 /// Convert f32 audio to PCM s16le, with mono mixdown and resampling
 fn convert_f32_to_pcm_s16le(

@@ -7,6 +7,26 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## v0.8.0 - 2026-07-06
+
+### Added
+
+- **Read mode — in-overlay Vietnamese TTS reader.** A new Live ↔ Read toggle in the toolbar (default Live). Paste or type Vietnamese text and the app reads it aloud with the currently selected TTS provider — no character limit (text is sentence-chunked, one synth call per chunk). Play / Pause / Stop, "đoạn N/M" progress, and a current-chunk highlight.
+  - Local voice uses Trudio-style prefetch (lookahead) for near-gapless reading; other providers read sequentially to avoid rate-limit bursts.
+  - No text is silently dropped: a chunk that fails synth/decode after a bounded retry is shown as a visible per-chunk error marker.
+  - Read plays on its own audio path, fully isolated from Live capture→translate→speak (no regression). Nothing is written to disk — audio stays in memory and is freed as it plays.
+
+- **Google TTS — Free: optional user API key.** Settings → TTS → Google TTS — Free now has an optional Google API key field. If set, that key is used; otherwise the app's built-in key (if any). With neither key present the provider is unavailable — no hardcoded fallback. The key is stored locally and redacted from any error output.
+
+- **Local (Offline) TTS provider — Piper neural voices, 100% on-device.** A new TTS provider that synthesizes speech locally via Piper (VITS) models running through sherpa-onnx — no network, no API key, nothing sent anywhere. Runs on CPU (macOS + Windows), ~15× faster than real-time.
+  - Vietnamese + English voices, downloaded on demand from an in-app catalog (Settings → TTS → Local). Each voice is user-**downloaded** (with progress) and **deletable** (real on-device removal).
+  - Choose where models are stored: default app location or a custom folder (prompted before the first download, changeable anytime).
+  - Downloads are SHA-256 verified before install; phonemization uses espeak-ng data bundled inside each model (fully offline).
+
+### Notes
+
+- sherpa-onnx is statically linked, so no extra native libraries are bundled; the app binary grows ~23 MB.
+
 ## v0.7.3 - 2026-06-17
 
 ### Changes

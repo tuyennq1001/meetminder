@@ -1,13 +1,13 @@
 /// Edge TTS — proxy WebSocket through Rust to avoid browser header limitations.
 /// Implements the DRM token generation required by Microsoft's TTS service.
-
 use base64::Engine as _;
 use futures_util::{SinkExt, StreamExt};
 use sha2::{Digest, Sha256};
 use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
 
-const BASE_URL: &str = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
+const BASE_URL: &str =
+    "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
 const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
 const CHROMIUM_FULL_VERSION: &str = "143.0.3650.75";
 const CHROMIUM_MAJOR_VERSION: &str = "143";
@@ -66,7 +66,12 @@ pub async fn edge_tts_speak(text: String, voice: String, rate: i32) -> Result<St
         .map_err(|e| format!("Failed to build request: {}", e))?;
 
     let headers = request.headers_mut();
-    headers.insert("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold".parse().unwrap());
+    headers.insert(
+        "Origin",
+        "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"
+            .parse()
+            .unwrap(),
+    );
     headers.insert(
         "User-Agent",
         format!(
@@ -76,7 +81,10 @@ pub async fn edge_tts_speak(text: String, voice: String, rate: i32) -> Result<St
     );
     headers.insert("Pragma", "no-cache".parse().unwrap());
     headers.insert("Cache-Control", "no-cache".parse().unwrap());
-    headers.insert("Accept-Encoding", "gzip, deflate, br, zstd".parse().unwrap());
+    headers.insert(
+        "Accept-Encoding",
+        "gzip, deflate, br, zstd".parse().unwrap(),
+    );
     headers.insert("Accept-Language", "en-US,en;q=0.9".parse().unwrap());
     headers.insert("Cookie", format!("muid={};", muid).parse().unwrap());
 
@@ -110,7 +118,11 @@ pub async fn edge_tts_speak(text: String, voice: String, rate: i32) -> Result<St
         .replace('>', "&gt;")
         .replace('"', "&quot;");
 
-    let rate_str = if rate >= 0 { format!("+{}%", rate) } else { format!("{}%", rate) };
+    let rate_str = if rate >= 0 {
+        format!("+{}%", rate)
+    } else {
+        format!("{}%", rate)
+    };
 
     let ssml = format!(
         "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>\
@@ -136,7 +148,19 @@ pub async fn edge_tts_speak(text: String, voice: String, rate: i32) -> Result<St
     let mut audio_data: Vec<u8> = Vec::new();
     let mut got_turn_end = false;
 
-    while let Some(msg_result) = read.next().await {
+    // Guard the read loop with a per-message timeout so a stalled socket (no turn.end,
+    // no close) can never block the TTS queue forever.
+    loop {
+        let msg_result = match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            read.next(),
+        )
+        .await
+        {
+            Ok(Some(m)) => m,
+            Ok(None) => break,
+            Err(_) => return Err("Edge TTS timed out waiting for audio".into()),
+        };
         match msg_result {
             Ok(Message::Binary(data)) => {
                 // Binary messages: 2 bytes header length (big endian) + header + audio

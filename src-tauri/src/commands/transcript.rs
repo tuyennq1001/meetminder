@@ -1,8 +1,8 @@
+use chrono::Local;
+use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
-use chrono::Local;
-use serde::Serialize;
 
 /// Get the transcript directory path
 fn transcript_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -25,8 +25,7 @@ pub fn save_transcript(app: AppHandle, content: String) -> Result<String, String
     let filename = format!("{}.md", now.format("%Y-%m-%d_%H-%M-%S"));
     let filepath = dir.join(&filename);
 
-    fs::write(&filepath, content)
-        .map_err(|e| format!("Failed to save transcript: {}", e))?;
+    fs::write(&filepath, content).map_err(|e| format!("Failed to save transcript: {}", e))?;
 
     Ok(filepath.to_string_lossy().to_string())
 }
@@ -119,6 +118,5 @@ pub fn read_transcript(app: AppHandle, filename: String) -> Result<String, Strin
     }
     let dir = transcript_dir(&app)?;
     let filepath = dir.join(&filename);
-    fs::read_to_string(&filepath)
-        .map_err(|e| format!("Failed to read transcript: {}", e))
+    fs::read_to_string(&filepath).map_err(|e| format!("Failed to read transcript: {}", e))
 }

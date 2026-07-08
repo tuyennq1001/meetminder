@@ -9,13 +9,26 @@ import { sonioxClient } from './soniox.js';
 import { elevenLabsTTS } from './elevenlabs-tts.js';
 import { googleTTS } from './google-tts.js';
 import { edgeTTSRust } from './edge-tts.js';
-import { audioPlayer } from './audio-player.js';
+import { microsoftTTS } from './microsoft-tts.js';
+import { googleFreeTTS } from './google-free-tts.js';
+import { tiktokTTS } from './tiktok-tts.js';
+import { localTTS } from './local-tts.js';
+import { audioPlayer, readAudioPlayer } from './audio-player.js';
+import { Reader } from './reader.js';
 import { updater } from './updater.js';
 import { sessionStore } from './session-store.js';
 import { QWEN_LANGS } from './qwen-langs.js';
 
-const { invoke } = window.__TAURI__.core;
+const { invoke, Channel } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
+
+// Static fallback for Microsoft v2 voices when the live list endpoint is unreachable.
+const MS_VOICE_FALLBACK = [
+    { short_name: 'vi-VN-HoaiMyNeural', friendly_name: 'HoaiMy', gender: 'Female', locale: 'vi-VN' },
+    { short_name: 'vi-VN-NamMinhNeural', friendly_name: 'NamMinh', gender: 'Male', locale: 'vi-VN' },
+    { short_name: 'en-US-JennyNeural', friendly_name: 'Jenny', gender: 'Female', locale: 'en-US' },
+    { short_name: 'en-US-GuyNeural', friendly_name: 'Guy', gender: 'Male', locale: 'en-US' },
+];
 
 class App {
     constructor() {
@@ -35,6 +48,7 @@ class App {
         this.ttsEnabled = false;  // TTS runtime toggle
         this.isPinned = true;     // Always-on-top state
         this.isCompact = false;   // Compact mode (hide control bar)
+        this._closing = false;    // Guard so the exit flush runs exactly once
     }
 
     async init() {
@@ -45,8 +59,8 @@ class App {
         const transcriptContainer = document.getElementById('transcript-content');
         this.transcriptUI = new TranscriptUI(transcriptContainer);
 
-        // Init session store — single session per app launch (auto-resumes
-        // across Start/Stop cycles; persists on every Stop).
+        // Init session store — one session file lives across many Start/Pause
+        // cycles; it autosaves while recording and finalizes on Stop or app close.
         const initSettings = settingsManager.get();
         sessionStore.init({
             engine: initSettings.translation_mode || 'soniox',
@@ -63,6 +77,9 @@ class App {
         // Bind event listeners
         this._bindEvents();
 
+        // Flush the session on every close route (window ✕, Cmd+Q, Dock quit).
+        await this._bindCloseHooks();
+
         // Bind keyboard shortcuts
         this._bindKeyboardShortcuts();
 
@@ -72,13 +89,19 @@ class App {
         // Init audio player for TTS
         audioPlayer.init();
 
-        // Wire TTS audio callbacks for providers that use audioPlayer
-        for (const tts of [elevenLabsTTS, edgeTTSRust, googleTTS]) {
+        // Read mode (in-overlay TTS reader). 'live' = capture→translate→speak; 'read' =
+        // paste text → read aloud. Default live. Reader is built lazily on Play.
+        this._readMode = 'live';
+        this._reader = null;
+        this._initReadMode();
+
+        // Wire TTS audio callbacks for every provider (single source of registration
+        // so a new provider can never be silently left unwired).
+        this._allTTS = [elevenLabsTTS, edgeTTSRust, googleTTS, microsoftTTS, googleFreeTTS, tiktokTTS, localTTS];
+        for (const tts of this._allTTS) {
             tts.onAudioChunk = (base64Audio, isFinal) => {
                 audioPlayer.enqueue(base64Audio);
             };
-        }
-        for (const tts of [elevenLabsTTS, edgeTTSRust, googleTTS]) {
             tts.onError = (error) => {
                 console.error('[TTS]', error);
                 this._showToast(error, 'error');
@@ -163,25 +186,6 @@ class App {
             }
         });
 
-        // New session button — flush current and start fresh
-        document.getElementById('btn-new-session')?.addEventListener('click', async () => {
-            if (this.isRunning) {
-                this._showToast('Stop the current session first', 'error');
-                return;
-            }
-            try { await sessionStore.endSession(); } catch {}
-            const settings = settingsManager.get();
-            sessionStore.init({
-                engine: settings.translation_mode || 'soniox',
-                sourceLang: settings.source_language || 'auto',
-                targetLang: settings.target_language || 'vi',
-            });
-            this.transcriptUI.clearSession();
-            this.transcriptUI.clear();
-            this._showToast('New session started', 'success');
-            await this._showSessions();
-        });
-
         // Session search box (debounced)
         const searchInput = document.getElementById('input-session-search');
         if (searchInput) {
@@ -217,12 +221,10 @@ class App {
         document.getElementById('btn-session-export-srt')?.addEventListener('click', () => this._exportCurrentSession('srt'));
         document.getElementById('btn-session-export-txt')?.addEventListener('click', () => this._exportCurrentSession('txt'));
 
-        // Close button (overlay)
+        // Close button (overlay) — flows through the onCloseRequested hook,
+        // which flushes the session before the app exits.
         document.getElementById('btn-close').addEventListener('click', async () => {
             await this._saveWindowPosition();
-            await this.stop();
-            // Mark session ended so resume-on-restart only fires for crashes
-            try { await sessionStore.endSession(); } catch {}
             await this.appWindow.close();
         });
 
@@ -266,7 +268,7 @@ class App {
             if (this.isStarting) return; // Prevent re-entry
             try {
                 if (this.isRunning) {
-                    await this.stop();
+                    await this.stopSession();
                 } else {
                     this.isStarting = true;
                     await this.start();
@@ -281,6 +283,19 @@ class App {
                 this.transcriptUI.showPlaceholder();
             } finally {
                 this.isStarting = false;
+            }
+        });
+
+        // Pause button — stop capture + persist, but keep the same session file.
+        // Only reachable while running (disabled otherwise); next Start appends a
+        // new chunk to the same file rather than starting a fresh one.
+        document.getElementById('btn-pause')?.addEventListener('click', async () => {
+            if (this.isStarting || !this.isRunning) return;
+            try {
+                await this.pause();
+            } catch (err) {
+                console.error('[App] Pause error:', err);
+                this._showToast(`Error: ${err}`, 'error');
             }
         });
 
@@ -382,7 +397,7 @@ class App {
         document.querySelectorAll('#engine-pill .engine-pill-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 if (this.isRunning || this.isStarting) {
-                    this._showToast('Stop the session before switching engine', 'error');
+                    this._showToast('Pause the session before switching engine', 'error');
                     return;
                 }
                 this._selectEngineClass(btn.dataset.engineClass);
@@ -442,6 +457,11 @@ class App {
             input.type = input.type === 'password' ? 'text' : 'password';
         });
 
+        document.getElementById('btn-toggle-google-free-key')?.addEventListener('click', () => {
+            const input = document.getElementById('input-google-free-key');
+            input.type = input.type === 'password' ? 'text' : 'password';
+        });
+
         // Settings tab switching
         document.querySelectorAll('.settings-tab').forEach(tab => {
             tab.addEventListener('click', () => {
@@ -479,6 +499,59 @@ class App {
         document.getElementById('range-google-speed')?.addEventListener('input', (e) => {
             const label = document.getElementById('google-speed-value');
             if (label) label.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
+        });
+
+        // Microsoft v2 speed slider
+        document.getElementById('range-microsoft-speed')?.addEventListener('input', (e) => {
+            const label = document.getElementById('microsoft-speed-value');
+            const v = parseInt(e.target.value);
+            if (label) label.textContent = (v >= 0 ? '+' : '') + v + '%';
+        });
+
+        // Microsoft v2 language filter — re-fill the voice dropdown for the chosen language
+        document.getElementById('select-microsoft-lang')?.addEventListener('change', (e) => {
+            this._fillMicrosoftVoices(e.target.value);
+        });
+
+        // Local offline: language filter re-renders the voice list
+        document.getElementById('select-local-lang')?.addEventListener('change', (e) => {
+            this._fillLocalVoices(e.target.value);
+        });
+
+        // Local offline: speed slider (0.5x–2.0x)
+        document.getElementById('range-local-speed')?.addEventListener('input', (e) => {
+            const label = document.getElementById('local-speed-value');
+            if (label) label.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
+        });
+
+        // Google-free / TikTok: client-side speed sliders (0.5x–2.0x)
+        document.getElementById('range-google-free-speed')?.addEventListener('input', (e) => {
+            const label = document.getElementById('google-free-speed-value');
+            if (label) label.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
+        });
+        document.getElementById('range-tiktok-speed')?.addEventListener('input', (e) => {
+            const label = document.getElementById('tiktok-speed-value');
+            if (label) label.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
+        });
+
+        // Local offline: change model storage folder
+        document.getElementById('btn-local-change-dir')?.addEventListener('click', () => {
+            this._maybePickModelsDir();
+        });
+
+        // Local offline: reset model folder back to the default app location
+        document.getElementById('btn-local-reset-dir')?.addEventListener('click', () => {
+            this._resetModelsDir();
+        });
+
+        // TikTok: paste a "Copy as cURL" and auto-extract the sessionid cookie into the field
+        document.getElementById('input-tiktok-curl')?.addEventListener('input', (e) => {
+            const m = e.target.value.match(/sessionid=([^;"'\s\\]+)/i);
+            const sidInput = document.getElementById('input-tiktok-session');
+            if (m && m[1] && sidInput && sidInput.value !== m[1]) {
+                sidInput.value = m[1];
+                this._showToast('sessionid extracted from cURL ✓', 'success');
+            }
         });
 
         // Add translation term row
@@ -553,7 +626,7 @@ class App {
                 (async () => {
                     try {
                         if (this.isRunning) {
-                            await this.stop();
+                            await this.stopSession();
                         } else {
                             this.isStarting = true;
                             await this.start();
@@ -748,6 +821,37 @@ class App {
         if (googleSpeedSlider) googleSpeedSlider.value = googleSpeed;
         if (googleSpeedLabel) googleSpeedLabel.textContent = googleSpeed + 'x';
 
+        // Microsoft v2 settings (voice populated dynamically in _updateTTSProviderUI)
+        const msVoiceSelect = document.getElementById('select-microsoft-voice');
+        if (msVoiceSelect) msVoiceSelect.value = s.microsoft_v2_voice || 'vi-VN-HoaiMyNeural';
+        const msSpeedSlider = document.getElementById('range-microsoft-speed');
+        const msSpeedLabel = document.getElementById('microsoft-speed-value');
+        const msSpeed = s.microsoft_v2_speed !== undefined ? s.microsoft_v2_speed : 20;
+        if (msSpeedSlider) msSpeedSlider.value = msSpeed;
+        if (msSpeedLabel) msSpeedLabel.textContent = (msSpeed >= 0 ? '+' : '') + msSpeed + '%';
+
+        // Google Free settings
+        const gfKeyInput = document.getElementById('input-google-free-key');
+        if (gfKeyInput) gfKeyInput.value = s.google_free_api_key || '';
+        const gfVoiceSelect = document.getElementById('select-google-free-voice');
+        if (gfVoiceSelect) gfVoiceSelect.value = s.google_free_voice || 'vi-VN';
+        const gfSpeed = s.google_free_speed || 1.0;
+        const gfSpeedSlider = document.getElementById('range-google-free-speed');
+        const gfSpeedLabel = document.getElementById('google-free-speed-value');
+        if (gfSpeedSlider) gfSpeedSlider.value = gfSpeed;
+        if (gfSpeedLabel) gfSpeedLabel.textContent = parseFloat(gfSpeed).toFixed(1) + 'x';
+
+        // TikTok settings
+        const ttVoiceSelect = document.getElementById('select-tiktok-voice');
+        if (ttVoiceSelect) ttVoiceSelect.value = s.tiktok_voice || 'BV074_streaming';
+        const ttSession = document.getElementById('input-tiktok-session');
+        if (ttSession) ttSession.value = s.tiktok_session_id || '';
+        const ttSpeed = s.tiktok_speed || 1.0;
+        const ttSpeedSlider = document.getElementById('range-tiktok-speed');
+        const ttSpeedLabel = document.getElementById('tiktok-speed-value');
+        if (ttSpeedSlider) ttSpeedSlider.value = ttSpeed;
+        if (ttSpeedLabel) ttSpeedLabel.textContent = parseFloat(ttSpeed).toFixed(1) + 'x';
+
         // TTS provider
         const providerSelect = document.getElementById('select-tts-provider');
         if (providerSelect) {
@@ -820,6 +924,15 @@ class App {
         settings.google_tts_api_key = document.getElementById('input-google-tts-key')?.value.trim() || '';
         settings.google_tts_voice = document.getElementById('select-google-voice')?.value || 'vi-VN-Chirp3-HD-Aoede';
         settings.google_tts_speed = parseFloat(document.getElementById('range-google-speed')?.value || 1.0);
+        settings.microsoft_v2_voice = document.getElementById('select-microsoft-voice')?.value || 'vi-VN-HoaiMyNeural';
+        settings.microsoft_v2_speed = parseInt(document.getElementById('range-microsoft-speed')?.value || 20);
+        settings.google_free_api_key = document.getElementById('input-google-free-key')?.value.trim() || '';
+        settings.google_free_voice = document.getElementById('select-google-free-voice')?.value || 'vi-VN';
+        settings.google_free_speed = parseFloat(document.getElementById('range-google-free-speed')?.value || 1.0);
+        settings.tiktok_voice = document.getElementById('select-tiktok-voice')?.value || 'BV074_streaming';
+        settings.tiktok_speed = parseFloat(document.getElementById('range-tiktok-speed')?.value || 1.0);
+        settings.tiktok_session_id = document.getElementById('input-tiktok-session')?.value.trim() || '';
+        settings.local_tts_speed = parseFloat(document.getElementById('range-local-speed')?.value || 1.0);
         settings.tts_enabled = false;
 
         try {
@@ -837,6 +950,16 @@ class App {
         // Update overlay opacity
         const overlayView = document.getElementById('overlay-view');
         overlayView.style.opacity = settings.overlay_opacity || 0.85;
+
+        // Note: saving settings turns TTS narration off (see end of this method), so the
+        // active provider is re-configured on the next TTS toggle — no mid-session re-sync
+        // needed here. Disconnect any non-active provider to drop stale queued audio.
+        if (this._allTTS) {
+            const active = this._getActiveTTS();
+            for (const tts of this._allTTS) {
+                if (tts !== active && tts.isConnected) tts.disconnect();
+            }
+        }
 
         // Update transcript UI
         if (this.transcriptUI) {
@@ -858,7 +981,7 @@ class App {
 
     // ─── TTS Control ──────────────────────────────────────
 
-    _toggleTTS() {
+    async _toggleTTS() {
         const settings = settingsManager.get();
         const provider = settings.tts_provider || 'edge';
 
@@ -869,7 +992,18 @@ class App {
             return;
         }
 
-        // Check API key for premium providers
+        // Local provider: the selected voice must actually be downloaded (async check).
+        // Only gate when turning ON (turning off never needs a model).
+        if (provider === 'local' && !this.ttsEnabled) {
+            const installed = await this._isLocalVoiceInstalled(settings.local_tts_voice);
+            if (!installed) {
+                this._showToast('Download a voice in Settings → TTS → Local', 'error');
+                this._showView('settings');
+                return;
+            }
+        }
+
+        // Check credentials for providers that require them (free providers need none)
         if (provider === 'elevenlabs' && !settings.elevenlabs_api_key) {
             this._showToast('Add ElevenLabs API key in Settings → TTS', 'error');
             this._showView('settings');
@@ -877,6 +1011,11 @@ class App {
         }
         if (provider === 'google' && !settings.google_tts_api_key) {
             this._showToast('Add Google TTS API key in Settings → TTS', 'error');
+            this._showView('settings');
+            return;
+        }
+        if (provider === 'tiktok' && !settings.tiktok_session_id) {
+            this._showToast('Add a TikTok sessionid in Settings → TTS', 'error');
             this._showView('settings');
             return;
         }
@@ -892,7 +1031,15 @@ class App {
                 tts.connect();
                 audioPlayer.resume();
             }
-            const label = { edge: 'Edge TTS (Free)', google: 'Google Chirp 3 HD', elevenlabs: 'ElevenLabs' }[provider] || provider;
+            const label = {
+                edge: 'Edge TTS (Free)',
+                microsoft: 'Microsoft v2 (Free)',
+                'google-free': 'Google TTS (Free)',
+                tiktok: 'TikTok TTS (Free)',
+                local: 'Local Offline',
+                google: 'Google Chirp 3 HD',
+                elevenlabs: 'ElevenLabs',
+            }[provider] || provider;
             this._showToast(`TTS narration ON 🔊 (${label})`, 'success');
         } else {
             tts.disconnect();
@@ -902,15 +1049,32 @@ class App {
     }
 
     _getActiveTTS() {
-        const settings = settingsManager.get();
-        const provider = settings.tts_provider || 'edge';
-        if (provider === 'elevenlabs') return elevenLabsTTS;
-        if (provider === 'google') return googleTTS;
-        return edgeTTSRust;
+        const provider = settingsManager.get().tts_provider || 'edge';
+        const map = {
+            edge: edgeTTSRust,
+            microsoft: microsoftTTS,
+            'google-free': googleFreeTTS,
+            tiktok: tiktokTTS,
+            local: localTTS,
+            google: googleTTS,
+            elevenlabs: elevenLabsTTS,
+        };
+        const tts = map[provider];
+        if (!tts) {
+            console.warn(`[TTS] Unknown provider "${provider}", falling back to Edge`);
+            return edgeTTSRust;
+        }
+        return tts;
     }
 
     _configureTTS(tts, settings) {
         const provider = settings.tts_provider || 'edge';
+        // Client-side playback speed ONLY for providers whose endpoint has no rate param
+        // (Google-free, TikTok). Others apply speed server-side / in the engine → keep 1.0.
+        const clientRate =
+            provider === 'google-free' ? (settings.google_free_speed || 1.0) :
+            provider === 'tiktok' ? (settings.tiktok_speed || 1.0) : 1.0;
+        audioPlayer.setPlaybackRate(clientRate);
         if (provider === 'elevenlabs') {
             tts.configure({
                 apiKey: settings.elevenlabs_api_key,
@@ -924,6 +1088,26 @@ class App {
                 voice: voice,
                 languageCode: langCode,
                 speakingRate: settings.google_tts_speed || 1.0,
+            });
+        } else if (provider === 'microsoft') {
+            tts.configure({
+                voice: settings.microsoft_v2_voice || 'vi-VN-HoaiMyNeural',
+                speed: settings.microsoft_v2_speed !== undefined ? settings.microsoft_v2_speed : 20,
+            });
+        } else if (provider === 'google-free') {
+            tts.configure({
+                voice: settings.google_free_voice || 'vi-VN',
+                apiKey: settings.google_free_api_key || '',
+            });
+        } else if (provider === 'tiktok') {
+            tts.configure({
+                voice: settings.tiktok_voice || 'BV074_streaming',
+                sessionId: settings.tiktok_session_id || '',
+            });
+        } else if (provider === 'local') {
+            tts.configure({
+                voice: settings.local_tts_voice || 'vi_VN-vais1000-medium',
+                speed: settings.local_tts_speed || 1.0,
             });
         } else {
             tts.configure({
@@ -969,22 +1153,275 @@ class App {
     }
 
     _updateTTSProviderUI(provider) {
-        const ed = document.getElementById('tts-edge-settings');
-        const go = document.getElementById('tts-google-settings');
-        const el = document.getElementById('tts-elevenlabs-settings');
-        if (ed) ed.style.display = provider === 'edge' ? '' : 'none';
-        if (go) go.style.display = provider === 'google' ? '' : 'none';
-        if (el) el.style.display = provider === 'elevenlabs' ? '' : 'none';
+        // Show only the active provider's settings panel.
+        const panels = {
+            edge: 'tts-edge-settings',
+            microsoft: 'tts-microsoft-settings',
+            'google-free': 'tts-google-free-settings',
+            tiktok: 'tts-tiktok-settings',
+            local: 'tts-local-settings',
+            google: 'tts-google-settings',
+            elevenlabs: 'tts-elevenlabs-settings',
+        };
+        for (const [id, elId] of Object.entries(panels)) {
+            const el = document.getElementById(elId);
+            if (el) el.style.display = provider === id ? '' : 'none';
+        }
         // Update hint text
         const hint = document.getElementById('tts-provider-hint');
         if (hint) {
             const hints = {
                 edge: 'Free, natural voices — no API key needed',
+                microsoft: 'Free — full Microsoft voice list (vi + en), sent to Microsoft',
+                'google-free': 'Free — experimental, may stop working anytime. Text sent to Google',
+                tiktok: 'Free — needs a TikTok sessionid. Text sent to TikTok',
+                local: 'Free & 100% offline — download a voice below; nothing is sent anywhere',
                 google: 'Near-human quality — requires Google Cloud API key (1M chars/month free)',
                 elevenlabs: 'Premium quality — requires ElevenLabs API key',
             };
             hint.textContent = hints[provider] || '';
         }
+        // Microsoft v2: populate the full voice list dynamically (fallback stays in HTML).
+        if (provider === 'microsoft') this._populateMicrosoftVoices();
+        // Local: fetch catalog + install state and render the downloadable voice list.
+        if (provider === 'local') this._populateLocalVoices();
+    }
+
+    /**
+     * Fetch Microsoft's vi+en voice list once (cached), then fill the voice dropdown
+     * filtered by the selected Language. The Language dropdown keeps the voice list short
+     * (Microsoft has ~50 English voices). Default language follows the saved voice's locale.
+     */
+    async _populateMicrosoftVoices() {
+        const langSel = document.getElementById('select-microsoft-lang');
+        const saved = settingsManager.get().microsoft_v2_voice || 'vi-VN-HoaiMyNeural';
+        // Initialize the Language dropdown from the saved voice's locale (once).
+        if (langSel && !langSel.dataset.init) {
+            langSel.value = saved.startsWith('en') ? 'en' : 'vi';
+            langSel.dataset.init = 'true';
+        }
+        if (!this._msVoices) {
+            try {
+                const voices = await microsoftTTS.listVoices();
+                this._msVoices = (Array.isArray(voices) && voices.length) ? voices : MS_VOICE_FALLBACK;
+            } catch (err) {
+                console.warn('[Microsoft v2] voice list fetch failed, using static fallback:', err);
+                this._msVoices = MS_VOICE_FALLBACK;
+            }
+        }
+        this._fillMicrosoftVoices(langSel ? langSel.value : 'vi');
+    }
+
+    /** Fill #select-microsoft-voice with cached voices for `lang` ("vi"|"en"), restoring saved. */
+    _fillMicrosoftVoices(lang) {
+        const select = document.getElementById('select-microsoft-voice');
+        if (!select) return;
+        const saved = settingsManager.get().microsoft_v2_voice;
+        const list = (this._msVoices || MS_VOICE_FALLBACK).filter(v => (v.locale || '').startsWith(lang));
+        select.innerHTML = '';
+        for (const v of list) {
+            const opt = document.createElement('option');
+            opt.value = v.short_name;
+            opt.textContent = `${v.friendly_name} (${v.gender})`;
+            select.appendChild(opt);
+        }
+        // Keep the saved voice if it belongs to this language, else pick the first.
+        if (saved && list.some(v => v.short_name === saved)) select.value = saved;
+        else if (select.options.length) select.selectedIndex = 0;
+    }
+
+    // ─── Local offline (Piper) voice manager ──────────────
+
+    /** Fetch the catalog + install state once per open, then render the list. */
+    async _populateLocalVoices() {
+        const langSel = document.getElementById('select-local-lang');
+        const saved = settingsManager.get().local_tts_voice || 'vi_VN-vais1000-medium';
+        if (langSel && !langSel.dataset.init) {
+            langSel.value = saved.startsWith('en') ? 'en' : 'vi';
+            langSel.dataset.init = 'true';
+        }
+        // Show the real resolved models folder (per-OS absolute path) so the user can
+        // find the files themselves. Falls back to the raw setting if the query fails.
+        const dirInput = document.getElementById('input-local-models-dir');
+        if (dirInput) {
+            try {
+                dirInput.value = await invoke('local_tts_models_dir_path');
+            } catch {
+                dirInput.value = settingsManager.get().local_tts_models_dir || 'Default app location';
+            }
+        }
+        // Speed slider from saved setting.
+        const speedSlider = document.getElementById('range-local-speed');
+        const speedLabel = document.getElementById('local-speed-value');
+        const speed = settingsManager.get().local_tts_speed || 1.0;
+        if (speedSlider) speedSlider.value = speed;
+        if (speedLabel) speedLabel.textContent = parseFloat(speed).toFixed(1) + 'x';
+        await this._refreshLocalVoices();
+        this._fillLocalVoices(langSel ? langSel.value : 'vi');
+    }
+
+    /** (Re)load the catalog + install state from the backend into a cache. */
+    async _refreshLocalVoices() {
+        try {
+            const list = await invoke('local_tts_list_models');
+            this._localVoices = Array.isArray(list) ? list : [];
+        } catch (err) {
+            console.warn('[Local TTS] list failed:', err);
+            this._localVoices = [];
+        }
+        this._localInstalled = new Set(
+            (this._localVoices || []).filter(v => v.installed).map(v => v.id)
+        );
+    }
+
+    /** True if `id` is currently installed (fresh backend check). */
+    async _isLocalVoiceInstalled(id) {
+        if (!id) return false;
+        await this._refreshLocalVoices();
+        return this._localInstalled.has(id);
+    }
+
+    /** Render the voice rows for `lang` ("vi"|"en") with download/delete controls. */
+    _fillLocalVoices(lang) {
+        const container = document.getElementById('local-voice-list');
+        if (!container) return;
+        const saved = settingsManager.get().local_tts_voice;
+        const all = this._localVoices || [];
+        // Catalog voices filter by the selected language; imported (local) voices are shown
+        // regardless of language (their language is unknown).
+        const catalogList = all.filter(v => !v.imported && v.lang === lang);
+        const importedList = all.filter(v => v.imported);
+        container.innerHTML = '';
+        if (!catalogList.length && !importedList.length) {
+            container.innerHTML = '<p class="hint">No voices for this language.</p>';
+            return;
+        }
+
+        const addRow = (v) => {
+            const row = document.createElement('div');
+            row.className = 'local-voice-row';
+            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;';
+            const sizeMb = (v.approxSizeBytes / 1e6).toFixed(0);
+            if (v.installed) {
+                const checked = saved === v.id ? 'checked' : '';
+                row.innerHTML =
+                    `<label style="flex:1;display:flex;align-items:center;gap:6px;cursor:pointer;">` +
+                    `<input type="radio" name="local-voice" value="${v.id}" ${checked} />` +
+                    `<span>${this._esc(v.display)}</span></label>` +
+                    `<button type="button" class="icon-btn small btn-local-delete" data-id="${v.id}" title="Delete">🗑️</button>`;
+            } else {
+                row.innerHTML =
+                    `<span style="flex:1;color:var(--text-muted,#888);">${this._esc(v.display)} · ${sizeMb} MB</span>` +
+                    `<span class="local-progress" data-id="${v.id}" style="min-width:64px;text-align:right;"></span>` +
+                    `<button type="button" class="icon-btn small btn-local-download" data-id="${v.id}" title="Download">⬇️</button>`;
+            }
+            container.appendChild(row);
+        };
+
+        catalogList.forEach(addRow);
+        if (importedList.length) {
+            const hdr = document.createElement('p');
+            hdr.className = 'hint';
+            hdr.style.cssText = 'margin:8px 0 2px;font-weight:600;';
+            hdr.textContent = `Imported (local) — ${importedList.length}`;
+            container.appendChild(hdr);
+            importedList.forEach(addRow);
+        }
+
+        container.querySelectorAll('.btn-local-download').forEach(btn =>
+            btn.addEventListener('click', () => this._downloadLocalVoice(btn.dataset.id))
+        );
+        container.querySelectorAll('.btn-local-delete').forEach(btn =>
+            btn.addEventListener('click', () => this._deleteLocalVoice(btn.dataset.id))
+        );
+        container.querySelectorAll('input[name="local-voice"]').forEach(radio =>
+            radio.addEventListener('change', () => {
+                if (radio.checked) settingsManager.save({ local_tts_voice: radio.value });
+            })
+        );
+    }
+
+    /** Download a voice model with live progress, then re-render as installed. */
+    async _downloadLocalVoice(id) {
+        // Prompt for a save location on the first ever download if none chosen.
+        if (!settingsManager.get().local_tts_models_dir && !this._localDirPrompted) {
+            this._localDirPrompted = true;
+            const custom = await this._maybePickModelsDir();
+            if (custom === null) return; // user cancelled
+        }
+        const progressEl = document.querySelector(`.local-progress[data-id="${id}"]`);
+        const btn = document.querySelector(`.btn-local-download[data-id="${id}"]`);
+        if (btn) btn.disabled = true;
+        const onProgress = new Channel();
+        onProgress.onmessage = (msg) => {
+            if (!progressEl) return;
+            if (msg.phase === 'downloading' && msg.total > 0) {
+                progressEl.textContent = `${Math.floor((msg.received / msg.total) * 100)}%`;
+            } else if (msg.phase === 'extracting') {
+                progressEl.textContent = '…';
+            }
+        };
+        try {
+            await invoke('local_tts_download_model', { id, onProgress });
+            this._showToast('Voice downloaded ✓', 'success');
+            await this._refreshLocalVoices();
+            this._fillLocalVoices(document.getElementById('select-local-lang')?.value || 'vi');
+        } catch (err) {
+            this._showToast(`Download failed: ${err}`, 'error');
+            if (btn) btn.disabled = false;
+            if (progressEl) progressEl.textContent = '';
+        }
+    }
+
+    /** Delete an installed voice (real on-device removal), then re-render. */
+    async _deleteLocalVoice(id) {
+        try {
+            await invoke('local_tts_delete_model', { id });
+            this._showToast('Voice deleted', 'success');
+            await this._refreshLocalVoices();
+            this._fillLocalVoices(document.getElementById('select-local-lang')?.value || 'vi');
+        } catch (err) {
+            this._showToast(`Delete failed: ${err}`, 'error');
+        }
+    }
+
+    /**
+     * Open the folder picker; on pick, persist as models dir and refresh.
+     * Returns the chosen path, or null if the user cancelled (so callers can abort),
+     * or '' if the picker itself failed.
+     */
+    async _maybePickModelsDir() {
+        try {
+            const { open } = window.__TAURI__.dialog;
+            const picked = await open({ directory: true, multiple: false, title: 'Choose model folder' });
+            if (picked === null || picked === undefined) return null; // cancelled
+            const dir = Array.isArray(picked) ? picked[0] : picked;
+            await settingsManager.save({ local_tts_models_dir: dir });
+            const dirInput = document.getElementById('input-local-models-dir');
+            if (dirInput) dirInput.value = dir;
+            await this._refreshLocalVoices();
+            this._fillLocalVoices(document.getElementById('select-local-lang')?.value || 'vi');
+            return dir;
+        } catch (err) {
+            console.warn('[Local TTS] folder pick failed:', err);
+            return '';
+        }
+    }
+
+    /** Reset the model folder back to the default app location and refresh the list. */
+    async _resetModelsDir() {
+        await settingsManager.save({ local_tts_models_dir: '' });
+        const dirInput = document.getElementById('input-local-models-dir');
+        if (dirInput) {
+            try {
+                dirInput.value = await invoke('local_tts_models_dir_path');
+            } catch {
+                dirInput.value = 'Default app location';
+            }
+        }
+        await this._refreshLocalVoices();
+        this._fillLocalVoices(document.getElementById('select-local-lang')?.value || 'vi');
+        this._showToast('Model folder reset to default', 'success');
     }
 
     _updateTranslationTypeUI(type) {
@@ -1036,6 +1473,231 @@ class App {
         }
     }
 
+    // ─── Read Mode (in-overlay TTS reader) ─────────────────
+
+    // Conservative per-provider chunk caps (chars). Local is offline (no endpoint cap);
+    // cloud providers use safe values; google-free/tiktok stay well under their real caps
+    // (TikTok's Rust command hard-caps at 280). Raise only after measuring a live call.
+    static get READ_MAX_LEN() {
+        return { local: 400, edge: 200, microsoft: 200, google: 200, 'google-free': 120, tiktok: 120 };
+    }
+
+    _initReadMode() {
+        const toggle = document.getElementById('mode-toggle');
+        toggle?.addEventListener('click', () => this._toggleMode());
+        document.getElementById('btn-read-play')?.addEventListener('click', () => {
+            // Play doubles as Resume when paused — do NOT rebuild the reader.
+            if (this._reader && this._reader.state === 'paused') this._reader.play();
+            else this._startRead();
+        });
+        document.getElementById('btn-read-pause')?.addEventListener('click', () => {
+            this._reader?.pause();
+        });
+        document.getElementById('btn-read-stop')?.addEventListener('click', () => this._stopRead());
+    }
+
+    _toggleMode() {
+        if (this._readMode === 'live') this._enterReadMode();
+        else this._exitReadMode();
+    }
+
+    async _enterReadMode() {
+        // Stop any running Live session AND drain the shared provider's queue so an in-flight
+        // Live synth cannot fire onAudioChunk into the Live context after the switch.
+        if (this.isRunning) await this.pause();
+        try { this._getActiveTTS().disconnect(); } catch { /* provider may be idle */ }
+
+        this._readMode = 'read';
+        document.getElementById('mode-toggle')?.classList.add('read-active');
+        // Hide live controls, show read panel.
+        this._setSel('.source-controls', 'none');
+        this._setEl('btn-start', 'none');
+        this._setEl('btn-pause', 'none');
+        this._setEl('engine-pill', 'none');
+        this._setEl('btn-tts', 'none');
+        this._setEl('transcript-content', 'none');
+        this._setEl('read-panel', '');
+        this._resetReadUI();
+        this._showReadCapabilityHint();
+    }
+
+    _exitReadMode() {
+        this._stopRead();
+        this._readMode = 'live';
+        document.getElementById('mode-toggle')?.classList.remove('read-active');
+        this._setSel('.source-controls', '');
+        this._setEl('btn-start', '');
+        this._setEl('btn-pause', '');
+        this._setEl('engine-pill', '');
+        this._setEl('btn-tts', '');
+        this._setEl('read-panel', 'none');
+        this._setEl('transcript-content', '');
+    }
+
+    _setEl(id, display) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = display;
+    }
+
+    _setSel(selector, display) {
+        const el = document.querySelector(selector);
+        if (el) el.style.display = display;
+    }
+
+    /** Capability = usability, not method existence. Returns {ok, reason, provider}. */
+    async _readCapability() {
+        const settings = settingsManager.get();
+        const provider = settings.tts_provider || 'edge';
+        const tts = this._getActiveTTS();
+        if (typeof tts.synthesize !== 'function') {
+            return { ok: false, reason: 'Nhà cung cấp TTS này không hỗ trợ chế độ Đọc. Hãy chọn Edge, Local, Microsoft, Google hoặc TikTok.' };
+        }
+        if (provider === 'google' && !settings.google_tts_api_key) {
+            return { ok: false, reason: 'Thiếu Google Cloud API key (Cài đặt → TTS → Google).' };
+        }
+        if (provider === 'tiktok' && !settings.tiktok_session_id) {
+            return { ok: false, reason: 'Thiếu TikTok sessionid (Cài đặt → TTS → TikTok).' };
+        }
+        if (provider === 'local') {
+            const installed = await this._isLocalVoiceInstalled(settings.local_tts_voice);
+            if (!installed) return { ok: false, reason: 'Chưa tải model giọng Local (Cài đặt → TTS → Local).' };
+        }
+        return { ok: true, provider };
+    }
+
+    async _showReadCapabilityHint() {
+        const hintEl = document.getElementById('read-hint');
+        const cap = await this._readCapability();
+        const playBtn = document.getElementById('btn-read-play');
+        if (this._readMode !== 'read') return;
+        if (hintEl) hintEl.textContent = cap.ok ? '' : cap.reason;
+        if (playBtn) playBtn.disabled = !cap.ok;
+    }
+
+    async _startRead() {
+        const cap = await this._readCapability();
+        if (!cap.ok) { this._showReadCapabilityHint(); return; }
+
+        const text = (document.getElementById('read-input')?.value || '').trim();
+        if (!text) { this._showToast('Nhập văn bản để đọc', 'error'); return; }
+
+        const settings = settingsManager.get();
+        const provider = cap.provider;
+        const tts = this._getActiveTTS();
+        this._configureTTS(tts, settings); // set voice/key/session + client rate
+
+        // Client-side rate: only providers without a server rate param.
+        const clientRate = provider === 'google-free' ? (settings.google_free_speed || 1.0)
+            : provider === 'tiktok' ? (settings.tiktok_speed || 1.0) : 1.0;
+        readAudioPlayer.setReadRate(clientRate);
+
+        const lookahead = provider === 'local' ? 2 : 1;
+        const interChunkDelayMs = (provider === 'google-free' || provider === 'tiktok') ? 250 : 0;
+        const maxLen = App.READ_MAX_LEN[provider] || 120;
+
+        this._reader?.stop(); // never leak a previous (e.g. paused) reader — it could race audio
+        readAudioPlayer.stop();
+        this._reader = new Reader({
+            synthesize: (t) => tts.synthesize(t),
+            player: readAudioPlayer,
+            lookahead,
+            interChunkDelayMs,
+        });
+        this._reader.onProgress = (n, total) => this._updateReadProgress(n, total);
+        this._reader.onSentence = (i) => this._highlightReadChunk(i);
+        this._reader.onChunkError = (i) => this._markReadChunkError(i);
+        this._reader.onError = (msg) => this._showToast(msg, 'error');
+        this._reader.onState = (state) => this._onReadState(state);
+
+        this._reader.load(text, maxLen);
+        if (this._reader.total === 0) { this._showToast('Không có nội dung để đọc', 'error'); return; }
+        this._renderReadChunks(this._reader.chunks);
+        this._reader.play();
+    }
+
+    _stopRead() {
+        this._reader?.stop();
+        this._reader = null;
+        this._resetReadUI();
+    }
+
+    _onReadState(state) {
+        if (state === 'playing') this._updateReadControls('playing');
+        else if (state === 'paused') this._updateReadControls('paused');
+        else if (state === 'done' || state === 'stopped') {
+            this._updateReadControls('idle');
+        }
+    }
+
+    _updateReadControls(mode) {
+        // mode: 'idle' | 'playing' | 'paused'
+        if (mode === 'idle') {
+            this._setEl('btn-read-play', '');
+            this._setEl('btn-read-pause', 'none');
+            this._setEl('btn-read-stop', 'none');
+            this._setEl('read-input', '');
+            this._setEl('read-output', 'none');
+        } else if (mode === 'playing') {
+            this._setEl('btn-read-play', 'none');
+            this._setEl('btn-read-pause', '');
+            this._setEl('btn-read-stop', '');
+            this._setEl('read-input', 'none');
+            this._setEl('read-output', '');
+        } else if (mode === 'paused') {
+            this._setEl('btn-read-play', ''); // play acts as resume
+            this._setEl('btn-read-pause', 'none');
+            this._setEl('btn-read-stop', '');
+        }
+    }
+
+    _resetReadUI() {
+        this._updateReadControls('idle');
+        const out = document.getElementById('read-output');
+        if (out) out.innerHTML = '';
+        const prog = document.getElementById('read-progress');
+        if (prog) prog.textContent = '';
+        const fill = document.getElementById('read-progress-fill');
+        if (fill) fill.style.width = '0%';
+    }
+
+    /** Build chunk spans with textContent (never innerHTML) — pasted text is untrusted. */
+    _renderReadChunks(chunks) {
+        const out = document.getElementById('read-output');
+        if (!out) return;
+        out.innerHTML = '';
+        chunks.forEach((c, i) => {
+            const span = document.createElement('span');
+            span.className = 'read-chunk';
+            span.dataset.index = String(i);
+            span.textContent = c + ' ';
+            out.appendChild(span);
+        });
+    }
+
+    _highlightReadChunk(index) {
+        const out = document.getElementById('read-output');
+        if (!out) return;
+        out.querySelectorAll('.read-chunk.active').forEach((el) => el.classList.remove('active'));
+        const span = out.querySelector(`.read-chunk[data-index="${index}"]`);
+        if (span) {
+            span.classList.add('active');
+            span.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+    }
+
+    _markReadChunkError(index) {
+        const span = document.getElementById('read-output')
+            ?.querySelector(`.read-chunk[data-index="${index}"]`);
+        if (span) span.classList.add('error');
+    }
+
+    _updateReadProgress(n, total) {
+        const prog = document.getElementById('read-progress');
+        if (prog) prog.textContent = `đoạn ${n}/${total}`;
+        const fill = document.getElementById('read-progress-fill');
+        if (fill) fill.style.width = total ? `${Math.round((n / total) * 100)}%` : '0%';
+    }
+
     // ─── Source Control ────────────────────────────────────
 
     _setSource(source) {
@@ -1046,7 +1708,7 @@ class App {
         settingsManager.save({ audio_source: source });
 
         if (wasRunning) {
-            this.stop().then(() => {
+            this.pause().then(() => {
                 this.currentSource = source;
                 this._updateSourceButtons();
                 this._showToast(`Switched to ${label}`, 'success');
@@ -1546,7 +2208,7 @@ class App {
             }, this.openAiOutputQueue);
         } catch (err) {
             this._showToast(`OpenAI connect failed: ${err}`, 'error');
-            await this.stop();
+            await this.pause();
             return;
         }
 
@@ -1570,7 +2232,7 @@ class App {
         } catch (err) {
             console.error('Failed to start audio capture:', err);
             this._showToast(`Audio error: ${err}`, 'error');
-            await this.stop();
+            await this.pause();
         }
     }
 
@@ -1627,7 +2289,7 @@ class App {
             });
         } catch (err) {
             this._showToast(`Qwen connect failed: ${err}`, 'error');
-            await this.stop();
+            await this.pause();
             return;
         }
 
@@ -1651,7 +2313,7 @@ class App {
         } catch (err) {
             console.error('Failed to start audio capture:', err);
             this._showToast(`Audio error: ${err}`, 'error');
-            await this.stop();
+            await this.pause();
         }
     }
 
@@ -1696,7 +2358,7 @@ class App {
         } catch (err) {
             console.error('Failed to start audio capture:', err);
             this._showToast(`Audio error: ${err}`, 'error');
-            await this.stop();
+            await this.pause();
         }
     }
 
@@ -1775,7 +2437,7 @@ class App {
         } catch (err) {
             console.error('Failed to start pipeline:', err);
             this._showToast(`Pipeline error: ${err}`, 'error');
-            await this.stop();
+            await this.pause();
             return;
         }
 
@@ -1964,7 +2626,10 @@ class App {
         });
     }
 
-    async stop() {
+    // Pause: stop capture and persist the current chunk, but keep the session
+    // file open. The next Start appends a new chunk to the same file. Finalizing
+    // into a new file is stopSession()'s job.
+    async pause() {
         this.isRunning = false;
         this._updateStartButton();
         this._setEnginePillLocked(false);
@@ -2024,15 +2689,85 @@ class App {
         // Transcript stays on screen — clearSession is no longer called here
         // so user can review & continue in next chunk.
         sessionStore.endChunk();
-        const hadContent = !sessionStore.isEmpty();
-        await sessionStore.persist();
-        if (hadContent) {
+        const result = await sessionStore.persist();
+        if (result === 'saved') {
             const n = sessionStore.totalSegmentCount();
             this._showToast(`Saved ${n} segment${n === 1 ? '' : 's'}`, 'success');
+        } else if (result === 'failed') {
+            this._showToast('Save failed — session kept in memory', 'error');
+        }
+        // 'skipped' → data already on disk or nothing to save; no toast.
+
+        // sessionStartTime stays — pausing keeps the same session file, which
+        // lives across many Start/Pause cycles. stopSession() resets it.
+    }
+
+    // Stop: pause (if running), finalize the current session file, then start a
+    // fresh session so the next Start writes a new file pair. Keeps the
+    // transcript on screen. Never wipes in-memory data on a failed save.
+    async stopSession() {
+        if (this.isRunning) await this.pause();
+
+        if (sessionStore.isEmpty()) {
+            this._showToast('Nothing to save', 'success');
+        } else {
+            const result = await sessionStore.endSession();
+            if (result === 'failed') {
+                // Keep the in-memory session intact so the user can retry Stop.
+                this._showToast('Save failed — session kept in memory', 'error');
+                return;
+            }
+            this._showToast('Session saved — next start creates a new one', 'success');
         }
 
-        // sessionStartTime stays — single session per app launch lives across
-        // many Start/Stop cycles. Reset only on "New Session" or app close.
+        // Reset session identity: fresh ID + current settings so the next Start
+        // writes a new file. Resetting sessionStartTime forces start() to
+        // re-stamp the metadata block with the current language pair.
+        this.sessionStartTime = null;
+        const settings = settingsManager.get();
+        sessionStore.init({
+            engine: settings.translation_mode || 'soniox',
+            sourceLang: settings.source_language || 'auto',
+            targetLang: settings.target_language || 'vi',
+        });
+    }
+
+    _sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Persist the session on the way out. endSession() first (cheap local write
+    // that finalizes the file), then best-effort engine teardown via pause().
+    // Both are idempotent, so running this more than once is harmless.
+    async _flushOnExit() {
+        try { await sessionStore.endSession(); } catch (e) { console.error('[App] exit flush (endSession) failed:', e); }
+        try { await this.pause(); } catch (e) { console.error('[App] exit flush (pause) failed:', e); }
+    }
+
+    // Two close routes, one flush:
+    //  • window ✕ / appWindow.close() → onCloseRequested (frontend)
+    //  • Cmd+Q / Dock quit → Rust RunEvent::ExitRequested emits 'app-exit-requested'
+    // Both flush (raced against a 3s deadline so a hung engine can't wedge the
+    // app) then exit_app, which force-exits the process cleanly in Rust.
+    async _bindCloseHooks() {
+        await this.appWindow.onCloseRequested(async (event) => {
+            if (this._closing) return;
+            this._closing = true;
+            event.preventDefault();
+            await Promise.race([this._flushOnExit(), this._sleep(3000)]);
+            try {
+                await invoke('exit_app');
+            } catch {
+                try { await this.appWindow.destroy(); } catch {}
+            }
+        });
+
+        await this.appWindow.listen('app-exit-requested', async () => {
+            if (this._closing) return;
+            this._closing = true;
+            await Promise.race([this._flushOnExit(), this._sleep(3000)]);
+            try { await invoke('exit_app'); } catch {}
+        });
     }
 
     _updateStartButton() {
@@ -2043,6 +2778,12 @@ class App {
         btn.classList.toggle('recording', this.isRunning);
         iconPlay.style.display = this.isRunning ? 'none' : 'block';
         iconStop.style.display = this.isRunning ? 'block' : 'none';
+
+        // Pause is only actionable while running. (Don't also gate on isStarting:
+        // start() calls this while isStarting is still true, and the click handler
+        // already guards the starting window.)
+        const btnPause = document.getElementById('btn-pause');
+        if (btnPause) btnPause.disabled = !this.isRunning;
     }
 
     // ─── Transcript Persistence ───────────────────────────────
@@ -2247,6 +2988,12 @@ class App {
                 btn.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     const id = btn.dataset.id;
+                    // Block deleting the active session — the next autosave would
+                    // just resurrect the file the user deleted.
+                    if (id === sessionStore.id) {
+                        this._showToast('Cannot delete the active session — Stop it first', 'error');
+                        return;
+                    }
                     if (!confirm('Delete this session permanently?')) return;
                     try {
                         await invoke('delete_session', { id });

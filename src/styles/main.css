@@ -461,6 +461,12 @@ body {
   transform: scale(0.92);
 }
 
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
 .action-btn.recording {
   background: var(--error);
   animation: recordPulse 2s infinite;
@@ -2220,3 +2226,91 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .engine-pill-btn:not(.active) { padding: 3px 6px; }
 .engine-pill[data-locked="true"] { opacity: 0.55; }
 .engine-pill[data-locked="true"] .engine-pill-btn { cursor: not-allowed; }
+/* ─── Read Mode (in-overlay TTS reader) ─────────────────────────────────── */
+.mode-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  cursor: pointer;
+}
+.mode-toggle-btn .mode-seg {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+}
+.mode-toggle-btn .mode-live { background: rgba(255, 255, 255, 0.18); color: #fff; }
+.mode-toggle-btn.read-active .mode-live { background: transparent; color: rgba(255, 255, 255, 0.6); }
+.mode-toggle-btn.read-active .mode-read { background: rgba(255, 255, 255, 0.18); color: #fff; }
+
+#read-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+}
+#read-input {
+  flex: 1;
+  min-height: 80px;
+  resize: none;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 10px;
+  font-family: inherit;
+}
+#read-input:focus { outline: none; border-color: rgba(255, 255, 255, 0.4); }
+
+.read-output {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 16px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.85);
+  padding: 4px 2px;
+}
+.read-chunk { transition: background 0.15s ease; border-radius: 3px; }
+.read-chunk.active { background: rgba(255, 215, 0, 0.28); color: #fff; }
+.read-chunk.error { text-decoration: underline wavy #ff5252; color: #ff9a9a; }
+
+.read-progress-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+#read-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: #ffd700;
+  transition: width 0.2s ease;
+}
+
+.read-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.read-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+.read-btn-primary { background: rgba(255, 215, 0, 0.85); color: #1a1a1a; border-color: transparent; }
+.read-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.read-progress { font-size: 12px; color: rgba(255, 255, 255, 0.6); margin-left: auto; }
+.read-hint { font-size: 12px; color: #ff9a9a; min-height: 14px; }

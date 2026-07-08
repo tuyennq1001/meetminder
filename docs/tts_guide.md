@@ -18,6 +18,32 @@ My Translator can **read translations aloud** as they appear — like having a p
 
 ---
 
+## Local (Offline) — Free, 100% on-device
+
+### What is it?
+
+Local TTS runs **Piper** neural voices entirely on your machine via sherpa-onnx — **no network, no API key, and nothing is ever sent anywhere**. Great for privacy or offline use (e.g. on a plane). Synthesis is fast (~15× real-time on CPU) and works on macOS and Windows.
+
+### Setup
+
+1. Settings → TTS → Provider → **🔊 Local (Offline) — Free**.
+2. Pick a **Language** (Vietnamese / English) to filter the list.
+3. Click **⬇️** next to a voice to download it. The first time, you'll be asked where to store models — the default app location or a custom folder.
+4. Select the downloaded voice (radio button), then toggle TTS on (`⌘ T`).
+
+### Managing voices
+
+- **Download**: each voice is ~65 MB; a progress indicator shows while downloading.
+- **Delete** (🗑️): removes the model from disk for real, freeing space.
+- **Model folder**: change the storage location anytime with the 📁 button. Voices downloaded to a previous folder simply stop being listed (they aren't moved).
+
+### Notes
+
+- Once a voice is downloaded, it works with **no internet connection at all**.
+- Voices are free, official on-device models (Vietnamese: VAIS1000, 25 hours; English: Ryan, Lessac). Quality is good and clear — not quite cloud-premium, but fully private and free.
+
+---
+
 ## Edge TTS (Default — Free)
 
 ### What is it?
