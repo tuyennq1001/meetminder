@@ -104,26 +104,6 @@ pub const CATALOG: &[VoiceEntry] = &[
         sample_rate: 22_050,
     },
     VoiceEntry {
-        id: "banmai",
-        display: "Tiếng Việt — Ban Mai (custom)",
-        lang: "vi",
-        package: "vits-piper-banmai",
-        base_url: CUSTOM_VI_BASE,
-        sha256: "ab100268af6059dc3003d5bb54246f73957082e6fbc5650371e6b77f27496ec5",
-        approx_size_bytes: 67_229_740,
-        sample_rate: 22_050,
-    },
-    VoiceEntry {
-        id: "minhkhang",
-        display: "Tiếng Việt — Minh Khang (custom)",
-        lang: "vi",
-        package: "vits-piper-minhkhang",
-        base_url: CUSTOM_VI_BASE,
-        sha256: "fc82d350cff501fc05e942302f746bfefdb861e4c7fd8044c4c598bbc5e86de4",
-        approx_size_bytes: 67_253_792,
-        sample_rate: 22_050,
-    },
-    VoiceEntry {
         id: "minhquang",
         display: "Tiếng Việt — Minh Quang (custom)",
         lang: "vi",
@@ -133,16 +113,9 @@ pub const CATALOG: &[VoiceEntry] = &[
         approx_size_bytes: 67_246_724,
         sample_rate: 22_050,
     },
-    VoiceEntry {
-        id: "minhthu",
-        display: "Tiếng Việt — Minh Thư (custom)",
-        lang: "vi",
-        package: "vits-piper-minhthu",
-        base_url: CUSTOM_VI_BASE,
-        sha256: "7d73801e17eaa3980e7cb9232b2c6c29c68931aa5509fd2ceb2f899b75b0dec3",
-        approx_size_bytes: 67_224_534,
-        sample_rate: 22_050,
-    },
+    // NOTE: banmai / minhkhang / minhthu are omitted — their .onnx crash
+    // sherpa-onnx (Ort::Exception) at synth. Re-add once re-exported by the
+    // author so they load under onnxruntime (sherpa-onnx 1.13.3).
 ];
 
 /// Look up a downloadable catalog entry by id (used only by download).
