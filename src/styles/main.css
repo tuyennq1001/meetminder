@@ -960,33 +960,83 @@ body {
 }
 
 /* ─── Settings Tabs ───────────────────────────────────── */
-.settings-tabs {
+/* Settings wizard — home cards (level 1) and detail back rows (level 2) */
+.settings-card {
   display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: 16px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 14px;
+  margin-bottom: 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-.settings-tab {
+.settings-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-light);
+}
+
+.settings-card.disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.settings-card.disabled:hover {
+  background: var(--bg-input);
+  border-color: var(--border-subtle);
+}
+
+.settings-card-icon {
+  font-size: 20px;
+}
+
+.settings-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   flex: 1;
-  padding: 8px 0;
+  min-width: 0;
+}
+
+.settings-card-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-card-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-card-chevron {
+  color: var(--text-muted);
+  font-size: 18px;
+}
+
+.settings-back-row {
+  display: block;
+  width: 100%;
+  padding: 4px 0 10px;
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-muted);
+  color: var(--accent);
   font-size: 12px;
   font-weight: 500;
+  text-align: left;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
 }
 
-.settings-tab:hover {
-  color: var(--text-primary);
-}
-
-.settings-tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+.settings-back-row:hover {
+  color: var(--accent-hover);
 }
 
 .settings-tab-content {

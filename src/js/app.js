@@ -134,10 +134,15 @@ class App {
         }
 
         if (!this.isAppleSilicon) {
-            // Hide Local MLX option
+            // Keep the Local MLX option VISIBLE but disabled with the reason —
+            // hiding it made users think the feature vanished. (Local TTS is
+            // CPU-based and unaffected; only the MLX engine needs Apple Silicon.)
             const select = document.getElementById('select-translation-mode');
             const localOption = select?.querySelector('option[value="local"]');
-            if (localOption) localOption.remove();
+            if (localOption) {
+                localOption.disabled = true;
+                localOption.textContent += ' — cần Mac Apple Silicon';
+            }
 
             // Force soniox mode if user had local selected
             const settings = settingsManager.get();
@@ -462,13 +467,11 @@ class App {
             input.type = input.type === 'password' ? 'text' : 'password';
         });
 
-        // Settings tab switching
-        document.querySelectorAll('.settings-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.remove('active'));
-                tab.classList.add('active');
-                document.getElementById(tab.dataset.tab)?.classList.add('active');
+        // Settings wizard navigation: home cards open detail screens, back rows return home
+        document.querySelectorAll('.settings-card, .settings-back-row').forEach(el => {
+            el.addEventListener('click', () => {
+                if (el.classList.contains('disabled')) return;
+                this._showSettingsScreen(el.dataset.screen);
             });
         });
 
@@ -712,6 +715,7 @@ class App {
 
         if (view === 'settings') {
             this._populateSettingsForm();
+            this._showSettingsScreen('settings-home'); // wizard always opens at home
         }
         if (view === 'sessions') {
             this._showSessions();
@@ -721,6 +725,49 @@ class App {
         // (else the Đọc button stays disabled until a Live↔Read toggle).
         if (view === 'overlay' && this._readMode === 'read') {
             this._showReadCapabilityHint();
+        }
+    }
+
+    /** Wizard: show one settings screen (home or a detail) inside the settings view. */
+    _showSettingsScreen(id) {
+        if (!id || !document.getElementById(id)) id = 'settings-home';
+        document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        if (id === 'settings-home') this._updateSettingsCards();
+        document.querySelector('.settings-body')?.scrollTo(0, 0);
+    }
+
+    /** Wizard: refresh the home cards' status subtitles from current settings. */
+    _updateSettingsCards() {
+        const s = settingsManager.get();
+        const mode = s.translation_mode || 'soniox';
+        const engineNames = { soniox: 'Soniox', local: 'Local MLX', openai: 'OpenAI Realtime', qwen: 'Qwen LiveTranslate' };
+        const keyField = { soniox: 'soniox_api_key', openai: 'openai_api_key', qwen: 'qwen_api_key' };
+        const hasKey = mode === 'local' || !!(s[keyField[mode]] || '').trim();
+        const subT = document.getElementById('card-translation-sub');
+        if (subT) {
+            subT.textContent =
+                `${engineNames[mode] || mode} · ${s.source_language || 'auto'} → ${s.target_language || 'vi'}` +
+                (hasKey ? '' : ' · ⚠️ chưa có API key');
+        }
+
+        // TTS card: cloud-realtime engines run text-only — reflect on the card, never hide.
+        const isCloudRealtime = mode === 'openai' || mode === 'qwen';
+        const provNames = {
+            edge: 'Edge TTS', microsoft: 'Microsoft v2', 'google-free': 'Google TTS Free',
+            tiktok: 'TikTok TTS', local: 'Local (Offline)', google: 'Google Chirp HD', elevenlabs: 'ElevenLabs',
+        };
+        const cardTts = document.getElementById('card-tts');
+        const subTts = document.getElementById('card-tts-sub');
+        if (cardTts) cardTts.classList.toggle('disabled', isCloudRealtime);
+        if (subTts) {
+            if (isCloudRealtime) {
+                subTts.textContent = `Tắt — engine ${engineNames[mode]} chạy dạng chữ, không đọc tiếng`;
+            } else {
+                const prov = s.tts_provider || 'edge';
+                const voice = prov === 'local' && s.local_tts_voice ? ` · ${s.local_tts_voice}` : '';
+                subTts.textContent = `${provNames[prov] || prov}${voice}`;
+            }
         }
     }
 
@@ -1876,18 +1923,12 @@ class App {
         const btnTts = document.getElementById('btn-tts');
         if (btnTts) btnTts.style.display = isCloudRealtime ? 'none' : '';
 
-        // Mobile-parity: hide the entire TTS tab when engine is cloud-realtime.
-        // If the user is currently viewing TTS, snap them back to Translation.
-        const ttsTabBtn = document.querySelector('.settings-tab[data-tab="tab-tts"]');
-        const ttsTabContent = document.getElementById('tab-tts');
-        if (ttsTabBtn) ttsTabBtn.style.display = isCloudRealtime ? 'none' : '';
-        if (isCloudRealtime && ttsTabBtn?.classList.contains('active')) {
-            ttsTabBtn.classList.remove('active');
-            if (ttsTabContent) ttsTabContent.classList.remove('active');
-            const translationTabBtn = document.querySelector('.settings-tab[data-tab="tab-translation"]');
-            const translationTabContent = document.getElementById('tab-translation');
-            translationTabBtn?.classList.add('active');
-            translationTabContent?.classList.add('active');
+        // Wizard: TTS availability shows on the home card (disabled + reason) —
+        // never hidden. If the user is inside the TTS detail when switching to a
+        // cloud-realtime engine, snap back to home so the state change is visible.
+        this._updateSettingsCards();
+        if (isCloudRealtime && document.getElementById('tab-tts')?.classList.contains('active')) {
+            this._showSettingsScreen('settings-home');
         }
         const btnOpenAiAudio = document.getElementById('btn-openai-audio');
         if (btnOpenAiAudio) btnOpenAiAudio.style.display = 'none';
@@ -3157,13 +3198,7 @@ class App {
         hint.textContent = `Update v${version} available — go to Settings → About`;
         hint.addEventListener('click', () => {
             this._showView('settings');
-            // Switch to About tab
-            document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.settings-tab-content').forEach(t => t.classList.remove('active'));
-            const aboutTab = document.querySelector('[data-tab="tab-about"]');
-            const aboutContent = document.getElementById('tab-about');
-            if (aboutTab) aboutTab.classList.add('active');
-            if (aboutContent) aboutContent.classList.add('active');
+            this._showSettingsScreen('tab-about');
             hint.remove();
         });
         document.body.appendChild(hint);

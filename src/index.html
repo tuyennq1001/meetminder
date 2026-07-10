@@ -274,16 +274,45 @@
     </div>
 
     <div class="settings-body">
-      <!-- Tab Bar -->
-      <div class="settings-tabs">
-        <button class="settings-tab active" data-tab="tab-translation">Translation</button>
-        <button class="settings-tab" data-tab="tab-display">Display</button>
-        <button class="settings-tab" data-tab="tab-tts">TTS</button>
-        <button class="settings-tab" data-tab="tab-about">About</button>
+      <!-- Settings Home — 2-level wizard: cards navigate to detail screens -->
+      <div class="settings-tab-content active" id="settings-home">
+        <button class="settings-card" data-screen="tab-translation" id="card-translation">
+          <span class="settings-card-icon">🌐</span>
+          <span class="settings-card-text">
+            <span class="settings-card-title">Engine dịch</span>
+            <span class="settings-card-sub" id="card-translation-sub">—</span>
+          </span>
+          <span class="settings-card-chevron">›</span>
+        </button>
+        <button class="settings-card" data-screen="tab-tts" id="card-tts">
+          <span class="settings-card-icon">🔊</span>
+          <span class="settings-card-text">
+            <span class="settings-card-title">Giọng đọc (TTS)</span>
+            <span class="settings-card-sub" id="card-tts-sub">—</span>
+          </span>
+          <span class="settings-card-chevron">›</span>
+        </button>
+        <button class="settings-card" data-screen="tab-display" id="card-display">
+          <span class="settings-card-icon">🎨</span>
+          <span class="settings-card-text">
+            <span class="settings-card-title">Hiển thị</span>
+            <span class="settings-card-sub" id="card-display-sub">Font, kích thước chữ</span>
+          </span>
+          <span class="settings-card-chevron">›</span>
+        </button>
+        <button class="settings-card" data-screen="tab-about" id="card-about">
+          <span class="settings-card-icon">ℹ️</span>
+          <span class="settings-card-text">
+            <span class="settings-card-title">Giới thiệu</span>
+            <span class="settings-card-sub" id="card-about-sub">Phiên bản, cập nhật</span>
+          </span>
+          <span class="settings-card-chevron">›</span>
+        </button>
       </div>
 
-      <!-- Tab: Translation -->
-      <div class="settings-tab-content active" id="tab-translation">
+      <!-- Detail: Translation -->
+      <div class="settings-tab-content" id="tab-translation">
+        <button class="settings-back-row" data-screen="settings-home">‹ Cài đặt</button>
         <div class="settings-section">
           <span class="field-label">Engine</span>
           <select id="select-translation-mode">
@@ -604,6 +633,7 @@
 
       <!-- Tab: Display -->
       <div class="settings-tab-content" id="tab-display">
+        <button class="settings-back-row" data-screen="settings-home">‹ Cài đặt</button>
         <div class="settings-section">
           <div class="slider-field">
             <span class="field-label">Opacity</span>
@@ -629,6 +659,7 @@
 
       <!-- Tab: TTS -->
       <div class="settings-tab-content" id="tab-tts">
+        <button class="settings-back-row" data-screen="settings-home">‹ Cài đặt</button>
         <div class="settings-section">
           <span class="field-label">Provider</span>
           <select id="select-tts-provider">
@@ -855,6 +886,7 @@
 
       <!-- Tab: About -->
       <div class="settings-tab-content" id="tab-about">
+        <button class="settings-back-row" data-screen="settings-home">‹ Cài đặt</button>
         <div class="settings-section about-info">
           <div class="about-app-header">
             <span class="about-app-name">My Translator</span>
