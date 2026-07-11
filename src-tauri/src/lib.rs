@@ -19,11 +19,37 @@ static EXIT_ALLOWED: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
 fn get_platform_info() -> String {
+    // `std::env::consts::ARCH` is the arch of THIS binary, not the CPU. On an
+    // Apple Silicon Mac running the x64 build under Rosetta it reports
+    // "x86_64", which wrongly blocked the Local MLX engine (MLX runs as a
+    // separate native-ARM Python subprocess, so it works fine there).
+    // Ask the hardware directly so detection is Rosetta-proof.
+    let is_arm_hardware = is_apple_silicon_hardware();
     format!(
-        r#"{{"os":"{}","arch":"{}","version":"0.3.0"}}"#,
+        r#"{{"os":"{}","arch":"{}","is_arm_hardware":{},"version":"0.3.0"}}"#,
         std::env::consts::OS,
-        std::env::consts::ARCH
+        std::env::consts::ARCH,
+        is_arm_hardware
     )
+}
+
+/// True only on Apple Silicon hardware (macOS), even when the current process
+/// is x86_64 under Rosetta. Uses `sysctl hw.optional.arm64`, which reads the
+/// real CPU, not the process translation state. Non-macOS → false.
+#[cfg(target_os = "macos")]
+fn is_apple_silicon_hardware() -> bool {
+    std::process::Command::new("sysctl")
+        .args(["-n", "hw.optional.arm64"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim() == "1")
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn is_apple_silicon_hardware() -> bool {
+    false
 }
 
 // Called by the frontend after it has flushed the session on exit. Force-exits

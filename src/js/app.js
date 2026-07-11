@@ -130,25 +130,38 @@ class App {
 
     async _checkPlatformSupport() {
         try {
-            // Check if we're on macOS Apple Silicon
+            // Apple Silicon detection must be Rosetta-proof: the x64 build on an
+            // ARM Mac reports arch "x86_64" but is_arm_hardware asks the real CPU.
+            // MLX runs as a native-ARM Python subprocess, so it works even when
+            // the app binary itself is x64-under-Rosetta.
             const arch = await invoke('get_platform_info');
             const info = JSON.parse(arch);
-            this.isAppleSilicon = (info.os === 'macos' && info.arch === 'aarch64');
+            this._platformOs = info.os; // 'macos' | 'windows' | 'linux'
+            this.isAppleSilicon = info.is_arm_hardware === true
+                || (info.os === 'macos' && info.arch === 'aarch64');
         } catch {
             // Fallback: check via navigator
+            this._platformOs = navigator.userAgent.includes('Mac OS X') ? 'macos'
+                : navigator.userAgent.includes('Windows') ? 'windows' : 'linux';
             this.isAppleSilicon = navigator.platform === 'MacIntel' &&
                 navigator.userAgent.includes('Mac OS X');
         }
 
         if (!this.isAppleSilicon) {
-            // Keep the Local MLX option VISIBLE but disabled with the reason —
-            // hiding it made users think the feature vanished. (Local TTS is
-            // CPU-based and unaffected; only the MLX engine needs Apple Silicon.)
+            // Keep Local MLX SELECTABLE — don't hard-block. We highlight a warning
+            // when the user picks it (see _updateModeUI) and stop them at Start
+            // (see start()) so they can't crash into an unsupported runtime.
+            // Local TTS is CPU-based and unaffected; only the MLX engine needs
+            // macOS Apple Silicon.
             const select = document.getElementById('select-translation-mode');
             const localOption = select?.querySelector('option[value="local"]');
             if (localOption) {
-                localOption.disabled = true;
-                localOption.textContent += ' — cần Mac Apple Silicon';
+                // Platform-accurate label: Mac Intel needs Apple Silicon;
+                // Windows/Linux aren't supported at all.
+                const reason = this._platformOs === 'macos'
+                    ? ' — cần chip Apple Silicon'
+                    : ' — chỉ hỗ trợ macOS Apple Silicon';
+                localOption.textContent += reason;
             }
 
             // Force soniox mode if user had local selected
@@ -1938,6 +1951,18 @@ class App {
             hintSoniox.textContent = ENGINE_HINTS[mode] || '';
             hintSoniox.style.display = '';
         }
+        // Highlight a warning when Local MLX is picked on an unsupported machine —
+        // the option stays selectable (Hiếu's ask) but the user is told clearly
+        // it won't run here, and Start will block it.
+        const localUnsupported = isLocal && !this.isAppleSilicon;
+        if (hintSoniox) {
+            hintSoniox.classList.toggle('hint-warning', localUnsupported);
+            if (localUnsupported) {
+                hintSoniox.textContent = this._platformOs === 'macos'
+                    ? '⚠️ Local MLX cần chip Apple Silicon — máy này không chạy được, hãy chọn engine khác.'
+                    : '⚠️ Local MLX chỉ chạy trên macOS Apple Silicon — trên máy này hãy chọn engine khác.';
+            }
+        }
         if (hintLocal) hintLocal.style.display = 'none';
         if (hintOpenAi) hintOpenAi.style.display = 'none';
         if (hintQwen) hintQwen.style.display = 'none';
@@ -2166,6 +2191,14 @@ class App {
         const settings = settingsManager.get();
         this.translationMode = settings.translation_mode || 'soniox';
         console.log('[App] start() called, translation_mode:', this.translationMode, 'settings:', JSON.stringify(settings));
+
+        // Local MLX needs macOS Apple Silicon — block here (option is selectable
+        // but can't actually run on other platforms) instead of crashing.
+        if (this.translationMode === 'local' && !this.isAppleSilicon) {
+            this._showToast('Local MLX chỉ chạy trên macOS Apple Silicon. Hãy chọn engine khác trong Cài đặt.', 'error');
+            this._showView('settings');
+            return;
+        }
 
         // Check Soniox API key only for cloud mode
         if (this.translationMode === 'soniox' && !settings.soniox_api_key) {

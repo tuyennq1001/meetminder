@@ -2167,6 +2167,12 @@ input[type="range"]::-webkit-slider-thumb:hover {
   color: #ffb84d;
 }
 
+/* Engine hint switched to a warning (e.g. Local MLX on an unsupported machine) */
+.hint.hint-warning {
+  color: var(--warning);
+  font-weight: 500;
+}
+
 /* Inline key validation status (tick/cross/dot) next to field label */
 .key-status {
   margin-left: 0.5rem;
