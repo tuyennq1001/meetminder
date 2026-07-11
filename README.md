@@ -15,6 +15,19 @@
 
 > 📖 Installation guides: [macOS (EN)](docs/installation_guide.md) · [macOS (VI)](docs/installation_guide_vi.md) · [Windows (EN)](docs/installation_guide_win.md) · [Windows (VI)](docs/installation_guide_win_vi.md)
 
+### ⬇️ Which build do I download?
+
+Grab the matching file from the [latest release](https://github.com/phuc-nt/my-translator/releases/latest):
+
+| Your machine | File |
+|---|---|
+| **Mac Apple Silicon** (M1/M2/M3/M4) | `MyTranslator_<ver>_aarch64.dmg` |
+| **Mac Intel** (pre-2020) | `MyTranslator_<ver>_x64.dmg` |
+| **Windows** | `MyTranslator_<ver>_x64-setup.exe` |
+
+> On a Mac, check  → **About This Mac** → *Chip*: **Apple M-series** → `aarch64`, **Intel** → `x64`. Macs from late 2020 on are almost all Apple Silicon.
+> The `.app.tar.gz`, `.sig`, and `latest.json` files are for the built-in auto-updater — you don't download those.
+
 ---
 
 ## How It Works

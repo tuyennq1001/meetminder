@@ -11,6 +11,16 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 > First tagged release since v0.7.3 — also ships everything in the v0.8.0 section below (local/online TTS providers, Read mode, custom Vietnamese voices).
 
+### ⬇️ Which file do I download?
+
+| Your machine | Download |
+|---|---|
+| **Mac Apple Silicon** (M1/M2/M3/M4) | `MyTranslator_0.9.0_aarch64.dmg` |
+| **Mac Intel** (pre-2020) | `MyTranslator_0.9.0_x64.dmg` |
+| **Windows** | `MyTranslator_0.9.0_x64-setup.exe` |
+
+On a Mac,  → About This Mac → "Chip": **Apple** = aarch64, **Intel** = x64. The `.app.tar.gz`, `.sig`, and `latest.json` files are for the auto-updater — no need to download them.
+
 ### Changed — Main UI redesigned around 3 activities
 
 - **Activity switcher `[🎙 Live | 📖 Đọc | 📚 Thư viện]`** replaces the Live/Read toggle and the separate Sessions screen. Each space shows only its own controls; a live session keeps running in the background while you browse Thư viện (red badge on the Live tab).
