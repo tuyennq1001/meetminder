@@ -1951,16 +1951,25 @@ class App {
             hintSoniox.textContent = ENGINE_HINTS[mode] || '';
             hintSoniox.style.display = '';
         }
-        // Highlight a warning when Local MLX is picked on an unsupported machine —
-        // the option stays selectable (Hiếu's ask) but the user is told clearly
-        // it won't run here, and Start will block it.
+        // Highlight a warning when the picked engine can't run yet — either
+        // Local MLX on unsupported hardware, or a cloud engine missing its key.
+        // The option stays selectable (Hiếu's ask): the user needs to pick it
+        // to add the key; start() blocks launch until the requirement is met.
+        const s = settingsManager.get();
         const localUnsupported = isLocal && !this.isAppleSilicon;
+        const missingKey =
+            (isSoniox && !(s.soniox_api_key || '').trim()) ? 'Soniox' :
+            (isOpenAi && !(s.openai_api_key || '').trim()) ? 'OpenAI Realtime' :
+            (isQwen && !(s.qwen_api_key || '').trim()) ? 'Qwen' : null;
         if (hintSoniox) {
-            hintSoniox.classList.toggle('hint-warning', localUnsupported);
+            const warn = localUnsupported || !!missingKey;
+            hintSoniox.classList.toggle('hint-warning', warn);
             if (localUnsupported) {
                 hintSoniox.textContent = this._platformOs === 'macos'
                     ? '⚠️ Local MLX cần chip Apple Silicon — máy này không chạy được, hãy chọn engine khác.'
                     : '⚠️ Local MLX chỉ chạy trên macOS Apple Silicon — trên máy này hãy chọn engine khác.';
+            } else if (missingKey) {
+                hintSoniox.textContent = `⚠️ ${missingKey} cần API key — nhập key bên dưới rồi mới bắt đầu được.`;
             }
         }
         if (hintLocal) hintLocal.style.display = 'none';
@@ -2100,18 +2109,21 @@ class App {
             openaiStatus.textContent = openaiKey === '' ? '' : openaiOk ? '✓ format ok' : '✗ should start with sk-';
         }
 
-        // Disable engine options whose key is missing/invalid.
+        // Engines that need a key stay SELECTABLE even when it's missing —
+        // otherwise the user can't pick the engine to add its key (catch-22).
+        // The label hints "add key first", and start() blocks launch until the
+        // key is present. (Same not-hard-disabled principle as Local MLX.)
         const select = document.getElementById('select-translation-mode');
         if (select) {
             const sonioxOpt = select.querySelector('option[value="soniox"]');
             const openaiOpt = select.querySelector('option[value="openai"]');
             if (sonioxOpt) {
-                sonioxOpt.disabled = !sonioxOk;
-                sonioxOpt.textContent = sonioxOk ? '☁️ Soniox' : '☁️ Soniox — add key first';
+                sonioxOpt.disabled = false;
+                sonioxOpt.textContent = sonioxOk ? '☁️ Soniox' : '☁️ Soniox — cần nhập key';
             }
             if (openaiOpt) {
-                openaiOpt.disabled = !openaiOk;
-                openaiOpt.textContent = openaiOk ? '⚡ OpenAI Realtime' : '⚡ OpenAI Realtime — add key first';
+                openaiOpt.disabled = false;
+                openaiOpt.textContent = openaiOk ? '⚡ OpenAI Realtime' : '⚡ OpenAI Realtime — cần nhập key';
             }
         }
     }
