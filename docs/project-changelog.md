@@ -7,6 +7,19 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## v0.9.1 - 2026-07-11
+
+### Fixed — engine picker no longer traps users
+
+- **Cloud engines stay selectable without a key.** Soniox / OpenAI were disabled in the engine dropdown until a valid key was entered — a catch-22, since you had to select the engine to add its key. All key-based engines (Soniox, OpenAI, Qwen) are now selectable with a highlighted "cần API key" hint; the session is still blocked at Start until the key is present.
+- **Local MLX detected by hardware, not binary arch.** On an Apple Silicon Mac running the x64 build (Rosetta), the app reported arch "x86_64" and wrongly disabled Local MLX. It now asks the real CPU via `sysctl hw.optional.arm64`, so Local works regardless of which build you installed. Local MLX is also no longer hard-disabled on unsupported machines — it shows a clear warning and is blocked at Start.
+
+### Docs
+
+- Added a "which build do I download?" table (Apple Silicon vs Intel vs Windows) to the README and release notes — several users had installed the x64 Mac build on Apple Silicon.
+
+---
+
 ## v0.9.0 - 2026-07-11
 
 > First tagged release since v0.7.3 — also ships everything in the v0.8.0 section below (local/online TTS providers, Read mode, custom Vietnamese voices).
