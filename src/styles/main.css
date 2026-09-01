@@ -2401,6 +2401,73 @@ input[type="range"]::-webkit-slider-thumb:hover {
   flex-wrap: wrap;
 }
 
+.session-player {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding-top: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.session-player-detail {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(20, 20, 30, 0.2);
+}
+
+.session-player-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  padding: 0 0 0 1px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.session-player-toggle:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.session-player-toggle:disabled,
+.session-player.is-disabled {
+  opacity: 0.45;
+}
+
+.session-player-time {
+  min-width: 30px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.session-player-timeline {
+  --player-progress: 0%;
+  flex: 1;
+  min-width: 60px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--md-sys-color-primary);
+  cursor: pointer;
+}
+
+.session-player-timeline:disabled {
+  cursor: not-allowed;
+}
+
+.session-player-detail .session-player-timeline {
+  height: 18px;
+}
+
 .session-item-title {
   flex: 1;
   font-size: 13px;
@@ -2477,6 +2544,29 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .session-badge.badge-legacy {
   color: #c9a86a;
   background: rgba(201, 168, 106, 0.12);
+}
+
+.session-language-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.session-language {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.session-language-flag {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.session-language-arrow {
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .session-meta-dim {

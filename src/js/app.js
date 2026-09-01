@@ -16,6 +16,20 @@ import {
 const { invoke, Channel } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
 
+const LANGUAGE_DISPLAY = {
+    auto: ['🌐', 'Tự động'], en: ['🇬🇧', 'English'], ja: ['🇯🇵', '日本語'],
+    ko: ['🇰🇷', '한국어'], zh: ['🇨🇳', '中文'], vi: ['🇻🇳', 'Tiếng Việt'],
+    fr: ['🇫🇷', 'Français'], de: ['🇩🇪', 'Deutsch'], es: ['🇪🇸', 'Español'],
+    th: ['🇹🇭', 'ไทย'], id: ['🇮🇩', 'Bahasa Indonesia'], pt: ['🇵🇹', 'Português'],
+    ru: ['🇷🇺', 'Русский'], ar: ['🇸🇦', 'العربية'], hi: ['🇮🇳', 'हिन्दी'],
+    it: ['🇮🇹', 'Italiano'], nl: ['🇳🇱', 'Nederlands'], pl: ['🇵🇱', 'Polski'],
+    tr: ['🇹🇷', 'Türkçe'], sv: ['🇸🇪', 'Svenska'], da: ['🇩🇰', 'Dansk'],
+    no: ['🇳🇴', 'Norsk'], fi: ['🇫🇮', 'Suomi'], el: ['🇬🇷', 'Ελληνικά'],
+    cs: ['🇨🇿', 'Čeština'], ro: ['🇷🇴', 'Română'], hu: ['🇭🇺', 'Magyar'],
+    uk: ['🇺🇦', 'Українська'], he: ['🇮🇱', 'עברית'], ms: ['🇲🇾', 'Bahasa Melayu'],
+    tl: ['🇵🇭', 'Filipino'], bn: ['🇧🇩', 'বাংলা'], ta: ['🇱🇰', 'தமிழ்'],
+};
+
 class App {
     constructor() {
         this.isRunning = false;
@@ -225,6 +239,8 @@ class App {
             const cur = this._currentViewedSession;
             if (cur) this._playSessionTTS(cur.id, cur.isLegacy);
         });
+
+        this._bindSessionPlayer(document.querySelector('.session-player-detail'));
 
         // Delete single session from viewer
         document.getElementById('btn-session-delete-single')?.addEventListener('click', async () => {
@@ -2867,11 +2883,11 @@ class App {
 
             // Stop any currently playing session audio
             if (this._sessionAudioElement) {
+                const wasPlayingSame = this._sessionAudioId === id;
                 this._sessionAudioElement.pause();
                 this._sessionAudioElement = null;
-                const wasPlayingSame = this._sessionAudioId === id;
                 this._sessionAudioId = null;
-                if (btn) btn.innerHTML = '🔊 Nghe lại';
+                this._resetSessionPlayerUI();
                 if (wasPlayingSame) {
                     this._showToast('Đã dừng phát ghi âm', 'info');
                     return;
@@ -2898,15 +2914,20 @@ class App {
             }
 
             this._showToast('🔊 Đang phát lại bản ghi âm cuộc họp...', 'info');
-            if (btn) btn.innerHTML = '⏹ Dừng nghe';
+            if (btn) btn.innerHTML = '⏸ Tạm dừng';
 
             const audio = new Audio(audioDataUrl);
             this._sessionAudioElement = audio;
             this._sessionAudioId = id;
+            this._setSessionPlayerUI(id, true);
+            audio.onloadedmetadata = () => this._updateSessionPlayerUI(audio);
+            audio.ontimeupdate = () => this._updateSessionPlayerUI(audio);
+            audio.onpause = () => this._setSessionPlayerUI(id, false);
+            audio.onplay = () => this._setSessionPlayerUI(id, true);
             audio.onended = () => {
                 this._sessionAudioElement = null;
                 this._sessionAudioId = null;
-                if (btn) btn.innerHTML = '🔊 Nghe lại';
+                this._resetSessionPlayerUI();
             };
             audio.onerror = () => {
                 const mediaError = audio.error;
@@ -2914,14 +2935,96 @@ class App {
                 this._showToast(`Lỗi khi phát file ghi âm${mediaError?.message ? `: ${mediaError.message}` : ''}`, 'error');
                 this._sessionAudioElement = null;
                 this._sessionAudioId = null;
-                if (btn) btn.innerHTML = '🔊 Nghe lại';
+                this._resetSessionPlayerUI();
             };
             await audio.play();
         } catch (err) {
             this._showToast(`Lỗi phát âm thanh: ${err}`, 'error');
             const btn = document.getElementById('btn-session-tts-play');
-            if (btn) btn.innerHTML = '🔊 Nghe lại';
+            this._resetSessionPlayerUI();
         }
+    }
+
+    _formatPlayerTime(seconds) {
+        if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+        const total = Math.floor(seconds);
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = String(total % 60).padStart(2, '0');
+        return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+    }
+
+    _sessionPlayerElements() {
+        return Array.from(document.querySelectorAll('.session-player'));
+    }
+
+    _setSessionPlayerUI(id, playing) {
+        this._sessionPlayerElements().forEach(player => {
+            const isCurrent = player.dataset.playerId === id;
+            const toggle = player.querySelector('[data-player-toggle]');
+            if (isCurrent) {
+                player.classList.add('is-active');
+                if (toggle) {
+                    toggle.textContent = playing ? '❚❚' : '▶';
+                    toggle.title = playing ? 'Tạm dừng' : 'Tiếp tục phát';
+                }
+            } else if (!id) {
+                player.classList.remove('is-active');
+            }
+        });
+        const detailBtn = document.getElementById('btn-session-tts-play');
+        if (detailBtn && this._currentViewedSession?.id === id) {
+            detailBtn.innerHTML = playing ? '⏸ Tạm dừng' : '🔊 Nghe lại';
+        }
+    }
+
+    _updateSessionPlayerUI(audio) {
+        this._sessionPlayerElements().forEach(player => {
+            if (player.dataset.playerId !== this._sessionAudioId) return;
+            const timeline = player.querySelector('[data-player-timeline]');
+            const current = player.querySelector('[data-player-current]');
+            const duration = player.querySelector('[data-player-duration]');
+            if (timeline) {
+                timeline.max = Number.isFinite(audio.duration) ? audio.duration : 0;
+                timeline.value = audio.currentTime || 0;
+                timeline.style.setProperty('--player-progress', `${audio.duration ? (audio.currentTime / audio.duration) * 100 : 0}%`);
+            }
+            if (current) current.textContent = this._formatPlayerTime(audio.currentTime);
+            if (duration) duration.textContent = this._formatPlayerTime(audio.duration);
+        });
+    }
+
+    _resetSessionPlayerUI() {
+        this._sessionPlayerElements().forEach(player => {
+            player.classList.remove('is-active');
+            player.dataset.playerId = '';
+            const toggle = player.querySelector('[data-player-toggle]');
+            const timeline = player.querySelector('[data-player-timeline]');
+            if (toggle) { toggle.textContent = '▶'; toggle.title = 'Phát bản ghi âm'; }
+            if (timeline) { timeline.value = 0; timeline.max = 0; timeline.style.setProperty('--player-progress', '0%'); }
+            const current = player.querySelector('[data-player-current]');
+            const duration = player.querySelector('[data-player-duration]');
+            if (current) current.textContent = '0:00';
+            if (duration) duration.textContent = '0:00';
+        });
+        const detailBtn = document.getElementById('btn-session-tts-play');
+        if (detailBtn) detailBtn.innerHTML = '🔊 Nghe lại';
+    }
+
+    _bindSessionPlayer(player) {
+        if (!player || player.dataset.bound === '1') return;
+        player.dataset.bound = '1';
+        player.querySelector('[data-player-toggle]')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = player.dataset.playerId || player.dataset.id;
+            if (id) this._playSessionTTS(id, player.dataset.legacy === '1');
+        });
+        player.querySelector('[data-player-timeline]')?.addEventListener('input', (e) => {
+            if (this._sessionAudioElement && player.dataset.playerId === this._sessionAudioId) {
+                this._sessionAudioElement.currentTime = Number(e.target.value);
+                this._updateSessionPlayerUI(this._sessionAudioElement);
+            }
+        });
     }
 
     async _showSessions(query) {
@@ -2930,6 +3033,7 @@ class App {
             this._sessionAudioElement = null;
             this._sessionAudioId = null;
         }
+        this._resetSessionPlayerUI();
         const listEl = document.getElementById('sessions-list');
         const listPanel = document.getElementById('sessions-list-panel');
         const viewer = document.getElementById('session-viewer');
@@ -3058,7 +3162,7 @@ class App {
             ? `<span class="session-badge badge-legacy">legacy</span>`
             : `<span class="session-badge badge-engine">${this._esc(engine)}</span>`;
         const langPair = s.source_lang && s.target_lang
-            ? `<span class="session-badge">${this._esc(s.source_lang)} → ${this._esc(s.target_lang)}</span>`
+            ? `<span class="session-badge session-language-pair">${this._formatLanguage(s.source_lang)} <span class="session-language-arrow">→</span> ${this._formatLanguage(s.target_lang)}</span>`
             : '';
         const segCount = s.segment_count > 0 ? `<span class="session-meta-dim">${s.segment_count} câu</span>` : '';
         const isChecked = this._selectedSessionIds.has(s.id);
@@ -3074,7 +3178,6 @@ class App {
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                         </svg>
                     </button>
-                    <button type="button" class="session-btn-action play-tts" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}" title="Nghe lại cuộc họp này">🔊</button>
                     <button type="button" class="session-btn-action rename" data-id="${this._escAttr(s.id)}" data-title="${this._escAttr(s.title || '')}" title="Đổi tên">✏️</button>
                     <button type="button" class="session-delete-btn" data-id="${this._escAttr(s.id)}" title="Xóa">×</button>
                 </div>
@@ -3089,24 +3192,37 @@ class App {
         </div>`;
     }
 
+    _formatLanguage(code) {
+        const normalized = String(code || '').toLowerCase().split(/[-_]/)[0];
+        const [flag, name] = LANGUAGE_DISPLAY[normalized] || ['🌐', String(code || '').toUpperCase()];
+        return `<span class="session-language"><span class="session-language-flag">${flag}</span> ${this._esc(name)}</span>`;
+    }
+
     async _openSession(id, isLegacy = false) {
         if (this._sessionAudioElement) {
             this._sessionAudioElement.pause();
             this._sessionAudioElement = null;
             this._sessionAudioId = null;
         }
-        const playBtn = document.getElementById('btn-session-tts-play');
-        if (playBtn) playBtn.innerHTML = '🔊 Nghe lại';
+        this._resetSessionPlayerUI();
 
         const listPanel = document.getElementById('sessions-list-panel');
         const viewer = document.getElementById('session-viewer');
         const title = document.getElementById('session-viewer-title');
         const content = document.getElementById('session-viewer-content');
+        const detailPlayer = document.querySelector('.session-player-detail');
 
         if (listPanel) listPanel.style.display = 'none';
         if (viewer) viewer.style.display = '';
         if (title) title.textContent = id;
         if (content) content.textContent = 'Loading...';
+        if (detailPlayer) {
+            detailPlayer.dataset.playerId = id;
+            detailPlayer.dataset.legacy = isLegacy ? '1' : '0';
+            detailPlayer.classList.toggle('is-disabled', isLegacy);
+            detailPlayer.querySelector('[data-player-toggle]').disabled = isLegacy;
+            detailPlayer.querySelector('[data-player-timeline]').disabled = isLegacy;
+        }
         this._currentViewedSession = { id, isLegacy };
 
         try {
