@@ -363,11 +363,15 @@ class App {
         // Dynamic Stop / Save Log button
         document.getElementById('btn-stop')?.addEventListener('click', async () => {
             if (this._isStopConfirmationOpen) return;
-            const chosenTitle = await this._promptConfirmStop();
-            if (!chosenTitle) return;
+            const stopAction = await this._promptConfirmStop();
+            if (!stopAction) return;
 
             try {
-                await this.stopSession(chosenTitle);
+                if (stopAction.discard) {
+                    await this.discardSession();
+                } else {
+                    await this.stopSession(stopAction.title);
+                }
             } catch (err) {
                 console.error('[App] Stop session error:', err);
                 this._showToast(`Lỗi kết thúc: ${err}`, 'error');
@@ -684,10 +688,14 @@ class App {
                     // Keep the keyboard path consistent with the Stop button:
                     // users must be able to confirm the action and name the log.
                     (async () => {
-                        const chosenTitle = await this._promptConfirmStop();
-                        if (!chosenTitle) return;
+                        const stopAction = await this._promptConfirmStop();
+                        if (!stopAction) return;
                         try {
-                            await this.stopSession(chosenTitle);
+                            if (stopAction.discard) {
+                                await this.discardSession();
+                            } else {
+                                await this.stopSession(stopAction.title);
+                            }
                         } catch (err) {
                             console.error('[App] Keyboard stop session error:', err);
                             this._showToast(`Lỗi kết thúc: ${err}`, 'error');
@@ -2188,16 +2196,7 @@ class App {
         });
     }
 
-    // Pause: stop capture and persist the current chunk, but keep the session
-    // file open. The next Start appends a new chunk to the same file. Finalizing
-    // into a new file is stopSession()'s job.
-    async pause() {
-        this.isRunning = false;
-        this.isPaused = true;
-        this._updateStartButton();
-        this._setEnginePillLocked(false);
-        this._clearInactivityTimer();
-
+    async _stopTranslationEngine() {
         // Stop audio capture
         try {
             await invoke('stop_capture');
@@ -2249,6 +2248,18 @@ class App {
 
         // Drain any leftover Soniox originals that didn't get paired
         if (this._sonioxOriginalQueue) this._sonioxOriginalQueue.length = 0;
+    }
+
+    // Pause: stop capture and persist the current chunk, but keep the session
+    // file open. The next Start appends a new chunk to the same file. Finalizing
+    // into a new file is stopSession()'s job.
+    async pause() {
+        this.isRunning = false;
+        this.isPaused = true;
+        this._updateStartButton();
+        this._setEnginePillLocked(false);
+        this._clearInactivityTimer();
+        await this._stopTranslationEngine();
 
         // Close the chunk and persist the whole session (md + json sidecar).
         // Transcript stays on screen — clearSession is no longer called here
@@ -2277,7 +2288,7 @@ class App {
 
         if (!modal) {
             const entered = prompt('Nhập tên cuộc họp để kết thúc & lưu:', defaultTitle);
-            return entered !== null ? (entered.trim() || defaultTitle) : null;
+            return entered !== null ? { title: entered.trim() || defaultTitle, discard: false } : null;
         }
 
         if (input) {
@@ -2295,7 +2306,12 @@ class App {
                 cleanup();
                 const chosenTitle = (input ? input.value.trim() : '') || defaultTitle;
                 modal.style.display = 'none';
-                resolve(chosenTitle);
+                resolve({ title: chosenTitle, discard: false });
+            };
+            const onDiscard = () => {
+                cleanup();
+                modal.style.display = 'none';
+                resolve({ discard: true });
             };
             const onCancel = () => {
                 cleanup();
@@ -2314,6 +2330,7 @@ class App {
             const cleanup = () => {
                 this._isStopConfirmationOpen = false;
                 document.getElementById('btn-agree-confirm-stop')?.removeEventListener('click', onConfirm);
+                document.getElementById('btn-discard-confirm-stop')?.removeEventListener('click', onDiscard);
                 document.getElementById('btn-cancel-confirm-stop')?.removeEventListener('click', onCancel);
                 document.getElementById('btn-close-confirm-stop')?.removeEventListener('click', onCancel);
                 input?.removeEventListener('keydown', onKeyDown);
@@ -2321,6 +2338,7 @@ class App {
             };
 
             document.getElementById('btn-agree-confirm-stop')?.addEventListener('click', onConfirm);
+            document.getElementById('btn-discard-confirm-stop')?.addEventListener('click', onDiscard);
             document.getElementById('btn-cancel-confirm-stop')?.addEventListener('click', onCancel);
             document.getElementById('btn-close-confirm-stop')?.addEventListener('click', onCancel);
             input?.addEventListener('keydown', onKeyDown);
@@ -2374,6 +2392,51 @@ class App {
             sourceLang: settings.source_language || 'auto',
             targetLang: settings.target_language || 'vi',
         });
+        this._updateStartButton();
+    }
+
+    async discardSession() {
+        if (this.isRunning) {
+            this.isRunning = false;
+            this.isPaused = true;
+            this._updateStartButton();
+            this._setEnginePillLocked(false);
+            this._clearInactivityTimer();
+            await this._stopTranslationEngine();
+        }
+
+        this.transcriptUI.clearProvisional();
+        if (this._sonioxOriginalQueue) this._sonioxOriginalQueue.length = 0;
+
+        try {
+            await sessionStore.discard();
+            this._showToast('🗑 Đã kết thúc và bỏ cuộc họp', 'info');
+        } catch (err) {
+            this._showToast(`Không thể bỏ cuộc họp: ${err}`, 'error');
+            return;
+        }
+
+        this.isRunning = false;
+        this.isPaused = false;
+        this._hasUnsavedMeetingData = false;
+        this.sessionStartTime = null;
+        this.recordingStartTime = null;
+        this._clearInactivityTimer();
+        if (this.transcriptUI) {
+            this.transcriptUI.clear();
+            this.transcriptUI.showPlaceholder();
+        }
+        const noteTextarea = document.getElementById('live-note-textarea');
+        if (noteTextarea) noteTextarea.value = '';
+        this._toggleNotesDrawer(false);
+
+        const settings = settingsManager.get();
+        sessionStore.init({
+            engine: settings.translation_mode || 'gemini',
+            sourceLang: settings.source_language || 'auto',
+            targetLang: settings.target_language || 'vi',
+        });
+        this._updateStatus('idle');
         this._updateStartButton();
     }
 
@@ -2696,7 +2759,7 @@ class App {
         const selectTiming = document.getElementById('select-translation-timing');
         if (selectTiming) selectTiming.value = timing;
         await settingsManager.save(s);
-        this._showToast(timing === 'realtime' ? '⚡ Kiểu dịch: Nghe real time' : '⏳ Kiểu dịch: Nghe dứt câu', 'info');
+        this._showToast(timing === 'realtime' ? '⚡ Kiểu dịch: Dịch real time' : '⏳ Kiểu dịch: Dịch hết câu', 'info');
     }
 
     _adjustFontSize(delta) {

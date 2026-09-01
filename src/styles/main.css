@@ -1914,7 +1914,22 @@ input[type="range"]::-webkit-slider-thumb:hover {
   padding: 8px 24px 20px;
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  height: 34px;
+  padding: 8px 14px;
+  line-height: 1.2;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .secondary-btn {
@@ -1932,6 +1947,29 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .secondary-btn:hover {
   background: var(--bg-hover);
   border-color: rgba(255, 255, 255, 0.25);
+}
+
+.danger-btn {
+  background: rgba(242, 184, 181, 0.08);
+  color: var(--md-sys-color-error);
+  border: 1px solid rgba(242, 184, 181, 0.45);
+  border-radius: var(--radius-pill);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.danger-btn:hover {
+  background: rgba(242, 184, 181, 0.16);
+  border-color: var(--md-sys-color-error);
+}
+
+.danger-btn:active,
+.secondary-btn:active,
+.modal-footer .primary-action-btn:active {
+  transform: scale(0.97);
 }
 
 /* Progress bar */

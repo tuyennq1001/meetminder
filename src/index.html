@@ -119,9 +119,9 @@
           </div>
 
           <!-- Timing Selector Pulldown -->
-          <select id="select-translation-timing" class="source-select" title="Kiểu dịch: Nghe dứt câu hoặc Nghe real time">
-            <option value="on_pause">⏳ Nghe dứt câu</option>
-            <option value="realtime">⚡ Nghe real time</option>
+          <select id="select-translation-timing" class="source-select" title="Kiểu dịch: Dịch hết câu hoặc Dịch real time">
+            <option value="on_pause">⏳ Dịch hết câu</option>
+            <option value="realtime">⚡ Dịch real time</option>
           </select>
 
           <!-- View Mode Selector Pulldown -->
@@ -920,11 +920,12 @@
       <div class="modal-body">
         <label for="input-stop-meeting-title" class="field-label" style="margin-bottom:8px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tên cuộc họp:</label>
         <input type="text" id="input-stop-meeting-title" class="modal-input" placeholder="20260901 11:00 Họp dự án..." />
-        <p class="modal-desc">Phiên dịch sẽ dừng lại và toàn bộ bản ghi âm, bản dịch cùng ghi chú sẽ được lưu vào tab 📚 Meeting Logs.</p>
+        <p class="modal-desc">Phiên dịch sẽ dừng lại. Bạn có thể lưu toàn bộ bản ghi âm, bản dịch và ghi chú vào tab 📚 Meeting Logs, hoặc kết thúc mà không lưu.</p>
       </div>
       <div class="modal-footer">
-        <button type="button" id="btn-cancel-confirm-stop" class="secondary-btn">Hủy bỏ</button>
-        <button type="button" id="btn-agree-confirm-stop" class="primary-action-btn">💾 Kết thúc & Lưu</button>
+        <button type="button" id="btn-cancel-confirm-stop" class="secondary-btn modal-action-btn">Huỷ</button>
+        <button type="button" id="btn-discard-confirm-stop" class="danger-btn modal-action-btn">🗑 Xoá</button>
+        <button type="button" id="btn-agree-confirm-stop" class="primary-action-btn modal-action-btn">💾 Kết thúc & Lưu</button>
       </div>
     </div>
   </div>

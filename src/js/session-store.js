@@ -146,6 +146,23 @@ export class SessionStore {
         return await this.persist();
     }
 
+    // Discard the current session and remove any autosaved files. Wait for
+    // queued writes first so an in-flight autosave cannot recreate the file
+    // after it has been deleted.
+    async discard() {
+        this._cancelAutosave();
+        this.endChunk();
+        await this._persistChain.catch(() => {});
+        if (this.id) {
+            try {
+                await invoke('delete_session', { id: this.id });
+            } catch (err) {
+                console.error('[SessionStore] discard delete failed:', err);
+                throw err;
+            }
+        }
+    }
+
     async setTitle(newTitle) {
         const t = (newTitle || '').trim().slice(0, 200);
         this.title = t;
