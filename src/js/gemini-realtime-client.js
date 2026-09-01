@@ -11,6 +11,7 @@ export class GeminiRealtimeClient {
 
         this.onStatusChange = () => {};
         this.onSegment = () => {};
+        this.onSourceFinal = () => {};
         this.onProvisional = () => {};
         this.onError = () => {};
         this.onClosed = () => {};
@@ -68,7 +69,9 @@ export class GeminiRealtimeClient {
     flushPending() {
         const tgt = this._provisionalBuffer;
         this._provisionalBuffer = '';
-        if (tgt) this.onSegment('', tgt);
+        // Gemini's interim input transcription is source-language text. Keep
+        // it as source when stopping before the corresponding final event.
+        if (tgt) this.onSourceFinal(tgt);
     }
 
     async disconnect() {
@@ -87,7 +90,13 @@ export class GeminiRealtimeClient {
                 break;
             case 'segment':
                 this._provisionalBuffer = '';
-                this.onSegment(evt.original, evt.translation);
+                this.onSegment(evt.original, evt.translation, evt.id ?? null);
+                break;
+            case 'source_transcript':
+                if (evt.is_final) {
+                    this._provisionalBuffer = '';
+                    this.onSourceFinal(evt.text, evt.id ?? null);
+                }
                 break;
             case 'transcript':
                 if (evt.is_final) {

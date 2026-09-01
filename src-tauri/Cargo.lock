@@ -2356,6 +2356,7 @@ name = "meet-minder"
 version = "0.9.1"
 dependencies = [
  "base64 0.22.1",
+ "block2",
  "bzip2",
  "chrono",
  "cpal",

@@ -82,17 +82,47 @@ export class SessionStore {
         };
     }
 
-    addSegment(src, tgt) {
+    addSegment(src, tgt, pendingId = null) {
         if (!this.currentChunk) {
             this.beginChunk();
         }
-        this.currentChunk.segments.push({
+        const segment = {
             ts: this._timeStr(new Date()),
             src: src || '',
             tgt: tgt || '',
-        });
+        };
+        if (pendingId !== null) segment.pendingId = pendingId;
+        this.currentChunk.segments.push(segment);
         this._mutations++;
         this._scheduleAutosave();
+    }
+
+    // Complete the oldest source-only segment. Gemini writes source text as
+    // soon as ASR finalizes and fills this field when REST translation returns.
+    // Keeping the source-only record makes a stop during translation lossless.
+    completeFirstPendingTranslation(tgt, pendingId = null) {
+        if (!this.currentChunk) return false;
+        for (let i = 0; i < this.currentChunk.segments.length; i++) {
+            const segment = this.currentChunk.segments[i];
+            if (!segment.tgt && segment.src && (pendingId === null || segment.pendingId === pendingId)) {
+                segment.tgt = tgt || '';
+                delete segment.pendingId;
+                this._mutations++;
+                this._scheduleAutosave();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bindPendingSegmentId(src, pendingId) {
+        if (!this.currentChunk || pendingId === null) return false;
+        const segment = this.currentChunk.segments.find(
+            item => !item.tgt && item.src === src && item.pendingId === undefined,
+        );
+        if (!segment) return false;
+        segment.pendingId = pendingId;
+        return true;
     }
 
     endChunk() {

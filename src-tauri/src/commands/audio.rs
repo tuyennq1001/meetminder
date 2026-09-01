@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{ipc::Channel, State};
 
 /// State for tracking active audio captures
@@ -20,6 +21,9 @@ pub struct AudioForwarder {
     /// The recorder must finish writing the WAV header before a caller can
     /// safely start another capture or play the completed recording.
     worker: Option<std::thread::JoinHandle<()>>,
+    received_samples: std::sync::Arc<AtomicU64>,
+    nonzero_samples: std::sync::Arc<AtomicU64>,
+    rms_milli: std::sync::Arc<AtomicU64>,
 }
 
 impl AudioForwarder {
@@ -36,6 +40,16 @@ impl AudioForwarder {
 pub struct PermissionStatus {
     pub screen_recording: String,
     pub microphone: String,
+}
+
+#[derive(Serialize, Clone)]
+pub struct CaptureStatus {
+    pub received_samples: u64,
+    pub nonzero_samples: u64,
+    pub rms: f64,
+    pub microphone_received_samples: u64,
+    pub microphone_nonzero_samples: u64,
+    pub microphone_rms: f64,
 }
 
 /// Start audio capture and forward data to the frontend via IPC channel.
@@ -136,6 +150,12 @@ pub fn start_capture(
     // Spawn a thread to forward audio data from receiver to IPC channel
     let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let stop_flag_clone = stop_flag.clone();
+    let received_samples = std::sync::Arc::new(AtomicU64::new(0));
+    let nonzero_samples = std::sync::Arc::new(AtomicU64::new(0));
+    let rms_milli = std::sync::Arc::new(AtomicU64::new(0));
+    let received_samples_clone = received_samples.clone();
+    let nonzero_samples_clone = nonzero_samples.clone();
+    let rms_milli_clone = rms_milli.clone();
     let record_path_clone = record_path;
 
     let worker = std::thread::spawn(move || {
@@ -201,6 +221,23 @@ pub fn start_capture(
 
             match receiver.recv_timeout(std::time::Duration::from_millis(10)) {
                 Ok(data) => {
+                    let mut sum_squares = 0.0f64;
+                    let mut samples = 0u64;
+                    let mut nonzero = 0u64;
+                    for chunk in data.chunks_exact(2) {
+                        let sample = i16::from_le_bytes([chunk[0], chunk[1]]) as f64 / 32768.0;
+                        sum_squares += sample * sample;
+                        samples += 1;
+                        if sample.abs() > 0.0005 {
+                            nonzero += 1;
+                        }
+                    }
+                    if samples > 0 {
+                        received_samples_clone.fetch_add(samples, Ordering::Relaxed);
+                        nonzero_samples_clone.fetch_add(nonzero, Ordering::Relaxed);
+                        let rms = (sum_squares / samples as f64).sqrt();
+                        rms_milli_clone.store((rms * 1000.0).round() as u64, Ordering::Relaxed);
+                    }
                     if let Some(ref mut f) = wav_file {
                         let _ = f.write_all(&data);
                         total_pcm_bytes = total_pcm_bytes.saturating_add(data.len() as u32);
@@ -241,11 +278,42 @@ pub fn start_capture(
     let forwarder = AudioForwarder {
         stop_flag,
         worker: Some(worker),
+        received_samples,
+        nonzero_samples,
+        rms_milli,
     };
     let mut active = state.active_receiver.lock().map_err(|e| e.to_string())?;
     *active = Some(forwarder);
 
     Ok(())
+}
+
+/// Inspect whether the active stream is producing samples. This is separate
+/// from permission status because a granted microphone can still be silent or
+/// fail after the stream is opened.
+#[tauri::command]
+pub fn get_capture_status(state: State<'_, AudioState>) -> Result<CaptureStatus, String> {
+    let active = state.active_receiver.lock().map_err(|e| e.to_string())?;
+    let microphone = state.microphone.lock().map_err(|e| e.to_string())?.status();
+    if let Some(forwarder) = active.as_ref() {
+        Ok(CaptureStatus {
+            received_samples: forwarder.received_samples.load(Ordering::Relaxed),
+            nonzero_samples: forwarder.nonzero_samples.load(Ordering::Relaxed),
+            rms: forwarder.rms_milli.load(Ordering::Relaxed) as f64 / 1000.0,
+            microphone_received_samples: microphone.received_samples,
+            microphone_nonzero_samples: microphone.nonzero_samples,
+            microphone_rms: microphone.rms,
+        })
+    } else {
+        Ok(CaptureStatus {
+            received_samples: 0,
+            nonzero_samples: 0,
+            rms: 0.0,
+            microphone_received_samples: microphone.received_samples,
+            microphone_nonzero_samples: microphone.nonzero_samples,
+            microphone_rms: microphone.rms,
+        })
+    }
 }
 
 /// Stop audio capture
@@ -306,8 +374,132 @@ pub fn check_permissions() -> PermissionStatus {
     #[cfg(not(target_os = "macos"))]
     let screen = "granted".to_string();
 
+    #[cfg(target_os = "macos")]
+    let microphone = macos_microphone_permission::status();
+    #[cfg(not(target_os = "macos"))]
+    let microphone = "granted".to_string();
+
     PermissionStatus {
         screen_recording: screen,
-        microphone: "granted".to_string(),
+        microphone,
+    }
+}
+
+/// Ask macOS for microphone access. The first call displays the system prompt;
+/// subsequent calls resolve immediately with the existing TCC decision.
+#[tauri::command]
+pub fn request_microphone_permission() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        macos_microphone_permission::request()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod macos_microphone_permission {
+    use block2::RcBlock;
+    use std::ffi::CString;
+    use std::os::raw::{c_char, c_void};
+    use std::sync::{Arc, Condvar, Mutex};
+
+    type ObjcId = *mut c_void;
+
+    #[link(name = "AVFoundation", kind = "framework")]
+    extern "C" {}
+
+    #[link(name = "objc", kind = "dylib")]
+    extern "C" {
+        fn objc_getClass(name: *const c_char) -> ObjcId;
+        fn sel_registerName(name: *const c_char) -> ObjcId;
+        fn objc_msgSend();
+    }
+
+    unsafe fn send_with_arg<T>(receiver: ObjcId, selector: ObjcId, arg: *const c_void) -> T {
+        let send: unsafe extern "C" fn(ObjcId, ObjcId, *const c_void) -> T =
+            std::mem::transmute(objc_msgSend as *const ());
+        send(receiver, selector, arg)
+    }
+
+    unsafe fn send_with_two_args<T>(
+        receiver: ObjcId,
+        selector: ObjcId,
+        first: *const c_void,
+        second: *const c_void,
+    ) -> T {
+        let send: unsafe extern "C" fn(ObjcId, ObjcId, *const c_void, *const c_void) -> T =
+            std::mem::transmute(objc_msgSend as *const ());
+        send(receiver, selector, first, second)
+    }
+
+    unsafe fn class(name: &str) -> ObjcId {
+        let name = CString::new(name).expect("Objective-C class name cannot contain NUL");
+        objc_getClass(name.as_ptr())
+    }
+
+    unsafe fn selector(name: &str) -> ObjcId {
+        let name = CString::new(name).expect("Objective-C selector cannot contain NUL");
+        sel_registerName(name.as_ptr())
+    }
+
+    unsafe fn audio_media_type() -> ObjcId {
+        let ns_string = class("NSString");
+        let selector = selector("stringWithUTF8String:");
+        let value = CString::new("soun").expect("audio media type");
+        send_with_arg(ns_string, selector, value.as_ptr().cast())
+    }
+
+    pub fn status() -> String {
+        unsafe {
+            let device = class("AVCaptureDevice");
+            let selector = selector("authorizationStatusForMediaType:");
+            let status: isize = send_with_arg(device, selector, audio_media_type().cast());
+            match status {
+                0 => "not_determined",
+                1 => "restricted",
+                2 => "denied",
+                3 => "granted",
+                _ => "unknown",
+            }
+            .to_string()
+        }
+    }
+
+    pub fn request() -> bool {
+        let result = Arc::new((Mutex::new(None), Condvar::new()));
+        let result_for_block = result.clone();
+        // Objective-C BOOL is a one-byte value on macOS. `i8` is used here
+        // because block2 intentionally does not encode Rust's `bool`.
+        let completion: RcBlock<dyn Fn(i8)> = RcBlock::new(move |granted| {
+            let (lock, condvar) = &*result_for_block;
+            if let Ok(mut value) = lock.lock() {
+                *value = Some(granted != 0);
+                condvar.notify_one();
+            }
+        });
+
+        unsafe {
+            let device = class("AVCaptureDevice");
+            let selector = selector("requestAccessForMediaType:completionHandler:");
+            let _ = send_with_two_args::<()>(
+                device,
+                selector,
+                audio_media_type().cast(),
+                RcBlock::as_ptr(&completion).cast(),
+            );
+        }
+
+        let (lock, condvar) = &*result;
+        let guard = match lock.lock() {
+            Ok(guard) => guard,
+            Err(_) => return false,
+        };
+        let guard = condvar
+            .wait_timeout_while(guard, std::time::Duration::from_secs(10), |value| value.is_none())
+            .ok();
+        guard.and_then(|(value, _)| *value).unwrap_or(false)
     }
 }

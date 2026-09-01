@@ -11,10 +11,12 @@ use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 const GEMINI_LIVE_WS_HOST: &str = "generativelanguage.googleapis.com";
 const DEFAULT_GEMINI_MODEL: &str = "models/gemini-3.5-transcribe-live";
+const TRANSLATION_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
 #[derive(Debug, Deserialize)]
 pub struct GeminiRealtimeConfig {
@@ -37,7 +39,15 @@ pub enum GeminiEvent {
         text: String,
         is_final: bool,
     },
+    /// Final source-language ASR. This is emitted before the REST translation
+    /// finishes so stopping a session can never hide the source transcript.
+    SourceTranscript {
+        id: u64,
+        text: String,
+        is_final: bool,
+    },
     Segment {
+        id: u64,
         original: String,
         translation: String,
     },
@@ -54,11 +64,13 @@ struct Session {
     audio_tx: mpsc::UnboundedSender<Vec<u8>>,
     stop_tx: mpsc::UnboundedSender<()>,
     target_lang: Arc<tokio::sync::RwLock<String>>,
+    done_rx: Option<oneshot::Receiver<()>>,
 }
 
 /// A finalized transcript awaiting REST translation. Keeping these in one
 /// bounded FIFO avoids unbounded task growth and preserves segment order.
 struct TranslationJob {
+    id: u64,
     original: String,
 }
 
@@ -87,11 +99,13 @@ pub async fn gemini_realtime_start(
     let target_lang = Arc::new(tokio::sync::RwLock::new(config.target_language.clone()));
     let (audio_tx, audio_rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let (stop_tx, stop_rx) = mpsc::unbounded_channel::<()>();
+    let (done_tx, done_rx) = oneshot::channel::<()>();
 
     let session = Session {
         audio_tx,
         stop_tx,
         target_lang: target_lang.clone(),
+        done_rx: Some(done_rx),
     };
     state.sessions.lock().unwrap().insert(session_id, session);
 
@@ -117,6 +131,7 @@ pub async fn gemini_realtime_start(
                 reason: "session_ended".into(),
             });
         }
+        let _ = done_tx.send(());
     });
 
     Ok(session_id)
@@ -164,9 +179,20 @@ pub async fn gemini_realtime_stop(
     session_id: u64,
     state: State<'_, GeminiState>,
 ) -> Result<(), String> {
-    let mut sessions = state.sessions.lock().unwrap();
-    if let Some(session) = sessions.remove(&session_id) {
+    let session = {
+        let mut sessions = state.sessions.lock().unwrap();
+        sessions.remove(&session_id)
+    };
+    if let Some(mut session) = session {
         let _ = session.stop_tx.send(());
+        if let Some(done_rx) = session.done_rx.take() {
+            if tokio::time::timeout(TRANSLATION_DRAIN_TIMEOUT + std::time::Duration::from_secs(2), done_rx)
+                .await
+                .is_err()
+            {
+                eprintln!("[gemini-live] Timed out waiting for session {} to drain", session_id);
+            }
+        }
     }
     Ok(())
 }
@@ -204,7 +230,7 @@ async fn run_session(
         .await
         .map_err(|e| format!("send setup message: {}", e))?;
 
-    let mut current_turn_text = String::new();
+    let mut next_translation_id = 1u64;
     let http_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
@@ -231,6 +257,7 @@ async fn run_session(
             .await
             .unwrap_or_else(|| job.original.clone());
             let _ = translation_event_ch.send(GeminiEvent::Segment {
+                id: job.id,
                 original: job.original,
                 translation,
             });
@@ -261,7 +288,7 @@ async fn run_session(
                 });
                 if let Err(e) = ws_sink.send(Message::Text(media_msg.to_string().into())).await {
                     eprintln!("[gemini-live] send audio failed: {}", e);
-                    translation_worker.abort();
+                    finish_translation_worker(translation_tx, translation_worker).await;
                     return Err(format!("send audio: {}", e));
                 }
             }
@@ -272,8 +299,8 @@ async fn run_session(
                         handle_server_message(
                             &text,
                             &event_ch,
-                            &mut current_turn_text,
                             &translation_tx,
+                            &mut next_translation_id,
                         ).await;
                     }
                     Some(Ok(Message::Binary(bin))) => {
@@ -281,8 +308,8 @@ async fn run_session(
                             handle_server_message(
                                 text,
                                 &event_ch,
-                                &mut current_turn_text,
                                 &translation_tx,
+                                &mut next_translation_id,
                             ).await;
                         }
                     }
@@ -292,13 +319,13 @@ async fn run_session(
                             .unwrap_or_else(|| "remote_close".into());
                         eprintln!("[gemini-live] WebSocket closed by server: {}", reason);
                         let _ = event_ch.send(GeminiEvent::Closed { reason: reason.clone() });
-                        translation_worker.abort();
+                        finish_translation_worker(translation_tx, translation_worker).await;
                         return Err(format!("Server closed connection: {}", reason));
                     }
                     Some(Ok(_)) => {}
                     Some(Err(e)) => {
                         eprintln!("[gemini-live] WebSocket stream error: {}", e);
-                        translation_worker.abort();
+                        finish_translation_worker(translation_tx, translation_worker).await;
                         return Err(format!("ws error: {}", e));
                     }
                     None => {
@@ -310,8 +337,26 @@ async fn run_session(
         }
     }
 
-    translation_worker.abort();
+    // Stop is a graceful boundary: close the producer, then wait for every
+    // already-accepted translation job. SourceTranscript events were emitted
+    // before enqueueing, so even a timeout here cannot lose source text.
+    finish_translation_worker(translation_tx, translation_worker).await;
     Ok(())
+}
+
+async fn finish_translation_worker(
+    translation_tx: mpsc::Sender<TranslationJob>,
+    mut translation_worker: tokio::task::JoinHandle<()>,
+) {
+    drop(translation_tx);
+    if tokio::time::timeout(TRANSLATION_DRAIN_TIMEOUT, &mut translation_worker)
+        .await
+        .is_err()
+    {
+        eprintln!("[gemini-live] Translation drain timed out; cancelling remaining REST work");
+        translation_worker.abort();
+        let _ = translation_worker.await;
+    }
 }
 
 fn map_lang_name(code: &str) -> String {
@@ -368,8 +413,8 @@ fn build_setup_message(cfg: &GeminiRealtimeConfig) -> String {
 async fn handle_server_message(
     text: &str,
     event_ch: &Channel<GeminiEvent>,
-    current_turn_text: &mut String,
     translation_tx: &mpsc::Sender<TranslationJob>,
+    next_translation_id: &mut u64,
 ) {
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
@@ -423,50 +468,33 @@ async fn handle_server_message(
                 let speech_clean = speech.trim().to_string();
                 if !speech_clean.is_empty() {
                     eprintln!("[gemini-live] Final speech: {}", speech_clean);
+                    let translation_id = *next_translation_id;
+                    *next_translation_id = (*next_translation_id).saturating_add(1);
+                    // Publish source text first. The UI/session store can now
+                    // retain it even while REST translation is still pending.
+                    let _ = event_ch.send(GeminiEvent::SourceTranscript {
+                        id: translation_id,
+                        text: speech_clean.clone(),
+                        is_final: true,
+                    });
                     // Awaiting here is intentional: when the queue is full,
                     // pause WebSocket consumption until translation catches up
                     // rather than dropping or reordering finalized speech.
                     let _ = translation_tx
-                        .send(TranslationJob { original: speech_clean })
+                        .send(TranslationJob {
+                            id: translation_id,
+                            original: speech_clean,
+                        })
                         .await;
                 }
             }
         }
 
-        // C. Direct modelTurn (if using standard generative models)
-        if let Some(model_turn) = server_content.get("modelTurn") {
-            if let Some(parts) = model_turn.get("parts").and_then(|p| p.as_array()) {
-                for part in parts {
-                    if let Some(chunk) = part.get("text").and_then(|t| t.as_str()) {
-                        if !chunk.is_empty() {
-                            current_turn_text.push_str(chunk);
-                            let _ = event_ch.send(GeminiEvent::Transcript {
-                                text: current_turn_text.clone(),
-                                is_final: false,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        // D. Turn complete
-        let is_turn_complete = server_content
-            .get("turnComplete")
-            .and_then(|tc| tc.as_bool())
-            .unwrap_or(false);
-
-        if is_turn_complete {
-            let final_text = current_turn_text.trim().to_string();
-            if !final_text.is_empty() {
-                eprintln!("[gemini-live] Final turn: {}", final_text);
-                let _ = event_ch.send(GeminiEvent::Transcript {
-                    text: final_text,
-                    is_final: true,
-                });
-            }
-            current_turn_text.clear();
-        }
+        // Ignore modelTurn text here. The setup asks Gemini to generate a
+        // direct translation, but that stream can contain speculative text or
+        // language hallucinations while ASR is still settling. The input
+        // transcript above is the source of truth; REST translation emits the
+        // only target text shown for this provider.
     }
 }
 
