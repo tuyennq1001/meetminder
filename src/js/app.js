@@ -1171,7 +1171,7 @@ class App {
             if (this.isRunning && !this.isPaused) {
                 console.log(`[App] Auto-pausing due to ${timeoutMin}min of silence`);
                 await this.pause();
-                this._showToast(`⏱️ Đã tự động tạm dừng do không có âm thanh trong ${timeoutMin} phút`, 'info');
+                this._showToast(`⏱️ Automatically paused because no sound was detected for ${timeoutMin} minutes`, 'info');
             }
         }, timeoutMin * 60 * 1000);
     }
@@ -2404,7 +2404,7 @@ class App {
             btnStart.className = 'primary-action-btn running-state';
             if (iconPlay) iconPlay.style.display = 'none';
             if (iconPause) iconPause.style.display = 'block';
-            if (labelStart) labelStart.innerHTML = '<u>p</u>ause';
+            if (labelStart) labelStart.innerHTML = '<u>P</u>ause';
             btnStart.title = 'Pause translation (⌘P)';
 
             if (btnStop) {
@@ -2420,7 +2420,7 @@ class App {
             btnStart.className = 'primary-action-btn paused-state';
             if (iconPlay) iconPlay.style.display = 'block';
             if (iconPause) iconPause.style.display = 'none';
-            if (labelStart) labelStart.innerHTML = '<u>c</u>ontinue';
+            if (labelStart) labelStart.innerHTML = '<u>C</u>ontinue';
             btnStart.title = 'Continue translation (⌘C)';
 
             if (btnStop) {

@@ -38,21 +38,24 @@ impl MicCapture {
         let host = cpal::default_host();
 
         // List available input devices for debugging
-        let input_devices: Vec<String> = host
-            .input_devices()
-            .map(|devs| devs.filter_map(|d| d.name().ok()).collect())
-            .unwrap_or_default();
+        let input_devices: Vec<String> = match host.input_devices() {
+            Ok(devs) => devs.filter_map(|d| d.name().ok()).collect(),
+            Err(e) => {
+                eprintln!("[Mic] Failed to enumerate input devices: {}", e);
+                Vec::new()
+            }
+        };
         println!("[Mic] Available input devices: {:?}", input_devices);
 
-        if input_devices.is_empty() {
-            return Err(
-                "No microphone found. Connect an external microphone or headset.".to_string(),
-            );
-        }
-
-        let device = host
-            .default_input_device()
-            .ok_or("No default microphone found. Connect an external microphone or headset.")?;
+        // Do not reject an empty enumeration immediately: on macOS, CoreAudio
+        // can temporarily hide devices while microphone permission is pending.
+        let device = host.default_input_device().ok_or_else(|| {
+            if input_devices.is_empty() {
+                "No microphone input device is available. Check that a mic is connected and that MyTranslator has Microphone permission in System Settings > Privacy & Security > Microphone.".to_string()
+            } else {
+                "No default microphone found. Select a default input device in System Settings > Sound > Input.".to_string()
+            }
+        })?;
 
         println!("[Mic] Device: {:?}", device.name().unwrap_or_default());
 
@@ -183,11 +186,15 @@ impl MicCapture {
                 return Err(format!("Unsupported sample format: {:?}", format));
             }
         }
-        .map_err(|e| format!("Failed to build input stream: {}", e))?;
+        .map_err(|e| {
+            self.is_capturing.store(false, Ordering::SeqCst);
+            format!("Failed to build input stream: {}", e)
+        })?;
 
-        stream
-            .play()
-            .map_err(|e| format!("Failed to start mic stream: {}", e))?;
+        if let Err(e) = stream.play() {
+            self.is_capturing.store(false, Ordering::SeqCst);
+            return Err(format!("Failed to start mic stream: {}", e));
+        }
 
         // Store stream to keep it alive
         self._stream = Some(stream);
