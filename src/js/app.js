@@ -363,6 +363,9 @@ class App {
         document.getElementById('select-audio-source')?.addEventListener('change', (e) => {
             this._setSource(e.target.value);
         });
+        document.querySelectorAll('input[name="audio-source"]').forEach((radio) => {
+            radio.addEventListener('change', (e) => this._setSource(e.target.value));
+        });
 
         // Clear button — clears display only (auto-save happens on stop)
         document.getElementById('btn-clear')?.addEventListener('click', async () => {
@@ -620,7 +623,14 @@ class App {
                 return;
             }
 
-            // Cmd/Ctrl + S: Start / Pause / Resume
+            // Cmd/Ctrl + C: Continue a paused session.
+            if (hasModifier && !isTyping && (e.key === 'c' || e.key === 'C') && this.isPaused) {
+                e.preventDefault();
+                if (!this.isStarting) this.start();
+                return;
+            }
+
+            // Cmd/Ctrl + S: Start a new session (or keep the legacy toggle).
             if (hasModifier && (e.key === 's' || e.key === 'S')) {
                 e.preventDefault();
                 if (this.isStarting) return;
@@ -736,10 +746,11 @@ class App {
                 return;
             }
 
-            // Cmd/Ctrl + P: Toggle Pin
+            // Cmd/Ctrl + P: Pause while running; otherwise toggle Pin.
             if (hasModifier && (e.key === 'p' || e.key === 'P')) {
                 e.preventDefault();
-                this._togglePin();
+                if (this.isRunning) this.pause();
+                else this._togglePin();
                 return;
             }
 
@@ -1104,6 +1115,8 @@ class App {
     _updateSourceButtons() {
         const sel = document.getElementById('select-audio-source');
         if (sel) sel.value = this.currentSource;
+        const radio = document.querySelector(`input[name="audio-source"][value="${this.currentSource}"]`);
+        if (radio) radio.checked = true;
     }
 
     // ─── Engine picker (Standard vs OpenAI) ──────────────────
@@ -2391,8 +2404,8 @@ class App {
             btnStart.className = 'primary-action-btn running-state';
             if (iconPlay) iconPlay.style.display = 'none';
             if (iconPause) iconPause.style.display = 'block';
-            if (labelStart) labelStart.textContent = 'Tạm dừng';
-            btnStart.title = 'Tạm dừng dịch (⌘S)';
+            if (labelStart) labelStart.innerHTML = '<u>p</u>ause';
+            btnStart.title = 'Pause translation (⌘P)';
 
             if (btnStop) {
                 btnStop.style.display = 'inline-flex';
@@ -2407,8 +2420,8 @@ class App {
             btnStart.className = 'primary-action-btn paused-state';
             if (iconPlay) iconPlay.style.display = 'block';
             if (iconPause) iconPause.style.display = 'none';
-            if (labelStart) labelStart.textContent = 'Tiếp tục';
-            btnStart.title = 'Tiếp tục dịch (⌘S)';
+            if (labelStart) labelStart.innerHTML = '<u>c</u>ontinue';
+            btnStart.title = 'Continue translation (⌘C)';
 
             if (btnStop) {
                 btnStop.style.display = 'inline-flex';
@@ -3386,7 +3399,7 @@ class App {
             this._renderAudioMeter(level.percent);
         };
 
-        const testSource = document.querySelector('input[name="audio-source"]:checked')?.value || this.currentSource || 'system';
+        const testSource = this.currentSource || document.querySelector('input[name="audio-source"]:checked')?.value || 'system';
 
         try {
             await invoke('start_capture', {
@@ -3485,7 +3498,7 @@ class App {
             }
         };
 
-        const testSource = document.querySelector('input[name="audio-source"]:checked')?.value || this.currentSource || 'system';
+        const testSource = this.currentSource || document.querySelector('input[name="audio-source"]:checked')?.value || 'system';
         try {
             await invoke('start_capture', {
                 source: testSource,

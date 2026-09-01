@@ -113,7 +113,7 @@ impl MicCapture {
         };
 
         let target_rate = TARGET_SAMPLE_RATE;
-        let err_fn = |err| eprintln!("Microphone input error: {}", err);
+        let err_fn = |err| eprintln!("[Mic] Input stream error: {}", err);
 
         let stream = match default_config.sample_format() {
             cpal::SampleFormat::F32 => device.build_input_stream(
@@ -144,6 +144,28 @@ impl MicCapture {
                             return;
                         }
                         let pcm = convert_i16_to_pcm_s16le(
+                            data,
+                            source_channels,
+                            source_sample_rate,
+                            target_rate,
+                        );
+                        if !pcm.is_empty() {
+                            let _ = sender.send(pcm);
+                        }
+                    },
+                    err_fn,
+                    None,
+                )
+            }
+            cpal::SampleFormat::U16 => {
+                let is_capturing = self.is_capturing.clone();
+                device.build_input_stream(
+                    &stream_config,
+                    move |data: &[u16], _: &cpal::InputCallbackInfo| {
+                        if !is_capturing.load(Ordering::SeqCst) {
+                            return;
+                        }
+                        let pcm = convert_u16_to_pcm_s16le(
                             data,
                             source_channels,
                             source_sample_rate,
@@ -258,6 +280,38 @@ fn convert_i16_to_pcm_s16le(
             let s16 = (clamped * 32767.0) as i16;
             s16.to_le_bytes()
         })
+        .collect()
+}
+
+/// Convert unsigned 16-bit audio to PCM s16le (used by some input devices).
+fn convert_u16_to_pcm_s16le(
+    data: &[u16],
+    channels: usize,
+    source_rate: u32,
+    target_rate: u32,
+) -> Vec<u8> {
+    let mono: Vec<f32> = if channels > 1 {
+        data.chunks(channels)
+            .map(|frame| {
+                let sum: f32 = frame.iter().map(|&s| (s as f32 - 32768.0) / 32768.0).sum();
+                sum / channels as f32
+            })
+            .collect()
+    } else {
+        data.iter()
+            .map(|&s| (s as f32 - 32768.0) / 32768.0)
+            .collect()
+    };
+
+    let resampled = if source_rate != target_rate {
+        simple_resample(&mono, source_rate, target_rate)
+    } else {
+        mono
+    };
+
+    resampled
+        .iter()
+        .flat_map(|&s| ((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes())
         .collect()
 }
 
