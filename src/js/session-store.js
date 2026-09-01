@@ -82,7 +82,7 @@ export class SessionStore {
         };
     }
 
-    addSegment(src, tgt, pendingId = null) {
+    addSegment(src, tgt, pendingId = null, speaker = null) {
         if (!this.currentChunk) {
             this.beginChunk();
         }
@@ -92,6 +92,7 @@ export class SessionStore {
             tgt: tgt || '',
         };
         if (pendingId !== null) segment.pendingId = pendingId;
+        if (speaker) segment.speaker = speaker;
         this.currentChunk.segments.push(segment);
         this._mutations++;
         this._scheduleAutosave();
@@ -261,14 +262,16 @@ export class SessionStore {
     }
 
     _autoTitle() {
-        for (const chunk of this._allChunks()) {
-            for (const seg of chunk.segments) {
-                if (seg.tgt && seg.tgt.trim()) {
-                    return seg.tgt.trim().split(/\s+/).slice(0, 7).join(' ').slice(0, 80);
-                }
-            }
-        }
-        return 'Untitled session';
+        // Use the first chunk's start time so autosave and the final Stop
+        // dialog produce the same deterministic meeting title.
+        const firstChunk = this._allChunks()[0];
+        const d = new Date(firstChunk?.started_at || this.createdAt || Date.now());
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return `MM_${y}${m}${day}_${hh}:${mm}`;
     }
 
     // End time of an open (ended_at: null) chunk, derived from its last segment's

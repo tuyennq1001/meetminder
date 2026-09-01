@@ -30,6 +30,7 @@ export class GeminiRealtimeClient {
                     source_language: cfg.sourceLanguage || 'auto',
                     target_language: cfg.targetLanguage || 'vi',
                     model: cfg.model || null,
+                    diarization: cfg.diarization === true,
                 },
                 onEvent: this.channel,
             });
@@ -90,18 +91,18 @@ export class GeminiRealtimeClient {
                 break;
             case 'segment':
                 this._provisionalBuffer = '';
-                this.onSegment(evt.original, evt.translation, evt.id ?? null);
+                this.onSegment(evt.original, evt.translation, evt.id ?? null, evt.speaker ?? null);
                 break;
             case 'source_transcript':
                 if (evt.is_final) {
                     this._provisionalBuffer = '';
-                    this.onSourceFinal(evt.text, evt.id ?? null);
+                    this.onSourceFinal(evt.text, evt.id ?? null, evt.speaker ?? null);
                 }
                 break;
             case 'transcript':
                 if (evt.is_final) {
                     this._provisionalBuffer = '';
-                    this.onSegment('', evt.text);
+                    this.onSegment('', evt.text, null, evt.speaker ?? null);
                 } else {
                     this._provisionalBuffer = evt.text;
                     this.onProvisional(this._provisionalBuffer);

@@ -10,12 +10,13 @@ if (!window.__TAURI__ && location.port === '3111') {
 
     const mockSettings = {
         translation_mode: 'soniox',
-        source_language: 'auto',
+        source_language: 'ja',
         target_language: 'vi',
         soniox_api_key: '',
         elevenlabs_api_key: '',
         google_tts_api_key: '',
         openai_api_key: '',
+        gemini_diarization: false,
         qwen_api_key: '',
         tts_provider: 'edge',
         edge_tts_voice: 'vi-VN-HoaiMyNeural',

@@ -77,6 +77,12 @@
             <span id="btn-stop-label">S<u>t</u>op</span>
           </button>
 
+          <!-- Quick Gemini speaker diarization toggle -->
+          <label id="toolbar-gemini-diarization" class="toolbar-checkbox" title="Bật/tắt phân biệt người nói cho Gemini (⌘E, áp dụng từ phiên tiếp theo)">
+            <input type="checkbox" id="check-gemini-diarization" />
+            <span>Show sp<u>e</u>aker</span>
+          </label>
+
           <!-- Take Note button -->
           <button id="btn-toggle-notes" class="btn-notes-action" title="Ghi chú cuộc họp (⌘N)">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -85,38 +91,6 @@
             </svg>
             <span id="btn-notes-label">Take <u>N</u>ote</span>
           </button>
-
-          <!-- Language Selector -->
-          <div class="quick-lang-wrap" title="Chọn ngôn ngữ trực tiếp trong khi dịch">
-            <select id="quick-select-source-lang" class="source-select quick-lang-select" title="Ngôn ngữ nguồn (Gốc)">
-              <option value="auto">🌐 Auto</option>
-              <option value="ja">🇯🇵 JP</option>
-              <option value="en">🇺🇸 EN</option>
-              <option value="vi">🇻🇳 VI</option>
-              <option value="zh">🇨🇳 ZH</option>
-              <option value="ko">🇰🇷 KO</option>
-              <option value="fr">🇫🇷 FR</option>
-              <option value="de">🇩🇪 DE</option>
-              <option value="es">🇪🇸 ES</option>
-              <option value="th">🇹🇭 TH</option>
-              <option value="id">🇮🇩 ID</option>
-              <option value="ru">🇷🇺 RU</option>
-            </select>
-            <button type="button" id="btn-quick-swap-lang" class="btn-swap-lang" title="Đổi chiều ngôn ngữ">⇄</button>
-            <select id="quick-select-target-lang" class="source-select quick-lang-select" title="Ngôn ngữ dịch (Đích)">
-              <option value="vi">🇻🇳 VI</option>
-              <option value="en">🇺🇸 EN</option>
-              <option value="ja">🇯🇵 JP</option>
-              <option value="zh">🇨🇳 ZH</option>
-              <option value="ko">🇰🇷 KO</option>
-              <option value="fr">🇫🇷 FR</option>
-              <option value="de">🇩🇪 DE</option>
-              <option value="es">🇪🇸 ES</option>
-              <option value="th">🇹🇭 TH</option>
-              <option value="id">🇮🇩 ID</option>
-              <option value="ru">🇷🇺 RU</option>
-            </select>
-          </div>
 
           <!-- Timing Selector Pulldown -->
           <select id="select-translation-timing" class="source-select" title="Kiểu dịch: Dịch hết câu hoặc Dịch real time">
@@ -133,10 +107,11 @@
 
           <!-- Audio Source Select + VU meter -->
           <div class="source-select-wrap">
+            <span class="toolbar-source-label">Nguồn</span>
             <select id="select-audio-source" class="source-select" title="Nguồn âm thanh (⌘1/2/3)">
               <option value="system">🔊 System</option>
               <option value="microphone">🎤 Mic</option>
-              <option value="both">🔊+🎤 Cả hai</option>
+              <option value="both">🔊+🎤 Cả 2</option>
             </select>
             <div id="live-audio-meter" class="live-vu-meter" title="Mức âm lượng nhận được từ Mic/System">
               <div class="vu-bar" data-orig-bg="#10b981" style="background: rgba(255,255,255,0.2);"></div>
@@ -845,7 +820,8 @@
         <tr><td><kbd>⌘S</kbd> / <kbd>⌘P</kbd> / <kbd>⌘C</kbd></td><td>Start / Pause / Continue</td></tr>
         <tr><td><kbd>⌘T</kbd></td><td>Kết thúc cuộc họp & Lưu (Stop)</td></tr>
         <tr><td><kbd>⌘N</kbd></td><td>Mở / Đóng ghi chú (Take Note)</td></tr>
-        <tr><td><kbd>⌘1</kbd> / <kbd>⌘2</kbd> / <kbd>⌘3</kbd></td><td>Nguồn: System / Mic / Cả hai</td></tr>
+        <tr><td><kbd>⌘E</kbd></td><td>Bật / tắt Show speaker</td></tr>
+        <tr><td><kbd>⌘1</kbd> / <kbd>⌘2</kbd> / <kbd>⌘3</kbd></td><td>Nguồn: System / Mic / Cả 2</td></tr>
         <tr><td><kbd>⌘,</kbd></td><td>Mở Cài đặt</td></tr>
         <tr><td><kbd>⌘P</kbd></td><td>Ghim cửa sổ nổi</td></tr>
         <tr><td><kbd>⌘M</kbd></td><td>Thu nhỏ cửa sổ</td></tr>
@@ -919,7 +895,7 @@
       </div>
       <div class="modal-body">
         <label for="input-stop-meeting-title" class="field-label" style="margin-bottom:8px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tên cuộc họp:</label>
-        <input type="text" id="input-stop-meeting-title" class="modal-input" placeholder="20260901 11:00 Họp dự án..." />
+        <input type="text" id="input-stop-meeting-title" class="modal-input" placeholder="MM_20260901_11:00" />
         <p class="modal-desc">Phiên dịch sẽ dừng lại. Bạn có thể lưu toàn bộ bản ghi âm, bản dịch và ghi chú vào tab 📚 Meeting Logs, hoặc kết thúc mà không lưu.</p>
       </div>
       <div class="modal-footer">

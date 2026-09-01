@@ -70,7 +70,7 @@ class App {
         const initSettings = settingsManager.get();
         sessionStore.init({
             engine: initSettings.translation_mode || 'gemini',
-            sourceLang: initSettings.source_language || 'auto',
+            sourceLang: initSettings.source_language || 'ja',
             targetLang: initSettings.target_language || 'vi',
         });
 
@@ -460,6 +460,24 @@ class App {
             this._saveSettingsFromForm().then(() => settingsManager.save(settingsManager.get()));
         });
 
+        // Toolbar-only Gemini option — save immediately so it is ready for the
+        // next session without requiring the Settings screen to be opened.
+        document.getElementById('check-gemini-diarization')?.addEventListener('change', async (e) => {
+            const enabled = e.target.checked;
+            try {
+                await settingsManager.save({ gemini_diarization: enabled });
+                this._showToast(
+                    enabled
+                        ? 'Đã bật phân biệt người nói cho phiên Gemini tiếp theo'
+                        : 'Đã tắt phân biệt người nói',
+                    'success',
+                );
+            } catch (err) {
+                e.target.checked = !enabled;
+                this._showToast(`Không thể lưu tuỳ chọn: ${err}`, 'error');
+            }
+        });
+
         document.getElementById('link-openai')?.addEventListener('click', (e) => {
             e.preventDefault();
             window.__TAURI__.opener.openUrl('https://platform.openai.com/api-keys');
@@ -713,6 +731,16 @@ class App {
                 return;
             }
 
+            // Cmd/Ctrl + E: toggle Gemini speaker labels.
+            if (hasModifier && !isTyping && (e.key === 'e' || e.key === 'E')) {
+                const diarizationCheckbox = document.getElementById('check-gemini-diarization');
+                if (diarizationCheckbox && !diarizationCheckbox.disabled) {
+                    e.preventDefault();
+                    diarizationCheckbox.click();
+                    return;
+                }
+            }
+
             // Cmd/Ctrl + Enter: Start / Pause fallback
             if (hasModifier && e.key === 'Enter') {
                 e.preventDefault();
@@ -849,7 +877,7 @@ class App {
         const subT = document.getElementById('card-translation-sub');
         if (subT) {
             subT.textContent =
-                `${engineNames[mode] || mode} · ${s.source_language || 'auto'} → ${s.target_language || 'vi'}` +
+                `${engineNames[mode] || mode} · ${s.source_language || 'ja'} → ${s.target_language || 'vi'}` +
                 (hasKey ? '' : ' · ⚠️ chưa có API key');
         }
     }
@@ -879,9 +907,11 @@ class App {
                 if (customModelInput) customModelInput.value = savedModel;
             }
         }
+        const geminiDiarization = document.getElementById('check-gemini-diarization');
+        if (geminiDiarization) geminiDiarization.checked = s.gemini_diarization === true;
         const qwenKeyInput = document.getElementById('input-qwen-key');
         if (qwenKeyInput) qwenKeyInput.value = s.qwen_api_key || '';
-        document.getElementById('select-source-lang').value = s.source_language || 'auto';
+        document.getElementById('select-source-lang').value = s.source_language || 'ja';
         document.getElementById('select-target-lang').value = s.target_language || 'vi';
         document.getElementById('select-translation-mode').value = s.translation_mode || 'gemini';
         const inactSelect = document.getElementById('select-inactivity-timeout');
@@ -970,6 +1000,7 @@ class App {
                 }
                 return sel || 'models/gemini-2.0-flash-exp';
             })(),
+            gemini_diarization: document.getElementById('check-gemini-diarization')?.checked || false,
             qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
             source_language: document.getElementById('select-source-lang').value,
             target_language: document.getElementById('select-target-lang').value,
@@ -1042,7 +1073,7 @@ class App {
         // Live status row: language pair display
         const langEl = document.getElementById('live-lang');
         if (langEl) {
-            langEl.textContent = `${settings.source_language || 'auto'} → ${settings.target_language || 'vi'}`;
+            langEl.textContent = `${settings.source_language || 'ja'} → ${settings.target_language || 'vi'}`;
         }
 
         // Update transcript UI
@@ -1060,9 +1091,14 @@ class App {
         this._setViewMode(viewMode);
 
         // Update quick language and timing in toolbar
+        const diarizationCheckbox = document.getElementById('check-gemini-diarization');
+        const diarizationLabel = document.getElementById('toolbar-gemini-diarization');
+        if (diarizationCheckbox) diarizationCheckbox.checked = settings.gemini_diarization === true;
+        if (diarizationCheckbox) diarizationCheckbox.disabled = settings.translation_mode !== 'gemini';
+        if (diarizationLabel) diarizationLabel.classList.toggle('is-disabled', settings.translation_mode !== 'gemini');
         const quickSrc = document.getElementById('quick-select-source-lang');
         const quickTgt = document.getElementById('quick-select-target-lang');
-        if (quickSrc) quickSrc.value = settings.source_language || 'auto';
+        if (quickSrc) quickSrc.value = settings.source_language || 'ja';
         if (quickTgt) quickTgt.value = settings.target_language || 'vi';
 
         const timing = settings.translation_timing || 'on_pause';
@@ -1310,6 +1346,11 @@ class App {
         if (sectionOpenAiKey) sectionOpenAiKey.style.display = isOpenAi ? '' : 'none';
         if (sectionGeminiKey) sectionGeminiKey.style.display = isGemini ? '' : 'none';
         if (sectionQwenKey) sectionQwenKey.style.display = isQwen ? '' : 'none';
+
+        const diarizationCheckbox = document.getElementById('check-gemini-diarization');
+        const diarizationLabel = document.getElementById('toolbar-gemini-diarization');
+        if (diarizationCheckbox) diarizationCheckbox.disabled = !isGemini;
+        if (diarizationLabel) diarizationLabel.classList.toggle('is-disabled', !isGemini);
 
         // Soniox-only features: Custom context, Strict language detection,
         // Endpoint delay. The realtime engines manage these internally.
@@ -1579,7 +1620,7 @@ class App {
                 this.sessionSourceLang = settings.language_a || 'ja';
                 this.sessionTargetLang = settings.language_b || 'vi';
             } else {
-                this.sessionSourceLang = settings.source_language || 'auto';
+                this.sessionSourceLang = settings.source_language || 'ja';
                 this.sessionTargetLang = settings.target_language || 'vi';
             }
         }
@@ -1722,7 +1763,7 @@ class App {
         try {
             await this.openAiClient.connect({
                 apiKey: settings.openai_api_key,
-                sourceLanguage: settings.source_language || 'auto',
+                sourceLanguage: settings.source_language || 'ja',
                 targetLanguage: settings.target_language,
                 audioOutput: false,
             }, this.openAiOutputQueue);
@@ -1775,7 +1816,7 @@ class App {
         this.geminiClient.onProvisional = (text) => {
             this.transcriptUI.setProvisional(text, null, null);
         };
-        this.geminiClient.onSourceFinal = (sourceText, pendingId = null) => {
+        this.geminiClient.onSourceFinal = (sourceText, pendingId = null, speaker = null) => {
             if (!sourceText || !sourceText.trim()) return;
             const source = sourceText.trim();
             // The final source event supersedes Gemini's interim line. Clear it
@@ -1794,12 +1835,12 @@ class App {
                 }
                 return;
             }
-            this.transcriptUI.addOriginal(source, null, null, pendingId);
+            this.transcriptUI.addOriginal(source, speaker, null, pendingId);
             // Persist the source immediately. Translation is allowed to arrive
             // later, or time out during Stop, without losing this utterance.
-            sessionStore.addSegment(source, '', pendingId);
+            sessionStore.addSegment(source, '', pendingId, speaker);
         };
-        this.geminiClient.onSegment = (sourceText, translatedText, pendingId = null) => {
+        this.geminiClient.onSegment = (sourceText, translatedText, pendingId = null, speaker = null) => {
             // New backend versions emit SourceTranscript first and attach the
             // same id to the later REST translation. Never pair by whichever
             // source happens to remain in the bounded UI buffer.
@@ -1808,8 +1849,8 @@ class App {
                     s => s.status === 'original' && s.pendingId === pendingId,
                 );
                 if (!hasSource) {
-                    this.transcriptUI.addOriginal(sourceText || '', null, null, pendingId);
-                    sessionStore.addSegment(sourceText || '', '', pendingId);
+                    this.transcriptUI.addOriginal(sourceText || '', speaker, null, pendingId);
+                    sessionStore.addSegment(sourceText || '', '', pendingId, speaker);
                 }
                 this.transcriptUI.addTranslation(translatedText, pendingId);
                 if (!sessionStore.completeFirstPendingTranslation(translatedText || '', pendingId)) {
@@ -1817,10 +1858,10 @@ class App {
                 }
             } else if (sourceText) {
                 // Compatibility fallback for direct/older events without an id.
-                this.transcriptUI.addOriginal(sourceText, null, null);
+                this.transcriptUI.addOriginal(sourceText, speaker, null);
                 this.transcriptUI.addTranslation(translatedText);
                 if (!sessionStore.completeFirstPendingTranslation(translatedText || '')) {
-                    sessionStore.addSegment(sourceText, translatedText || '');
+                    sessionStore.addSegment(sourceText, translatedText || '', null, speaker);
                 }
             } else if (!this.transcriptUI.segments.some(s => s.status === 'original')) {
                 // A direct modelTurn translation has no source/job id. Do not
@@ -1856,9 +1897,10 @@ class App {
         try {
             await this.geminiClient.connect({
                 apiKey: settings.gemini_api_key,
-                sourceLanguage: settings.source_language || 'auto',
+                sourceLanguage: settings.source_language || 'ja',
                 targetLanguage: settings.target_language || 'vi',
                 model: settings.gemini_model || 'models/gemini-3.5-transcribe-live',
+                diarization: settings.gemini_diarization === true,
             });
         } catch (err) {
             this._showToast(`Gemini connect failed: ${err}`, 'error');
@@ -2498,7 +2540,7 @@ class App {
         const settings = settingsManager.get();
         sessionStore.init({
             engine: settings.translation_mode || 'gemini',
-            sourceLang: settings.source_language || 'auto',
+            sourceLang: settings.source_language || 'ja',
             targetLang: settings.target_language || 'vi',
         });
         this._updateStartButton();
@@ -2542,7 +2584,7 @@ class App {
         const settings = settingsManager.get();
         sessionStore.init({
             engine: settings.translation_mode || 'gemini',
-            sourceLang: settings.source_language || 'auto',
+            sourceLang: settings.source_language || 'ja',
             targetLang: settings.target_language || 'vi',
         });
         this._updateStatus('idle');
@@ -3046,7 +3088,7 @@ class App {
         const day = String(d.getDate()).padStart(2, '0');
         const hh = String(d.getHours()).padStart(2, '0');
         const mm = String(d.getMinutes()).padStart(2, '0');
-        return `${y}${m}${day} ${hh}:${mm}`;
+        return `MM_${y}${m}${day}_${hh}:${mm}`;
     }
 
     async _playSessionTTS(id, isLegacy = false) {

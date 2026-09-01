@@ -26,6 +26,8 @@ pub struct GeminiRealtimeConfig {
     /// BCP-47-ish code (e.g. "vi", "en", "ja")
     pub target_language: String,
     pub model: Option<String>,
+    #[serde(default)]
+    pub diarization: bool,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -45,11 +47,13 @@ pub enum GeminiEvent {
         id: u64,
         text: String,
         is_final: bool,
+        speaker: Option<String>,
     },
     Segment {
         id: u64,
         original: String,
         translation: String,
+        speaker: Option<String>,
     },
     Error {
         code: String,
@@ -72,6 +76,7 @@ struct Session {
 struct TranslationJob {
     id: u64,
     original: String,
+    speaker: Option<String>,
 }
 
 #[derive(Default)]
@@ -260,6 +265,7 @@ async fn run_session(
                 id: job.id,
                 original: job.original,
                 translation,
+                speaker: job.speaker,
             });
         }
     });
@@ -397,7 +403,11 @@ fn build_setup_message(cfg: &GeminiRealtimeConfig) -> String {
                 "responseModalities": ["TEXT"],
                 "temperature": 0.2
             },
-            "inputAudioTranscription": {},
+            "inputAudioTranscription": if cfg.diarization {
+                serde_json::json!({ "diarization": true })
+            } else {
+                serde_json::json!({})
+            },
             "systemInstruction": {
                 "parts": [
                     {
@@ -468,6 +478,11 @@ async fn handle_server_message(
                 let speech_clean = speech.trim().to_string();
                 if !speech_clean.is_empty() {
                     eprintln!("[gemini-live] Final speech: {}", speech_clean);
+                    let speaker = input_tx
+                        .get("speaker")
+                        .or_else(|| input_tx.get("speakerLabel"))
+                        .and_then(|s| s.as_str())
+                        .map(str::to_string);
                     let translation_id = *next_translation_id;
                     *next_translation_id = (*next_translation_id).saturating_add(1);
                     // Publish source text first. The UI/session store can now
@@ -476,6 +491,7 @@ async fn handle_server_message(
                         id: translation_id,
                         text: speech_clean.clone(),
                         is_final: true,
+                        speaker: speaker.clone(),
                     });
                     // Awaiting here is intentional: when the queue is full,
                     // pause WebSocket consumption until translation catches up
@@ -484,6 +500,7 @@ async fn handle_server_message(
                         .send(TranslationJob {
                             id: translation_id,
                             original: speech_clean,
+                            speaker,
                         })
                         .await;
                 }

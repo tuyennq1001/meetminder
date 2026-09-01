@@ -140,6 +140,7 @@ summary,
 .timing-btn,
 .engine-pill-btn,
 .btn-swap-lang,
+.toolbar-checkbox,
 .primary-action-btn,
 .btn-stop-action,
 .btn-notes-action,
@@ -172,6 +173,7 @@ summary,
 #drag-region select,
 #drag-region input,
 #drag-region .activity-tab,
+#drag-region label,
 #drag-region .icon-btn,
 #drag-region .primary-action-btn,
 #drag-region .btn-stop-action,
@@ -181,6 +183,7 @@ summary,
 #drag-region .timing-btn,
 #drag-region .view-mode-btn,
 #drag-region .btn-swap-lang,
+#drag-region .toolbar-checkbox,
 #settings-drag button,
 #settings-drag .icon-btn {
   cursor: pointer !important;
@@ -365,6 +368,46 @@ body:not(.activity-live) .header-divider {
 }
 
 .toggle-btn[aria-pressed="true"] {
+  color: var(--text-primary);
+}
+
+/* Compact toolbar checkbox for quick per-session options. */
+.toolbar-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.toolbar-checkbox:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.toolbar-checkbox input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.toolbar-checkbox.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed !important;
+}
+
+.toolbar-checkbox:has(input:checked) {
+  border-color: var(--accent);
   color: var(--text-primary);
 }
 
@@ -3120,6 +3163,23 @@ body:not(.activity-live) .floating-controls { display: none; }
   background: var(--bg-input);
   color: var(--text-primary);
   font-size: 11px;
+}
+
+#select-view-mode {
+  min-width: 124px;
+  max-width: 140px;
+}
+
+.toolbar-source-label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#select-audio-source {
+  min-width: 100px;
+  max-width: 104px;
 }
 .live-vu-meter {
   display: flex;

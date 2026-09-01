@@ -32,6 +32,9 @@ pub struct Settings {
     /// Google Gemini model name
     #[serde(default = "default_gemini_model")]
     pub gemini_model: String,
+    /// Whether Gemini should request speaker diarization when supported.
+    #[serde(default)]
+    pub gemini_diarization: bool,
     /// Alibaba Cloud DashScope API key (for Qwen LiveTranslate Flash)
     #[serde(default)]
     pub qwen_api_key: String,
@@ -126,8 +129,9 @@ impl Default for Settings {
             openai_api_key: String::new(),
             gemini_api_key: String::new(),
             gemini_model: "models/gemini-3.5-transcribe-live".to_string(),
+            gemini_diarization: false,
             qwen_api_key: String::new(),
-            source_language: "auto".to_string(),
+            source_language: "ja".to_string(),
             target_language: "vi".to_string(),
             audio_source: "system".to_string(),
             overlay_opacity: 0.85,
