@@ -35,6 +35,8 @@ if (!window.__TAURI__ && location.port === '3111') {
         local_tts_speed: 1.0,
         local_tts_models_dir: '',
         font_size: 16,
+        font_color: '#ffffff',
+        font_family: 'system',
     };
 
     // Sample local (Piper) voice catalog so the download/delete UI can be exercised.

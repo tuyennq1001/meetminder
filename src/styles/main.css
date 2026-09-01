@@ -774,6 +774,7 @@ body:not(.activity-live) .header-divider {
 .transcript-flow {
   font-size: var(--transcript-font-size, 16px);
   color: var(--transcript-font-color, #ffffff);
+  font-family: var(--transcript-font-family, system-ui, sans-serif);
   line-height: 1.7;
   padding: 12px 16px;
   word-wrap: break-word;
@@ -919,7 +920,7 @@ body:not(.activity-live) .header-divider {
 }
 
 .dual-view .panel-source .seg-text {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--transcript-font-color, rgba(255, 255, 255, 0.5));
   font-size: var(--transcript-font-size, 16px);
   margin-bottom: 6px;
   line-height: 1.5;
@@ -934,7 +935,7 @@ body:not(.activity-live) .header-divider {
 }
 
 .dual-view .panel-source .seg-text.pending {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--transcript-font-color, rgba(255, 255, 255, 0.3));
   font-style: italic;
 }
 
@@ -953,7 +954,7 @@ body:not(.activity-live) .header-divider {
 /* Original text — smaller, dimmer, above translation */
 .seg-original {
   display: block;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--transcript-font-color, rgba(255, 255, 255, 0.45));
   font-weight: 400;
   font-size: 0.8em;
   margin-top: 8px;
@@ -1586,6 +1587,41 @@ select:focus {
 
 .slider-field .field-label {
   min-width: 65px;
+}
+
+.display-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.display-field .field-label {
+  min-width: 65px;
+}
+
+.display-field .source-select {
+  max-width: 220px;
+}
+
+.color-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.color-input-wrap input[type="color"] {
+  width: 34px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  cursor: pointer;
 }
 
 input[type="range"] {

@@ -528,6 +528,10 @@ class App {
             document.getElementById('font-size-value').textContent = `${e.target.value}px`;
         });
 
+        document.getElementById('input-font-color').addEventListener('input', (e) => {
+            document.getElementById('font-color-value').textContent = e.target.value.toUpperCase();
+        });
+
         document.getElementById('range-max-lines').addEventListener('input', (e) => {
             document.getElementById('max-lines-value').textContent = e.target.value;
         });
@@ -891,6 +895,11 @@ class App {
         document.getElementById('range-font-size').value = s.font_size || 16;
         document.getElementById('font-size-value').textContent = `${s.font_size || 16}px`;
 
+        const fontColor = s.font_color || '#ffffff';
+        document.getElementById('input-font-color').value = fontColor;
+        document.getElementById('font-color-value').textContent = fontColor.toUpperCase();
+        document.getElementById('select-font-family').value = s.font_family || 'system';
+
         document.getElementById('range-max-lines').value = s.max_lines || 5;
         document.getElementById('max-lines-value').textContent = s.max_lines || 5;
 
@@ -949,6 +958,8 @@ class App {
             audio_source: document.querySelector('input[name="audio-source"]:checked')?.value || 'system',
             overlay_opacity: parseInt(document.getElementById('range-opacity').value) / 100,
             font_size: parseInt(document.getElementById('range-font-size').value),
+            font_color: document.getElementById('input-font-color').value,
+            font_family: document.getElementById('select-font-family').value,
             max_lines: parseInt(document.getElementById('range-max-lines').value),
             show_original: document.getElementById('check-show-original').checked,
             custom_context: null,
@@ -1016,6 +1027,8 @@ class App {
                 maxLines: settings.max_lines || 5,
                 showOriginal: settings.show_original !== false,
                 fontSize: settings.font_size || 16,
+                fontColor: settings.font_color || '#ffffff',
+                fontFamily: settings.font_family || 'system',
                 viewMode: viewMode,
             });
         }

@@ -59,7 +59,7 @@ export class TranscriptUI {
     /**
      * Update display settings
      */
-    configure({ maxLines, showOriginal, fontSize, fontColor, viewMode }) {
+    configure({ maxLines, showOriginal, fontSize, fontColor, fontFamily, viewMode }) {
         if (maxLines !== undefined) this.maxChars = maxLines * 160;
         if (fontSize !== undefined) {
             this.fontSize = fontSize;
@@ -68,6 +68,17 @@ export class TranscriptUI {
         if (fontColor !== undefined) {
             this.fontColor = fontColor;
             this.container.style.setProperty('--transcript-font-color', fontColor);
+        }
+        if (fontFamily !== undefined) {
+            this.fontFamily = fontFamily;
+            const families = {
+                system: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
+                inter: 'Inter, sans-serif',
+                arial: 'Arial, sans-serif',
+                georgia: 'Georgia, serif',
+                monospace: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            };
+            this.container.style.setProperty('--transcript-font-family', families[fontFamily] || families.system);
         }
         if (viewMode !== undefined) {
             this.viewMode = viewMode;

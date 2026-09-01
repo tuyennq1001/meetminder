@@ -740,6 +740,23 @@
             <input type="range" id="range-font-size" min="12" max="140" value="16" />
             <span id="font-size-value" class="range-value">16px</span>
           </div>
+          <div class="display-field">
+            <label class="field-label" for="input-font-color">Font Color</label>
+            <div class="color-input-wrap">
+              <input type="color" id="input-font-color" value="#ffffff" />
+              <span id="font-color-value">#FFFFFF</span>
+            </div>
+          </div>
+          <div class="display-field">
+            <label class="field-label" for="select-font-family">Font Style</label>
+            <select id="select-font-family" class="source-select">
+              <option value="system">System</option>
+              <option value="inter">Inter</option>
+              <option value="arial">Arial</option>
+              <option value="georgia">Georgia</option>
+              <option value="monospace">Monospace</option>
+            </select>
+          </div>
           <div class="slider-field">
             <span class="field-label">Max Lines</span>
             <input type="range" id="range-max-lines" min="2" max="15" value="5" />

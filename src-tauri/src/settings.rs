@@ -45,6 +45,12 @@ pub struct Settings {
     pub overlay_opacity: f64,
     /// Font size in px
     pub font_size: u32,
+    /// Transcript font color as a CSS color string
+    #[serde(default = "default_font_color")]
+    pub font_color: String,
+    /// Transcript font family identifier
+    #[serde(default = "default_font_family")]
+    pub font_family: String,
     /// Max transcript lines to display
     pub max_lines: u32,
     /// Whether to show original text alongside translation
@@ -126,6 +132,8 @@ impl Default for Settings {
             audio_source: "system".to_string(),
             overlay_opacity: 0.85,
             font_size: 16,
+            font_color: default_font_color(),
+            font_family: default_font_family(),
             max_lines: 5,
             show_original: true,
             translation_mode: "gemini".to_string(),
@@ -165,6 +173,14 @@ fn default_inactivity_timeout_min() -> u32 {
 /// Serde default for `local_tts_speed` (field-level default would give 0.0).
 fn default_local_tts_speed() -> f32 {
     1.0
+}
+
+fn default_font_color() -> String {
+    "#ffffff".to_string()
+}
+
+fn default_font_family() -> String {
+    "system".to_string()
 }
 
 fn default_gemini_model() -> String {
