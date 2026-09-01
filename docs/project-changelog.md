@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to My Translator are documented here.
+All notable changes to Meet Minder are documented here.
 Each release section is extracted automatically by `.github/workflows/release.yml` and published as the GitHub Release body.
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
@@ -28,9 +28,9 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 | Your machine | Download |
 |---|---|
-| **Mac Apple Silicon** (M1/M2/M3/M4) | `MyTranslator_0.9.0_aarch64.dmg` |
-| **Mac Intel** (pre-2020) | `MyTranslator_0.9.0_x64.dmg` |
-| **Windows** | `MyTranslator_0.9.0_x64-setup.exe` |
+| **Mac Apple Silicon** (M1/M2/M3/M4) | `MeetMinder_0.9.0_aarch64.dmg` |
+| **Mac Intel** (pre-2020) | `MeetMinder_0.9.0_x64.dmg` |
+| **Windows** | `MeetMinder_0.9.0_x64-setup.exe` |
 
 On a Mac,  → About This Mac → "Chip": **Apple** = aarch64, **Intel** = x64. The `.app.tar.gz`, `.sig`, and `latest.json` files are for the auto-updater — no need to download them.
 

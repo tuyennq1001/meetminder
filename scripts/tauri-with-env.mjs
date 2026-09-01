@@ -4,7 +4,7 @@
  *
  * If the repo-root `.env` defines `APP_IDENTIFIER`, it is injected via
  * `--config {"identifier": "..."}` so the dev build can use a distinct id
- * (e.g. `com.personal.translator.dev`). This gives the dev build its OWN macOS
+ * (e.g. `com.meetminder.desktop.dev`). This gives the dev build its OWN macOS
  * Screen-Recording / Microphone permission entry, leaving the installed stable
  * app's permissions untouched. When `.env` has no `APP_IDENTIFIER`, the default
  * identifier from `tauri.conf.json` is used unchanged.
@@ -58,11 +58,11 @@ if (identifier) {
   // the " Dev" name makes the app distinct in Finder and the macOS permission lists. The
   // release path (`npm run build` / `npm run tauri build`) does NOT use this wrapper, so it
   // keeps the real identifier, product name, and Developer ID identity from tauri.conf.json.
-  const baseName = readConfValue('productName') || 'MyTranslator';
+  const baseName = readConfValue('productName') || 'Meet Minder';
   const devName = baseName.endsWith(' Dev') ? baseName : `${baseName} Dev`;
   // Signing identity: ad-hoc "-" by default. Ad-hoc changes on every rebuild, so macOS
   // Screen-Recording permission does NOT persist across rebuilds. Set APP_SIGNING_IDENTITY
-  // in .env to a STABLE cert name (e.g. a self-signed "MyTranslator Dev" cert) to make the
+  // in .env to a STABLE cert name (e.g. a self-signed "Meet Minder Dev" cert) to make the
   // permission stick across rebuilds.
   const signingIdentity =
     process.env.APP_SIGNING_IDENTITY || readEnvValue('APP_SIGNING_IDENTITY') || '-';

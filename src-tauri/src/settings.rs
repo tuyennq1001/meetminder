@@ -172,10 +172,10 @@ fn default_gemini_model() -> String {
 }
 
 /// Get the settings file path
-/// ~/Library/Application Support/com.terry.translator/settings.json
+/// ~/Library/Application Support/com.meetminder.desktop/settings.json
 fn settings_path() -> PathBuf {
     let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("com.terry.translator");
+    path.push("com.meetminder.desktop");
     path.push("settings.json");
     path
 }

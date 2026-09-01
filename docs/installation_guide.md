@@ -1,6 +1,6 @@
 # Installation Guide
 
-Step-by-step guide to install and use **My Translator** on macOS.
+Step-by-step guide to install and use **Meet Minder** on macOS.
 
 ---
 
@@ -19,22 +19,22 @@ Step-by-step guide to install and use **My Translator** on macOS.
 Download the latest `.dmg` from: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/latest)
 
 Choose the right file:
-- `MyTranslator_x.x.x_aarch64.dmg` — Apple Silicon (M1/M2/M3/M4)
-- `MyTranslator_x.x.x_x64.dmg` — Intel Mac
+- `MeetMinder_x.x.x_aarch64.dmg` — Apple Silicon (M1/M2/M3/M4)
+- `MeetMinder_x.x.x_x64.dmg` — Intel Mac
 
 ---
 
 ## Step 2 — Install
 
 1. Open the `.dmg` file
-2. Drag **My Translator** into the **Applications** folder
+2. Drag **Meet Minder** into the **Applications** folder
 3. Eject the DMG
 
 ---
 
 ## Step 3 — First Launch
 
-Open My Translator from Applications.
+Open Meet Minder from Applications.
 
 > ✅ The app is signed and notarized — macOS should allow it without any security warnings.
 
@@ -45,7 +45,7 @@ Open My Translator from Applications.
 On first launch, macOS will ask for **Screen & System Audio Recording** permission:
 
 1. Click **Open System Settings** when prompted
-2. Find **My Translator** in the list
+2. Find **Meet Minder** in the list
 3. **Toggle the switch ON**
 4. macOS will ask to **Quit & Reopen** — click that button
 
@@ -249,7 +249,7 @@ In **Dual** view the source transcript appears on the left and the translated te
 
 ## Updating
 
-My Translator includes **auto-update**. When a new version is available:
+Meet Minder includes **auto-update**. When a new version is available:
 
 1. A **green badge** appears on the ⚙️ settings icon
 2. Open Settings → **About** tab → click **Download & Install**

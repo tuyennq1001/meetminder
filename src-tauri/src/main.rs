@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    my_translator_lib::run()
+    meet_minder_lib::run()
 }

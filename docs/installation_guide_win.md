@@ -1,6 +1,6 @@
 # Installation Guide — Windows
 
-Step-by-step guide to install and use **My Translator** on Windows 10/11.
+Step-by-step guide to install and use **Meet Minder** on Windows 10/11.
 
 ---
 
@@ -45,7 +45,7 @@ The setup wizard will guide you:
 
 1. Click **Next** to start
 
-![Welcome to My Translator Setup](user_manual_win/mytrans_win_03.png)
+![Welcome to Meet Minder Setup](user_manual_win/mytrans_win_03.png)
 
 2. Choose install location (default is fine) → click **Next**
 
@@ -55,9 +55,9 @@ The setup wizard will guide you:
 
 ![Installation Complete](user_manual_win/mytrans_win_05.png)
 
-4. Check **"Run My Translator"** → click **Finish**
+4. Check **"Run Meet Minder"** → click **Finish**
 
-![Completing Setup — Run My Translator](user_manual_win/mytrans_win_06.png)
+![Completing Setup — Run Meet Minder](user_manual_win/mytrans_win_06.png)
 
 ---
 
@@ -212,7 +212,7 @@ In **Dual** view the source transcript appears on the left and the translated te
 
 ## Updating
 
-My Translator includes **auto-update**. When a new version is available:
+Meet Minder includes **auto-update**. When a new version is available:
 
 1. A **green badge** appears on the ⚙️ settings icon
 2. Open Settings → **About** tab → click **Download & Install**

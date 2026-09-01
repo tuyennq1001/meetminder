@@ -103,7 +103,7 @@ class App {
         this._initAboutTab();
         this._checkForUpdates();
 
-        console.log('🌐 My Translator v0.9.1 initialized');
+        console.log('🌐 Meet Minder v0.9.1 initialized');
     }
 
     async _checkPlatformSupport() {

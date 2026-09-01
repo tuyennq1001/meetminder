@@ -1,6 +1,6 @@
 # TTS (Text-to-Speech) Guide
 
-My Translator can **read translations aloud** as they appear — like having a personal interpreter. Three providers available:
+Meet Minder can **read translations aloud** as they appear — like having a personal interpreter. Three providers available:
 
 ## Provider Comparison
 
@@ -48,7 +48,7 @@ Local TTS runs **Piper** neural voices entirely on your machine via sherpa-onnx 
 
 ### What is it?
 
-Edge TTS uses the same neural speech engine behind Microsoft Edge's **"Read Aloud"** feature. My Translator connects to the same service to read translations.
+Edge TTS uses the same neural speech engine behind Microsoft Edge's **"Read Aloud"** feature. Meet Minder connects to the same service to read translations.
 
 - **No API key needed** — works out of the box
 - **No explicit limits** — free for personal use
@@ -86,7 +86,7 @@ Google's latest text-to-speech model with **near-human quality**. Chirp 3 HD cap
 ### How to Get API Key
 
 1. Go to [console.cloud.google.com](https://console.cloud.google.com)
-2. Create a new project (or use existing) — click dropdown at top-left → **New Project** → name it `my-translator` → **Create**
+2. Create a new project (or use existing) — click dropdown at top-left → **New Project** → name it `meet-minder` → **Create**
 3. Enable the Text-to-Speech API:
    - Visit [console.cloud.google.com/apis/library/texttospeech.googleapis.com](https://console.cloud.google.com/apis/library/texttospeech.googleapis.com)
    - Click **Enable**

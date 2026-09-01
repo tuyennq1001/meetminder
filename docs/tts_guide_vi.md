@@ -1,6 +1,6 @@
 # Hướng Dẫn TTS (Text-to-Speech)
 
-My Translator có thể **đọc thành tiếng bản dịch** ngay khi xuất hiện — như có phiên dịch viên ngồi cạnh. Hỗ trợ 3 nhà cung cấp:
+Meet Minder có thể **đọc thành tiếng bản dịch** ngay khi xuất hiện — như có phiên dịch viên ngồi cạnh. Hỗ trợ 3 nhà cung cấp:
 
 ## So sánh các lựa chọn
 
@@ -48,7 +48,7 @@ Local TTS chạy giọng neural **Piper** hoàn toàn trên máy bạn qua sherp
 
 ### Edge TTS là gì?
 
-Edge TTS dùng cùng công nghệ giọng nói neural của **Microsoft Edge** (tính năng "Đọc to"). My Translator kết nối đến cùng dịch vụ để đọc bản dịch.
+Edge TTS dùng cùng công nghệ giọng nói neural của **Microsoft Edge** (tính năng "Đọc to"). Meet Minder kết nối đến cùng dịch vụ để đọc bản dịch.
 
 - **Không cần API key** — bật là dùng
 - **Không giới hạn rõ ràng** — miễn phí cho mục đích cá nhân
@@ -86,7 +86,7 @@ Model TTS mới nhất của Google với chất lượng **gần giọng ngư�
 ### Cách lấy API Key
 
 1. Vào [console.cloud.google.com](https://console.cloud.google.com)
-2. Tạo project mới (hoặc dùng project có sẵn) — click dropdown góc trên trái → **New Project** → đặt tên `my-translator` → **Create**
+2. Tạo project mới (hoặc dùng project có sẵn) — click dropdown góc trên trái → **New Project** → đặt tên `meet-minder` → **Create**
 3. Bật Text-to-Speech API:
    - Vào [console.cloud.google.com/apis/library/texttospeech.googleapis.com](https://console.cloud.google.com/apis/library/texttospeech.googleapis.com)
    - Click **Enable**

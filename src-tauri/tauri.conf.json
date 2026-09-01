@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MyTranslator",
+  "productName": "Meet Minder",
   "version": "0.9.1",
-  "identifier": "com.terry.translator",
+  "identifier": "com.meetminder.desktop",
   "build": {
     "frontendDist": "../src"
   },
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "My Translator",
+        "title": "Meet Minder",
         "width": 1200,
         "height": 750,
         "minWidth": 820,

@@ -4,7 +4,7 @@
 # Prerequisites:
 #   1. Developer ID Application cert installed (signingIdentity in tauri.conf.json).
 #   2. App-specific password stored via:
-#        xcrun notarytool store-credentials "my-translator" \
+#        xcrun notarytool store-credentials "meet-minder" \
 #          --apple-id "phucnt0@gmail.com" --team-id "75EN938B6L"
 #
 # Usage:  ./scripts/build-notarized.sh

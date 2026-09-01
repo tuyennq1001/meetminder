@@ -1,6 +1,6 @@
 #[test]
 fn test_settings_load() {
-    let settings = my_translator_lib::settings::Settings::load();
+    let settings = meet_minder_lib::settings::Settings::load();
     println!("API key present: {}", !settings.gemini_api_key.is_empty());
     println!("Selected model: {}", settings.gemini_model);
     assert!(!settings.gemini_api_key.is_empty());
@@ -8,7 +8,7 @@ fn test_settings_load() {
 
 #[test]
 fn test_mic_capture_init() {
-    let mut mic = my_translator_lib::audio::microphone::MicCapture::new();
+    let mut mic = meet_minder_lib::audio::microphone::MicCapture::new();
     match mic.start() {
         Ok(rx) => {
             println!("Mic started successfully!");
@@ -33,7 +33,7 @@ fn test_mic_capture_init() {
 
 #[test]
 fn test_system_audio_capture() {
-    let mut sys = my_translator_lib::audio::system_audio::SystemAudioCapture::new();
+    let mut sys = meet_minder_lib::audio::system_audio::SystemAudioCapture::new();
     match sys.start() {
         Ok(rx) => {
             println!("System audio started successfully!");

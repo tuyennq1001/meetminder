@@ -79,7 +79,7 @@ if (!window.__TAURI__ && location.port === '3111') {
                         return mockLocalVoices;
                     case 'local_tts_models_dir_path':
                         return mockSettings.local_tts_models_dir ||
-                            '/Users/dev/Library/Application Support/com.personal.translator/piper-models';
+                            '/Users/dev/Library/Application Support/com.meetminder.desktop/piper-models';
                     case 'local_tts_download_model': {
                         // Simulate progress then mark installed.
                         const ch = args?.onProgress;

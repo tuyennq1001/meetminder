@@ -51,7 +51,7 @@ impl MicCapture {
         // can temporarily hide devices while microphone permission is pending.
         let device = host.default_input_device().ok_or_else(|| {
             if input_devices.is_empty() {
-                "No microphone input device is available. Check that a mic is connected and that MyTranslator has Microphone permission in System Settings > Privacy & Security > Microphone.".to_string()
+                "No microphone input device is available. Check that a mic is connected and that Meet Minder has Microphone permission in System Settings > Privacy & Security > Microphone.".to_string()
             } else {
                 "No default microphone found. Select a default input device in System Settings > Sound > Input.".to_string()
             }

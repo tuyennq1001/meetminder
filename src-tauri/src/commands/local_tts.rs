@@ -144,10 +144,10 @@ fn ensure_safe_id(id: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Default models root: `<config>/com.terry.translator/piper-models`.
+/// Default models root: `<config>/com.meetminder.desktop/piper-models`.
 fn default_models_root() -> PathBuf {
     let mut p = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    p.push("com.terry.translator");
+    p.push("com.meetminder.desktop");
     p.push("piper-models");
     p
 }
