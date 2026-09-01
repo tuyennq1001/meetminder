@@ -73,20 +73,33 @@ impl SCStreamOutputTrait for AudioHandler {
 /// Captures all system audio output and converts to PCM s16le 16kHz mono.
 pub struct SystemAudioCapture {
     is_capturing: Arc<AtomicBool>,
+    _stream: Option<SCStream>,
 }
+
+unsafe impl Send for SystemAudioCapture {}
 
 impl SystemAudioCapture {
     pub fn new() -> Self {
         Self {
             is_capturing: Arc::new(AtomicBool::new(false)),
+            _stream: None,
         }
     }
 
     /// Start capturing system audio.
     /// Returns a receiver that yields PCM s16le 16kHz mono audio chunks.
-    pub fn start(&self) -> Result<mpsc::Receiver<Vec<u8>>, String> {
+    pub fn start(&mut self) -> Result<mpsc::Receiver<Vec<u8>>, String> {
         if self.is_capturing.load(Ordering::SeqCst) {
             return Err("Already capturing".to_string());
+        }
+
+        #[cfg(target_os = "macos")]
+        unsafe {
+            #[link(name = "CoreGraphics", kind = "framework")]
+            extern "C" {
+                fn CGRequestScreenCaptureAccess() -> bool;
+            }
+            CGRequestScreenCaptureAccess();
         }
 
         // Get available displays
@@ -109,7 +122,7 @@ impl SystemAudioCapture {
             .with_excluding_windows(&[])
             .build();
 
-        // Configure: audio only, 48kHz stereo (ScreenCaptureKit native rate)
+        // Configure: audio only, 48kHz mono
         // Downsampling to 16kHz mono happens in AudioHandler
         let config = SCStreamConfiguration::new()
             .with_width(2) // minimal video (required by API)
@@ -117,7 +130,7 @@ impl SystemAudioCapture {
             .with_captures_audio(true)
             .with_excludes_current_process_audio(true) // Prevent TTS audio feedback loop
             .with_sample_rate(48000)
-            .with_channel_count(2);
+            .with_channel_count(1);
 
         // Create channel for audio data
         let (sender, receiver) = mpsc::channel::<Vec<u8>>();
@@ -133,22 +146,17 @@ impl SystemAudioCapture {
             .map_err(|e| format!("Failed to start system audio capture: {}", e))?;
 
         self.is_capturing.store(true, Ordering::SeqCst);
-
-        // Keep the stream alive in a background thread
-        let is_capturing = self.is_capturing.clone();
-        std::thread::spawn(move || {
-            while is_capturing.load(Ordering::SeqCst) {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            let _ = stream.stop_capture();
-        });
+        self._stream = Some(stream);
 
         Ok(receiver)
     }
 
     /// Stop capturing
-    pub fn stop(&self) {
+    pub fn stop(&mut self) {
         self.is_capturing.store(false, Ordering::SeqCst);
+        if let Some(mut stream) = self._stream.take() {
+            let _ = stream.stop_capture();
+        }
     }
 
     pub fn is_capturing(&self) -> bool {

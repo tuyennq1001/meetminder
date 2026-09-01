@@ -6,68 +6,55 @@
 import { settingsManager } from './settings.js';
 import { TranscriptUI } from './ui.js';
 import { sonioxClient } from './soniox.js';
-import { elevenLabsTTS } from './elevenlabs-tts.js';
-import { googleTTS } from './google-tts.js';
-import { edgeTTSRust } from './edge-tts.js';
-import { microsoftTTS } from './microsoft-tts.js';
-import { googleFreeTTS } from './google-free-tts.js';
-import { tiktokTTS } from './tiktok-tts.js';
-import { localTTS } from './local-tts.js';
-import { audioPlayer, readAudioPlayer } from './audio-player.js';
-import { Reader } from './reader.js';
 import { updater } from './updater.js';
 import { sessionStore } from './session-store.js';
 import { QWEN_LANGS } from './qwen-langs.js';
 import {
     initShell, setActivity, getActivity, setLiveBadge, bindMenu, initWindowModes,
-    startAutoHideWatch, stopAutoHideWatch, toggleManualCompact, isAutoHideEnabled, setAutoHideEnabled,
 } from './ui-shell.js';
 
 const { invoke, Channel } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
-
-// Static fallback for Microsoft v2 voices when the live list endpoint is unreachable.
-const MS_VOICE_FALLBACK = [
-    { short_name: 'vi-VN-HoaiMyNeural', friendly_name: 'HoaiMy', gender: 'Female', locale: 'vi-VN' },
-    { short_name: 'vi-VN-NamMinhNeural', friendly_name: 'NamMinh', gender: 'Male', locale: 'vi-VN' },
-    { short_name: 'en-US-JennyNeural', friendly_name: 'Jenny', gender: 'Female', locale: 'en-US' },
-    { short_name: 'en-US-GuyNeural', friendly_name: 'Guy', gender: 'Male', locale: 'en-US' },
-];
 
 class App {
     constructor() {
         this.isRunning = false;
         this.isStarting = false; // Guard against re-entry
         this.currentSource = 'system'; // 'system' | 'microphone' | 'both'
-        this.translationMode = 'soniox'; // 'soniox' | 'local'
-        this.transcriptUI = null;
+        this.currentViewMode = 'dual'; // 'dual' | 'original' | 'translation'
+        this.translationMode = 'gemini'; // 'gemini' | 'soniox' | 'openai' | 'qwen' | 'local'
         this.appWindow = getCurrentWindow();
-        this.localPipelineChannel = null;
-        this.localPipelineReady = false;
+        this.sessionStartTime = null;
         this.recordingStartTime = null;
-        this.sessionStartTime = null;  // Session start timestamp (new Date())
-        this.sessionSourceLang = 'auto';
-        this.sessionTargetLang = 'vi';
+        this.liveDurationInterval = null;
         this.sessionMode = 'one_way';
-        this.ttsEnabled = false;  // TTS runtime toggle
-        this.isPinned = true;     // Always-on-top state
-        this.isCompact = false;   // Compact mode (hide control bar)
+        this.isPinned = false;    // Always-on-top state (default false)
         this._closing = false;    // Guard so the exit flush runs exactly once
+        this._selectedSessionIds = new Set();
+        this.isPaused = false;
+        this._hasUnsavedMeetingData = false;
+        this._inactivityTimer = null;
+        this._isStopConfirmationOpen = false;
     }
 
     async init() {
+        // UI Shell tabs (must be initialized first so tabs work immediately)
+        this._initShellAndMenus();
+
         // Load settings
         await settingsManager.load();
 
         // Init transcript UI
         const transcriptContainer = document.getElementById('transcript-content');
         this.transcriptUI = new TranscriptUI(transcriptContainer);
+        this.transcriptUI.onToast = (msg, type) => this._showToast(msg, type);
+        this.transcriptUI.onActivity = () => this._resetInactivityTimer();
 
         // Init session store — one session file lives across many Start/Pause
         // cycles; it autosaves while recording and finalizes on Stop or app close.
         const initSettings = settingsManager.get();
         sessionStore.init({
-            engine: initSettings.translation_mode || 'soniox',
+            engine: initSettings.translation_mode || 'gemini',
             sourceLang: initSettings.source_language || 'auto',
             targetLang: initSettings.target_language || 'vi',
         });
@@ -90,42 +77,33 @@ class App {
         // Subscribe to settings changes
         settingsManager.onChange((settings) => this._applySettings(settings));
 
-        // Init audio player for TTS
-        audioPlayer.init();
-
-        // Read mode (in-overlay TTS reader). 'live' = capture→translate→speak; 'read' =
-        // paste text → read aloud. Default live. Reader is built lazily on Play.
-        this._readMode = 'live';
-        this._reader = null;
-        this._initReadMode();
-
-        // Wire TTS audio callbacks for every provider (single source of registration
-        // so a new provider can never be silently left unwired).
-        this._allTTS = [elevenLabsTTS, edgeTTSRust, googleTTS, microsoftTTS, googleFreeTTS, tiktokTTS, localTTS];
-        for (const tts of this._allTTS) {
-            tts.onAudioChunk = (base64Audio, isFinal) => {
-                audioPlayer.enqueue(base64Audio);
-            };
-            tts.onError = (error) => {
-                console.error('[TTS]', error);
-                this._showToast(error, 'error');
-            };
-        }
-
         // Window position restore disabled — causes issues on Retina displays
         // await this._restoreWindowPosition();
 
         // Window modes: overlay ↔ expanded (⤢), restores last mode + sizes
-        initWindowModes(this.appWindow);
+        // Maximize window by default on app launch
+        try {
+            await this.appWindow.maximize();
+        } catch (e) {
+            console.warn('Failed to maximize window on start:', e);
+        }
+
+        // Always-on-top state: default false, or restore user preference
+        const savedPinned = localStorage.getItem('is_pinned') === 'true';
+        this.isPinned = savedPinned;
+        try {
+            await this.appWindow.setAlwaysOnTop(this.isPinned);
+        } catch (e) {
+            console.warn('Failed to set initial alwaysOnTop:', e);
+        }
+        const btnPin = document.getElementById('btn-pin');
+        if (btnPin) btnPin.classList.toggle('active', this.isPinned);
 
         // Check for updates (non-blocking)
         this._initAboutTab();
         this._checkForUpdates();
 
-        // Show engine picker on first launch
-        this._maybeShowEnginePicker();
-
-        console.log('🌐 My Translator v0.7.1 initialized');
+        console.log('🌐 My Translator v0.9.1 initialized');
     }
 
     async _checkPlatformSupport() {
@@ -177,27 +155,40 @@ class App {
 
     _bindEvents() {
         // Settings button
-        document.getElementById('btn-settings').addEventListener('click', () => {
+        document.getElementById('btn-settings')?.addEventListener('click', () => {
             this._showView('settings');
         });
 
         // Back from settings
-        document.getElementById('btn-back').addEventListener('click', () => {
+        document.getElementById('btn-back')?.addEventListener('click', () => {
             this._showView('overlay');
         });
 
+        // Save Meeting Log buttons
+        document.getElementById('btn-save-meeting')?.addEventListener('click', () => {
+            this._promptSaveMeeting();
+        });
+        document.getElementById('btn-menu-save-meeting')?.addEventListener('click', () => {
+            this._promptSaveMeeting();
+        });
+
         // Back from session viewer to session list
-        document.getElementById('btn-session-back-to-list').addEventListener('click', () => {
+        document.getElementById('btn-session-back-to-list')?.addEventListener('click', () => {
             document.getElementById('sessions-list-panel').style.display = '';
             document.getElementById('session-viewer').style.display = 'none';
+            this._showSessions();
         });
 
         // Copy session content
-        document.getElementById('btn-session-copy').addEventListener('click', async () => {
+        const btnSessionCopy = document.getElementById('btn-session-copy');
+        btnSessionCopy?.addEventListener('click', async () => {
             const content = document.getElementById('session-viewer-content')?.textContent || '';
             if (content) {
                 await navigator.clipboard.writeText(content);
-                this._showToast('Copied to clipboard', 'success');
+                this._showToast('Đã copy nội dung cuộc họp ✓', 'success');
+                const orig = btnSessionCopy.innerHTML;
+                btnSessionCopy.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                setTimeout(() => { if (btnSessionCopy) btnSessionCopy.innerHTML = orig; }, 1500);
             }
         });
 
@@ -212,7 +203,50 @@ class App {
             });
         }
 
-        // Edit session title (inline prompt)
+        // Select all sessions checkbox
+        document.getElementById('chk-select-all-sessions')?.addEventListener('change', (e) => {
+            const checked = e.target.checked;
+            document.querySelectorAll('.session-item-chk').forEach(chk => {
+                chk.checked = checked;
+                const id = chk.dataset.id;
+                if (checked) this._selectedSessionIds.add(id);
+                else this._selectedSessionIds.delete(id);
+            });
+            this._updateBatchSelectionUI();
+        });
+
+        // Batch delete sessions
+        document.getElementById('btn-batch-delete-sessions')?.addEventListener('click', async () => {
+            await this._deleteSelectedSessions();
+        });
+
+        // TTS play session
+        document.getElementById('btn-session-tts-play')?.addEventListener('click', () => {
+            const cur = this._currentViewedSession;
+            if (cur) this._playSessionTTS(cur.id, cur.isLegacy);
+        });
+
+        // Delete single session from viewer
+        document.getElementById('btn-session-delete-single')?.addEventListener('click', async () => {
+            const cur = this._currentViewedSession;
+            if (!cur) return;
+            if (cur.id === sessionStore.id) {
+                this._showToast('Không thể xoá cuộc họp đang chạy — hãy Dừng trước', 'error');
+                return;
+            }
+            if (!confirm('Xóa vĩnh viễn cuộc họp này?')) return;
+            try {
+                await invoke('delete_session', { id: cur.id });
+                this._showToast('Đã xóa cuộc họp', 'success');
+                document.getElementById('sessions-list-panel').style.display = '';
+                document.getElementById('session-viewer').style.display = 'none';
+                await this._showSessions();
+            } catch (err) {
+                this._showToast(`Xóa thất bại: ${err}`, 'error');
+            }
+        });
+
+        // Edit session title (modal/prompt)
         document.getElementById('btn-session-edit-title')?.addEventListener('click', async () => {
             const cur = this._currentViewedSession;
             if (!cur || cur.isLegacy) {
@@ -221,48 +255,60 @@ class App {
             }
             const titleEl = document.getElementById('session-viewer-title');
             const oldTitle = titleEl?.textContent || '';
-            const newTitle = prompt('Rename session:', oldTitle);
-            if (newTitle == null || newTitle === oldTitle) return;
-            try {
-                await invoke('update_session_title', { id: cur.id, title: newTitle });
-                if (titleEl) titleEl.textContent = newTitle;
-                this._showToast('Renamed', 'success');
-            } catch (err) {
-                this._showToast(`Rename failed: ${err}`, 'error');
-            }
+            await this._renameSession(cur.id, oldTitle);
         });
 
         // Export session
         document.getElementById('btn-session-export-srt')?.addEventListener('click', () => this._exportCurrentSession('srt'));
         document.getElementById('btn-session-export-txt')?.addEventListener('click', () => this._exportCurrentSession('txt'));
 
-        // Close button (overlay) — flows through the onCloseRequested hook,
-        // which flushes the session before the app exits.
-        document.getElementById('btn-close').addEventListener('click', async () => {
+        // macOS Traffic Light Window Controls
+        document.getElementById('btn-win-close')?.addEventListener('click', async () => {
+            await this._saveWindowPosition();
+            await this.appWindow.close();
+        });
+        document.getElementById('btn-win-minimize')?.addEventListener('click', async () => {
+            await this.appWindow.minimize();
+        });
+        document.getElementById('btn-win-maximize')?.addEventListener('click', async () => {
+            await this.appWindow.toggleMaximize();
+        });
+
+        // Close button (overlay / legacy)
+        document.getElementById('btn-close')?.addEventListener('click', async () => {
             await this._saveWindowPosition();
             await this.appWindow.close();
         });
 
-        // (Minimize button removed from toolbar — ⌘M / window menu still work)
-
         // Pin/Unpin button
-        document.getElementById('btn-pin').addEventListener('click', () => {
+        document.getElementById('btn-pin')?.addEventListener('click', () => {
             this._togglePin();
         });
 
-        // Compact mode button
-        document.getElementById('btn-compact').addEventListener('click', () => {
-            this._toggleCompact();
+        // View mode select pulldown (Dual / Original / Translation)
+        document.getElementById('select-view-mode')?.addEventListener('change', (e) => {
+            this._setViewMode(e.target.value);
         });
 
-        // View mode toggle (dual panel)
-        document.getElementById('btn-view-mode').addEventListener('click', () => {
-            this._toggleViewMode();
+        // Quick Language Switchers (Source / Target)
+        document.getElementById('quick-select-source-lang')?.addEventListener('change', async (e) => {
+            await this._handleQuickSourceLangChange(e.target.value);
+        });
+        document.getElementById('quick-select-target-lang')?.addEventListener('change', async (e) => {
+            await this._handleQuickTargetLangChange(e.target.value);
+        });
+        document.getElementById('btn-quick-swap-lang')?.addEventListener('click', async () => {
+            await this._handleQuickLangSwap();
+        });
+
+        // Translation Timing select pulldown (Realtime vs Chờ dứt câu)
+        document.getElementById('select-translation-timing')?.addEventListener('change', async (e) => {
+            await this._setTranslationTiming(e.target.value);
         });
 
         // Font size quick controls
-        document.getElementById('btn-font-up').addEventListener('click', () => this._adjustFontSize(4));
-        document.getElementById('btn-font-down').addEventListener('click', () => this._adjustFontSize(-4));
+        document.getElementById('btn-font-up')?.addEventListener('click', () => this._adjustFontSize(4));
+        document.getElementById('btn-font-down')?.addEventListener('click', () => this._adjustFontSize(-4));
 
         // Color dot controls
         document.querySelectorAll('.color-dot').forEach(dot => {
@@ -274,39 +320,41 @@ class App {
             });
         });
 
-        // Start/Stop button
-        document.getElementById('btn-start').addEventListener('click', async () => {
-            if (this.isStarting) return; // Prevent re-entry
+        // Main Start / Pause button
+        document.getElementById('btn-start')?.addEventListener('click', async () => {
+            if (this.isStarting) return;
             try {
                 if (this.isRunning) {
-                    await this.stopSession();
+                    // Running -> click to Pause
+                    await this.pause();
                 } else {
+                    // Idle or Paused -> click to Start / Resume
                     this.isStarting = true;
                     await this.start();
                 }
             } catch (err) {
-                console.error('[App] Start/Stop error:', err);
-                this._showToast(`Error: ${err}`, 'error');
+                console.error('[App] Start/Pause error:', err);
+                this._showToast(`Lỗi: ${err}`, 'error');
                 this.isRunning = false;
+                this.isPaused = false;
                 this._updateStartButton();
                 this._updateStatus('error');
-                this.transcriptUI.clear();
-                this.transcriptUI.showPlaceholder();
             } finally {
                 this.isStarting = false;
             }
         });
 
-        // Pause button — stop capture + persist, but keep the same session file.
-        // Only reachable while running (disabled otherwise); next Start appends a
-        // new chunk to the same file rather than starting a fresh one.
-        document.getElementById('btn-pause')?.addEventListener('click', async () => {
-            if (this.isStarting || !this.isRunning) return;
+        // Dynamic Stop / Save Log button
+        document.getElementById('btn-stop')?.addEventListener('click', async () => {
+            if (this._isStopConfirmationOpen) return;
+            const chosenTitle = await this._promptConfirmStop();
+            if (!chosenTitle) return;
+
             try {
-                await this.pause();
+                await this.stopSession(chosenTitle);
             } catch (err) {
-                console.error('[App] Pause error:', err);
-                this._showToast(`Error: ${err}`, 'error');
+                console.error('[App] Stop session error:', err);
+                this._showToast(`Lỗi kết thúc: ${err}`, 'error');
             }
         });
 
@@ -317,14 +365,14 @@ class App {
         });
 
         // Clear button — clears display only (auto-save happens on stop)
-        document.getElementById('btn-clear').addEventListener('click', async () => {
+        document.getElementById('btn-clear')?.addEventListener('click', async () => {
             this.transcriptUI.clear();
             this.transcriptUI.showPlaceholder();
             this.recordingStartTime = null;
         });
 
-        // Copy transcript button
-        document.getElementById('btn-copy').addEventListener('click', async () => {
+        // Copy transcript button (if present)
+        document.getElementById('btn-copy')?.addEventListener('click', async () => {
             const text = this.transcriptUI.getPlainText();
             if (text) {
                 await navigator.clipboard.writeText(text);
@@ -335,13 +383,16 @@ class App {
         });
 
         // Open saved transcripts folder (kept for Finder access)
-        document.getElementById('btn-open-transcripts').addEventListener('click', async () => {
+        document.getElementById('btn-open-transcripts')?.addEventListener('click', async () => {
             try {
                 await invoke('open_transcript_dir');
             } catch (err) {
                 this._showToast('Failed to open folder: ' + err, 'error');
             }
         });
+
+        // Initialize Horizontal Take Note Drawer
+        this._initNotesModule();
 
         // Settings form elements
         this._bindSettingsForm();
@@ -358,7 +409,7 @@ class App {
         });
 
         // Toggle API key visibility
-        document.getElementById('btn-toggle-key').addEventListener('click', () => {
+        document.getElementById('btn-toggle-key')?.addEventListener('click', () => {
             const input = document.getElementById('input-api-key');
             input.type = input.type === 'password' ? 'text' : 'password';
         });
@@ -368,24 +419,55 @@ class App {
             if (input) input.type = input.type === 'password' ? 'text' : 'password';
         });
 
+        document.getElementById('btn-toggle-gemini-key')?.addEventListener('click', () => {
+            const input = document.getElementById('input-gemini-key');
+            if (input) input.type = input.type === 'password' ? 'text' : 'password';
+        });
+
+        document.getElementById('select-gemini-model')?.addEventListener('change', (e) => {
+            const customSection = document.getElementById('section-gemini-custom-model');
+            if (customSection) {
+                customSection.style.display = e.target.value === 'custom' ? 'block' : 'none';
+            }
+            this._saveSettingsFromForm().then(() => settingsManager.save(settingsManager.get()));
+        });
+
+        document.getElementById('input-gemini-custom-model')?.addEventListener('change', () => {
+            this._saveSettingsFromForm().then(() => settingsManager.save(settingsManager.get()));
+        });
+
         document.getElementById('link-openai')?.addEventListener('click', (e) => {
             e.preventDefault();
             window.__TAURI__.opener.openUrl('https://platform.openai.com/api-keys');
         });
 
+        document.getElementById('link-gemini')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.__TAURI__.opener.openUrl('https://aistudio.google.com/app/apikey');
+        });
+
         // Inline key format validation + engine-option enable/disable
         const sonioxInput = document.getElementById('input-api-key');
         const openaiInput = document.getElementById('input-openai-key');
+        const geminiInput = document.getElementById('input-gemini-key');
         sonioxInput?.addEventListener('input', () => this._refreshKeyStatus());
         openaiInput?.addEventListener('input', () => this._refreshKeyStatus());
+        geminiInput?.addEventListener('input', () => this._refreshKeyStatus());
 
         // Test-connection buttons
         document.getElementById('btn-test-soniox')?.addEventListener('click', () => this._testConnection('soniox'));
         document.getElementById('btn-test-openai')?.addEventListener('click', () => this._testConnection('openai'));
 
         // Translation mode toggle
-        document.getElementById('select-translation-mode').addEventListener('change', (e) => {
+        document.getElementById('select-translation-mode')?.addEventListener('change', (e) => {
             this._updateModeUI(e.target.value);
+        });
+
+        // Inactivity timeout change
+        document.getElementById('select-inactivity-timeout')?.addEventListener('change', (e) => {
+            const val = parseInt(e.target.value, 10);
+            settingsManager.save({ inactivity_timeout_min: isNaN(val) ? 10 : val });
+            this._resetInactivityTimer();
         });
 
         // Welcome-screen engine cards: pick a class (standard / openai),
@@ -452,19 +534,12 @@ class App {
         });
 
         // Toggle ElevenLabs API key visibility
-        document.getElementById('btn-toggle-elevenlabs-key')?.addEventListener('click', () => {
-            const input = document.getElementById('input-elevenlabs-key');
-            input.type = input.type === 'password' ? 'text' : 'password';
+        // Audio Diagnostics & Test buttons
+        document.getElementById('btn-test-mic-rec')?.addEventListener('click', () => {
+            this._startAudioRecordingTest();
         });
-
-        document.getElementById('btn-toggle-google-key')?.addEventListener('click', () => {
-            const input = document.getElementById('input-google-tts-key');
-            input.type = input.type === 'password' ? 'text' : 'password';
-        });
-
-        document.getElementById('btn-toggle-google-free-key')?.addEventListener('click', () => {
-            const input = document.getElementById('input-google-free-key');
-            input.type = input.type === 'password' ? 'text' : 'password';
+        document.getElementById('btn-test-mic-live')?.addEventListener('click', () => {
+            this._toggleAudioLiveMonitor();
         });
 
         // Settings wizard navigation: home cards open detail screens, back rows return home
@@ -475,88 +550,6 @@ class App {
             });
         });
 
-        // TTS enable/disable toggle in settings — show/hide detail
-        document.getElementById('check-tts-enabled')?.addEventListener('change', (e) => {
-            const detail = document.getElementById('tts-settings-detail');
-            if (detail) detail.style.display = e.target.checked ? '' : 'none';
-        });
-
-        // TTS provider toggle — show/hide relevant settings panels
-        document.getElementById('select-tts-provider')?.addEventListener('change', (e) => {
-            this._updateTTSProviderUI(e.target.value);
-        });
-
-        // TTS speed slider — show value
-        document.getElementById('range-tts-speed')?.addEventListener('input', (e) => {
-            const label = document.getElementById('tts-speed-value');
-            if (label) label.textContent = e.target.value + 'x';
-        });
-
-        // Edge TTS speed slider
-        document.getElementById('range-edge-speed')?.addEventListener('input', (e) => {
-            const label = document.getElementById('edge-speed-value');
-            const v = parseInt(e.target.value);
-            if (label) label.textContent = (v >= 0 ? '+' : '') + v + '%';
-        });
-
-        document.getElementById('range-google-speed')?.addEventListener('input', (e) => {
-            const label = document.getElementById('google-speed-value');
-            if (label) label.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
-        });
-
-        // Microsoft v2 speed slider
-        document.getElementById('range-microsoft-speed')?.addEventListener('input', (e) => {
-            const label = document.getElementById('microsoft-speed-value');
-            const v = parseInt(e.target.value);
-            if (label) label.textContent = (v >= 0 ? '+' : '') + v + '%';
-        });
-
-        // Microsoft v2 language filter — re-fill the voice dropdown for the chosen language
-        document.getElementById('select-microsoft-lang')?.addEventListener('change', (e) => {
-            this._fillMicrosoftVoices(e.target.value);
-        });
-
-        // Local offline: language filter re-renders the voice list
-        document.getElementById('select-local-lang')?.addEventListener('change', (e) => {
-            this._fillLocalVoices(e.target.value);
-        });
-
-        // Local offline: speed slider (0.5x–2.0x)
-        document.getElementById('range-local-speed')?.addEventListener('input', (e) => {
-            const label = document.getElementById('local-speed-value');
-            if (label) label.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
-        });
-
-        // Google-free / TikTok: client-side speed sliders (0.5x–2.0x)
-        document.getElementById('range-google-free-speed')?.addEventListener('input', (e) => {
-            const label = document.getElementById('google-free-speed-value');
-            if (label) label.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
-        });
-        document.getElementById('range-tiktok-speed')?.addEventListener('input', (e) => {
-            const label = document.getElementById('tiktok-speed-value');
-            if (label) label.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
-        });
-
-        // Local offline: change model storage folder
-        document.getElementById('btn-local-change-dir')?.addEventListener('click', () => {
-            this._maybePickModelsDir();
-        });
-
-        // Local offline: reset model folder back to the default app location
-        document.getElementById('btn-local-reset-dir')?.addEventListener('click', () => {
-            this._resetModelsDir();
-        });
-
-        // TikTok: paste a "Copy as cURL" and auto-extract the sessionid cookie into the field
-        document.getElementById('input-tiktok-curl')?.addEventListener('input', (e) => {
-            const m = e.target.value.match(/sessionid=([^;"'\s\\]+)/i);
-            const sidInput = document.getElementById('input-tiktok-session');
-            if (m && m[1] && sidInput && sidInput.value !== m[1]) {
-                sidInput.value = m[1];
-                this._showToast('sessionid extracted from cURL ✓', 'success');
-            }
-        });
-
         // Add translation term row
         document.getElementById('btn-add-term')?.addEventListener('click', () => {
             this._addTermRow('', '');
@@ -565,11 +558,6 @@ class App {
         // Add general context row
         document.getElementById('btn-add-general')?.addEventListener('click', () => {
             this._addGeneralRow('', '');
-        });
-
-        // TTS toggle button in overlay
-        document.getElementById('btn-tts').addEventListener('click', () => {
-            this._toggleTTS();
         });
 
         // Wire Soniox callbacks. Soniox emits original + translation as
@@ -617,33 +605,147 @@ class App {
 
     _bindKeyboardShortcuts() {
         document.addEventListener('keydown', (e) => {
-            // Ignore when typing in input fields (SELECT: keep native typeahead)
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+            const hasModifier = e.metaKey || e.ctrlKey;
+            const isTyping = (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) && !e.target.readOnly;
+
+            // Cmd/Ctrl + L/O: switch the top-level activity.
+            if (hasModifier && !isTyping && (e.key === 'l' || e.key === 'L')) {
+                e.preventDefault();
+                setActivity('live');
+                return;
+            }
+            if (hasModifier && !isTyping && (e.key === 'o' || e.key === 'O')) {
+                e.preventDefault();
+                setActivity('library');
                 return;
             }
 
-            // Cmd/Ctrl + Enter: Start/Stop
-            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+            // Cmd/Ctrl + S: Start / Pause / Resume
+            if (hasModifier && (e.key === 's' || e.key === 'S')) {
                 e.preventDefault();
                 if (this.isStarting) return;
                 (async () => {
                     try {
                         if (this.isRunning) {
-                            await this.stopSession();
+                            await this.pause();
                         } else {
                             this.isStarting = true;
                             await this.start();
                         }
                     } catch (err) {
-                        console.error('[App] Keyboard start/stop error:', err);
-                        this._showToast(`Error: ${err}`, 'error');
+                        console.error('[App] Keyboard start/pause error:', err);
+                        this._showToast(`Lỗi: ${err}`, 'error');
                         this.isRunning = false;
+                        this.isPaused = false;
                         this._updateStartButton();
                         this._updateStatus('error');
                     } finally {
                         this.isStarting = false;
                     }
                 })();
+                return;
+            }
+
+            // Cmd/Ctrl + T: Stop (Kết thúc cuộc họp & Lưu)
+            if (hasModifier && (e.key === 't' || e.key === 'T')) {
+                e.preventDefault();
+                if (this.isRunning || this.isPaused || this._hasUnsavedMeetingData) {
+                    if (this._isStopConfirmationOpen) return;
+                    // Keep the keyboard path consistent with the Stop button:
+                    // users must be able to confirm the action and name the log.
+                    (async () => {
+                        const chosenTitle = await this._promptConfirmStop();
+                        if (!chosenTitle) return;
+                        try {
+                            await this.stopSession(chosenTitle);
+                        } catch (err) {
+                            console.error('[App] Keyboard stop session error:', err);
+                            this._showToast(`Lỗi kết thúc: ${err}`, 'error');
+                        }
+                    })();
+                }
+                return;
+            }
+
+            // Cmd/Ctrl + N: Take Note (Mở / Đóng ghi chú nhanh)
+            if (hasModifier && (e.key === 'n' || e.key === 'N')) {
+                e.preventDefault();
+                this._toggleNotesDrawer();
+                return;
+            }
+
+            // Cmd/Ctrl + Enter: Start / Pause fallback
+            if (hasModifier && e.key === 'Enter') {
+                e.preventDefault();
+                if (this.isStarting) return;
+                (async () => {
+                    try {
+                        if (this.isRunning) {
+                            await this.pause();
+                        } else {
+                            this.isStarting = true;
+                            await this.start();
+                        }
+                    } catch (err) {
+                        console.error('[App] Keyboard start/pause error:', err);
+                        this._showToast(`Lỗi: ${err}`, 'error');
+                        this.isRunning = false;
+                        this.isPaused = false;
+                        this._updateStartButton();
+                        this._updateStatus('error');
+                    } finally {
+                        this.isStarting = false;
+                    }
+                })();
+                return;
+            }
+
+            // Cmd/Ctrl + ,: Open settings
+            if (hasModifier && e.key === ',') {
+                e.preventDefault();
+                this._showView('settings');
+                return;
+            }
+
+            // Cmd/Ctrl + 1: Switch to System Audio
+            if (hasModifier && e.key === '1') {
+                e.preventDefault();
+                this._setSource('system');
+                return;
+            }
+
+            // Cmd/Ctrl + 2: Switch to Microphone
+            if (hasModifier && e.key === '2') {
+                e.preventDefault();
+                this._setSource('microphone');
+                return;
+            }
+
+            // Cmd/Ctrl + 3: Switch to Both
+            if (hasModifier && e.key === '3') {
+                e.preventDefault();
+                this._setSource('both');
+                return;
+            }
+
+            // Cmd/Ctrl + M: Minimize
+            if (hasModifier && (e.key === 'm' || e.key === 'M')) {
+                e.preventDefault();
+                this._saveWindowPosition();
+                this.appWindow.minimize();
+                return;
+            }
+
+            // Cmd/Ctrl + P: Toggle Pin
+            if (hasModifier && (e.key === 'p' || e.key === 'P')) {
+                e.preventDefault();
+                this._togglePin();
+                return;
+            }
+
+            // Non-modifier shortcuts below — ignore when typing in input fields
+            if (isTyping) {
+                return;
             }
 
             // Escape: Go back to overlay / close settings
@@ -661,59 +763,10 @@ class App {
                 }
             }
 
-            // "?": shortcut cheat-sheet (guarded above from input/textarea)
-            if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
+            // "?": shortcut cheat-sheet
+            if (e.key === '?' && !hasModifier) {
                 e.preventDefault();
                 this._toggleShortcutSheet?.(true);
-            }
-
-            // Cmd/Ctrl + ,: Open settings
-            if ((e.metaKey || e.ctrlKey) && e.key === ',') {
-                e.preventDefault();
-                this._showView('settings');
-            }
-
-            // Cmd/Ctrl + 1: Switch to System Audio
-            if ((e.metaKey || e.ctrlKey) && e.key === '1') {
-                e.preventDefault();
-                this._setSource('system');
-            }
-
-            // Cmd/Ctrl + 2: Switch to Microphone
-            if ((e.metaKey || e.ctrlKey) && e.key === '2') {
-                e.preventDefault();
-                this._setSource('microphone');
-            }
-
-            // Cmd/Ctrl + 3: Switch to Both
-            if ((e.metaKey || e.ctrlKey) && e.key === '3') {
-                e.preventDefault();
-                this._setSource('both');
-            }
-
-            // Cmd/Ctrl + T: Toggle TTS
-            if ((e.metaKey || e.ctrlKey) && e.key === 't') {
-                e.preventDefault();
-                this._toggleTTS();
-            }
-
-            // Cmd/Ctrl + M: Minimize
-            if ((e.metaKey || e.ctrlKey) && e.key === 'm') {
-                e.preventDefault();
-                this._saveWindowPosition();
-                this.appWindow.minimize();
-            }
-
-            // Cmd/Ctrl + P: Toggle Pin
-            if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
-                e.preventDefault();
-                this._togglePin();
-            }
-
-            // Cmd/Ctrl + D: Toggle Compact
-            if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
-                e.preventDefault();
-                this._toggleCompact();
             }
         });
     }
@@ -750,33 +803,14 @@ class App {
     _updateSettingsCards() {
         const s = settingsManager.get();
         const mode = s.translation_mode || 'soniox';
-        const engineNames = { soniox: 'Soniox', local: 'Local MLX', openai: 'OpenAI Realtime', qwen: 'Qwen LiveTranslate' };
-        const keyField = { soniox: 'soniox_api_key', openai: 'openai_api_key', qwen: 'qwen_api_key' };
+        const engineNames = { soniox: 'Soniox', local: 'Local MLX', openai: 'OpenAI Realtime', gemini: 'Google Gemini Live', qwen: 'Qwen LiveTranslate' };
+        const keyField = { soniox: 'soniox_api_key', openai: 'openai_api_key', gemini: 'gemini_api_key', qwen: 'qwen_api_key' };
         const hasKey = mode === 'local' || !!(s[keyField[mode]] || '').trim();
         const subT = document.getElementById('card-translation-sub');
         if (subT) {
             subT.textContent =
                 `${engineNames[mode] || mode} · ${s.source_language || 'auto'} → ${s.target_language || 'vi'}` +
                 (hasKey ? '' : ' · ⚠️ chưa có API key');
-        }
-
-        // TTS card: cloud-realtime engines run text-only — reflect on the card, never hide.
-        const isCloudRealtime = mode === 'openai' || mode === 'qwen';
-        const provNames = {
-            edge: 'Edge TTS', microsoft: 'Microsoft v2', 'google-free': 'Google TTS Free',
-            tiktok: 'TikTok TTS', local: 'Local (Offline)', google: 'Google Chirp HD', elevenlabs: 'ElevenLabs',
-        };
-        const cardTts = document.getElementById('card-tts');
-        const subTts = document.getElementById('card-tts-sub');
-        if (cardTts) cardTts.classList.toggle('disabled', isCloudRealtime);
-        if (subTts) {
-            if (isCloudRealtime) {
-                subTts.textContent = `Tắt — engine ${engineNames[mode]} chạy dạng chữ, không đọc tiếng`;
-            } else {
-                const prov = s.tts_provider || 'edge';
-                const voice = prov === 'local' && s.local_tts_voice ? ` · ${s.local_tts_voice}` : '';
-                subTts.textContent = `${provNames[prov] || prov}${voice}`;
-            }
         }
     }
 
@@ -788,18 +822,36 @@ class App {
         document.getElementById('input-api-key').value = s.soniox_api_key || '';
         const openaiKeyInput = document.getElementById('input-openai-key');
         if (openaiKeyInput) openaiKeyInput.value = s.openai_api_key || '';
+        const geminiKeyInput = document.getElementById('input-gemini-key');
+        if (geminiKeyInput) geminiKeyInput.value = s.gemini_api_key || '';
+        const geminiModelSelect = document.getElementById('select-gemini-model');
+        const customModelSection = document.getElementById('section-gemini-custom-model');
+        const customModelInput = document.getElementById('input-gemini-custom-model');
+        if (geminiModelSelect) {
+            const savedModel = s.gemini_model || 'models/gemini-2.0-flash-exp';
+            const standardOptions = Array.from(geminiModelSelect.options).map(o => o.value);
+            if (standardOptions.includes(savedModel)) {
+                geminiModelSelect.value = savedModel;
+                if (customModelSection) customModelSection.style.display = 'none';
+            } else {
+                geminiModelSelect.value = 'custom';
+                if (customModelSection) customModelSection.style.display = 'block';
+                if (customModelInput) customModelInput.value = savedModel;
+            }
+        }
         const qwenKeyInput = document.getElementById('input-qwen-key');
         if (qwenKeyInput) qwenKeyInput.value = s.qwen_api_key || '';
         document.getElementById('select-source-lang').value = s.source_language || 'auto';
         document.getElementById('select-target-lang').value = s.target_language || 'vi';
-        document.getElementById('select-translation-mode').value = s.translation_mode || 'soniox';
-        this._updateModeUI(s.translation_mode || 'soniox');
+        document.getElementById('select-translation-mode').value = s.translation_mode || 'gemini';
+        const inactSelect = document.getElementById('select-inactivity-timeout');
+        if (inactSelect) inactSelect.value = String(s.inactivity_timeout_min ?? 10);
+        this._updateModeUI(s.translation_mode || 'gemini');
         this._refreshKeyStatus();
 
         // Translation type (one-way / two-way)
         const translationType = s.translation_type || 'one_way';
         document.getElementById('select-translation-type').value = translationType;
-        this._updateTranslationTypeUI(translationType);
 
         // Two-way language selects
         document.getElementById('select-lang-a').value = s.language_a || 'ja';
@@ -859,77 +911,25 @@ class App {
             const terms = ctx?.translation_terms || [];
             terms.forEach(t => this._addTermRow(t.source, t.target));
         }
-
-        // TTS settings
-        document.getElementById('input-elevenlabs-key').value = s.elevenlabs_api_key || '';
-        document.getElementById('select-tts-voice').value = s.tts_voice_id || '21m00Tcm4TlvDq8ikWAM';
-        // Edge TTS settings
-        const edgeVoiceSelect = document.getElementById('select-edge-voice');
-        if (edgeVoiceSelect) edgeVoiceSelect.value = s.edge_tts_voice || 'vi-VN-HoaiMyNeural';
-        const edgeSpeedSlider = document.getElementById('range-edge-speed');
-        const edgeSpeedLabel = document.getElementById('edge-speed-value');
-        const edgeSpeed = s.edge_tts_speed !== undefined ? s.edge_tts_speed : 20;
-        if (edgeSpeedSlider) edgeSpeedSlider.value = edgeSpeed;
-        if (edgeSpeedLabel) edgeSpeedLabel.textContent = (edgeSpeed >= 0 ? '+' : '') + edgeSpeed + '%';
-
-        // Google TTS settings
-        const googleKeyInput = document.getElementById('input-google-tts-key');
-        if (googleKeyInput) googleKeyInput.value = s.google_tts_api_key || '';
-        const googleVoiceSelect = document.getElementById('select-google-voice');
-        if (googleVoiceSelect) googleVoiceSelect.value = s.google_tts_voice || 'vi-VN-Chirp3-HD-Aoede';
-        const googleSpeedSlider = document.getElementById('range-google-speed');
-        const googleSpeedLabel = document.getElementById('google-speed-value');
-        const googleSpeed = s.google_tts_speed || 1.0;
-        if (googleSpeedSlider) googleSpeedSlider.value = googleSpeed;
-        if (googleSpeedLabel) googleSpeedLabel.textContent = googleSpeed + 'x';
-
-        // Microsoft v2 settings (voice populated dynamically in _updateTTSProviderUI)
-        const msVoiceSelect = document.getElementById('select-microsoft-voice');
-        if (msVoiceSelect) msVoiceSelect.value = s.microsoft_v2_voice || 'vi-VN-HoaiMyNeural';
-        const msSpeedSlider = document.getElementById('range-microsoft-speed');
-        const msSpeedLabel = document.getElementById('microsoft-speed-value');
-        const msSpeed = s.microsoft_v2_speed !== undefined ? s.microsoft_v2_speed : 20;
-        if (msSpeedSlider) msSpeedSlider.value = msSpeed;
-        if (msSpeedLabel) msSpeedLabel.textContent = (msSpeed >= 0 ? '+' : '') + msSpeed + '%';
-
-        // Google Free settings
-        const gfKeyInput = document.getElementById('input-google-free-key');
-        if (gfKeyInput) gfKeyInput.value = s.google_free_api_key || '';
-        const gfVoiceSelect = document.getElementById('select-google-free-voice');
-        if (gfVoiceSelect) gfVoiceSelect.value = s.google_free_voice || 'vi-VN';
-        const gfSpeed = s.google_free_speed || 1.0;
-        const gfSpeedSlider = document.getElementById('range-google-free-speed');
-        const gfSpeedLabel = document.getElementById('google-free-speed-value');
-        if (gfSpeedSlider) gfSpeedSlider.value = gfSpeed;
-        if (gfSpeedLabel) gfSpeedLabel.textContent = parseFloat(gfSpeed).toFixed(1) + 'x';
-
-        // TikTok settings
-        const ttVoiceSelect = document.getElementById('select-tiktok-voice');
-        if (ttVoiceSelect) ttVoiceSelect.value = s.tiktok_voice || 'BV074_streaming';
-        const ttSession = document.getElementById('input-tiktok-session');
-        if (ttSession) ttSession.value = s.tiktok_session_id || '';
-        const ttSpeed = s.tiktok_speed || 1.0;
-        const ttSpeedSlider = document.getElementById('range-tiktok-speed');
-        const ttSpeedLabel = document.getElementById('tiktok-speed-value');
-        if (ttSpeedSlider) ttSpeedSlider.value = ttSpeed;
-        if (ttSpeedLabel) ttSpeedLabel.textContent = parseFloat(ttSpeed).toFixed(1) + 'x';
-
-        // TTS provider
-        const providerSelect = document.getElementById('select-tts-provider');
-        if (providerSelect) {
-            providerSelect.value = s.tts_provider || 'edge';
-            this._updateTTSProviderUI(providerSelect.value);
-        }
     }
 
     async _saveSettingsFromForm() {
         const settings = {
             soniox_api_key: document.getElementById('input-api-key').value.trim(),
             openai_api_key: document.getElementById('input-openai-key')?.value.trim() || '',
+            gemini_api_key: document.getElementById('input-gemini-key')?.value.trim() || '',
+            gemini_model: (() => {
+                const sel = document.getElementById('select-gemini-model')?.value;
+                if (sel === 'custom') {
+                    return document.getElementById('input-gemini-custom-model')?.value.trim() || 'models/gemini-2.0-flash-exp';
+                }
+                return sel || 'models/gemini-2.0-flash-exp';
+            })(),
             qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
             source_language: document.getElementById('select-source-lang').value,
             target_language: document.getElementById('select-target-lang').value,
             translation_mode: document.getElementById('select-translation-mode').value,
+            inactivity_timeout_min: parseInt(document.getElementById('select-inactivity-timeout')?.value || '10', 10),
             translation_type: document.getElementById('select-translation-type')?.value || 'one_way',
             language_a: document.getElementById('select-lang-a')?.value || 'ja',
             language_b: document.getElementById('select-lang-b')?.value || 'vi',
@@ -976,27 +976,6 @@ class App {
             };
         }
 
-        // TTS settings
-        settings.tts_provider = document.getElementById('select-tts-provider')?.value || 'edge';
-        settings.elevenlabs_api_key = document.getElementById('input-elevenlabs-key').value.trim();
-        settings.tts_voice_id = document.getElementById('select-tts-voice').value;
-        settings.edge_tts_voice = document.getElementById('select-edge-voice')?.value || 'vi-VN-HoaiMyNeural';
-        settings.edge_tts_speed = parseInt(document.getElementById('range-edge-speed')?.value || 20);
-        settings.tts_speed = parseFloat(document.getElementById('range-tts-speed')?.value || 1.2);
-        settings.google_tts_api_key = document.getElementById('input-google-tts-key')?.value.trim() || '';
-        settings.google_tts_voice = document.getElementById('select-google-voice')?.value || 'vi-VN-Chirp3-HD-Aoede';
-        settings.google_tts_speed = parseFloat(document.getElementById('range-google-speed')?.value || 1.0);
-        settings.microsoft_v2_voice = document.getElementById('select-microsoft-voice')?.value || 'vi-VN-HoaiMyNeural';
-        settings.microsoft_v2_speed = parseInt(document.getElementById('range-microsoft-speed')?.value || 20);
-        settings.google_free_api_key = document.getElementById('input-google-free-key')?.value.trim() || '';
-        settings.google_free_voice = document.getElementById('select-google-free-voice')?.value || 'vi-VN';
-        settings.google_free_speed = parseFloat(document.getElementById('range-google-free-speed')?.value || 1.0);
-        settings.tiktok_voice = document.getElementById('select-tiktok-voice')?.value || 'BV074_streaming';
-        settings.tiktok_speed = parseFloat(document.getElementById('range-tiktok-speed')?.value || 1.0);
-        settings.tiktok_session_id = document.getElementById('input-tiktok-session')?.value.trim() || '';
-        settings.local_tts_speed = parseFloat(document.getElementById('range-local-speed')?.value || 1.0);
-        settings.tts_enabled = false;
-
         try {
             await settingsManager.save(settings);
             this._showToast('Settings saved', 'success');
@@ -1019,170 +998,35 @@ class App {
             langEl.textContent = `${settings.source_language || 'auto'} → ${settings.target_language || 'vi'}`;
         }
 
-        // Note: saving settings turns TTS narration off (see end of this method), so the
-        // active provider is re-configured on the next TTS toggle — no mid-session re-sync
-        // needed here. Disconnect any non-active provider to drop stale queued audio.
-        if (this._allTTS) {
-            const active = this._getActiveTTS();
-            for (const tts of this._allTTS) {
-                if (tts !== active && tts.isConnected) tts.disconnect();
-            }
-        }
-
         // Update transcript UI
+        const viewMode = settings.view_mode || 'dual';
         if (this.transcriptUI) {
             this.transcriptUI.configure({
                 maxLines: settings.max_lines || 5,
                 showOriginal: settings.show_original !== false,
                 fontSize: settings.font_size || 16,
+                viewMode: viewMode,
             });
         }
+        this._setViewMode(viewMode);
+
+        // Update quick language and timing in toolbar
+        const quickSrc = document.getElementById('quick-select-source-lang');
+        const quickTgt = document.getElementById('quick-select-target-lang');
+        if (quickSrc) quickSrc.value = settings.source_language || 'auto';
+        if (quickTgt) quickTgt.value = settings.target_language || 'vi';
+
+        const timing = settings.translation_timing || 'on_pause';
+        const timingSel = document.getElementById('select-translation-timing');
+        if (timingSel) timingSel.value = timing;
 
         // Update current source button states
         this.currentSource = settings.audio_source || 'system';
         this._updateSourceButtons();
 
-        // TTS is always OFF on app start — user must toggle on each session
-        this.ttsEnabled = false;
-        this._updateTTSButton();
-    }
-
-    // ─── TTS Control ──────────────────────────────────────
-
-    async _toggleTTS() {
-        const settings = settingsManager.get();
-        const provider = settings.tts_provider || 'edge';
-
-        // Block TTS in two-way mode to prevent audio feedback loop
-        const translationType = document.getElementById('select-translation-type')?.value;
-        if (translationType === 'two_way') {
-            this._showToast('TTS is disabled in two-way mode to prevent audio loop', 'error');
-            return;
-        }
-
-        // Local provider: the selected voice must actually be downloaded (async check).
-        // Only gate when turning ON (turning off never needs a model).
-        if (provider === 'local' && !this.ttsEnabled) {
-            const installed = await this._isLocalVoiceInstalled(settings.local_tts_voice);
-            if (!installed) {
-                this._showToast('Download a voice in Settings → TTS → Local', 'error');
-                this._showView('settings');
-                return;
-            }
-        }
-
-        // Check credentials for providers that require them (free providers need none)
-        if (provider === 'elevenlabs' && !settings.elevenlabs_api_key) {
-            this._showToast('Add ElevenLabs API key in Settings → TTS', 'error');
-            this._showView('settings');
-            return;
-        }
-        if (provider === 'google' && !settings.google_tts_api_key) {
-            this._showToast('Add Google TTS API key in Settings → TTS', 'error');
-            this._showView('settings');
-            return;
-        }
-        if (provider === 'tiktok' && !settings.tiktok_session_id) {
-            this._showToast('Add a TikTok sessionid in Settings → TTS', 'error');
-            this._showView('settings');
-            return;
-        }
-
-        this.ttsEnabled = !this.ttsEnabled;
-        this._updateTTSButton();
-
-        const tts = this._getActiveTTS();
-
-        if (this.ttsEnabled) {
-            this._configureTTS(tts, settings);
-            if (this.isRunning) {
-                tts.connect();
-                audioPlayer.resume();
-            }
-            const label = {
-                edge: 'Edge TTS (Free)',
-                microsoft: 'Microsoft v2 (Free)',
-                'google-free': 'Google TTS (Free)',
-                tiktok: 'TikTok TTS (Free)',
-                local: 'Local Offline',
-                google: 'Google Chirp 3 HD',
-                elevenlabs: 'ElevenLabs',
-            }[provider] || provider;
-            this._showToast(`TTS narration ON 🔊 (${label})`, 'success');
-        } else {
-            tts.disconnect();
-            audioPlayer.stop();
-            this._showToast('TTS narration OFF 🔇', 'success');
-        }
-    }
-
-    _getActiveTTS() {
-        const provider = settingsManager.get().tts_provider || 'edge';
-        const map = {
-            edge: edgeTTSRust,
-            microsoft: microsoftTTS,
-            'google-free': googleFreeTTS,
-            tiktok: tiktokTTS,
-            local: localTTS,
-            google: googleTTS,
-            elevenlabs: elevenLabsTTS,
-        };
-        const tts = map[provider];
-        if (!tts) {
-            console.warn(`[TTS] Unknown provider "${provider}", falling back to Edge`);
-            return edgeTTSRust;
-        }
-        return tts;
-    }
-
-    _configureTTS(tts, settings) {
-        const provider = settings.tts_provider || 'edge';
-        // Client-side playback speed ONLY for providers whose endpoint has no rate param
-        // (Google-free, TikTok). Others apply speed server-side / in the engine → keep 1.0.
-        const clientRate =
-            provider === 'google-free' ? (settings.google_free_speed || 1.0) :
-            provider === 'tiktok' ? (settings.tiktok_speed || 1.0) : 1.0;
-        audioPlayer.setPlaybackRate(clientRate);
-        if (provider === 'elevenlabs') {
-            tts.configure({
-                apiKey: settings.elevenlabs_api_key,
-                voiceId: settings.tts_voice_id || '21m00Tcm4TlvDq8ikWAM',
-            });
-        } else if (provider === 'google') {
-            const voice = settings.google_tts_voice || 'vi-VN-Chirp3-HD-Aoede';
-            const langCode = voice.replace(/-Chirp3.*/, '');
-            tts.configure({
-                apiKey: settings.google_tts_api_key,
-                voice: voice,
-                languageCode: langCode,
-                speakingRate: settings.google_tts_speed || 1.0,
-            });
-        } else if (provider === 'microsoft') {
-            tts.configure({
-                voice: settings.microsoft_v2_voice || 'vi-VN-HoaiMyNeural',
-                speed: settings.microsoft_v2_speed !== undefined ? settings.microsoft_v2_speed : 20,
-            });
-        } else if (provider === 'google-free') {
-            tts.configure({
-                voice: settings.google_free_voice || 'vi-VN',
-                apiKey: settings.google_free_api_key || '',
-            });
-        } else if (provider === 'tiktok') {
-            tts.configure({
-                voice: settings.tiktok_voice || 'BV074_streaming',
-                sessionId: settings.tiktok_session_id || '',
-            });
-        } else if (provider === 'local') {
-            tts.configure({
-                voice: settings.local_tts_voice || 'vi_VN-vais1000-medium',
-                speed: settings.local_tts_speed || 1.0,
-            });
-        } else {
-            tts.configure({
-                voice: settings.edge_tts_voice || 'vi-VN-HoaiMyNeural',
-                speed: settings.edge_tts_speed !== undefined ? settings.edge_tts_speed : 20,
-            });
-        }
+        // Update current source button states
+        this.currentSource = settings.audio_source || 'system';
+        this._updateSourceButtons();
     }
 
     _addTermRow(source = '', target = '') {
@@ -1220,612 +1064,18 @@ class App {
             .replace(/>/g, '&gt;');
     }
 
-    _updateTTSProviderUI(provider) {
-        // Show only the active provider's settings panel.
-        const panels = {
-            edge: 'tts-edge-settings',
-            microsoft: 'tts-microsoft-settings',
-            'google-free': 'tts-google-free-settings',
-            tiktok: 'tts-tiktok-settings',
-            local: 'tts-local-settings',
-            google: 'tts-google-settings',
-            elevenlabs: 'tts-elevenlabs-settings',
-        };
-        for (const [id, elId] of Object.entries(panels)) {
-            const el = document.getElementById(elId);
-            if (el) el.style.display = provider === id ? '' : 'none';
-        }
-        // Update hint text
-        const hint = document.getElementById('tts-provider-hint');
-        if (hint) {
-            const hints = {
-                edge: 'Free, natural voices — no API key needed',
-                microsoft: 'Free — full Microsoft voice list (vi + en), sent to Microsoft',
-                'google-free': 'Free — experimental, may stop working anytime. Text sent to Google',
-                tiktok: 'Free — needs a TikTok sessionid. Text sent to TikTok',
-                local: 'Free & 100% offline — download a voice below; nothing is sent anywhere',
-                google: 'Near-human quality — requires Google Cloud API key (1M chars/month free)',
-                elevenlabs: 'Premium quality — requires ElevenLabs API key',
-            };
-            hint.textContent = hints[provider] || '';
-        }
-        // Microsoft v2: populate the full voice list dynamically (fallback stays in HTML).
-        if (provider === 'microsoft') this._populateMicrosoftVoices();
-        // Local: fetch catalog + install state and render the downloadable voice list.
-        if (provider === 'local') this._populateLocalVoices();
-    }
-
-    /**
-     * Fetch Microsoft's vi+en voice list once (cached), then fill the voice dropdown
-     * filtered by the selected Language. The Language dropdown keeps the voice list short
-     * (Microsoft has ~50 English voices). Default language follows the saved voice's locale.
-     */
-    async _populateMicrosoftVoices() {
-        const langSel = document.getElementById('select-microsoft-lang');
-        const saved = settingsManager.get().microsoft_v2_voice || 'vi-VN-HoaiMyNeural';
-        // Initialize the Language dropdown from the saved voice's locale (once).
-        if (langSel && !langSel.dataset.init) {
-            langSel.value = saved.startsWith('en') ? 'en' : 'vi';
-            langSel.dataset.init = 'true';
-        }
-        if (!this._msVoices) {
-            try {
-                const voices = await microsoftTTS.listVoices();
-                this._msVoices = (Array.isArray(voices) && voices.length) ? voices : MS_VOICE_FALLBACK;
-            } catch (err) {
-                console.warn('[Microsoft v2] voice list fetch failed, using static fallback:', err);
-                this._msVoices = MS_VOICE_FALLBACK;
-            }
-        }
-        this._fillMicrosoftVoices(langSel ? langSel.value : 'vi');
-    }
-
-    /** Fill #select-microsoft-voice with cached voices for `lang` ("vi"|"en"), restoring saved. */
-    _fillMicrosoftVoices(lang) {
-        const select = document.getElementById('select-microsoft-voice');
-        if (!select) return;
-        const saved = settingsManager.get().microsoft_v2_voice;
-        const list = (this._msVoices || MS_VOICE_FALLBACK).filter(v => (v.locale || '').startsWith(lang));
-        select.innerHTML = '';
-        for (const v of list) {
-            const opt = document.createElement('option');
-            opt.value = v.short_name;
-            opt.textContent = `${v.friendly_name} (${v.gender})`;
-            select.appendChild(opt);
-        }
-        // Keep the saved voice if it belongs to this language, else pick the first.
-        if (saved && list.some(v => v.short_name === saved)) select.value = saved;
-        else if (select.options.length) select.selectedIndex = 0;
-    }
-
-    // ─── Local offline (Piper) voice manager ──────────────
-
-    /** Fetch the catalog + install state once per open, then render the list. */
-    async _populateLocalVoices() {
-        const langSel = document.getElementById('select-local-lang');
-        const saved = settingsManager.get().local_tts_voice || 'vi_VN-vais1000-medium';
-        if (langSel && !langSel.dataset.init) {
-            langSel.value = saved.startsWith('en') ? 'en' : 'vi';
-            langSel.dataset.init = 'true';
-        }
-        // Show the real resolved models folder (per-OS absolute path) so the user can
-        // find the files themselves. Falls back to the raw setting if the query fails.
-        const dirInput = document.getElementById('input-local-models-dir');
-        if (dirInput) {
-            try {
-                dirInput.value = await invoke('local_tts_models_dir_path');
-            } catch {
-                dirInput.value = settingsManager.get().local_tts_models_dir || 'Default app location';
-            }
-        }
-        // Speed slider from saved setting.
-        const speedSlider = document.getElementById('range-local-speed');
-        const speedLabel = document.getElementById('local-speed-value');
-        const speed = settingsManager.get().local_tts_speed || 1.0;
-        if (speedSlider) speedSlider.value = speed;
-        if (speedLabel) speedLabel.textContent = parseFloat(speed).toFixed(1) + 'x';
-        await this._refreshLocalVoices();
-        this._fillLocalVoices(langSel ? langSel.value : 'vi');
-    }
-
-    /** (Re)load the catalog + install state from the backend into a cache. */
-    async _refreshLocalVoices() {
-        try {
-            const list = await invoke('local_tts_list_models');
-            this._localVoices = Array.isArray(list) ? list : [];
-        } catch (err) {
-            console.warn('[Local TTS] list failed:', err);
-            this._localVoices = [];
-        }
-        this._localInstalled = new Set(
-            (this._localVoices || []).filter(v => v.installed).map(v => v.id)
-        );
-    }
-
-    /** True if `id` is currently installed (fresh backend check). */
-    async _isLocalVoiceInstalled(id) {
-        if (!id) return false;
-        await this._refreshLocalVoices();
-        return this._localInstalled.has(id);
-    }
-
-    /** Render the voice rows for `lang` ("vi"|"en") with download/delete controls. */
-    _fillLocalVoices(lang) {
-        const container = document.getElementById('local-voice-list');
-        if (!container) return;
-        const saved = settingsManager.get().local_tts_voice;
-        const all = this._localVoices || [];
-        // Catalog voices filter by the selected language; imported (local) voices are shown
-        // regardless of language (their language is unknown).
-        const catalogList = all.filter(v => !v.imported && v.lang === lang);
-        const importedList = all.filter(v => v.imported);
-        container.innerHTML = '';
-        if (!catalogList.length && !importedList.length) {
-            container.innerHTML = '<p class="hint">No voices for this language.</p>';
-            return;
-        }
-
-        const addRow = (v) => {
-            const row = document.createElement('div');
-            row.className = 'local-voice-row';
-            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;';
-            const sizeMb = (v.approxSizeBytes / 1e6).toFixed(0);
-            if (v.installed) {
-                const checked = saved === v.id ? 'checked' : '';
-                row.innerHTML =
-                    `<label style="flex:1;display:flex;align-items:center;gap:6px;cursor:pointer;">` +
-                    `<input type="radio" name="local-voice" value="${v.id}" ${checked} />` +
-                    `<span>${this._esc(v.display)}</span></label>` +
-                    `<button type="button" class="icon-btn small btn-local-delete" data-id="${v.id}" title="Delete">🗑️</button>`;
-            } else {
-                row.innerHTML =
-                    `<span style="flex:1;color:var(--text-muted,#888);">${this._esc(v.display)} · ${sizeMb} MB</span>` +
-                    `<span class="local-progress" data-id="${v.id}" style="min-width:64px;text-align:right;"></span>` +
-                    `<button type="button" class="icon-btn small btn-local-download" data-id="${v.id}" title="Download">⬇️</button>`;
-            }
-            container.appendChild(row);
-        };
-
-        catalogList.forEach(addRow);
-        if (importedList.length) {
-            const hdr = document.createElement('p');
-            hdr.className = 'hint';
-            hdr.style.cssText = 'margin:8px 0 2px;font-weight:600;';
-            hdr.textContent = `Imported (local) — ${importedList.length}`;
-            container.appendChild(hdr);
-            importedList.forEach(addRow);
-        }
-
-        container.querySelectorAll('.btn-local-download').forEach(btn =>
-            btn.addEventListener('click', () => this._downloadLocalVoice(btn.dataset.id))
-        );
-        container.querySelectorAll('.btn-local-delete').forEach(btn =>
-            btn.addEventListener('click', () => this._deleteLocalVoice(btn.dataset.id))
-        );
-        container.querySelectorAll('input[name="local-voice"]').forEach(radio =>
-            radio.addEventListener('change', () => {
-                if (radio.checked) settingsManager.save({ local_tts_voice: radio.value });
-            })
-        );
-    }
-
-    /** Download a voice model with live progress, then re-render as installed. */
-    async _downloadLocalVoice(id) {
-        // Download straight into the default app models folder — no folder prompt.
-        // Users who want a custom location can still set it via the Model folder field.
-        const progressEl = document.querySelector(`.local-progress[data-id="${id}"]`);
-        const btn = document.querySelector(`.btn-local-download[data-id="${id}"]`);
-        if (btn) btn.disabled = true;
-        const onProgress = new Channel();
-        onProgress.onmessage = (msg) => {
-            if (!progressEl) return;
-            if (msg.phase === 'downloading' && msg.total > 0) {
-                progressEl.textContent = `${Math.floor((msg.received / msg.total) * 100)}%`;
-            } else if (msg.phase === 'extracting') {
-                progressEl.textContent = '…';
-            }
-        };
-        try {
-            await invoke('local_tts_download_model', { id, onProgress });
-            this._showToast('Voice downloaded ✓', 'success');
-            await this._refreshLocalVoices();
-            this._fillLocalVoices(document.getElementById('select-local-lang')?.value || 'vi');
-        } catch (err) {
-            this._showToast(`Download failed: ${err}`, 'error');
-            if (btn) btn.disabled = false;
-            if (progressEl) progressEl.textContent = '';
-        }
-    }
-
-    /** Delete an installed voice (real on-device removal), then re-render. */
-    async _deleteLocalVoice(id) {
-        try {
-            await invoke('local_tts_delete_model', { id });
-            this._showToast('Voice deleted', 'success');
-            await this._refreshLocalVoices();
-            this._fillLocalVoices(document.getElementById('select-local-lang')?.value || 'vi');
-        } catch (err) {
-            this._showToast(`Delete failed: ${err}`, 'error');
-        }
-    }
-
-    /**
-     * Open the folder picker; on pick, persist as models dir and refresh.
-     * Returns the chosen path, or null if the user cancelled (so callers can abort),
-     * or '' if the picker itself failed.
-     */
-    async _maybePickModelsDir() {
-        try {
-            const { open } = window.__TAURI__.dialog;
-            const picked = await open({ directory: true, multiple: false, title: 'Choose model folder' });
-            if (picked === null || picked === undefined) return null; // cancelled
-            const dir = Array.isArray(picked) ? picked[0] : picked;
-            await settingsManager.save({ local_tts_models_dir: dir });
-            const dirInput = document.getElementById('input-local-models-dir');
-            if (dirInput) dirInput.value = dir;
-            await this._refreshLocalVoices();
-            this._fillLocalVoices(document.getElementById('select-local-lang')?.value || 'vi');
-            return dir;
-        } catch (err) {
-            console.warn('[Local TTS] folder pick failed:', err);
-            return '';
-        }
-    }
-
-    /** Reset the model folder back to the default app location and refresh the list. */
-    async _resetModelsDir() {
-        await settingsManager.save({ local_tts_models_dir: '' });
-        const dirInput = document.getElementById('input-local-models-dir');
-        if (dirInput) {
-            try {
-                dirInput.value = await invoke('local_tts_models_dir_path');
-            } catch {
-                dirInput.value = 'Default app location';
-            }
-        }
-        await this._refreshLocalVoices();
-        this._fillLocalVoices(document.getElementById('select-local-lang')?.value || 'vi');
-        this._showToast('Model folder reset to default', 'success');
-    }
-
-    _updateTranslationTypeUI(type) {
-        const oneway = document.getElementById('section-oneway-langs');
-        const twoway = document.getElementById('section-twoway-langs');
-        const hintTwoway = document.getElementById('hint-twoway');
-        const strictLang = document.getElementById('section-strict-lang');
-
-        if (type === 'two_way') {
-            if (oneway) oneway.style.display = 'none';
-            if (twoway) twoway.style.display = 'flex';
-            if (hintTwoway) hintTwoway.style.display = 'block';
-            // Hide strict lang in two-way mode (both languages are specified)
-            if (strictLang) strictLang.style.display = 'none';
-            // Force-disable TTS in two-way mode to prevent audio feedback loop
-            if (this.ttsEnabled) {
-                this.ttsEnabled = false;
-                this._getActiveTTS().disconnect();
-                audioPlayer.stop();
-            }
-            this._updateTTSButton();
-        } else {
-            if (oneway) oneway.style.display = 'flex';
-            if (twoway) twoway.style.display = 'none';
-            if (hintTwoway) hintTwoway.style.display = 'none';
-            if (strictLang) strictLang.style.display = 'flex';
-            this._updateTTSButton();
-        }
-    }
-
-    _updateTTSButton() {
-        const btn = document.getElementById('btn-tts');
-        const iconOff = document.getElementById('icon-tts-off');
-        const iconOn = document.getElementById('icon-tts-on');
-        const isTwoWay = document.getElementById('select-translation-type')?.value === 'two_way';
-
-        if (btn) {
-            btn.classList.toggle('active', this.ttsEnabled);
-            btn.classList.toggle('disabled', isTwoWay);
-            btn.title = isTwoWay ? 'TTS disabled in two-way mode' : 'Toggle TTS (Ctrl+T)';
-        }
-        if (iconOff) iconOff.style.display = this.ttsEnabled ? 'none' : 'block';
-        if (iconOn) iconOn.style.display = this.ttsEnabled ? 'block' : 'none';
-    }
-
-    _speakIfEnabled(text) {
-        if (this.ttsEnabled && text?.trim()) {
-            this._getActiveTTS().speak(text);
-        }
-    }
-
-    // ─── Read Mode (in-overlay TTS reader) ─────────────────
-
-    // Conservative per-provider chunk caps (chars). Local is offline (no endpoint cap);
-    // cloud providers use safe values; google-free/tiktok stay well under their real caps
-    // (TikTok's Rust command hard-caps at 280). Raise only after measuring a live call.
-    static get READ_MAX_LEN() {
-        return { local: 400, edge: 200, microsoft: 200, google: 200, 'google-free': 120, tiktok: 120 };
-    }
-
-    _initReadMode() {
-        // Activity shell: switcher clicks → panels; side effects handled here.
+    _initShellAndMenus() {
         initShell();
         document.addEventListener('activity-changed', (e) => this._onActivityChanged(e.detail));
-        // Overflow menu (⋯) in the Live action row
-        this._moreMenu = bindMenu('btn-more', 'more-menu');
-        // Menu items that navigate/close: shut the menu after action
-        ['btn-copy', 'btn-clear', 'btn-compact', 'btn-shortcuts'].forEach((id) => {
-            document.getElementById(id)?.addEventListener('click', () => this._moreMenu.close());
-        });
-        // Shortcut sheet (⋯ menu + `?` key; Esc/click-outside closes)
         const sheet = document.getElementById('shortcut-sheet');
         const toggleSheet = (show) => { if (sheet) sheet.style.display = show ? '' : 'none'; };
         document.getElementById('btn-shortcuts')?.addEventListener('click', () => toggleSheet(true));
         sheet?.addEventListener('click', (e) => { if (e.target === sheet) toggleSheet(false); });
         this._toggleShortcutSheet = toggleSheet;
-
-        // Read quick-pick: save the active provider's voice key + re-check capability
-        document.getElementById('read-voice-quick')?.addEventListener('change', (e) => {
-            const key = e.target.dataset.key;
-            if (!key) return;
-            settingsManager.save({ [key]: e.target.value });
-            this._showReadCapabilityHint();
-        });
-        // "Chỉnh thêm…" deep-links to Settings → TTS detail
-        document.getElementById('btn-read-tts-settings')?.addEventListener('click', () => {
-            this._showView('settings');
-            this._showSettingsScreen('tab-tts');
-        });
-        // Auto-hide toolbar toggle (✓ prefix reflects state; persists in localStorage)
-        const autoHideBtn = document.getElementById('btn-auto-hide');
-        const renderAutoHide = () => {
-            if (autoHideBtn) {
-                autoHideBtn.textContent = `${isAutoHideEnabled() ? '✓' : '　'} Tự ẩn khi đang dịch`;
-            }
-        };
-        renderAutoHide();
-        autoHideBtn?.addEventListener('click', () => {
-            setAutoHideEnabled(!isAutoHideEnabled());
-            renderAutoHide();
-        });
-        document.getElementById('btn-read-play')?.addEventListener('click', () => {
-            // Play doubles as Resume when paused — do NOT rebuild the reader.
-            if (this._reader && this._reader.state === 'paused') this._reader.play();
-            else this._startRead();
-        });
-        document.getElementById('btn-read-pause')?.addEventListener('click', () => {
-            this._reader?.pause();
-        });
-        document.getElementById('btn-read-stop')?.addEventListener('click', () => this._stopRead());
     }
 
-    /** Side effects when the activity switcher changes space. Panel visibility
-     *  itself is owned by ui-shell; this handles pause/drain/render concerns. */
     _onActivityChanged({ activity, previous }) {
-        if (previous === 'read' && activity !== 'read') this._exitReadMode();
-        if (activity === 'read') this._enterReadMode();
         if (activity === 'library') this._showSessions();
-    }
-
-    async _enterReadMode() {
-        // Stop any running Live session AND drain the shared provider's queue so an in-flight
-        // Live synth cannot fire onAudioChunk into the Live context after the switch.
-        // Panel visibility is owned by ui-shell; here we only hide the Live-only
-        // toolbar controls (shared toolbar until the phase-2 consolidation).
-        if (this.isRunning) await this.pause();
-        try { this._getActiveTTS().disconnect(); } catch { /* provider may be idle */ }
-
-        this._readMode = 'read'; // legacy alias for getActivity()==='read' checks
-        // Live controls now live inside the Live panel, which ui-shell hides —
-        // no per-element toggling needed anymore.
-        this._resetReadUI();
-        this._populateReadQuickPick();
-        this._showReadCapabilityHint();
-    }
-
-    /**
-     * Voice quick-pick in the Read panel — mirrors the active provider's voice
-     * options from its Settings select (DRY: one source of options, two views).
-     * Local voices come from the installed catalog instead.
-     */
-    async _populateReadQuickPick() {
-        const sel = document.getElementById('read-voice-quick');
-        if (!sel) return;
-        const s = settingsManager.get();
-        const provider = s.tts_provider || 'edge';
-        const map = {
-            edge: { src: 'select-edge-voice', key: 'edge_tts_voice' },
-            microsoft: { src: 'select-microsoft-voice', key: 'microsoft_v2_voice' },
-            'google-free': { src: 'select-google-free-voice', key: 'google_free_voice' },
-            tiktok: { src: 'select-tiktok-voice', key: 'tiktok_voice' },
-            google: { src: 'select-google-voice', key: 'google_tts_voice' },
-            elevenlabs: { src: 'select-tts-voice', key: 'tts_voice_id' },
-        };
-        sel.innerHTML = '';
-        if (provider === 'local') {
-            await this._refreshLocalVoices();
-            const installed = (this._localVoices || []).filter(v => v.installed);
-            installed.forEach(v => sel.add(new Option(v.display, v.id)));
-            sel.dataset.key = 'local_tts_voice';
-            if (s.local_tts_voice) sel.value = s.local_tts_voice;
-            sel.disabled = installed.length === 0;
-        } else {
-            const m = map[provider] || map.edge; // legacy/unknown provider → safe fallback
-            const src = document.getElementById(m.src);
-            if (src) [...src.options].forEach(o => sel.add(new Option(o.textContent, o.value)));
-            sel.dataset.key = m.key;
-            const cur = s[m.key];
-            if (cur) sel.value = cur;
-            sel.disabled = sel.options.length === 0;
-        }
-    }
-
-    _exitReadMode() {
-        this._stopRead();
-        this._readMode = 'live';
-    }
-
-    _setEl(id, display) {
-        const el = document.getElementById(id);
-        if (el) el.style.display = display;
-    }
-
-    _setSel(selector, display) {
-        const el = document.querySelector(selector);
-        if (el) el.style.display = display;
-    }
-
-    /** Capability = usability, not method existence. Returns {ok, reason, provider}. */
-    async _readCapability() {
-        const settings = settingsManager.get();
-        const provider = settings.tts_provider || 'edge';
-        const tts = this._getActiveTTS();
-        if (typeof tts.synthesize !== 'function') {
-            return { ok: false, reason: 'Nhà cung cấp TTS này không hỗ trợ chế độ Đọc. Hãy chọn Edge, Local, Microsoft, Google hoặc TikTok.' };
-        }
-        if (provider === 'google' && !settings.google_tts_api_key) {
-            return { ok: false, reason: 'Thiếu Google Cloud API key (Cài đặt → TTS → Google).' };
-        }
-        if (provider === 'tiktok' && !settings.tiktok_session_id) {
-            return { ok: false, reason: 'Thiếu TikTok sessionid (Cài đặt → TTS → TikTok).' };
-        }
-        if (provider === 'local') {
-            const installed = await this._isLocalVoiceInstalled(settings.local_tts_voice);
-            if (!installed) return { ok: false, reason: 'Chưa tải model giọng Local (Cài đặt → TTS → Local).' };
-        }
-        return { ok: true, provider };
-    }
-
-    async _showReadCapabilityHint() {
-        const hintEl = document.getElementById('read-hint');
-        const cap = await this._readCapability();
-        const playBtn = document.getElementById('btn-read-play');
-        if (this._readMode !== 'read') return;
-        if (hintEl) hintEl.textContent = cap.ok ? '' : cap.reason;
-        if (playBtn) playBtn.disabled = !cap.ok;
-    }
-
-    async _startRead() {
-        const cap = await this._readCapability();
-        if (!cap.ok) { this._showReadCapabilityHint(); return; }
-
-        const text = (document.getElementById('read-input')?.value || '').trim();
-        if (!text) { this._showToast('Nhập văn bản để đọc', 'error'); return; }
-
-        const settings = settingsManager.get();
-        const provider = cap.provider;
-        const tts = this._getActiveTTS();
-        this._configureTTS(tts, settings); // set voice/key/session + client rate
-
-        // Client-side rate: only providers without a server rate param.
-        const clientRate = provider === 'google-free' ? (settings.google_free_speed || 1.0)
-            : provider === 'tiktok' ? (settings.tiktok_speed || 1.0) : 1.0;
-        readAudioPlayer.setReadRate(clientRate);
-
-        const lookahead = provider === 'local' ? 2 : 1;
-        const interChunkDelayMs = (provider === 'google-free' || provider === 'tiktok') ? 250 : 0;
-        const maxLen = App.READ_MAX_LEN[provider] || 120;
-
-        this._reader?.stop(); // never leak a previous (e.g. paused) reader — it could race audio
-        readAudioPlayer.stop();
-        this._reader = new Reader({
-            synthesize: (t) => tts.synthesize(t),
-            player: readAudioPlayer,
-            lookahead,
-            interChunkDelayMs,
-        });
-        this._reader.onProgress = (n, total) => this._updateReadProgress(n, total);
-        this._reader.onSentence = (i) => this._highlightReadChunk(i);
-        this._reader.onChunkError = (i) => this._markReadChunkError(i);
-        this._reader.onError = (msg) => this._showToast(msg, 'error');
-        this._reader.onState = (state) => this._onReadState(state);
-
-        this._reader.load(text, maxLen);
-        if (this._reader.total === 0) { this._showToast('Không có nội dung để đọc', 'error'); return; }
-        this._renderReadChunks(this._reader.chunks);
-        this._reader.play();
-    }
-
-    _stopRead() {
-        this._reader?.stop();
-        this._reader = null;
-        this._resetReadUI();
-    }
-
-    _onReadState(state) {
-        if (state === 'playing') this._updateReadControls('playing');
-        else if (state === 'paused') this._updateReadControls('paused');
-        else if (state === 'done' || state === 'stopped') {
-            this._updateReadControls('idle');
-        }
-    }
-
-    _updateReadControls(mode) {
-        // mode: 'idle' | 'playing' | 'paused'
-        if (mode === 'idle') {
-            this._setEl('btn-read-play', '');
-            this._setEl('btn-read-pause', 'none');
-            this._setEl('btn-read-stop', 'none');
-            this._setEl('read-input', '');
-            this._setEl('read-output', 'none');
-        } else if (mode === 'playing') {
-            this._setEl('btn-read-play', 'none');
-            this._setEl('btn-read-pause', '');
-            this._setEl('btn-read-stop', '');
-            this._setEl('read-input', 'none');
-            this._setEl('read-output', '');
-        } else if (mode === 'paused') {
-            this._setEl('btn-read-play', ''); // play acts as resume
-            this._setEl('btn-read-pause', 'none');
-            this._setEl('btn-read-stop', '');
-        }
-    }
-
-    _resetReadUI() {
-        this._updateReadControls('idle');
-        const out = document.getElementById('read-output');
-        if (out) out.innerHTML = '';
-        const prog = document.getElementById('read-progress');
-        if (prog) prog.textContent = '';
-        const fill = document.getElementById('read-progress-fill');
-        if (fill) fill.style.width = '0%';
-    }
-
-    /** Build chunk spans with textContent (never innerHTML) — pasted text is untrusted. */
-    _renderReadChunks(chunks) {
-        const out = document.getElementById('read-output');
-        if (!out) return;
-        out.innerHTML = '';
-        chunks.forEach((c, i) => {
-            const span = document.createElement('span');
-            span.className = 'read-chunk';
-            span.dataset.index = String(i);
-            span.textContent = c + ' ';
-            out.appendChild(span);
-        });
-    }
-
-    _highlightReadChunk(index) {
-        const out = document.getElementById('read-output');
-        if (!out) return;
-        out.querySelectorAll('.read-chunk.active').forEach((el) => el.classList.remove('active'));
-        const span = out.querySelector(`.read-chunk[data-index="${index}"]`);
-        if (span) {
-            span.classList.add('active');
-            span.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        }
-    }
-
-    _markReadChunkError(index) {
-        const span = document.getElementById('read-output')
-            ?.querySelector(`.read-chunk[data-index="${index}"]`);
-        if (span) span.classList.add('error');
-    }
-
-    _updateReadProgress(n, total) {
-        const prog = document.getElementById('read-progress');
-        if (prog) prog.textContent = `đoạn ${n}/${total}`;
-        const fill = document.getElementById('read-progress-fill');
-        if (fill) fill.style.width = total ? `${Math.round((n / total) * 100)}%` : '0%';
     }
 
     // ─── Source Control ────────────────────────────────────
@@ -1864,6 +1114,7 @@ class App {
 
     _engineClassFromMode(mode) {
         if (mode === 'openai') return 'openai';
+        if (mode === 'gemini') return 'gemini';
         if (mode === 'qwen') return 'qwen';
         return 'standard';
     }
@@ -1874,6 +1125,8 @@ class App {
         let nextMode = currentMode;
         if (klass === 'openai') {
             nextMode = 'openai';
+        } else if (klass === 'gemini') {
+            nextMode = 'gemini';
         } else if (klass === 'qwen') {
             nextMode = 'qwen';
         } else if (klass === 'standard') {
@@ -1887,6 +1140,34 @@ class App {
         const select = document.getElementById('select-translation-mode');
         if (select) select.value = nextMode;
         this._updateModeUI(nextMode);
+    }
+
+    _resetInactivityTimer() {
+        if (!this.isRunning || this.isPaused) {
+            this._clearInactivityTimer();
+            return;
+        }
+        const s = settingsManager.get();
+        const timeoutMin = Number(s.inactivity_timeout_min ?? 10);
+        if (timeoutMin <= 0) {
+            this._clearInactivityTimer();
+            return;
+        }
+        this._clearInactivityTimer();
+        this._inactivityTimer = setTimeout(async () => {
+            if (this.isRunning && !this.isPaused) {
+                console.log(`[App] Auto-pausing due to ${timeoutMin}min of silence`);
+                await this.pause();
+                this._showToast(`⏱️ Đã tự động tạm dừng do không có âm thanh trong ${timeoutMin} phút`, 'info');
+            }
+        }, timeoutMin * 60 * 1000);
+    }
+
+    _clearInactivityTimer() {
+        if (this._inactivityTimer) {
+            clearTimeout(this._inactivityTimer);
+            this._inactivityTimer = null;
+        }
     }
 
     _updatePillState(mode) {
@@ -1903,35 +1184,20 @@ class App {
         pill.querySelectorAll('.engine-pill-btn').forEach(btn => { btn.disabled = locked; });
     }
 
-    _showEnginePicker() {
-        const picker = document.getElementById('engine-picker');
-        if (picker) picker.style.display = '';
-    }
-
-    _hideEnginePicker() {
-        const picker = document.getElementById('engine-picker');
-        if (picker) picker.style.display = 'none';
-        this._enginePickerDismissed = true;
-    }
-
-    _maybeShowEnginePicker() {
-        // Show on each fresh launch until first dismissal (click on a card or
-        // first Start). Once dismissed, the toolbar pill is the only switcher.
-        if (this._enginePickerDismissed) return;
-        if (this.isRunning || this.isStarting) return;
-        if (this.transcriptUI && this.transcriptUI.hasContent()) return;
-        this._showEnginePicker();
-    }
+    _showEnginePicker() {}
+    _hideEnginePicker() {}
+    _maybeShowEnginePicker() {}
 
     _updateModeUI(mode) {
         const isSoniox = mode === 'soniox';
         const isLocal = mode === 'local';
         const isOpenAi = mode === 'openai';
+        const isGemini = mode === 'gemini';
         const isQwen = mode === 'qwen';
         // Cloud-realtime engines that share the OpenAI-style audio toggle,
         // mic-only capture, and dual-panel routing. Used in place of bare
-        // `isOpenAi` checks below so Qwen inherits the same UI shape.
-        const isCloudRealtime = isOpenAi || isQwen;
+        // `isOpenAi` checks below so Gemini and Qwen inherit the same UI shape.
+        const isCloudRealtime = isOpenAi || isGemini || isQwen;
         this._updatePillState(mode);
 
         // Single dynamic hint line per engine (mobile parity). Only #hint-mode-soniox
@@ -1940,11 +1206,13 @@ class App {
         const hintSoniox = document.getElementById('hint-mode-soniox');
         const hintLocal = document.getElementById('hint-mode-local');
         const hintOpenAi = document.getElementById('hint-mode-openai');
+        const hintGemini = document.getElementById('hint-mode-gemini');
         const hintQwen = document.getElementById('hint-mode-qwen');
         const ENGINE_HINTS = {
             soniox: 'Cloud · 70+ languages · ~$0.12/hr',
             local: 'Offline · free · ~3–4s delay',
             openai: 'Cloud · 13 languages · text-only captions',
+            gemini: 'Cloud · Gemini 2.0 Flash · free on Google AI Studio · 100+ languages',
             qwen: 'Cloud · 60+ languages · text-only · free preview · pick a source language',
         };
         if (hintSoniox) {
@@ -1960,6 +1228,7 @@ class App {
         const missingKey =
             (isSoniox && !(s.soniox_api_key || '').trim()) ? 'Soniox' :
             (isOpenAi && !(s.openai_api_key || '').trim()) ? 'OpenAI Realtime' :
+            (isGemini && !(s.gemini_api_key || '').trim()) ? 'Gemini' :
             (isQwen && !(s.qwen_api_key || '').trim()) ? 'Qwen' : null;
         if (hintSoniox) {
             const warn = localUnsupported || !!missingKey;
@@ -1974,6 +1243,7 @@ class App {
         }
         if (hintLocal) hintLocal.style.display = 'none';
         if (hintOpenAi) hintOpenAi.style.display = 'none';
+        if (hintGemini) hintGemini.style.display = 'none';
         if (hintQwen) hintQwen.style.display = 'none';
 
         const costWarning = document.getElementById('openai-cost-warning');
@@ -1983,9 +1253,11 @@ class App {
         // Local hides them all (no key needed).
         const sectionApiKey = document.getElementById('section-api-key');
         const sectionOpenAiKey = document.getElementById('section-openai-key');
+        const sectionGeminiKey = document.getElementById('section-gemini-key');
         const sectionQwenKey = document.getElementById('section-qwen-key');
         if (sectionApiKey) sectionApiKey.style.display = isSoniox ? '' : 'none';
         if (sectionOpenAiKey) sectionOpenAiKey.style.display = isOpenAi ? '' : 'none';
+        if (sectionGeminiKey) sectionGeminiKey.style.display = isGemini ? '' : 'none';
         if (sectionQwenKey) sectionQwenKey.style.display = isQwen ? '' : 'none';
 
         // Soniox-only features: Custom context, Strict language detection,
@@ -2009,25 +1281,7 @@ class App {
             }
         }
 
-        // Custom TTS toggle: cloud realtime engines run text-only to prevent
-        // the speaker → mic feedback loop on shared devices.
-        const ttsCheck = document.getElementById('check-tts-enabled');
-        if (ttsCheck) {
-            ttsCheck.disabled = isCloudRealtime;
-            if (isCloudRealtime) ttsCheck.checked = false;
-            const ttsDetail = document.getElementById('tts-settings-detail');
-            if (ttsDetail) ttsDetail.style.display = (isCloudRealtime || !ttsCheck.checked) ? 'none' : '';
-        }
-        const btnTts = document.getElementById('btn-tts');
-        if (btnTts) btnTts.style.display = isCloudRealtime ? 'none' : '';
-
-        // Wizard: TTS availability shows on the home card (disabled + reason) —
-        // never hidden. If the user is inside the TTS detail when switching to a
-        // cloud-realtime engine, snap back to home so the state change is visible.
         this._updateSettingsCards();
-        if (isCloudRealtime && document.getElementById('tab-tts')?.classList.contains('active')) {
-            this._showSettingsScreen('settings-home');
-        }
         const btnOpenAiAudio = document.getElementById('btn-openai-audio');
         if (btnOpenAiAudio) btnOpenAiAudio.style.display = 'none';
 
@@ -2092,11 +1346,14 @@ class App {
     _refreshKeyStatus() {
         const sonioxKey = document.getElementById('input-api-key')?.value.trim() || '';
         const openaiKey = document.getElementById('input-openai-key')?.value.trim() || '';
+        const geminiKey = document.getElementById('input-gemini-key')?.value.trim() || '';
 
         // Soniox keys are opaque hex-like strings, ~32+ chars. Be lenient.
         const sonioxOk = sonioxKey.length >= 20;
         // OpenAI keys start with sk- and are ~50+ chars.
         const openaiOk = /^sk-[A-Za-z0-9_\-]{20,}$/.test(openaiKey);
+        // Gemini API keys start with AIzaSy and are ~39 chars.
+        const geminiOk = geminiKey.length >= 20;
 
         const sonioxStatus = document.getElementById('key-status-soniox');
         if (sonioxStatus) {
@@ -2108,6 +1365,11 @@ class App {
             openaiStatus.className = 'key-status ' + (openaiKey === '' ? '' : openaiOk ? 'ok' : 'bad');
             openaiStatus.textContent = openaiKey === '' ? '' : openaiOk ? '✓ format ok' : '✗ should start with sk-';
         }
+        const geminiStatus = document.getElementById('key-status-gemini');
+        if (geminiStatus) {
+            geminiStatus.className = 'key-status ' + (geminiKey === '' ? '' : geminiOk ? 'ok' : 'bad');
+            geminiStatus.textContent = geminiKey === '' ? '' : geminiOk ? '✓ format ok' : '✗ check format';
+        }
 
         // Engines that need a key stay SELECTABLE even when it's missing —
         // otherwise the user can't pick the engine to add its key (catch-22).
@@ -2117,6 +1379,7 @@ class App {
         if (select) {
             const sonioxOpt = select.querySelector('option[value="soniox"]');
             const openaiOpt = select.querySelector('option[value="openai"]');
+            const geminiOpt = select.querySelector('option[value="gemini"]');
             if (sonioxOpt) {
                 sonioxOpt.disabled = false;
                 sonioxOpt.textContent = sonioxOk ? '☁️ Soniox' : '☁️ Soniox — cần nhập key';
@@ -2124,6 +1387,10 @@ class App {
             if (openaiOpt) {
                 openaiOpt.disabled = false;
                 openaiOpt.textContent = openaiOk ? '⚡ OpenAI Realtime' : '⚡ OpenAI Realtime — cần nhập key';
+            }
+            if (geminiOpt) {
+                geminiOpt.disabled = false;
+                geminiOpt.textContent = geminiOk ? '✨ Google Gemini Live' : '✨ Google Gemini Live — cần nhập key';
             }
         }
     }
@@ -2226,6 +1493,13 @@ class App {
             return;
         }
 
+        // Check Gemini API key for gemini mode
+        if (this.translationMode === 'gemini' && !settings.gemini_api_key) {
+            this._showToast('Gemini API key is required. Add it in Settings.', 'error');
+            this._showView('settings');
+            return;
+        }
+
         // Check Qwen API key for qwen mode
         if (this.translationMode === 'qwen' && !settings.qwen_api_key) {
             this._showToast('Qwen (DashScope) API key is required. Add it in Settings.', 'error');
@@ -2233,14 +1507,9 @@ class App {
             return;
         }
 
-        // Check ElevenLabs key only if TTS is enabled AND provider is elevenlabs
-        if (this.ttsEnabled && settings.tts_provider === 'elevenlabs' && !settings.elevenlabs_api_key) {
-            this._showToast('TTS is ON but ElevenLabs API key is missing. Add it in Settings or disable TTS.', 'error');
-            this._showView('settings');
-            return;
-        }
-
         this.isRunning = true;
+        this.isPaused = false;
+        this._hasUnsavedMeetingData = false;
         this._updateStartButton();
         this._hideEnginePicker();
         this._setEnginePillLocked(true);
@@ -2280,19 +1549,26 @@ class App {
             await this._startLocalMode(settings);
         } else if (this.translationMode === 'openai') {
             await this._startOpenAiMode(settings);
+        } else if (this.translationMode === 'gemini') {
+            await this._startGeminiMode(settings);
         } else if (this.translationMode === 'qwen') {
             await this._startQwenMode(settings);
         } else {
             await this._startSonioxMode(settings);
         }
 
-        // Start TTS if enabled — skipped in realtime modes (built-in audio)
-        if (this.ttsEnabled && this.translationMode !== 'openai' && this.translationMode !== 'qwen') {
-            const tts = this._getActiveTTS();
-            this._configureTTS(tts, settings);
-            tts.connect();
-            audioPlayer.resume();
+        this._resetInactivityTimer();
+    }
+
+    async _getSessionRecordPath() {
+        if (sessionStore && sessionStore.id) {
+            try {
+                return await invoke('get_session_record_path', { id: sessionStore.id });
+            } catch (e) {
+                console.warn('[App] Failed to get session record path:', e);
+            }
         }
+        return null;
     }
 
     async _startOpenAiMode(settings) {
@@ -2315,22 +1591,15 @@ class App {
             this.transcriptUI.setProvisional(text, null, null);
         };
         this.openAiClient.onSourceProvisional = (text) => {
-            // Source-side provisional: keep dual panel responsive while ASR runs.
-            this.transcriptUI.setSourceProvisional?.(text);
+            this.transcriptUI.setSourceProvisional(text);
         };
-        this.openAiClient.onSegment = (sourceText, translatedText) => {
-            // Pair source + translation atomically so FIFO matching in addTranslation works.
-            if (sourceText) this.transcriptUI.addOriginal(sourceText, null, null);
-            this.transcriptUI.addTranslation(translatedText);
-            // Atomic write to session store — bypass UI's loose FIFO since
-            // OpenAI gives us both texts in one event.
-            sessionStore.addSegment(sourceText || '', translatedText || '');
-            this.transcriptUI.clearSourceProvisional?.();
-            this.transcriptUI.clearProvisional();
+        this.openAiClient.onFinal = (original, translation) => {
+            this.transcriptUI.addSegment(original, translation, null, null);
+            sessionStore.addSegment(original, translation);
         };
-        this.openAiClient.onError = (code, msg) => {
-            console.error('[OpenAI Realtime]', code, msg);
-            this._showToast(`${code}: ${msg}`, 'error');
+        this.openAiClient.onError = (err) => {
+            console.error('[OpenAI Realtime] error:', err);
+            this._showToast(`OpenAI error: ${err}`, 'error');
             this._updateStatus('error');
         };
         this.openAiClient.onClosed = (reason) => {
@@ -2366,16 +1635,113 @@ class App {
                 }
                 const bytes = new Uint8Array(pcmData);
                 this.openAiClient.sendAudio(bytes.buffer);
+                this._updateAudioMeter(bytes);
             };
             console.log('[OpenAI] Starting audio capture, source:', this.currentSource);
+            const recordPath = await this._getSessionRecordPath();
             await invoke('start_capture', {
                 source: this.currentSource,
                 channel,
+                recordPath,
             });
             console.log('[OpenAI] start_capture invoked OK');
         } catch (err) {
             console.error('Failed to start audio capture:', err);
             this._showToast(`Audio error: ${err}`, 'error');
+            await this.pause();
+        }
+    }
+
+    async _startGeminiMode(settings) {
+        this._updateStatus('connecting');
+        const { GeminiRealtimeClient } = await import('./gemini-realtime-client.js');
+
+        this.transcriptUI.provider = 'gemini';
+
+        this.geminiClient = new GeminiRealtimeClient();
+
+        this.geminiClient.onStatusChange = (state) => {
+            if (state === 'ready') this._updateStatus('connected');
+            else if (state === 'connecting') this._updateStatus('connecting');
+        };
+        this.geminiClient.onProvisional = (text) => {
+            this.transcriptUI.setProvisional(text, null, null);
+        };
+        this.geminiClient.onSegment = (sourceText, translatedText) => {
+            if (sourceText) {
+                this.transcriptUI.addOriginal(sourceText, null, null);
+            }
+            this.transcriptUI.addTranslation(translatedText);
+            sessionStore.addSegment(sourceText || '', translatedText || '');
+            this.transcriptUI.clearProvisional();
+        };
+        this.geminiClient.onError = (code, msg) => {
+            console.error('[Gemini Realtime]', code, msg);
+            if (code === 'connect_failed' && String(msg).includes('API key')) {
+                this._showToast(`Gemini: ${msg || code}`, 'error');
+                this._updateStatus('error');
+                this.pause();
+            } else if (this.isRunning) {
+                console.log('[Gemini Realtime] Connection error, auto-reconnecting...');
+                setTimeout(() => {
+                    if (this.isRunning) this._startGeminiMode(settingsManager.get());
+                }, 1000);
+            }
+        };
+        this.geminiClient.onClosed = (reason) => {
+            console.warn('[Gemini Realtime] closed:', reason);
+            if (this.isRunning) {
+                console.log('[Gemini Realtime] Session closed, auto-reconnecting...');
+                setTimeout(() => {
+                    if (this.isRunning) this._startGeminiMode(settingsManager.get());
+                }, 500);
+            }
+        };
+
+        try {
+            await this.geminiClient.connect({
+                apiKey: settings.gemini_api_key,
+                sourceLanguage: settings.source_language || 'auto',
+                targetLanguage: settings.target_language || 'vi',
+                model: settings.gemini_model || 'models/gemini-3.5-transcribe-live',
+            });
+        } catch (err) {
+            this._showToast(`Gemini connect failed: ${err}`, 'error');
+            await this.pause();
+            return;
+        }
+
+        try {
+            let audioBatchCount = 0;
+            const channel = new window.__TAURI__.core.Channel();
+            channel.onmessage = (pcmData) => {
+                audioBatchCount++;
+                if (audioBatchCount <= 3 || audioBatchCount % 50 === 0) {
+                    console.log(`[Gemini capture] batch #${audioBatchCount}, size:`, pcmData?.length || 0);
+                }
+                const bytes = new Uint8Array(pcmData);
+                this.geminiClient.sendAudio(bytes.buffer);
+                this._updateAudioMeter(bytes);
+            };
+            console.log('[Gemini] Starting audio capture, source:', this.currentSource);
+            const recordPath = await this._getSessionRecordPath();
+            await invoke('start_capture', {
+                source: this.currentSource,
+                channel,
+                recordPath,
+            });
+            console.log('[Gemini] start_capture invoked OK');
+        } catch (err) {
+            console.error('Failed to start audio capture:', err);
+            const errStr = String(err);
+            if (errStr.includes('Screen Recording') || errStr.includes('TCC') || errStr.includes('shareable content')) {
+                this._showToast('Vui lòng bật quyền Screen & System Audio trong System Settings', 'error');
+                try {
+                    await invoke('request_screen_capture_permission');
+                } catch {}
+            } else {
+                this._showToast(`Audio error: ${err}`, 'error');
+            }
             await this.pause();
         }
     }
@@ -2447,11 +1813,14 @@ class App {
                 }
                 const bytes = new Uint8Array(pcmData);
                 this.qwenClient.sendAudio(bytes.buffer);
+                this._updateAudioMeter(bytes);
             };
             console.log('[Qwen] Starting audio capture, source:', this.currentSource);
+            const recordPath = await this._getSessionRecordPath();
             await invoke('start_capture', {
                 source: this.currentSource,
                 channel,
+                recordPath,
             });
             console.log('[Qwen] start_capture invoked OK');
         } catch (err) {
@@ -2491,12 +1860,15 @@ class App {
                 // Forward batched audio to Soniox
                 const bytes = new Uint8Array(pcmData);
                 sonioxClient.sendAudio(bytes.buffer);
+                this._updateAudioMeter(bytes);
             };
 
             console.log('[App] Starting audio capture, source:', this.currentSource);
+            const recordPath = await this._getSessionRecordPath();
             await invoke('start_capture', {
                 source: this.currentSource,
                 channel: channel,
+                recordPath,
             });
             console.log('[App] Audio capture started successfully');
         } catch (err) {
@@ -2516,6 +1888,7 @@ class App {
             await invoke('start_capture', {
                 source: this.currentSource,
                 channel: new window.__TAURI__.core.Channel(), // dummy channel for permission check
+                recordPath: null,
             });
             await invoke('stop_capture');
         } catch (err) {
@@ -2595,6 +1968,7 @@ class App {
                 if (audioChunkCount <= 3 || audioChunkCount % 50 === 0) {
                     console.log(`[Local] Audio batch #${audioChunkCount}, size:`, pcmData?.length || 0);
                 }
+                this._updateAudioMeter(pcmData);
                 try {
                     await invoke('send_audio_to_pipeline', { data: Array.from(new Uint8Array(pcmData)) });
                 } catch (e) {
@@ -2602,9 +1976,11 @@ class App {
                 }
             };
 
+            const recordPath = await this._getSessionRecordPath();
             await invoke('start_capture', {
                 source: this.currentSource,
                 channel: audioChannel,
+                recordPath,
             });
             console.log('[App] Audio capture started');
         } catch (err) {
@@ -2775,8 +2151,10 @@ class App {
     // into a new file is stopSession()'s job.
     async pause() {
         this.isRunning = false;
+        this.isPaused = true;
         this._updateStartButton();
         this._setEnginePillLocked(false);
+        this._clearInactivityTimer();
 
         // Stop audio capture
         try {
@@ -2805,6 +2183,13 @@ class App {
                 this.openAiOutputQueue = null;
             }
             this._updateStatus('disconnected');
+        } else if (this.translationMode === 'gemini') {
+            if (this.geminiClient) {
+                try { await this.geminiClient.disconnect(); } catch {}
+                this.geminiClient = null;
+            }
+            try { await invoke('stop_capture'); } catch {}
+            this._updateStatus('disconnected');
         } else if (this.translationMode === 'qwen') {
             if (this.qwenClient) {
                 try { await this.qwenClient.disconnect(); } catch {}
@@ -2819,12 +2204,6 @@ class App {
 
         // Keep transcript visible — don't clear
         this.transcriptUI.clearProvisional();
-
-        // Stop TTS
-        elevenLabsTTS.disconnect();
-        edgeTTSRust.disconnect();
-
-        audioPlayer.stop();
 
         // Drain any leftover Soniox originals that didn't get paired
         if (this._sonioxOriginalQueue) this._sonioxOriginalQueue.length = 0;
@@ -2847,33 +2226,113 @@ class App {
     }
 
     // Stop: pause (if running), finalize the current session file, then start a
-    // fresh session so the next Start writes a new file pair. Keeps the
-    // transcript on screen. Never wipes in-memory data on a failed save.
-    async stopSession() {
+    // Stop: pause (if running), finalize the current session file with custom title,
+    // then start a fresh session so the next Start writes a new file pair.
+    async _promptConfirmStop() {
+        const modal = document.getElementById('modal-confirm-stop');
+        const input = document.getElementById('input-stop-meeting-title');
+        const defaultTitle = sessionStore.title || this._formatDefaultMeetingTitle(this.sessionStartTime || this.recordingStartTime);
+
+        if (!modal) {
+            const entered = prompt('Nhập tên cuộc họp để kết thúc & lưu:', defaultTitle);
+            return entered !== null ? (entered.trim() || defaultTitle) : null;
+        }
+
+        if (input) {
+            input.value = defaultTitle;
+        }
+        this._isStopConfirmationOpen = true;
+        modal.style.display = 'flex';
+        if (input) {
+            input.focus();
+            input.select();
+        }
+
+        return new Promise((resolve) => {
+            const onConfirm = () => {
+                cleanup();
+                const chosenTitle = (input ? input.value.trim() : '') || defaultTitle;
+                modal.style.display = 'none';
+                resolve(chosenTitle);
+            };
+            const onCancel = () => {
+                cleanup();
+                modal.style.display = 'none';
+                resolve(null);
+            };
+            const onKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onConfirm();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onCancel();
+                }
+            };
+            const cleanup = () => {
+                this._isStopConfirmationOpen = false;
+                document.getElementById('btn-agree-confirm-stop')?.removeEventListener('click', onConfirm);
+                document.getElementById('btn-cancel-confirm-stop')?.removeEventListener('click', onCancel);
+                document.getElementById('btn-close-confirm-stop')?.removeEventListener('click', onCancel);
+                input?.removeEventListener('keydown', onKeyDown);
+                window.removeEventListener('keydown', onKeyDown);
+            };
+
+            document.getElementById('btn-agree-confirm-stop')?.addEventListener('click', onConfirm);
+            document.getElementById('btn-cancel-confirm-stop')?.addEventListener('click', onCancel);
+            document.getElementById('btn-close-confirm-stop')?.addEventListener('click', onCancel);
+            input?.addEventListener('keydown', onKeyDown);
+            window.addEventListener('keydown', onKeyDown);
+        });
+    }
+
+    async stopSession(chosenTitle = null) {
         if (this.isRunning) await this.pause();
 
-        if (sessionStore.isEmpty()) {
-            this._showToast('Nothing to save', 'success');
+        const hadData = !sessionStore.isEmpty() && sessionStore.totalSegmentCount() > 0;
+
+        if (chosenTitle) {
+            sessionStore.title = chosenTitle;
+        }
+
+        if (!hadData) {
+            this._showToast('Không có dữ liệu cuộc họp để lưu', 'info');
+            this._hasUnsavedMeetingData = false;
         } else {
             const result = await sessionStore.endSession();
             if (result === 'failed') {
-                // Keep the in-memory session intact so the user can retry Stop.
-                this._showToast('Save failed — session kept in memory', 'error');
-                return;
+                this._showToast('Lưu thất bại — dữ liệu được giữ tạm trong bộ nhớ', 'error');
+            } else {
+                this._hasUnsavedMeetingData = false;
+                this._showToast(`💾 Đã kết thúc & lưu: ${sessionStore.title || 'Cuộc họp'} ✓`, 'success');
             }
-            this._showToast('Session saved — next start creates a new one', 'success');
         }
 
-        // Reset session identity: fresh ID + current settings so the next Start
-        // writes a new file. Resetting sessionStartTime forces start() to
-        // re-stamp the metadata block with the current language pair.
+        this.isRunning = false;
+        this.isPaused = false;
         this.sessionStartTime = null;
+        this.recordingStartTime = null;
+        this._clearInactivityTimer();
+
+        // Clear transcript UI back to fresh empty placeholder screen
+        if (this.transcriptUI) {
+            this.transcriptUI.clear();
+            this.transcriptUI.showPlaceholder();
+        }
+        this._updateStatus('idle');
+
+        // Clear live note textarea and close note drawer
+        const noteTextarea = document.getElementById('live-note-textarea');
+        if (noteTextarea) noteTextarea.value = '';
+        this._toggleNotesDrawer(false);
+
         const settings = settingsManager.get();
         sessionStore.init({
-            engine: settings.translation_mode || 'soniox',
+            engine: settings.translation_mode || 'gemini',
             sourceLang: settings.source_language || 'auto',
             targetLang: settings.target_language || 'vi',
         });
+        this._updateStartButton();
     }
 
     _sleep(ms) {
@@ -2915,21 +2374,78 @@ class App {
     }
 
     _updateStartButton() {
-        const btn = document.getElementById('btn-start');
+        const btnStart = document.getElementById('btn-start');
         const iconPlay = document.getElementById('icon-play');
-        const iconStop = document.getElementById('icon-stop');
+        const iconPause = document.getElementById('icon-pause');
+        const labelStart = document.getElementById('btn-start-label');
 
-        btn.classList.toggle('recording', this.isRunning);
-        iconPlay.style.display = this.isRunning ? 'none' : 'block';
-        iconStop.style.display = this.isRunning ? 'block' : 'none';
-        const label = document.getElementById('btn-start-label');
-        if (label) label.textContent = this.isRunning ? 'Dừng' : 'Bắt đầu';
+        const btnStop = document.getElementById('btn-stop');
+        const iconStopSq = document.getElementById('icon-stop-sq');
+        const iconSaveFloppy = document.getElementById('icon-save-floppy');
+        const labelStop = document.getElementById('btn-stop-label');
 
-        // Pause is only actionable while running. (Don't also gate on isStarting:
-        // start() calls this while isStarting is still true, and the click handler
-        // already guards the starting window.)
-        const btnPause = document.getElementById('btn-pause');
-        if (btnPause) btnPause.disabled = !this.isRunning;
+        if (!btnStart) return;
+
+        if (this.isRunning) {
+            // Running -> "Tạm dừng"
+            btnStart.className = 'primary-action-btn running-state';
+            if (iconPlay) iconPlay.style.display = 'none';
+            if (iconPause) iconPause.style.display = 'block';
+            if (labelStart) labelStart.textContent = 'Tạm dừng';
+            btnStart.title = 'Tạm dừng dịch (⌘S)';
+
+            if (btnStop) {
+                btnStop.style.display = 'inline-flex';
+                btnStop.className = 'action-btn btn-stop-action';
+                if (iconStopSq) iconStopSq.style.display = 'block';
+                if (iconSaveFloppy) iconSaveFloppy.style.display = 'none';
+                if (labelStop) labelStop.innerHTML = 'S<u>t</u>op';
+                btnStop.title = 'Kết thúc cuộc họp & Lưu (⌘T)';
+            }
+        } else if (this.isPaused) {
+            // Paused -> "Tiếp tục"
+            btnStart.className = 'primary-action-btn paused-state';
+            if (iconPlay) iconPlay.style.display = 'block';
+            if (iconPause) iconPause.style.display = 'none';
+            if (labelStart) labelStart.textContent = 'Tiếp tục';
+            btnStart.title = 'Tiếp tục dịch (⌘S)';
+
+            if (btnStop) {
+                btnStop.style.display = 'inline-flex';
+                btnStop.className = 'action-btn btn-stop-action';
+                if (iconStopSq) iconStopSq.style.display = 'block';
+                if (iconSaveFloppy) iconSaveFloppy.style.display = 'none';
+                if (labelStop) labelStop.innerHTML = 'S<u>t</u>op';
+                btnStop.title = 'Kết thúc cuộc họp & Lưu (⌘T)';
+            }
+        } else if (this._hasUnsavedMeetingData) {
+            // Stopped with data -> Start btn resets to "Bắt đầu", Stop btn transitions to "Lưu Log"
+            btnStart.className = 'primary-action-btn';
+            if (iconPlay) iconPlay.style.display = 'block';
+            if (iconPause) iconPause.style.display = 'none';
+            if (labelStart) labelStart.innerHTML = '<u>S</u>tart';
+            btnStart.title = 'Start a new translation (⌘S)';
+
+            if (btnStop) {
+                btnStop.style.display = 'inline-flex';
+                btnStop.className = 'action-btn btn-stop-action is-save-log';
+                if (iconStopSq) iconStopSq.style.display = 'none';
+                if (iconSaveFloppy) iconSaveFloppy.style.display = 'block';
+                if (labelStop) labelStop.textContent = 'Lưu Log';
+                btnStop.title = 'Lưu / Đổi tên cuộc họp này (⌘T)';
+            }
+        } else {
+            // Idle (Initial / No data) -> "Bắt đầu", Stop button hidden
+            btnStart.className = 'primary-action-btn';
+            if (iconPlay) iconPlay.style.display = 'block';
+            if (iconPause) iconPause.style.display = 'none';
+            if (labelStart) labelStart.innerHTML = '<u>S</u>tart';
+            btnStart.title = 'Start translation (⌘S)';
+
+            if (btnStop) {
+                btnStop.style.display = 'none';
+            }
+        }
     }
 
     // ─── Transcript Persistence ───────────────────────────────
@@ -2975,35 +2491,22 @@ class App {
     // ─── Status ────────────────────────────────────────────
 
     _updateStatus(status) {
-        const dot = document.getElementById('status-indicator');
-        const text = document.getElementById('status-text');
-
-        dot.className = 'status-dot';
-
         switch (status) {
             case 'connecting':
-                dot.classList.add('connecting');
-                text.textContent = 'Connecting...';
+            case 'disconnected':
+            case 'idle':
+                setLiveBadge('waiting');
                 break;
             case 'connected':
-                dot.classList.add('connected');
-                text.textContent = 'Listening';
-                break;
-            case 'disconnected':
-                dot.classList.add('disconnected');
-                text.textContent = 'Ready';
+            case 'listening':
+                setLiveBadge('listening');
                 break;
             case 'error':
-                dot.classList.add('error');
-                text.textContent = 'Error';
+                setLiveBadge('error');
                 break;
+            default:
+                setLiveBadge(this.isRunning ? 'listening' : 'waiting');
         }
-        // Live tab shows a red badge while a session runs so the user sees
-        // recording state even from the Đọc / Thư viện activities.
-        setLiveBadge(this.isRunning);
-        // Auto-hide chrome only while translating (idle 3s → hide, hover/keys → show)
-        if (this.isRunning) startAutoHideWatch();
-        else stopAutoHideWatch();
     }
 
     // ─── Window Position ───────────────────────────────────
@@ -3057,9 +2560,10 @@ class App {
     async _togglePin() {
         this.isPinned = !this.isPinned;
         await this.appWindow.setAlwaysOnTop(this.isPinned);
+        localStorage.setItem('is_pinned', this.isPinned ? 'true' : 'false');
         const btn = document.getElementById('btn-pin');
         if (btn) btn.classList.toggle('active', this.isPinned);
-        this._showToast(this.isPinned ? 'Pinned on top' : 'Unpinned — window can go behind other apps', 'success');
+        this._showToast(this.isPinned ? '📌 Đã ghim trên cùng' : 'Đã bỏ ghim — cửa sổ có thể ẩn phía sau', 'success');
     }
 
     // ─── Compact Mode ───────────────────────────────
@@ -3069,12 +2573,88 @@ class App {
         this.isCompact = toggleManualCompact();
     }
 
+    _setViewMode(mode) {
+        if (!mode) return;
+        this.currentViewMode = mode;
+        this.transcriptUI.configure({ viewMode: mode });
+        const selectView = document.getElementById('select-view-mode');
+        if (selectView) selectView.value = mode;
+    }
+
     _toggleViewMode() {
-        const isDual = this.transcriptUI.viewMode === 'dual';
-        const newMode = isDual ? 'single' : 'dual';
-        this.transcriptUI.configure({ viewMode: newMode });
-        const btn = document.getElementById('btn-view-mode');
-        if (btn) btn.classList.toggle('active', newMode === 'dual');
+        const isDual = this.transcriptUI.viewMode === 'dual' || this.transcriptUI.viewMode === 'both';
+        const newMode = isDual ? 'translation' : 'dual';
+        this._setViewMode(newMode);
+    }
+
+    async _handleQuickSourceLangChange(srcLang) {
+        const s = settingsManager.get();
+        s.source_language = srcLang;
+        const selectSource = document.getElementById('select-source-lang');
+        if (selectSource) selectSource.value = srcLang;
+        await settingsManager.save(s);
+        this._showToast(`Ngôn ngữ gốc: ${srcLang.toUpperCase()}`, 'info');
+        if (this.isRunning && this.translationMode === 'gemini') {
+            this._startGeminiMode(s);
+        }
+    }
+
+    async _handleQuickTargetLangChange(tgtLang) {
+        const s = settingsManager.get();
+        s.target_language = tgtLang;
+        const selectTarget = document.getElementById('select-target-lang');
+        if (selectTarget) selectTarget.value = tgtLang;
+        await settingsManager.save(s);
+        if (this.geminiClient && this.geminiClient.isConnected) {
+            await this.geminiClient.setTargetLanguage(tgtLang);
+        }
+        this._showToast(`Ngôn ngữ dịch: ${tgtLang.toUpperCase()}`, 'info');
+    }
+
+    async _handleQuickLangSwap() {
+        const s = settingsManager.get();
+        const curSrc = s.source_language || 'ja';
+        const curTgt = s.target_language || 'vi';
+
+        const newSrc = curTgt;
+        const newTgt = curSrc === 'auto' ? 'en' : curSrc;
+
+        s.source_language = newSrc;
+        s.target_language = newTgt;
+
+        const quickSrc = document.getElementById('quick-select-source-lang');
+        const quickTgt = document.getElementById('quick-select-target-lang');
+        const selectSrc = document.getElementById('select-source-lang');
+        const selectTgt = document.getElementById('select-target-lang');
+
+        if (quickSrc) quickSrc.value = newSrc;
+        if (quickTgt) quickTgt.value = newTgt;
+        if (selectSrc) selectSrc.value = newSrc;
+        if (selectTgt) selectTgt.value = newTgt;
+
+        await settingsManager.save(s);
+        if (this.geminiClient && this.geminiClient.isConnected) {
+            await this.geminiClient.setTargetLanguage(newTgt);
+        }
+        this._showToast(`Đã đổi chiều: ${newSrc.toUpperCase()} → ${newTgt.toUpperCase()}`, 'success');
+
+        if (this.isRunning && this.translationMode === 'gemini') {
+            this._startGeminiMode(s);
+        }
+    }
+
+    async _setTranslationTiming(timing) {
+        const s = settingsManager.get();
+        s.translation_timing = timing;
+        if (timing === 'realtime') {
+            s.endpoint_delay = 500;
+        } else {
+            s.endpoint_delay = 3000;
+        }
+        const selectTiming = document.getElementById('select-translation-timing');
+        if (selectTiming) selectTiming.value = timing;
+        await settingsManager.save(s);
+        this._showToast(timing === 'realtime' ? '⚡ Kiểu dịch: Nghe real time' : '⏳ Kiểu dịch: Nghe dứt câu', 'info');
     }
 
     _adjustFontSize(delta) {
@@ -3097,7 +2677,233 @@ class App {
 
     // ─── Session History ───────────────────────────────────
 
+    // ─── Session History / Meeting Logs ───────────────────
+
+    _updateBatchSelectionUI() {
+        const count = this._selectedSessionIds.size;
+        const countEl = document.getElementById('sessions-selected-count');
+        const batchBtn = document.getElementById('btn-batch-delete-sessions');
+        const selectAllChk = document.getElementById('chk-select-all-sessions');
+        const totalItems = document.querySelectorAll('.session-item-chk').length;
+
+        if (countEl) countEl.textContent = `${count} đã chọn`;
+        if (batchBtn) batchBtn.disabled = count === 0;
+        if (selectAllChk) selectAllChk.checked = totalItems > 0 && count === totalItems;
+    }
+
+    async _deleteSelectedSessions() {
+        if (this._selectedSessionIds.size === 0) return;
+        const ids = Array.from(this._selectedSessionIds);
+        const count = ids.length;
+
+        if (ids.includes(sessionStore.id)) {
+            this._showToast('Không thể xoá cuộc họp đang chạy — hãy Dừng trước', 'error');
+            return;
+        }
+
+        if (!confirm(`Xóa vĩnh viễn ${count} cuộc họp đã chọn?`)) return;
+
+        try {
+            await invoke('delete_sessions', { ids });
+            this._selectedSessionIds.clear();
+            this._showToast(`Đã xóa ${count} cuộc họp`, 'success');
+            await this._showSessions();
+        } catch (err) {
+            this._showToast(`Xóa thất bại: ${err}`, 'error');
+        }
+    }
+
+    async _promptSaveMeeting(isStopping = false) {
+        const modal = document.getElementById('modal-save-meeting');
+        const input = document.getElementById('input-meeting-title');
+        if (!modal || !input) return;
+
+        const defaultTitle = sessionStore.title || this._formatDefaultMeetingTitle(this.sessionStartTime || this.recordingStartTime);
+        input.value = defaultTitle;
+        modal.style.display = 'flex';
+        input.focus();
+        input.select();
+
+        return new Promise((resolve) => {
+            const onConfirm = async () => {
+                cleanup();
+                const chosenTitle = input.value.trim() || defaultTitle;
+                sessionStore.title = chosenTitle;
+                if (sessionStore.id) {
+                    await sessionStore.persist();
+                    try {
+                        await invoke('update_session_title', { id: sessionStore.id, title: chosenTitle });
+                    } catch {}
+                }
+                modal.style.display = 'none';
+                this._showToast(`💾 Đã lưu: ${chosenTitle}`, 'success');
+                resolve(chosenTitle);
+            };
+            const onCancel = () => {
+                cleanup();
+                modal.style.display = 'none';
+                resolve(null);
+            };
+            const onKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onConfirm();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onCancel();
+                }
+            };
+            const cleanup = () => {
+                document.getElementById('btn-confirm-save-meeting')?.removeEventListener('click', onConfirm);
+                document.getElementById('btn-cancel-save-meeting')?.removeEventListener('click', onCancel);
+                document.getElementById('btn-close-save-meeting')?.removeEventListener('click', onCancel);
+                input.removeEventListener('keydown', onKeyDown);
+            };
+
+            document.getElementById('btn-confirm-save-meeting')?.addEventListener('click', onConfirm);
+            document.getElementById('btn-cancel-save-meeting')?.addEventListener('click', onCancel);
+            document.getElementById('btn-close-save-meeting')?.addEventListener('click', onCancel);
+            input.addEventListener('keydown', onKeyDown);
+        });
+    }
+
+    async _renameSession(id, currentTitle = '') {
+        const modal = document.getElementById('modal-rename-meeting');
+        const input = document.getElementById('input-rename-meeting-title');
+        if (!modal || !input) return;
+
+        input.value = currentTitle;
+        modal.style.display = 'flex';
+        input.focus();
+        input.select();
+
+        return new Promise((resolve) => {
+            const onConfirm = async () => {
+                cleanup();
+                const newTitle = input.value.trim();
+                if (newTitle && newTitle !== currentTitle) {
+                    try {
+                        await invoke('update_session_title', { id, title: newTitle });
+                        if (this._currentViewedSession && this._currentViewedSession.id === id) {
+                            const titleEl = document.getElementById('session-viewer-title');
+                            if (titleEl) titleEl.textContent = newTitle;
+                        }
+                        this._showToast('Đã đổi tên cuộc họp', 'success');
+                        await this._showSessions();
+                    } catch (err) {
+                        this._showToast(`Đổi tên thất bại: ${err}`, 'error');
+                    }
+                }
+                modal.style.display = 'none';
+                resolve(newTitle);
+            };
+            const onCancel = () => {
+                cleanup();
+                modal.style.display = 'none';
+                resolve(null);
+            };
+            const onKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onConfirm();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onCancel();
+                }
+            };
+            const cleanup = () => {
+                document.getElementById('btn-confirm-rename-meeting')?.removeEventListener('click', onConfirm);
+                document.getElementById('btn-cancel-rename-meeting')?.removeEventListener('click', onCancel);
+                document.getElementById('btn-close-rename-meeting')?.removeEventListener('click', onCancel);
+                input.removeEventListener('keydown', onKeyDown);
+            };
+
+            document.getElementById('btn-confirm-rename-meeting')?.addEventListener('click', onConfirm);
+            document.getElementById('btn-cancel-rename-meeting')?.addEventListener('click', onCancel);
+            document.getElementById('btn-close-rename-meeting')?.addEventListener('click', onCancel);
+            input.addEventListener('keydown', onKeyDown);
+        });
+    }
+
+    _formatDefaultMeetingTitle(dateObj) {
+        const d = dateObj ? new Date(dateObj) : new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return `${y}${m}${day} ${hh}:${mm}`;
+    }
+
+    async _playSessionTTS(id, isLegacy = false) {
+        try {
+            const btn = document.getElementById('btn-session-tts-play');
+
+            // Stop any currently playing session audio
+            if (this._sessionAudioElement) {
+                this._sessionAudioElement.pause();
+                this._sessionAudioElement = null;
+                const wasPlayingSame = this._sessionAudioId === id;
+                this._sessionAudioId = null;
+                if (btn) btn.innerHTML = '🔊 Nghe lại';
+                if (wasPlayingSame) {
+                    this._showToast('Đã dừng phát ghi âm', 'info');
+                    return;
+                }
+            }
+
+            if (isLegacy) {
+                this._showToast('Cuộc họp cũ này không có file ghi âm âm thanh', 'info');
+                return;
+            }
+
+            // Read the meeting audio recording file (.wav)
+            let audioDataUrl = null;
+            try {
+                audioDataUrl = await invoke('read_session_audio', { id });
+            } catch (audioErr) {
+                console.warn('[App] read_session_audio failed:', audioErr);
+            }
+
+            if (!audioDataUrl) {
+                this._showToast('Không có file ghi âm cho cuộc họp này', 'info');
+                if (btn) btn.innerHTML = '🔊 Nghe lại';
+                return;
+            }
+
+            this._showToast('🔊 Đang phát lại bản ghi âm cuộc họp...', 'info');
+            if (btn) btn.innerHTML = '⏹ Dừng nghe';
+
+            const audio = new Audio(audioDataUrl);
+            this._sessionAudioElement = audio;
+            this._sessionAudioId = id;
+            audio.onended = () => {
+                this._sessionAudioElement = null;
+                this._sessionAudioId = null;
+                if (btn) btn.innerHTML = '🔊 Nghe lại';
+            };
+            audio.onerror = () => {
+                const mediaError = audio.error;
+                console.error('[App] Audio playback error:', mediaError?.code, mediaError?.message);
+                this._showToast(`Lỗi khi phát file ghi âm${mediaError?.message ? `: ${mediaError.message}` : ''}`, 'error');
+                this._sessionAudioElement = null;
+                this._sessionAudioId = null;
+                if (btn) btn.innerHTML = '🔊 Nghe lại';
+            };
+            await audio.play();
+        } catch (err) {
+            this._showToast(`Lỗi phát âm thanh: ${err}`, 'error');
+            const btn = document.getElementById('btn-session-tts-play');
+            if (btn) btn.innerHTML = '🔊 Nghe lại';
+        }
+    }
+
     async _showSessions(query) {
+        if (this._sessionAudioElement) {
+            this._sessionAudioElement.pause();
+            this._sessionAudioElement = null;
+            this._sessionAudioId = null;
+        }
         const listEl = document.getElementById('sessions-list');
         const listPanel = document.getElementById('sessions-list-panel');
         const viewer = document.getElementById('session-viewer');
@@ -3113,37 +2919,103 @@ class App {
             const args = query && query.trim() ? { query: query.trim() } : {};
             const sessions = await invoke(cmd, args);
             if (sessions.length === 0) {
-                listEl.innerHTML = '<div class="sessions-empty">No saved sessions yet.</div>';
+                listEl.innerHTML = '<div class="sessions-empty">Chưa có meeting log nào được lưu.</div>';
+                this._updateBatchSelectionUI();
                 return;
             }
 
-            listEl.innerHTML = sessions.map(s => this._renderSessionItem(s)).join('');
+            // Ensure newest first sorting
+            sessions.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
 
-            listEl.querySelectorAll('.session-item').forEach(item => {
-                item.addEventListener('click', (e) => {
-                    if (e.target.closest('.session-delete-btn')) return;
-                    const id = item.dataset.id;
-                    const legacy = item.dataset.legacy === '1';
-                    this._openSession(id, legacy);
+            listEl.innerHTML = sessions.map(s => this._renderSessionItem(s)).join('');
+            this._updateBatchSelectionUI();
+
+            // Checkbox changes
+            listEl.querySelectorAll('.session-item-chk').forEach(chk => {
+                chk.addEventListener('click', (e) => e.stopPropagation());
+                chk.addEventListener('change', (e) => {
+                    const id = e.target.dataset.id;
+                    if (e.target.checked) this._selectedSessionIds.add(id);
+                    else this._selectedSessionIds.delete(id);
+                    this._updateBatchSelectionUI();
                 });
             });
+
+            // TTS play
+            listEl.querySelectorAll('.session-btn-action.play-tts').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const id = btn.dataset.id;
+                    const legacy = btn.dataset.legacy === '1';
+                    this._playSessionTTS(id, legacy);
+                });
+            });
+
+            // Rename
+            listEl.querySelectorAll('.session-btn-action.rename').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const id = btn.dataset.id;
+                    const oldTitle = btn.dataset.title;
+                    this._renameSession(id, oldTitle);
+                });
+            });
+
+            // Copy session
+            listEl.querySelectorAll('.session-btn-action.copy-session').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const id = btn.dataset.id;
+                    const legacy = btn.dataset.legacy === '1';
+                    try {
+                        let text = '';
+                        if (legacy) {
+                            text = await invoke('read_legacy_session', { id });
+                        } else {
+                            const res = await invoke('read_session', { id });
+                            text = res.md;
+                        }
+                        if (text) {
+                            await navigator.clipboard.writeText(text);
+                            this._showToast('Đã sao chép nội dung cuộc họp ✓', 'success');
+                            const orig = btn.innerHTML;
+                            btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                            setTimeout(() => { if (btn) btn.innerHTML = orig; }, 1500);
+                        }
+                    } catch (err) {
+                        this._showToast(`Lỗi sao chép: ${err}`, 'error');
+                    }
+                });
+            });
+
+            // Delete
             listEl.querySelectorAll('.session-delete-btn').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     const id = btn.dataset.id;
-                    // Block deleting the active session — the next autosave would
-                    // just resurrect the file the user deleted.
                     if (id === sessionStore.id) {
-                        this._showToast('Cannot delete the active session — Stop it first', 'error');
+                        this._showToast('Không thể xoá cuộc họp đang chạy — hãy Dừng trước', 'error');
                         return;
                     }
-                    if (!confirm('Delete this session permanently?')) return;
+                    if (!confirm('Xóa vĩnh viễn cuộc họp này?')) return;
                     try {
                         await invoke('delete_session', { id });
+                        this._selectedSessionIds.delete(id);
                         await this._showSessions();
+                        this._showToast('Đã xóa cuộc họp', 'success');
                     } catch (err) {
                         this._showToast(`Delete failed: ${err}`, 'error');
                     }
+                });
+            });
+
+            // Item click
+            listEl.querySelectorAll('.session-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    if (e.target.closest('.session-delete-btn, .session-btn-action, .session-item-chk')) return;
+                    const id = item.dataset.id;
+                    const legacy = item.dataset.legacy === '1';
+                    this._openSession(id, legacy);
                 });
             });
         } catch (err) {
@@ -3152,7 +3024,7 @@ class App {
     }
 
     _renderSessionItem(s) {
-        const title = this._esc(s.title || 'Untitled session');
+        const title = this._esc(s.title || 'Cuộc họp chưa đặt tên');
         const created = this._esc(s.created_at || '').slice(0, 16);
         const duration = this._formatSeconds(s.duration_sec || 0);
         const engine = s.engine || 'unknown';
@@ -3162,13 +3034,24 @@ class App {
         const langPair = s.source_lang && s.target_lang
             ? `<span class="session-badge">${this._esc(s.source_lang)} → ${this._esc(s.target_lang)}</span>`
             : '';
-        const segCount = s.segment_count > 0 ? `<span class="session-meta-dim">${s.segment_count} segments</span>` : '';
-        const chunks = s.chunk_count > 1 ? `<span class="session-meta-dim">${s.chunk_count} chunks</span>` : '';
-        const delBtn = `<button class="session-delete-btn" title="Delete" data-id="${this._escAttr(s.id)}">×</button>`;
+        const segCount = s.segment_count > 0 ? `<span class="session-meta-dim">${s.segment_count} câu</span>` : '';
+        const isChecked = this._selectedSessionIds.has(s.id);
+
         return `<div class="session-item" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}">
             <div class="session-item-row1">
+                <input type="checkbox" class="session-item-chk" data-id="${this._escAttr(s.id)}" ${isChecked ? 'checked' : ''} />
                 <span class="session-item-title">${title}</span>
-                ${delBtn}
+                <div class="session-actions-inline">
+                    <button type="button" class="session-btn-action copy-session" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}" title="Sao chép nội dung cuộc họp">
+                        <svg class="icon-copy-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </button>
+                    <button type="button" class="session-btn-action play-tts" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}" title="Nghe lại cuộc họp này">🔊</button>
+                    <button type="button" class="session-btn-action rename" data-id="${this._escAttr(s.id)}" data-title="${this._escAttr(s.title || '')}" title="Đổi tên">✏️</button>
+                    <button type="button" class="session-delete-btn" data-id="${this._escAttr(s.id)}" title="Xóa">×</button>
+                </div>
             </div>
             <div class="session-item-row2">
                 ${engineBadge}
@@ -3176,12 +3059,19 @@ class App {
                 <span class="session-meta-dim">${created}</span>
                 ${duration ? `<span class="session-meta-dim">${duration}</span>` : ''}
                 ${segCount}
-                ${chunks}
             </div>
         </div>`;
     }
 
     async _openSession(id, isLegacy = false) {
+        if (this._sessionAudioElement) {
+            this._sessionAudioElement.pause();
+            this._sessionAudioElement = null;
+            this._sessionAudioId = null;
+        }
+        const playBtn = document.getElementById('btn-session-tts-play');
+        if (playBtn) playBtn.innerHTML = '🔊 Nghe lại';
+
         const listPanel = document.getElementById('sessions-list-panel');
         const viewer = document.getElementById('session-viewer');
         const title = document.getElementById('session-viewer-title');
@@ -3373,6 +3263,471 @@ class App {
         });
     }
 
+    _updateAudioMeter(pcmData) {
+        if (!pcmData || pcmData.length === 0) {
+            this._renderAudioMeter(0);
+            return;
+        }
+        const bytes = pcmData instanceof Uint8Array ? pcmData : new Uint8Array(pcmData);
+        const { percent } = this._calculateAudioRms(bytes);
+        this._renderAudioMeter(percent);
+        if (percent > 6) {
+            this._resetInactivityTimer();
+        }
+    }
+
+    _calculateAudioRms(pcmBytes) {
+        if (!pcmBytes || pcmBytes.length === 0) return { rms: 0, percent: 0 };
+        const view = new DataView(pcmBytes.buffer, pcmBytes.byteOffset, pcmBytes.byteLength);
+        const numSamples = Math.floor(pcmBytes.length / 2);
+        if (numSamples === 0) return { rms: 0, percent: 0 };
+
+        let sumSquares = 0;
+        for (let i = 0; i < numSamples; i++) {
+            const s = view.getInt16(i * 2, true) / 32768.0;
+            sumSquares += s * s;
+        }
+        const rms = Math.sqrt(sumSquares / numSamples);
+        const percent = Math.min(100, Math.round(Math.pow(rms * 5.0, 0.65) * 100));
+        return { rms, percent };
+    }
+
+    _renderAudioMeter(percent) {
+        // 1. Update mini status-bar VU meter
+        const liveMeter = document.getElementById('live-audio-meter');
+        if (liveMeter) {
+            const bars = liveMeter.querySelectorAll('.vu-bar');
+            if (bars && bars.length === 4) {
+                bars[0].style.height = percent > 3 ? `${Math.min(100, Math.max(20, percent * 1.5))}%` : '20%';
+                bars[1].style.height = percent > 20 ? `${Math.min(100, Math.max(20, percent * 1.2))}%` : '20%';
+                bars[2].style.height = percent > 45 ? `${Math.min(100, Math.max(20, percent * 1.0))}%` : '20%';
+                bars[3].style.height = percent > 70 ? `${Math.min(100, Math.max(20, percent * 0.9))}%` : '20%';
+
+                bars.forEach(b => {
+                    if (percent <= 3) b.style.background = 'rgba(255,255,255,0.2)';
+                    else if (b.dataset.origBg) b.style.background = b.dataset.origBg;
+                });
+            }
+        }
+
+        // 2. Update Settings Audio Test Bar
+        const testBar = document.getElementById('audio-test-meter-bar');
+        const testText = document.getElementById('audio-test-level-text');
+        if (testBar) {
+            testBar.style.width = `${percent}%`;
+        }
+        if (testText) {
+            testText.textContent = `${percent}%`;
+        }
+    }
+
+    async _playPcmAudio(pcmBytes, sampleRate = 16000) {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx({ sampleRate });
+            if (ctx.state === 'suspended') {
+                await ctx.resume();
+            }
+            const numSamples = Math.floor(pcmBytes.length / 2);
+            if (numSamples === 0) return;
+            const samples = new Float32Array(numSamples);
+            const view = new DataView(pcmBytes.buffer, pcmBytes.byteOffset, numSamples * 2);
+            for (let i = 0; i < numSamples; i++) {
+                samples[i] = view.getInt16(i * 2, true) / 32768.0;
+            }
+            const buffer = ctx.createBuffer(1, numSamples, sampleRate);
+            buffer.getChannelData(0).set(samples);
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.start(0);
+        } catch (e) {
+            console.error('[Audio Playback] failed:', e);
+        }
+    }
+
+    async _startAudioRecordingTest() {
+        if (this._isAudioTesting) return;
+        
+        // If live monitoring is active, stop it first
+        if (this._isLiveMonitoring) {
+            this._isLiveMonitoring = false;
+            const btnLive = document.getElementById('btn-test-mic-live');
+            if (btnLive) btnLive.innerHTML = '🔊 Bật Live Monitor';
+            try { await invoke('stop_capture'); } catch {}
+            await new Promise(r => setTimeout(r, 100));
+        }
+
+        this._isAudioTesting = true;
+
+        const statusEl = document.getElementById('audio-test-status');
+        const btnRec = document.getElementById('btn-test-mic-rec');
+        const originalBtnText = '🎙️ Ghi âm thử 3s & Nghe lại';
+
+        if (statusEl) statusEl.textContent = '⏳ Đang khởi động...';
+        if (btnRec) {
+            btnRec.disabled = true;
+            btnRec.innerHTML = '🔴 Đang thu (3s)...';
+        }
+
+        const recordedChunks = [];
+        let totalRms = 0;
+        let batchCount = 0;
+        const testChannel = new window.__TAURI__.core.Channel();
+
+        testChannel.onmessage = (pcmData) => {
+            if (!this._isAudioTesting) return;
+            const bytes = new Uint8Array(pcmData);
+            recordedChunks.push(bytes);
+            const level = this._calculateAudioRms(bytes);
+            totalRms += level.rms;
+            batchCount++;
+            this._renderAudioMeter(level.percent);
+        };
+
+        const testSource = document.querySelector('input[name="audio-source"]:checked')?.value || this.currentSource || 'system';
+
+        try {
+            await invoke('start_capture', {
+                source: testSource,
+                channel: testChannel,
+            });
+
+            // Countdown 3 seconds
+            for (let sec = 3; sec > 0; sec--) {
+                if (statusEl) statusEl.textContent = `🔴 Thu từ ${testSource}: ${sec}s...`;
+                if (btnRec) btnRec.innerHTML = `🔴 Đang thu (${sec}s)...`;
+                await new Promise(r => setTimeout(r, 1000));
+            }
+
+            // Stop capture
+            await invoke('stop_capture');
+            this._renderAudioMeter(0);
+
+            // Merge recorded chunks
+            const totalBytes = recordedChunks.reduce((acc, c) => acc + c.length, 0);
+            const merged = new Uint8Array(totalBytes);
+            let offset = 0;
+            for (const chunk of recordedChunks) {
+                merged.set(chunk, offset);
+                offset += chunk.length;
+            }
+
+            const avgRms = batchCount > 0 ? (totalRms / batchCount) : 0;
+            console.log(`[Audio Test] Recorded ${totalBytes} bytes, avg RMS: ${avgRms.toFixed(5)}`);
+
+            if (totalBytes === 0 || avgRms < 0.001) {
+                if (statusEl) {
+                    statusEl.innerHTML = '<span style="color: #ef4444; font-weight:600;">⚠️ Im lặng (Không có tiếng)</span>';
+                }
+                this._showToast('Không thu được âm thanh! Hãy kiểm tra microphone hoặc quyền Screen Recording trong macOS.', 'error');
+            } else {
+                if (statusEl) {
+                    statusEl.innerHTML = '<span style="color: #10b981; font-weight:600;">🔊 Đang phát lại âm thanh vừa thu...</span>';
+                }
+                if (btnRec) btnRec.innerHTML = '🔊 Đang phát lại...';
+                await this._playPcmAudio(merged, 16000);
+
+                const playDuration = Math.round(totalBytes / 32000 * 1000);
+                setTimeout(() => {
+                    if (statusEl) {
+                        statusEl.innerHTML = '<span style="color: #10b981; font-weight:600;">✅ Thu âm tốt (RMS: ' + (avgRms * 100).toFixed(1) + '%)</span>';
+                    }
+                    if (btnRec) {
+                        btnRec.disabled = false;
+                        btnRec.innerHTML = originalBtnText;
+                    }
+                    this._isAudioTesting = false;
+                }, playDuration + 500);
+                return;
+            }
+        } catch (err) {
+            console.error('[Audio Test] Error:', err);
+            if (statusEl) statusEl.textContent = `❌ Lỗi: ${err}`;
+            this._showToast(`Lỗi thu âm: ${err}`, 'error');
+            try { await invoke('stop_capture'); } catch {}
+        } finally {
+            if (btnRec && !btnRec.innerHTML.includes('phát lại')) {
+                btnRec.disabled = false;
+                btnRec.innerHTML = originalBtnText;
+                this._isAudioTesting = false;
+            }
+        }
+    }
+
+    async _toggleAudioLiveMonitor() {
+        const btnLive = document.getElementById('btn-test-mic-live');
+        const statusEl = document.getElementById('audio-test-status');
+
+        if (this._isLiveMonitoring) {
+            this._isLiveMonitoring = false;
+            try { await invoke('stop_capture'); } catch {}
+            this._renderAudioMeter(0);
+            if (btnLive) btnLive.innerHTML = '🔊 Bật Live Monitor';
+            if (statusEl) statusEl.textContent = 'Đã dừng Monitor';
+            return;
+        }
+
+        this._isLiveMonitoring = true;
+        if (btnLive) btnLive.innerHTML = '⏹ Dừng Monitor';
+        if (statusEl) statusEl.textContent = '🟢 Đang đo âm lượng Live...';
+
+        const testChannel = new window.__TAURI__.core.Channel();
+        testChannel.onmessage = (pcmData) => {
+            if (!this._isLiveMonitoring) return;
+            const bytes = new Uint8Array(pcmData);
+            const level = this._calculateAudioRms(bytes);
+            this._renderAudioMeter(level.percent);
+            if (statusEl) {
+                const db = level.rms > 0 ? (20 * Math.log10(level.rms)).toFixed(1) : '-inf';
+                statusEl.innerHTML = `🟢 Live: <b style="color:${level.percent > 5 ? '#10b981' : '#94a3b8'}">${level.percent}%</b> (${db} dB)`;
+            }
+        };
+
+        const testSource = document.querySelector('input[name="audio-source"]:checked')?.value || this.currentSource || 'system';
+        try {
+            await invoke('start_capture', {
+                source: testSource,
+                channel: testChannel,
+            });
+        } catch (err) {
+            this._isLiveMonitoring = false;
+            if (btnLive) btnLive.innerHTML = '🔊 Bật Live Monitor';
+            if (statusEl) statusEl.textContent = `❌ Lỗi: ${err}`;
+            this._showToast(`Lỗi Monitor: ${err}`, 'error');
+        }
+    }
+
+    // ─── Take Note Module ──────────────────────────────────────
+
+    _initNotesModule() {
+        const btnToggleNotes = document.getElementById('btn-toggle-notes');
+        const btnClose = document.getElementById('btn-note-close');
+        const btnCopy = document.getElementById('btn-note-copy');
+        const btnPreview = document.getElementById('btn-note-toggle-preview');
+        const noteTextarea = document.getElementById('live-note-textarea');
+        const fmtButtons = document.querySelectorAll('.note-fmt-btn');
+
+        this._isNotePreviewActive = false;
+
+        btnToggleNotes?.addEventListener('click', () => {
+            this._toggleNotesDrawer();
+        });
+
+        btnClose?.addEventListener('click', () => {
+            this._toggleNotesDrawer(false);
+        });
+
+        btnCopy?.addEventListener('click', async () => {
+            const text = noteTextarea?.value;
+            if (text && text.trim()) {
+                await navigator.clipboard.writeText(text);
+                this._showToast('📋 Đã copy ghi chú vào clipboard', 'success');
+            } else {
+                this._showToast('Ghi chú đang trống', 'info');
+            }
+        });
+
+        btnPreview?.addEventListener('click', () => {
+            this._toggleNotePreview();
+        });
+
+        fmtButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const fmt = btn.dataset.fmt;
+                if (fmt) this._applyNoteFormat(fmt);
+            });
+        });
+
+        noteTextarea?.addEventListener('input', (e) => {
+            const val = e.target.value;
+            sessionStore.notes = val;
+            if (this._isNotePreviewActive) {
+                this._renderNotePreview();
+            }
+        });
+    }
+
+    _getNoteTemplate() {
+        const now = new Date();
+        const p = n => String(n).padStart(2, '0');
+        const dateStr = `${now.getFullYear()}/${p(now.getMonth() + 1)}/${p(now.getDate())}`;
+        return `# MTG Title\n## Thông tin cuộc họp\n- Người tham gia: \n- Ngày tháng: ${dateStr}\n\n## Nội dung cuộc họp \n\n\n## TODO\n- \n`;
+    }
+
+    _toggleNotesDrawer(forceOpen = null) {
+        const drawer = document.getElementById('live-notes-drawer');
+        const textarea = document.getElementById('live-note-textarea');
+        const btnToggleNotes = document.getElementById('btn-toggle-notes');
+        if (!drawer || !textarea) return;
+
+        const isOpen = drawer.style.display !== 'none';
+        const shouldOpen = forceOpen !== null ? forceOpen : !isOpen;
+
+        if (shouldOpen) {
+            drawer.style.display = 'flex';
+            if (btnToggleNotes) btnToggleNotes.classList.add('active');
+            if (!textarea.value.trim()) {
+                textarea.value = this._getNoteTemplate();
+                sessionStore.notes = textarea.value;
+            }
+            if (this._isNotePreviewActive) {
+                this._renderNotePreview();
+            }
+            textarea.focus();
+        } else {
+            drawer.style.display = 'none';
+            if (btnToggleNotes) btnToggleNotes.classList.remove('active');
+        }
+    }
+
+    _toggleNotePreview() {
+        const textarea = document.getElementById('live-note-textarea');
+        const preview = document.getElementById('live-note-preview');
+        const btnPreview = document.getElementById('btn-note-toggle-preview');
+        if (!textarea || !preview || !btnPreview) return;
+
+        this._isNotePreviewActive = !this._isNotePreviewActive;
+
+        if (this._isNotePreviewActive) {
+            this._renderNotePreview();
+            textarea.style.display = 'none';
+            preview.style.display = 'block';
+            btnPreview.classList.add('active');
+            btnPreview.textContent = '✏️ Edit';
+        } else {
+            textarea.style.display = 'block';
+            preview.style.display = 'none';
+            btnPreview.classList.remove('active');
+            btnPreview.textContent = '👁️ Preview';
+            textarea.focus();
+        }
+    }
+
+    _applyNoteFormat(fmt) {
+        const textarea = document.getElementById('live-note-textarea');
+        if (!textarea) return;
+
+        // If preview is active, switch back to edit mode first
+        if (this._isNotePreviewActive) {
+            this._toggleNotePreview();
+        }
+
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+        const selected = text.substring(start, end);
+
+        let replacement = '';
+        let newCursorPos = end;
+
+        switch (fmt) {
+            case 'bold':
+                replacement = `**${selected || 'in đậm'}**`;
+                newCursorPos = selected ? start + replacement.length : start + 2;
+                break;
+            case 'italic':
+                replacement = `*${selected || 'in nghiêng'}*`;
+                newCursorPos = selected ? start + replacement.length : start + 1;
+                break;
+            case 'h1':
+                replacement = selected ? `# ${selected}` : '# ';
+                newCursorPos = start + replacement.length;
+                break;
+            case 'h2':
+                replacement = selected ? `## ${selected}` : '## ';
+                newCursorPos = start + replacement.length;
+                break;
+            case 'list':
+                replacement = selected ? `- ${selected}` : '- ';
+                newCursorPos = start + replacement.length;
+                break;
+            case 'todo':
+                replacement = selected ? `- [ ] ${selected}` : '- [ ] ';
+                newCursorPos = start + replacement.length;
+                break;
+            case 'code':
+                replacement = `\`${selected || 'code'}\``;
+                newCursorPos = selected ? start + replacement.length : start + 1;
+                break;
+        }
+
+        textarea.setRangeText(replacement, start, end, 'end');
+        textarea.selectionStart = newCursorPos;
+        textarea.selectionEnd = newCursorPos;
+        sessionStore.notes = textarea.value;
+        textarea.focus();
+    }
+
+    _renderNotePreview() {
+        const textarea = document.getElementById('live-note-textarea');
+        const preview = document.getElementById('live-note-preview');
+        if (!textarea || !preview) return;
+
+        const raw = textarea.value;
+        const lines = raw.split('\n');
+        const htmlLines = [];
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+
+            // Checkboxes: - [ ] or - [x]
+            const todoMatch = line.match(/^(\s*)-\s+\[([ xX])\]\s+(.*)$/);
+            if (todoMatch) {
+                const checked = todoMatch[2].toLowerCase() === 'x';
+                const text = this._esc(todoMatch[3]);
+                htmlLines.push(`<div class="todo-item ${checked ? 'done' : ''}" data-line="${i}"><input type="checkbox" ${checked ? 'checked' : ''} data-line="${i}"> <span>${this._formatInlineMarkdown(text)}</span></div>`);
+                continue;
+            }
+
+            // Headers
+            if (line.startsWith('# ')) {
+                htmlLines.push(`<h1>${this._formatInlineMarkdown(this._esc(line.slice(2)))}</h1>`);
+            } else if (line.startsWith('## ')) {
+                htmlLines.push(`<h2>${this._formatInlineMarkdown(this._esc(line.slice(3)))}</h2>`);
+            } else if (line.startsWith('### ')) {
+                htmlLines.push(`<h3>${this._formatInlineMarkdown(this._esc(line.slice(4)))}</h3>`);
+            } else if (line.match(/^(\s*)-\s+(.*)$/)) {
+                const m = line.match(/^(\s*)-\s+(.*)$/);
+                htmlLines.push(`<ul><li>${this._formatInlineMarkdown(this._esc(m[2]))}</li></ul>`);
+            } else if (!line.trim()) {
+                htmlLines.push('<div style="height:6px;"></div>');
+            } else {
+                htmlLines.push(`<p style="margin:2px 0;">${this._formatInlineMarkdown(this._esc(line))}</p>`);
+            }
+        }
+
+        preview.innerHTML = htmlLines.join('');
+
+        // Wire checkbox clicking to toggle in underlying markdown
+        preview.querySelectorAll('input[type="checkbox"]').forEach(chk => {
+            chk.addEventListener('change', (e) => {
+                const lineIdx = parseInt(e.target.dataset.line);
+                const currentLines = textarea.value.split('\n');
+                if (currentLines[lineIdx]) {
+                    if (e.target.checked) {
+                        currentLines[lineIdx] = currentLines[lineIdx].replace(/-\s+\[ \]/, '- [x]');
+                    } else {
+                        currentLines[lineIdx] = currentLines[lineIdx].replace(/-\s+\[[xX]\]/, '- [ ]');
+                    }
+                    textarea.value = currentLines.join('\n');
+                    sessionStore.notes = textarea.value;
+                    this._renderNotePreview();
+                }
+            });
+        });
+    }
+
+    _formatInlineMarkdown(text) {
+        if (!text) return '';
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+            .replace(/\*(.*?)\*/g, '<i>$1</i>')
+            .replace(/~~(.*?)~~/g, '<del>$1</del>')
+            .replace(/`(.*?)`/g, '<code>$1</code>');
+    }
+
     _showToast(message, type = 'success') {
         // Remove existing toast
         const existing = document.querySelector('.toast');
@@ -3380,7 +3735,43 @@ class App {
 
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
-        toast.textContent = message;
+
+        const msgSpan = document.createElement('span');
+        msgSpan.className = 'toast-msg';
+        msgSpan.textContent = message;
+        toast.appendChild(msgSpan);
+
+        // Add copy button for all toasts (especially useful for error messages)
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'toast-copy-btn';
+        copyBtn.title = 'Sao chép thông báo';
+        const copySvg = `<svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+        const checkSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+        copyBtn.innerHTML = copySvg;
+        copyBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(String(message));
+                } else {
+                    const ta = document.createElement('textarea');
+                    ta.value = String(message);
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    ta.remove();
+                }
+                copyBtn.innerHTML = checkSvg;
+                setTimeout(() => {
+                    if (copyBtn) copyBtn.innerHTML = copySvg;
+                }, 1500);
+            } catch (err) {
+                console.error('Failed to copy toast message:', err);
+            }
+        });
+        toast.appendChild(copyBtn);
+
         document.body.appendChild(toast);
 
         // Trigger animation
@@ -3388,17 +3779,36 @@ class App {
             toast.classList.add('show');
         });
 
-        // Auto-remove (longer for errors)
-        const duration = type === 'error' ? 5000 : 3000;
-        setTimeout(() => {
+        // Auto-remove (longer for errors so user has ample time to copy)
+        const duration = type === 'error' ? 8000 : 3500;
+        let removeTimer = setTimeout(() => {
             toast.classList.remove('show');
             setTimeout(() => toast.remove(), 300);
         }, duration);
+
+        toast.addEventListener('mouseenter', () => {
+            clearTimeout(removeTimer);
+        });
+        toast.addEventListener('mouseleave', () => {
+            removeTimer = setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        });
     }
 }
 
-// Initialize on DOM ready
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize on DOM ready or immediately if already loaded
+function startApp() {
     const app = new App();
-    app.init();
-});
+    window.__app = app;
+    app.init().catch(err => {
+        console.error('[App] Init failed:', err);
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startApp);
+} else {
+    startApp();
+}

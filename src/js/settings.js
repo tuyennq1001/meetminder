@@ -8,6 +8,8 @@ const { invoke } = window.__TAURI__.core;
 const DEFAULT_SETTINGS = {
   soniox_api_key: '',
   openai_api_key: '',
+  gemini_api_key: '',
+  gemini_model: 'models/gemini-3.5-transcribe-live',
   qwen_api_key: '',
   source_language: 'auto',
   target_language: 'vi',
@@ -16,33 +18,9 @@ const DEFAULT_SETTINGS = {
   font_size: 16,
   max_lines: 5,
   show_original: true,
-  translation_mode: 'soniox',
+  translation_mode: 'gemini',
+  inactivity_timeout_min: 10,
   custom_context: null,
-  elevenlabs_api_key: '',
-  tts_enabled: false,
-  tts_provider: 'edge',
-  tts_voice_id: '21m00Tcm4TlvDq8ikWAM',
-  tts_speed: 1.2,
-  edge_tts_voice: 'vi-VN-HoaiMyNeural',
-  edge_tts_speed: 50,
-  tts_auto_read: true,
-  // Google Cloud (premium) — kept for parity with backend defaults
-  google_tts_api_key: '',
-  google_tts_voice: 'vi-VN-Chirp3-HD-Aoede',
-  google_tts_speed: 1.0,
-  // New free online providers (Trudio-style)
-  microsoft_v2_voice: 'vi-VN-HoaiMyNeural',
-  microsoft_v2_speed: 20,
-  google_free_voice: 'vi-VN',
-  google_free_api_key: '',
-  google_free_speed: 1.0,
-  tiktok_voice: 'BV074_streaming',
-  tiktok_speed: 1.0,
-  tiktok_session_id: '',
-  // Local offline (Piper/sherpa-onnx)
-  local_tts_voice: 'vi_VN-vais1000-medium',
-  local_tts_speed: 1.0,
-  local_tts_models_dir: '',
 };
 
 class SettingsManager {

@@ -26,6 +26,12 @@ pub struct Settings {
     pub soniox_api_key: String,
     /// OpenAI API key (for gpt-realtime-translate)
     pub openai_api_key: String,
+    /// Google Gemini API key (for Gemini Multimodal Live)
+    #[serde(default)]
+    pub gemini_api_key: String,
+    /// Google Gemini model name
+    #[serde(default = "default_gemini_model")]
+    pub gemini_model: String,
     /// Alibaba Cloud DashScope API key (for Qwen LiveTranslate Flash)
     #[serde(default)]
     pub qwen_api_key: String,
@@ -102,6 +108,9 @@ pub struct Settings {
     /// Default false — speaker → mic feedback loop on shared devices.
     #[serde(default)]
     pub openai_audio_output: bool,
+    /// Auto-pause session when silence/inactivity exceeds N minutes (0 = disabled).
+    #[serde(default = "default_inactivity_timeout_min")]
+    pub inactivity_timeout_min: u32,
 }
 
 impl Default for Settings {
@@ -109,6 +118,8 @@ impl Default for Settings {
         Self {
             soniox_api_key: String::new(),
             openai_api_key: String::new(),
+            gemini_api_key: String::new(),
+            gemini_model: "models/gemini-3.5-transcribe-live".to_string(),
             qwen_api_key: String::new(),
             source_language: "auto".to_string(),
             target_language: "vi".to_string(),
@@ -117,7 +128,7 @@ impl Default for Settings {
             font_size: 16,
             max_lines: 5,
             show_original: true,
-            translation_mode: "soniox".to_string(),
+            translation_mode: "gemini".to_string(),
             custom_context: None,
             elevenlabs_api_key: String::new(),
             tts_enabled: false,
@@ -142,8 +153,13 @@ impl Default for Settings {
             local_tts_speed: 1.0,
             local_tts_models_dir: String::new(),
             openai_audio_output: false,
+            inactivity_timeout_min: 10,
         }
     }
+}
+
+fn default_inactivity_timeout_min() -> u32 {
+    10
 }
 
 /// Serde default for `local_tts_speed` (field-level default would give 0.0).
@@ -151,11 +167,15 @@ fn default_local_tts_speed() -> f32 {
     1.0
 }
 
+fn default_gemini_model() -> String {
+    "models/gemini-3.5-transcribe-live".to_string()
+}
+
 /// Get the settings file path
-/// ~/Library/Application Support/com.personal.translator/settings.json
+/// ~/Library/Application Support/com.terry.translator/settings.json
 fn settings_path() -> PathBuf {
     let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("com.personal.translator");
+    path.push("com.terry.translator");
     path.push("settings.json");
     path
 }

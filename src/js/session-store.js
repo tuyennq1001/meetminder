@@ -17,6 +17,7 @@ export class SessionStore {
         this.createdAt = null;
         this.endedAt = null;
         this.title = '';
+        this.notes = '';
         this.engine = null;            // 'openai' | 'soniox' | 'local'
         this.sourceLang = '';
         this.targetLang = '';
@@ -41,6 +42,7 @@ export class SessionStore {
         this.createdAt = new Date().toISOString();
         this.endedAt = null;
         this.title = '';
+        this.notes = '';
         this.engine = engine || null;
         this.sourceLang = sourceLang || '';
         this.targetLang = targetLang || '';
@@ -60,6 +62,7 @@ export class SessionStore {
         s.createdAt = j.created_at;
         s.endedAt = j.ended_at;
         s.title = j.title || '';
+        s.notes = j.notes || '';
         s.engine = j.engine || null;
         s.sourceLang = j.source_lang || '';
         s.targetLang = j.target_lang || '';
@@ -256,6 +259,7 @@ export class SessionStore {
             created_at: this.createdAt,
             ended_at: this.endedAt,
             title: this.title || this._autoTitle(),
+            notes: this.notes || '',
             engine: this.engine || 'unknown',
             source_lang: this.sourceLang || '',
             target_lang: this.targetLang || '',
@@ -288,35 +292,65 @@ export class SessionStore {
 
         lines.push(`# ${title}`);
         lines.push('');
-        lines.push(`**Engine**: ${this.engine || 'unknown'} · ${langPair} · ${this._formatDateTime(this.createdAt)} · ${dur}`);
+        lines.push(`**Thông tin**: Engine ${this.engine || 'unknown'} · ${langPair} · ${this._formatDateTime(this.createdAt)} · ${dur}`);
+        lines.push('');
+        lines.push('---');
         lines.push('');
 
+        // Section 1: Meeting Notes
+        lines.push('## 📝 1. Ghi chú cuộc họp (Meeting Notes)');
+        lines.push('');
+        if (this.notes && this.notes.trim()) {
+            lines.push(this.notes.trim());
+        } else {
+            lines.push('*(Không có ghi chú)*');
+        }
+        lines.push('');
+        lines.push('---');
+        lines.push('');
+
+        // Extract segments from all chunks
         const all = this._allChunks();
-        for (let i = 0; i < all.length; i++) {
-            const chunk = all[i];
-            if (i > 0) {
-                const prevEnd = new Date(all[i - 1].ended_at).getTime();
-                const curStart = new Date(chunk.started_at).getTime();
-                const gapMin = Math.max(0, Math.round((curStart - prevEnd) / 60000));
-                const startStr = this._formatDateTime(chunk.started_at).slice(11);
-                lines.push('');
-                lines.push(`──── resumed at ${startStr} (after ${gapMin}m) ────`);
-                lines.push('');
-            }
-            const startStr = this._formatDateTime(chunk.started_at).slice(11);
-            const endStr = chunk.ended_at ? this._formatDateTime(chunk.ended_at).slice(11) : '...';
-            lines.push(`## Chunk ${i + 1} — ${startStr} – ${endStr}`);
-            lines.push('');
-            for (const seg of chunk.segments) {
-                if (seg.src) {
-                    lines.push(`[${seg.ts}] ${seg.src}`);
-                    lines.push(`→ ${seg.tgt}`);
-                } else {
-                    lines.push(`[${seg.ts}] ${seg.tgt}`);
+        const srcLines = [];
+        const tgtLines = [];
+
+        for (const chunk of all) {
+            for (const seg of (chunk.segments || [])) {
+                const tsTag = seg.ts ? `[${seg.ts}] ` : '';
+                const spkTag = seg.speaker ? `(Speaker ${seg.speaker}) ` : '';
+                const src = (seg.src || '').trim();
+                const tgt = (seg.tgt || '').trim();
+
+                if (src) {
+                    srcLines.push(`${tsTag}${spkTag}${src}`);
                 }
-                lines.push('');
+                if (tgt) {
+                    tgtLines.push(`${tsTag}${spkTag}${tgt}`);
+                }
             }
         }
+
+        // Section 2: Original Transcript
+        lines.push('## 🗣️ 2. Bản gốc (Original)');
+        lines.push('');
+        if (srcLines.length > 0) {
+            lines.push(srcLines.join('\n'));
+        } else {
+            lines.push('*(Không có nội dung bản gốc)*');
+        }
+        lines.push('');
+        lines.push('---');
+        lines.push('');
+
+        // Section 3: Translation
+        lines.push('## 🌐 3. Bản dịch (Translation)');
+        lines.push('');
+        if (tgtLines.length > 0) {
+            lines.push(tgtLines.join('\n'));
+        } else {
+            lines.push('*(Không có nội dung bản dịch)*');
+        }
+
         return lines.join('\n');
     }
 }

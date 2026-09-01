@@ -40,6 +40,8 @@ pub struct SessionData {
     pub target_lang: String,
     pub duration_sec: u64,
     pub chunks: Vec<Chunk>,
+    #[serde(default)]
+    pub notes: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -249,12 +251,21 @@ pub fn read_legacy_session(app: AppHandle, id: String) -> Result<String, String>
 pub fn delete_session(app: AppHandle, id: String) -> Result<(), String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
-    // New format: session-{id}.{md,json}
+    // New format: session-{id}.{md,json,wav}
     let (md_path, json_path) = session_paths(&dir, &id);
     let _ = fs::remove_file(&json_path);
     let _ = fs::remove_file(&md_path);
+    let _ = fs::remove_file(dir.join(format!("session-{}.wav", id)));
     // Legacy format: {id}.md (no session- prefix, no sidecar)
     let _ = fs::remove_file(dir.join(format!("{}.md", id)));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_sessions(app: AppHandle, ids: Vec<String>) -> Result<(), String> {
+    for id in ids {
+        let _ = delete_session(app.clone(), id);
+    }
     Ok(())
 }
 
@@ -376,4 +387,27 @@ fn add_seconds_hms(ts: &str, add: u64) -> String {
     let m = (total % 3600) / 60;
     let s = total % 60;
     format!("{:02}:{:02}:{:02}", h, m, s)
+}
+
+#[tauri::command]
+pub fn get_session_record_path(app: AppHandle, id: String) -> Result<String, String> {
+    validate_id(&id)?;
+    let dir = sessions_dir(&app)?;
+    let wav_path = dir.join(format!("session-{}.wav", id));
+    Ok(wav_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn read_session_audio(app: AppHandle, id: String) -> Result<Option<String>, String> {
+    validate_id(&id)?;
+    let dir = sessions_dir(&app)?;
+    let wav_path = dir.join(format!("session-{}.wav", id));
+    if wav_path.exists() {
+        let bytes = fs::read(&wav_path).map_err(|e| e.to_string())?;
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        Ok(Some(format!("data:audio/wav;base64,{}", b64)))
+    } else {
+        Ok(None)
+    }
 }

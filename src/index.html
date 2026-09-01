@@ -11,14 +11,28 @@
   <link rel="stylesheet" href="styles/main.css" />
 </head>
 
-<body>
+<body class="activity-live">
   <!-- ═══════════════════ OVERLAY VIEW ═══════════════════ -->
   <div id="overlay-view" class="view active">
-    <!-- Drag Region (title bar area) -->
-    <div id="drag-region" data-tauri-drag-region>
-      <div class="control-bar" data-tauri-drag-region>
-        <button id="btn-settings" class="icon-btn" title="Settings">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <!-- Unified Single Top Bar (Activity Switcher + Live Toolbar + Window Controls) -->
+    <div id="drag-region">
+      <div class="control-bar">
+        <!-- Traffic lights window controls (Close, Minimize, Maximize) -->
+        <div class="traffic-lights" data-tauri-drag-region="false">
+          <button id="btn-win-close" class="traffic-btn traffic-close" title="Đóng cửa sổ (⌘W / ⌘Q)" type="button">
+            <svg viewBox="0 0 12 12" width="7" height="7"><path d="M2.5 2.5l7 7m0-7l-7 7" stroke="#4c0000" stroke-width="1.2" stroke-linecap="round"/></svg>
+          </button>
+          <button id="btn-win-minimize" class="traffic-btn traffic-minimize" title="Thu nhỏ cửa sổ (⌘M)" type="button">
+            <svg viewBox="0 0 12 12" width="7" height="7"><path d="M2 6h8" stroke="#5a3d00" stroke-width="1.2" stroke-linecap="round"/></svg>
+          </button>
+          <button id="btn-win-maximize" class="traffic-btn traffic-maximize" title="Phóng to / Thu nhỏ cửa sổ" type="button">
+            <svg viewBox="0 0 12 12" width="7" height="7"><polygon points="3,3 3,9 9,3" fill="#004d00" opacity="0.8"/><polygon points="9,9 9,3 3,9" fill="#004d00" opacity="0.8"/></svg>
+          </button>
+        </div>
+
+        <!-- Settings button -->
+        <button id="btn-settings" class="icon-btn" title="Cài đặt (⌘,)">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3" />
             <path
               d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -26,75 +40,135 @@
           <span id="settings-badge" class="settings-badge" style="display:none"></span>
         </button>
 
-        <!-- Activity switcher — the 3 first-class spaces of the app -->
+        <!-- Activity switcher (Live, Meeting Logs) -->
         <div class="activity-switcher">
-          <button class="activity-tab active" data-activity="live" title="Dịch trực tiếp" type="button">
-            🎙 Live<span id="live-tab-badge" class="live-tab-badge"></span>
+          <button class="activity-tab active" data-activity="live" title="Dịch trực tiếp (⌘L)" type="button">
+            🎙 <u>L</u>ive<span id="live-tab-badge" class="live-tab-badge state-waiting" title="Trạng thái chờ / đang dịch"></span>
           </button>
-          <button class="activity-tab" data-activity="read" title="Đọc văn bản (TTS)" type="button">📖 Đọc</button>
-          <button class="activity-tab" data-activity="library" title="Sessions đã lưu" type="button">📚 Thư viện</button>
+          <button class="activity-tab" data-activity="library" title="Cuộc họp đã lưu (⌘O)" type="button">📚 L<u>o</u>gs</button>
+        </div>
+
+        <div class="header-divider"></div>
+
+        <!-- Live Header Controls: Actions · Languages · Timing · View · Audio · TTS · More -->
+        <div class="live-header-controls" id="live-header-controls">
+          <!-- Main Start / Pause button -->
+          <button id="btn-start" class="primary-action-btn" title="Start / Pause (⌘S)">
+            <svg id="icon-play" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+            <svg id="icon-pause" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="display:none">
+              <rect x="6" y="4" width="4" height="16" rx="1" />
+              <rect x="14" y="4" width="4" height="16" rx="1" />
+            </svg>
+            <span id="btn-start-label"><u>S</u>tart</span>
+          </button>
+
+          <!-- Dynamic Stop / Save button -->
+          <button id="btn-stop" class="btn-stop-action" title="Kết thúc cuộc họp & Lưu (⌘T)" style="display:none">
+            <svg id="icon-stop-sq" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="4" y="4" width="16" height="16" rx="3" />
+            </svg>
+            <svg id="icon-save-floppy" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+              <polyline points="17 21 17 13 7 13 7 21" />
+              <polyline points="7 3 7 8 15 8" />
+            </svg>
+            <span id="btn-stop-label">S<u>t</u>op</span>
+          </button>
+
+          <!-- Take Note button -->
+          <button id="btn-toggle-notes" class="btn-notes-action" title="Ghi chú cuộc họp (⌘N)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+            <span id="btn-notes-label">Take <u>N</u>ote</span>
+          </button>
+
+          <!-- Language Selector -->
+          <div class="quick-lang-wrap" title="Chọn ngôn ngữ trực tiếp trong khi dịch">
+            <select id="quick-select-source-lang" class="source-select quick-lang-select" title="Ngôn ngữ nguồn (Gốc)">
+              <option value="auto">🌐 Auto</option>
+              <option value="ja">🇯🇵 JP</option>
+              <option value="en">🇺🇸 EN</option>
+              <option value="vi">🇻🇳 VI</option>
+              <option value="zh">🇨🇳 ZH</option>
+              <option value="ko">🇰🇷 KO</option>
+              <option value="fr">🇫🇷 FR</option>
+              <option value="de">🇩🇪 DE</option>
+              <option value="es">🇪🇸 ES</option>
+              <option value="th">🇹🇭 TH</option>
+              <option value="id">🇮🇩 ID</option>
+              <option value="ru">🇷🇺 RU</option>
+            </select>
+            <button type="button" id="btn-quick-swap-lang" class="btn-swap-lang" title="Đổi chiều ngôn ngữ">⇄</button>
+            <select id="quick-select-target-lang" class="source-select quick-lang-select" title="Ngôn ngữ dịch (Đích)">
+              <option value="vi">🇻🇳 VI</option>
+              <option value="en">🇺🇸 EN</option>
+              <option value="ja">🇯🇵 JP</option>
+              <option value="zh">🇨🇳 ZH</option>
+              <option value="ko">🇰🇷 KO</option>
+              <option value="fr">🇫🇷 FR</option>
+              <option value="de">🇩🇪 DE</option>
+              <option value="es">🇪🇸 ES</option>
+              <option value="th">🇹🇭 TH</option>
+              <option value="id">🇮🇩 ID</option>
+              <option value="ru">🇷🇺 RU</option>
+            </select>
+          </div>
+
+          <!-- Timing Selector Pulldown -->
+          <select id="select-translation-timing" class="source-select" title="Kiểu dịch: Nghe dứt câu hoặc Nghe real time">
+            <option value="on_pause">⏳ Nghe dứt câu</option>
+            <option value="realtime">⚡ Nghe real time</option>
+          </select>
+
+          <!-- View Mode Selector Pulldown -->
+          <select id="select-view-mode" class="source-select" title="Chế độ hiển thị: Bản gốc + dịch, Bản gốc hoặc Bản dịch">
+            <option value="dual">📑 Bản gốc + dịch</option>
+            <option value="original">📝 Bản gốc</option>
+            <option value="translation">🌐 Bản dịch</option>
+          </select>
+
+          <!-- Audio Source Select + VU meter -->
+          <div class="source-select-wrap">
+            <select id="select-audio-source" class="source-select" title="Nguồn âm thanh (⌘1/2/3)">
+              <option value="system">🔊 System</option>
+              <option value="microphone">🎤 Mic</option>
+              <option value="both">🔊+🎤 Cả hai</option>
+            </select>
+            <div id="live-audio-meter" class="live-vu-meter" title="Mức âm lượng nhận được từ Mic/System">
+              <div class="vu-bar" data-orig-bg="#10b981" style="background: rgba(255,255,255,0.2);"></div>
+              <div class="vu-bar" data-orig-bg="#10b981" style="background: rgba(255,255,255,0.2);"></div>
+              <div class="vu-bar" data-orig-bg="#f59e0b" style="background: rgba(255,255,255,0.2);"></div>
+              <div class="vu-bar" data-orig-bg="#ef4444" style="background: rgba(255,255,255,0.2);"></div>
+            </div>
+          </div>
+
+
+
         </div>
 
         <div class="toolbar-spacer" data-tauri-drag-region></div>
 
-        <button id="btn-window-mode" class="icon-btn" title="Mở rộng cửa sổ">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="15 3 21 3 21 9" />
-            <polyline points="9 21 3 21 3 15" />
-            <line x1="21" y1="3" x2="14" y2="10" />
-            <line x1="3" y1="21" x2="10" y2="14" />
-          </svg>
-        </button>
-
-        <button id="btn-pin" class="icon-btn active" title="Pin on top (always visible)">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 17v5" />
-            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76z" />
-          </svg>
-        </button>
-
-        <button id="btn-close" class="icon-btn close-btn" title="Close">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+        <!-- Right window control buttons -->
+        <div class="window-controls">
+          <button id="btn-pin" class="icon-btn" title="Ghim cửa sổ trên cùng (⌘P)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 17v5" />
+              <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76z" />
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
 
     <!-- Transcript Area (Live activity panel) -->
-    <div id="transcript-container" class="activity-panel active" data-activity="live" data-tauri-drag-region>
-      <!-- Live status row: engine · state · languages · audio source -->
-      <div class="live-status-row">
-        <div class="engine-pill" id="engine-pill" title="Click to switch engine">
-          <button class="engine-pill-btn active" data-engine-class="standard" type="button">
-            <span class="engine-pill-icon">☁️</span>
-            <span class="engine-pill-label">Standard</span>
-          </button>
-          <button class="engine-pill-btn" data-engine-class="openai" type="button">
-            <span class="engine-pill-icon">⚡</span>
-            <span class="engine-pill-label">OpenAI</span>
-          </button>
-          <button class="engine-pill-btn" data-engine-class="qwen" type="button">
-            <span class="engine-pill-icon">🌏</span>
-            <span class="engine-pill-label">Qwen</span>
-          </button>
-        </div>
-        <div class="status-area">
-          <span id="status-indicator" class="status-dot disconnected"></span>
-          <span id="status-text" class="status-text">Ready</span>
-        </div>
-        <span id="live-lang" class="live-lang" title="Cặp ngôn ngữ (đổi trong Cài đặt)"></span>
-        <select id="select-audio-source" class="source-select" title="Nguồn âm thanh (⌘1/2/3)">
-          <option value="system">🔊 System</option>
-          <option value="microphone">🎤 Mic</option>
-          <option value="both">🔊+🎤 Cả hai</option>
-        </select>
-      </div>
-
+    <div id="transcript-container" class="activity-panel active" data-activity="live">
       <div id="transcript-content" data-tauri-drag-region>
         <div class="transcript-placeholder">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
             opacity="0.4">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
             <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
@@ -102,177 +176,103 @@
             <line x1="8" y1="23" x2="16" y2="23" />
           </svg>
           <p>Press ▶ to start translating</p>
+          <p class="shortcut-hint">⌘S</p>
         </div>
       </div>
 
-      <!-- Live action row: primary start/stop + pause + TTS + overflow menu -->
-      <div class="live-action-row">
-        <button id="btn-start" class="primary-action-btn" title="Start/Stop (⌘↩)">
-          <svg id="icon-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <polygon points="5 3 19 12 5 21 5 3" />
-          </svg>
-          <svg id="icon-stop" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none">
-            <rect x="4" y="4" width="16" height="16" rx="2" />
-          </svg>
-          <span id="btn-start-label">Bắt đầu</span>
-        </button>
-
-        <button id="btn-pause" class="action-btn" title="Pause (keep session)" disabled>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="6" y="4" width="4" height="16" rx="1" />
-            <rect x="14" y="4" width="4" height="16" rx="1" />
-          </svg>
-        </button>
-
-        <button id="btn-tts" class="tts-action-btn" title="TTS Narration (⌘T)">
-          <svg id="icon-tts-off" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            <line x1="9" y1="10" x2="15" y2="10" />
-          </svg>
-          <svg id="icon-tts-on" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:none">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            <path d="M9 10h2" /><path d="M13 8v4" /><path d="M15 10h1" />
-          </svg>
-          <span class="tts-label">TTS</span>
-        </button>
-
-        <div class="more-menu-wrap">
-          <button id="btn-more" class="icon-btn" title="Thêm">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" />
-            </svg>
-          </button>
-          <div id="more-menu" class="more-menu" style="display:none">
-            <button id="btn-copy" class="more-menu-item" type="button">📋 Copy transcript</button>
-            <button id="btn-clear" class="more-menu-item" type="button">🗑 Xóa transcript</button>
-            <div class="more-menu-sep"></div>
-            <div class="more-menu-label">Hiển thị</div>
-            <div class="floating-controls">
-              <div class="font-controls">
-                <button id="btn-font-down" class="float-btn" title="Decrease font size">A−</button>
-                <span id="font-size-display" class="font-size-label">16</span>
-                <button id="btn-font-up" class="float-btn" title="Increase font size">A+</button>
-              </div>
-              <div class="color-controls">
-                <button class="color-dot active" data-color="#ffffff" title="White" style="background:#ffffff;"></button>
-                <button class="color-dot" data-color="#ffd700" title="Yellow" style="background:#ffd700;"></button>
-                <button class="color-dot" data-color="#00e5ff" title="Cyan" style="background:#00e5ff;"></button>
-              </div>
-              <button id="btn-view-mode" class="float-btn" title="Toggle dual view">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="3" y="3" width="7" height="18" rx="1" />
-                  <rect x="14" y="3" width="7" height="18" rx="1" />
-                </svg>
-              </button>
-            </div>
-            <div class="more-menu-sep"></div>
-            <button id="btn-compact" class="more-menu-item" type="button">⤢ Compact — ẩn thanh công cụ</button>
-            <button id="btn-auto-hide" class="more-menu-item" type="button">✓ Tự ẩn khi đang dịch</button>
-            <button id="btn-shortcuts" class="more-menu-item" type="button">⌨️ Phím tắt</button>
+      <!-- Collapsible Horizontal Take Note Drawer -->
+      <div id="live-notes-drawer" class="live-notes-drawer" style="display:none">
+        <!-- Notes toolbar with Markdown format buttons, Preview button, and Copy button -->
+        <div class="notes-toolbar">
+          <div class="notes-tools-left">
+            <span class="notes-header-title">📝 Take Note</span>
+            <div class="notes-sep"></div>
+            <button type="button" class="note-fmt-btn" data-fmt="bold" title="In đậm (Bold) **text**"><b>B</b></button>
+            <button type="button" class="note-fmt-btn" data-fmt="italic" title="In nghiêng (Italic) *text*"><i>I</i></button>
+            <button type="button" class="note-fmt-btn" data-fmt="h1" title="Tiêu đề H1 #">H1</button>
+            <button type="button" class="note-fmt-btn" data-fmt="h2" title="Tiêu đề H2 ##">H2</button>
+            <button type="button" class="note-fmt-btn" data-fmt="list" title="Gạch đầu dòng - ">• List</button>
+            <button type="button" class="note-fmt-btn" data-fmt="todo" title="Checklist - [ ] ">☑ To-Do</button>
+            <button type="button" class="note-fmt-btn" data-fmt="code" title="Mã code `code`"><code>&lt;/&gt;</code></button>
+            <div class="notes-sep"></div>
+            <button type="button" id="btn-note-toggle-preview" class="note-preview-btn" title="Chuyển đổi Xem trước / Soạn thảo">👁️ Preview</button>
+          </div>
+          <div class="notes-tools-right">
+            <button type="button" id="btn-note-copy" class="note-copy-btn" title="Sao chép nội dung ghi chú">
+              <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+            <button type="button" id="btn-note-close" class="note-close-btn" title="Thu gọn ghi chú">✕</button>
           </div>
         </div>
-      </div>
 
-      <!-- Engine picker — shown before the first session each launch.
-           Two cards because OpenAI Realtime is structurally different from
-           Soniox/Local (text+voice fused, no two-way, no custom TTS). -->
-      <div id="engine-picker" class="engine-picker" style="display:none">
-        <p class="engine-picker-title">Choose translation mode</p>
-        <div class="engine-cards">
-          <button class="engine-card" data-engine-class="standard" type="button">
-            <div class="engine-card-icon">☁️</div>
-            <div class="engine-card-name">Standard</div>
-            <div class="engine-card-meta">Soniox / Local · ~$0.12/hr</div>
-            <ul class="engine-card-feats">
-              <li>70+ languages</li>
-              <li>Two-way mode</li>
-              <li>Custom TTS</li>
-            </ul>
-          </button>
-          <button class="engine-card" data-engine-class="openai" type="button">
-            <div class="engine-card-icon">⚡</div>
-            <div class="engine-card-name">OpenAI Realtime</div>
-            <div class="engine-card-meta">~$4/hr · text-only</div>
-            <ul class="engine-card-feats">
-              <li>13 languages</li>
-              <li>Continuous delta captions</li>
-              <li>Most idiomatic output</li>
-            </ul>
-          </button>
-          <button class="engine-card" data-engine-class="qwen" type="button">
-            <div class="engine-card-icon">🌏</div>
-            <div class="engine-card-name">Qwen LiveTranslate Flash</div>
-            <div class="engine-card-meta">Free preview · text-only</div>
-            <ul class="engine-card-feats">
-              <li>60+ languages</li>
-              <li>Fastest first token (~4s)</li>
-              <li>Alibaba DashScope (Singapore)</li>
-            </ul>
-          </button>
+        <!-- Editor & Preview containers -->
+        <div class="notes-body">
+          <textarea id="live-note-textarea" class="live-note-textarea" placeholder="Nhập ghi chú cuộc họp dạng Markdown..."></textarea>
+          <div id="live-note-preview" class="live-note-preview" style="display:none"></div>
         </div>
-        <p class="engine-picker-hint">Switch any time from the engine pill in the toolbar.</p>
       </div>
     </div>
 
-    <!-- Read activity panel — paste Vietnamese text, hear it read aloud -->
-    <div id="read-panel" class="activity-panel" data-activity="read">
-      <!-- Quick-pick: change voice without leaving the panel -->
-      <div class="read-quick-row">
-        <span class="read-quick-label">Giọng:</span>
-        <select id="read-voice-quick" class="source-select"></select>
-        <button id="btn-read-tts-settings" class="read-quick-more" type="button" title="Mở cài đặt TTS đầy đủ">Chỉnh thêm…</button>
-      </div>
-      <textarea id="read-input" placeholder="Dán hoặc gõ văn bản tiếng Việt để đọc to…"></textarea>
-      <div id="read-output" class="read-output" style="display:none"></div>
-      <div class="read-progress-bar"><div id="read-progress-fill"></div></div>
-      <div class="read-controls">
-        <button id="btn-read-play" class="read-btn read-btn-primary" type="button">▶ Đọc</button>
-        <button id="btn-read-pause" class="read-btn" type="button" style="display:none">⏸ Tạm dừng</button>
-        <button id="btn-read-stop" class="read-btn" type="button" style="display:none">⏹ Dừng</button>
-        <span id="read-progress" class="read-progress"></span>
-      </div>
-      <div id="read-hint" class="read-hint"></div>
-    </div>
-
-    <!-- Library activity panel — saved sessions (list + viewer) -->
+    <!-- Library activity panel — saved sessions / meeting logs (list + viewer) -->
     <div id="library-panel" class="activity-panel" data-activity="library">
       <!-- Session list -->
       <div id="sessions-list-panel" class="sessions-body">
         <div class="sessions-search-row">
-          <input id="input-session-search" type="text" placeholder="Search sessions..." class="sessions-search-input" />
-          <button id="btn-open-transcripts" class="icon-btn small" title="Open saved transcripts folder in Finder">
+          <input id="input-session-search" type="text" placeholder="🔍 Tìm kiếm meeting log..." class="sessions-search-input" />
+          <button id="btn-open-transcripts" class="icon-btn small" title="Mở thư mục lưu file trong Finder">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
           </button>
         </div>
+
+        <!-- Batch Actions Bar -->
+        <div class="sessions-batch-bar" id="sessions-batch-bar">
+          <label class="batch-select-all-label">
+            <input type="checkbox" id="chk-select-all-sessions" />
+            <span>Chọn tất cả</span>
+          </label>
+          <span id="sessions-selected-count" class="sessions-selected-count">0 đã chọn</span>
+          <button type="button" id="btn-batch-delete-sessions" class="btn-danger-small" disabled title="Xoá các cuộc họp đã chọn">
+            🗑 Xoá đã chọn
+          </button>
+        </div>
+
         <div id="sessions-list"></div>
       </div>
 
       <!-- Session viewer (shown when a session is selected) -->
       <div id="session-viewer" class="sessions-body" style="display:none">
         <div class="session-viewer-header">
-          <button id="btn-session-back-to-list" class="icon-btn" title="Back to list">
+          <button id="btn-session-back-to-list" class="icon-btn" title="Quay lại danh sách">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="19" y1="12" x2="5" y2="12" />
               <polyline points="12 19 5 12 12 5" />
             </svg>
           </button>
           <span id="session-viewer-title" class="session-viewer-title-text"></span>
-          <button id="btn-session-edit-title" class="icon-btn small" title="Rename session">
+          <button id="btn-session-edit-title" class="icon-btn small" title="Đổi tên cuộc họp">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
             </svg>
           </button>
-          <button id="btn-session-export-srt" class="btn-secondary small" title="Export as .srt">.srt</button>
-          <button id="btn-session-export-txt" class="btn-secondary small" title="Export as .txt">.txt</button>
-          <button id="btn-session-copy" class="session-copy-btn" title="Copy content">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          <button id="btn-session-tts-play" class="btn-primary small session-tts-play-btn" title="Nghe lại bản ghi âm cuộc họp">
+            🔊 Nghe lại
+          </button>
+          <button id="btn-session-export-srt" class="btn-secondary small" title="Xuất file .srt">.srt</button>
+          <button id="btn-session-export-txt" class="btn-secondary small" title="Xuất file .txt">.txt</button>
+          <button id="btn-session-copy" class="session-copy-btn" title="Sao chép nội dung cuộc họp">
+            <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
             </svg>
-            Copy
+          </button>
+          <button id="btn-session-delete-single" class="icon-btn small delete-btn-single" title="Xóa cuộc họp này">
+            🗑
           </button>
         </div>
         <div id="session-viewer-content" class="session-content-scroll"></div>
@@ -313,14 +313,7 @@
           </span>
           <span class="settings-card-chevron">›</span>
         </button>
-        <button class="settings-card" data-screen="tab-tts" id="card-tts">
-          <span class="settings-card-icon">🔊</span>
-          <span class="settings-card-text">
-            <span class="settings-card-title">Giọng đọc (TTS)</span>
-            <span class="settings-card-sub" id="card-tts-sub">—</span>
-          </span>
-          <span class="settings-card-chevron">›</span>
-        </button>
+
         <button class="settings-card" data-screen="tab-display" id="card-display">
           <span class="settings-card-icon">🎨</span>
           <span class="settings-card-text">
@@ -343,20 +336,34 @@
       <div class="settings-tab-content" id="tab-translation">
         <button class="settings-back-row" data-screen="settings-home">‹ Cài đặt</button>
         <div class="settings-section">
-          <span class="field-label">Engine</span>
+          <span class="field-label">Engine Dịch</span>
           <select id="select-translation-mode">
-            <option value="soniox">☁️ Soniox</option>
-            <option value="local">🖥️ Local MLX</option>
+            <option value="gemini" selected>✨ Google Gemini Live (Khuyên dùng)</option>
             <option value="openai">⚡ OpenAI Realtime</option>
             <option value="qwen">🌏 Qwen LiveTranslate Flash</option>
+            <option value="soniox">☁️ Soniox</option>
+            <option value="local">🖥️ Local MLX</option>
           </select>
-          <p class="hint" id="hint-mode-soniox">Cloud · 70+ languages · ~$0.12/hr</p>
+          <p class="hint" id="hint-mode-gemini">Cloud · Gemini 2.0 Flash · free on Google AI Studio · 100+ languages</p>
+          <p class="hint" id="hint-mode-soniox" style="display:none">Cloud · 70+ languages · ~$0.12/hr</p>
           <p class="hint" id="hint-mode-local" style="display:none">Offline · free · ~3–4s delay</p>
           <p class="hint" id="hint-mode-openai" style="display:none">Cloud · 13 languages · text-only captions</p>
           <p class="hint" id="hint-mode-qwen" style="display:none">Cloud · 60+ languages · text-only · free preview · pick a source language</p>
           <div id="openai-cost-warning" class="cost-warning" style="display:none">
             ⚠️ ~$4/hr — much pricier than Soniox. Charged to your OpenAI account.
           </div>
+        </div>
+
+        <div class="settings-section">
+          <span class="field-label">Tự động tạm dừng khi im lặng</span>
+          <select id="select-inactivity-timeout">
+            <option value="5">Sau 5 phút im lặng</option>
+            <option value="10" selected>Sau 10 phút im lặng (Mặc định)</option>
+            <option value="15">Sau 15 phút im lặng</option>
+            <option value="30">Sau 30 phút im lặng</option>
+            <option value="0">Tắt (Không tự động tạm dừng)</option>
+          </select>
+          <p class="hint">Tự động chuyển sang Tạm dừng nếu không phát hiện âm thanh/giọng nói trong khoảng thời gian này để tiết kiệm tài nguyên & chi phí API.</p>
         </div>
 
         <div class="settings-section" id="section-api-key">
@@ -391,6 +398,35 @@
             <button id="btn-test-openai" class="btn-secondary small" title="Test connection">Test</button>
           </div>
           <p class="hint">Get key at <a href="#" id="link-openai">platform.openai.com</a></p>
+        </div>
+
+        <div class="settings-section" id="section-gemini-key" style="display:none">
+          <span class="field-label">
+            Gemini API Key
+            <span id="key-status-gemini" class="key-status"></span>
+          </span>
+          <div class="input-group">
+            <input type="password" id="input-gemini-key" placeholder="AIzaSy..." autocomplete="off" />
+            <button id="btn-toggle-gemini-key" class="icon-btn small" title="Show/Hide">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          </div>
+          <p class="hint">Get free key at <a href="#" id="link-gemini">aistudio.google.com</a></p>
+
+          <div style="margin-top: 10px;">
+            <span class="field-label">Gemini Model</span>
+            <select id="select-gemini-model">
+              <option value="models/gemini-3.5-transcribe-live">🎙️ Gemini 3.5 Transcribe Live (Khuyên dùng)</option>
+              <option value="models/gemini-2.0-flash-exp">✨ Gemini 2.0 Flash Live</option>
+              <option value="models/gemini-2.0-flash-realtime-exp">⚡ Gemini Realtime Exp</option>
+              <option value="custom">✏️ Model tùy chỉnh (Nhập tay)...</option>
+            </select>
+          </div>
+          <div id="section-gemini-custom-model" style="display:none; margin-top: 6px;">
+            <input type="text" id="input-gemini-custom-model" placeholder="VD: models/gemini-3.5-transcribe" />
+          </div>
         </div>
 
         <div class="settings-section" id="section-qwen-key" style="display:none">
@@ -622,6 +658,36 @@
             <label class="radio-option"><input type="radio" name="audio-source" value="microphone" /><span class="radio-label">Mic</span></label>
             <label class="radio-option"><input type="radio" name="audio-source" value="both" /><span class="radio-label">Both</span></label>
           </div>
+
+          <!-- Audio Test / Diagnostics Widget -->
+          <div class="audio-test-box">
+            <div class="audio-test-header">
+              <span class="audio-test-title">🧪 Kiểm tra âm thanh (Mic & System)</span>
+              <span id="audio-test-status" class="audio-test-status">Sẵn sàng</span>
+            </div>
+            
+            <!-- Live VU Meter Bar -->
+            <div class="audio-test-meter-wrap">
+              <div class="audio-test-meter-labels">
+                <span>Mức âm lượng đầu vào</span>
+                <span id="audio-test-level-text">0%</span>
+              </div>
+              <div class="audio-test-meter-track">
+                <div id="audio-test-meter-bar" class="audio-test-meter-bar"></div>
+              </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="audio-test-actions">
+              <button type="button" id="btn-test-mic-rec" class="btn-audio-test">
+                🎙️ Ghi âm thử 3s & Nghe lại
+              </button>
+              <button type="button" id="btn-test-mic-live" class="btn-audio-test secondary">
+                🔊 Bật Live Monitor
+              </button>
+            </div>
+            <p class="hint" style="margin-top: 6px; margin-bottom: 0;">Test trực tiếp âm thanh thu được từ Micro / System Audio mà không gửi lên Google/OpenAI.</p>
+          </div>
         </div>
 
         <div class="settings-section" id="section-soniox-context">
@@ -686,232 +752,7 @@
         </div>
       </div>
 
-      <!-- Tab: TTS -->
-      <div class="settings-tab-content" id="tab-tts">
-        <button class="settings-back-row" data-screen="settings-home">‹ Cài đặt</button>
-        <div class="settings-section">
-          <span class="field-label">Provider</span>
-          <select id="select-tts-provider">
-            <optgroup label="Free">
-              <option value="edge">🎙️ Edge TTS — Free</option>
-              <option value="microsoft">🪟 Microsoft v2 — Free</option>
-              <option value="google-free">🌐 Google TTS — Free</option>
-              <option value="tiktok">🎵 TikTok TTS — Free</option>
-              <option value="local">🔊 Local (Offline) — Free</option>
-            </optgroup>
-            <optgroup label="Premium">
-              <option value="google">🌐 Google Chirp 3 HD — Premium</option>
-              <option value="elevenlabs">✨ ElevenLabs — Premium</option>
-            </optgroup>
-          </select>
-          <p class="hint" id="tts-provider-hint">Free, natural voices — no API key needed</p>
-        </div>
 
-        <!-- Edge TTS settings -->
-        <div class="settings-section" id="tts-edge-settings">
-          <div class="field">
-            <span class="field-label">Voice</span>
-            <select id="select-edge-voice">
-              <option value="vi-VN-HoaiMyNeural">HoaiMy — Nữ 🇻🇳</option>
-              <option value="vi-VN-NamMinhNeural">NamMinh — Nam 🇻🇳</option>
-              <option value="en-US-JennyNeural">Jenny — Female 🇺🇸</option>
-              <option value="en-US-GuyNeural">Guy — Male 🇺🇸</option>
-              <option value="ja-JP-NanamiNeural">Nanami — 女性 🇯🇵</option>
-              <option value="ko-KR-SunHiNeural">SunHi — 여성 🇰🇷</option>
-              <option value="zh-CN-XiaoxiaoNeural">Xiaoxiao — 女声 🇨🇳</option>
-            </select>
-          </div>
-          <div class="slider-field" style="margin-top: 8px;">
-            <span class="field-label">Speed</span>
-            <input type="range" id="range-edge-speed" min="-50" max="100" step="10" />
-            <span id="edge-speed-value" class="range-value"></span>
-          </div>
-        </div>
-
-        <!-- Microsoft v2 settings (voice list populated dynamically, filtered by language) -->
-        <div class="settings-section" id="tts-microsoft-settings" style="display:none;">
-          <div class="field">
-            <span class="field-label">Language</span>
-            <select id="select-microsoft-lang">
-              <option value="vi">Vietnamese — Tiếng Việt</option>
-              <option value="en">English</option>
-            </select>
-          </div>
-          <div class="field" style="margin-top: 8px;">
-            <span class="field-label">Voice</span>
-            <select id="select-microsoft-voice">
-              <option value="vi-VN-HoaiMyNeural">HoaiMy (Female)</option>
-              <option value="vi-VN-NamMinhNeural">NamMinh (Male)</option>
-            </select>
-          </div>
-          <div class="slider-field" style="margin-top: 8px;">
-            <span class="field-label">Speed</span>
-            <input type="range" id="range-microsoft-speed" min="-50" max="100" step="10" />
-            <span id="microsoft-speed-value" class="range-value"></span>
-          </div>
-        </div>
-
-        <!-- Google Free (android-tts) settings -->
-        <div class="settings-section" id="tts-google-free-settings" style="display:none;">
-          <span class="field-label">Google API Key (optional)</span>
-          <div class="input-group">
-            <input type="password" id="input-google-free-key" placeholder="AIzaSy… (leave empty to use the built-in key)" autocomplete="off" />
-            <button id="btn-toggle-google-free-key" class="icon-btn small" title="Show/Hide">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-              </svg>
-            </button>
-          </div>
-          <p class="hint">If set, this key is used; otherwise the app's built-in key (if any). No key at all → provider unavailable.</p>
-          <div class="field" style="margin-top: 8px;">
-            <span class="field-label">Voice</span>
-            <select id="select-google-free-voice">
-              <option value="vi-VN">Tiếng Việt 🇻🇳</option>
-              <option value="en-US">English 🇺🇸</option>
-            </select>
-          </div>
-          <div class="slider-field" style="margin-top: 8px;">
-            <span class="field-label">Speed</span>
-            <input type="range" id="range-google-free-speed" min="0.5" max="2.0" step="0.1" value="1.0" />
-            <span id="google-free-speed-value" class="range-value">1.0x</span>
-          </div>
-          <p class="hint">Experimental — free Google voice, may stop working anytime. Text is sent to Google.</p>
-        </div>
-
-        <!-- TikTok settings -->
-        <div class="settings-section" id="tts-tiktok-settings" style="display:none;">
-          <div class="field">
-            <span class="field-label">Voice</span>
-            <select id="select-tiktok-voice">
-              <optgroup label="🇻🇳 Vietnamese">
-                <option value="BV074_streaming">Nữ (vi)</option>
-                <option value="BV075_streaming">Nam (vi)</option>
-              </optgroup>
-              <optgroup label="🇺🇸 English">
-                <option value="en_us_001">Female (en)</option>
-                <option value="en_us_006">Male (en)</option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="slider-field" style="margin-top: 8px;">
-            <span class="field-label">Speed</span>
-            <input type="range" id="range-tiktok-speed" min="0.5" max="2.0" step="0.1" value="1.0" />
-            <span id="tiktok-speed-value" class="range-value">1.0x</span>
-          </div>
-          <div style="margin-top: 8px;">
-            <span class="field-label">TikTok sessionid</span>
-            <input type="password" id="input-tiktok-session" placeholder="sessionid cookie from tiktok.com" autocomplete="off" />
-            <p class="hint">Log in at tiktok.com → DevTools → Application → Cookies → copy <code>sessionid</code>. Text is sent to TikTok.</p>
-          </div>
-          <div style="margin-top: 8px;">
-            <span class="field-label">…or paste cURL (auto-extract sessionid)</span>
-            <textarea id="input-tiktok-curl" rows="3" placeholder="DevTools → Network → right-click a tiktok.com request → Copy → Copy as cURL, then paste here" autocomplete="off" style="width:100%; resize:vertical; font-family:monospace; font-size:11px;"></textarea>
-            <p class="hint">Only the <code>sessionid</code> is read from it and filled above; the cURL itself is not saved or sent anywhere.</p>
-          </div>
-        </div>
-
-        <!-- Local offline (Piper/sherpa-onnx) settings -->
-        <div class="settings-section" id="tts-local-settings" style="display:none;">
-          <div class="field">
-            <span class="field-label">Language</span>
-            <select id="select-local-lang">
-              <option value="vi">Vietnamese — Tiếng Việt</option>
-              <option value="en">English</option>
-            </select>
-          </div>
-          <div class="field" style="margin-top: 8px;">
-            <span class="field-label">Voices</span>
-            <div id="local-voice-list"><p class="hint">Loading…</p></div>
-          </div>
-          <div class="slider-field" style="margin-top: 8px;">
-            <span class="field-label">Speed</span>
-            <input type="range" id="range-local-speed" min="0.5" max="3.0" step="0.1" value="1.0" />
-            <span id="local-speed-value" class="range-value">1.0x</span>
-          </div>
-          <div style="margin-top: 10px;">
-            <span class="field-label">Model folder</span>
-            <div class="input-group">
-              <input type="text" id="input-local-models-dir" placeholder="Resolving…" readonly title="Full path where voice models are stored" />
-              <button id="btn-local-change-dir" class="icon-btn small" title="Change location" type="button">📁</button>
-              <button id="btn-local-reset-dir" class="icon-btn small" title="Reset to default app location" type="button">↺</button>
-            </div>
-            <p class="hint">Where downloaded voice models are stored. 100% offline once downloaded.</p>
-          </div>
-        </div>
-
-        <!-- Google TTS settings -->
-        <div class="settings-section" id="tts-google-settings" style="display:none;">
-          <span class="field-label">Google Cloud API Key</span>
-          <div class="input-group">
-            <input type="password" id="input-google-tts-key" placeholder="AIzaSy..." autocomplete="off" />
-            <button id="btn-toggle-google-key" class="icon-btn small" title="Show/Hide">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-              </svg>
-            </button>
-          </div>
-          <p class="hint">console.cloud.google.com → Enable Text-to-Speech API → Create API Key</p>
-          <div class="field" style="margin-top: 8px;">
-            <span class="field-label">Voice</span>
-            <select id="select-google-voice">
-              <optgroup label="🇻🇳 Vietnamese">
-                <option value="vi-VN-Chirp3-HD-Aoede">Aoede — Nữ</option>
-                <option value="vi-VN-Chirp3-HD-Kore">Kore — Nữ</option>
-                <option value="vi-VN-Chirp3-HD-Leda">Leda — Nữ</option>
-                <option value="vi-VN-Chirp3-HD-Charon">Charon — Nam</option>
-                <option value="vi-VN-Chirp3-HD-Fenrir">Fenrir — Nam</option>
-                <option value="vi-VN-Chirp3-HD-Puck">Puck — Nam</option>
-              </optgroup>
-              <optgroup label="🇺🇸 English">
-                <option value="en-US-Chirp3-HD-Aoede">Aoede — Female</option>
-                <option value="en-US-Chirp3-HD-Kore">Kore — Female</option>
-                <option value="en-US-Chirp3-HD-Charon">Charon — Male</option>
-                <option value="en-US-Chirp3-HD-Puck">Puck — Male</option>
-              </optgroup>
-              <optgroup label="🇯🇵 Japanese">
-                <option value="ja-JP-Chirp3-HD-Aoede">Aoede — 女性</option>
-                <option value="ja-JP-Chirp3-HD-Charon">Charon — 男性</option>
-              </optgroup>
-              <optgroup label="🇰🇷 Korean">
-                <option value="ko-KR-Chirp3-HD-Aoede">Aoede — 여성</option>
-                <option value="ko-KR-Chirp3-HD-Charon">Charon — 남성</option>
-              </optgroup>
-              <optgroup label="🇨🇳 Chinese">
-                <option value="cmn-CN-Chirp3-HD-Aoede">Aoede — 女声</option>
-                <option value="cmn-CN-Chirp3-HD-Charon">Charon — 男声</option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="slider-field" style="margin-top: 8px;">
-            <span class="field-label">Speed</span>
-            <input type="range" id="range-google-speed" min="0.5" max="2.0" step="0.1" value="1.0" />
-            <span id="google-speed-value" class="range-value">1.0x</span>
-          </div>
-        </div>
-
-        <!-- ElevenLabs settings -->
-        <div class="settings-section" id="tts-elevenlabs-settings" style="display:none;">
-          <span class="field-label">ElevenLabs API Key</span>
-          <div class="input-group">
-            <input type="password" id="input-elevenlabs-key" placeholder="Enter key..." autocomplete="off" />
-            <button id="btn-toggle-elevenlabs-key" class="icon-btn small" title="Show/Hide">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-              </svg>
-            </button>
-          </div>
-          <p class="hint">elevenlabs.io — Premium quality</p>
-          <div class="field" style="margin-top: 8px;">
-            <span class="field-label">Voice</span>
-            <select id="select-tts-voice">
-              <option value="21m00Tcm4TlvDq8ikWAM">Rachel — Female</option>
-              <option value="EXAVITQu4vr4xnSDxMaL">Sarah — Female</option>
-              <option value="onwK4e9ZLuTAKqWW03F9">Daniel — Male</option>
-              <option value="pNInz6obpgDQGcFmaJgB">Adam — Male</option>
-            </select>
-          </div>
-        </div>
-      </div>
 
       <!-- Tab: About -->
       <div class="settings-tab-content" id="tab-about">
@@ -978,12 +819,12 @@
     <div class="modal-card shortcut-card">
       <h3 class="shortcut-title">⌨️ Phím tắt</h3>
       <table class="shortcut-table">
-        <tr><td><kbd>⌘↩</kbd></td><td>Bắt đầu / Dừng dịch</td></tr>
+        <tr><td><kbd>⌘S</kbd></td><td>Bắt đầu / Tạm dừng / Tiếp tục</td></tr>
+        <tr><td><kbd>⌘T</kbd></td><td>Kết thúc cuộc họp & Lưu (Stop)</td></tr>
+        <tr><td><kbd>⌘N</kbd></td><td>Mở / Đóng ghi chú (Take Note)</td></tr>
         <tr><td><kbd>⌘1</kbd> / <kbd>⌘2</kbd> / <kbd>⌘3</kbd></td><td>Nguồn: System / Mic / Cả hai</td></tr>
-        <tr><td><kbd>⌘T</kbd></td><td>Bật/tắt đọc bản dịch (TTS)</td></tr>
         <tr><td><kbd>⌘,</kbd></td><td>Mở Cài đặt</td></tr>
         <tr><td><kbd>⌘P</kbd></td><td>Ghim cửa sổ nổi</td></tr>
-        <tr><td><kbd>⌘D</kbd></td><td>Compact — ẩn thanh công cụ</td></tr>
         <tr><td><kbd>⌘M</kbd></td><td>Thu nhỏ cửa sổ</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>Về màn hình chính / đóng bảng này</td></tr>
         <tr><td><kbd>?</kbd></td><td>Mở bảng phím tắt</td></tr>
@@ -1046,14 +887,48 @@
     </div>
   </div>
 
+  <!-- ═══════════════════ STOP & SAVE MEETING MODAL (UNIFIED) ═══════════════════ -->
+  <div id="modal-confirm-stop" class="modal-overlay" style="display:none">
+    <div class="modal-card" style="max-width: 420px;">
+      <div class="modal-header">
+        <h3>⏹ Kết thúc & Lưu cuộc họp</h3>
+        <button type="button" id="btn-close-confirm-stop" class="icon-btn close-btn" title="Đóng">×</button>
+      </div>
+      <div class="modal-body">
+        <label for="input-stop-meeting-title" class="field-label" style="margin-bottom:8px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tên cuộc họp:</label>
+        <input type="text" id="input-stop-meeting-title" class="modal-input" placeholder="20260901 11:00 Họp dự án..." />
+        <p class="modal-desc">Phiên dịch sẽ dừng lại và toàn bộ bản ghi âm, bản dịch cùng ghi chú sẽ được lưu vào tab 📚 Meeting Logs.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btn-cancel-confirm-stop" class="secondary-btn">Hủy bỏ</button>
+        <button type="button" id="btn-agree-confirm-stop" class="primary-action-btn">💾 Kết thúc & Lưu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ RENAME MEETING MODAL ═══════════════════ -->
+  <div id="modal-rename-meeting" class="modal-overlay" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>✏️ Đổi tên cuộc họp</h3>
+        <button type="button" id="btn-close-rename-meeting" class="icon-btn close-btn">×</button>
+      </div>
+      <div class="modal-body">
+        <label for="input-rename-meeting-title" class="field-label" style="margin-bottom:8px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tên mới:</label>
+        <input type="text" id="input-rename-meeting-title" class="modal-input" />
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btn-cancel-rename-meeting" class="secondary-btn">Hủy</button>
+        <button type="button" id="btn-confirm-rename-meeting" class="primary-action-btn">Lưu tên</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/js/tauri-mock.js"></script>
   <script type="module" src="/js/settings.js"></script>
   <script type="module" src="/js/ui.js"></script>
   <script type="module" src="/js/soniox.js"></script>
-  <script type="module" src="/js/elevenlabs-tts.js"></script>
-  <script type="module" src="/js/google-tts.js"></script>
   <script type="module" src="/js/updater.js"></script>
-  <script type="module" src="/js/audio-player.js"></script>
   <script type="module" src="/js/app.js"></script>
 </body>
 

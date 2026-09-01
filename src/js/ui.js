@@ -20,8 +20,12 @@ export class TranscriptUI {
 
         // Segments: each has { original, translation, status, speaker, language, confidence }
         this.segments = [];
-        // sessionLog: parallel array — never trimmed, holds complete session history
-        this.sessionLog = [];
+        // `segments` is deliberately only the bounded render buffer. Durable
+        // session history belongs to SessionStore, which avoids keeping a
+        // second copy of every segment in the UI for long meetings.
+        this.segmentTimeFormatter = new Intl.DateTimeFormat(undefined, {
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+        });
         this.provisionalText = '';
         this.provisionalSpeaker = null;
         this.provisionalLanguage = null;
@@ -91,20 +95,11 @@ export class TranscriptUI {
             createdAt: Date.now(),
         };
         this.segments.push(seg);
-        // Also push a separate copy to sessionLog (never trimmed)
-        this.sessionLog.push({
-            original: text,
-            translation: null,
-            status: 'original',
-            speaker: speaker || null,
-            language: language || null,
-            confidence: this.lastConfidence,
-            createdAt: seg.createdAt,
-        });
         if (speaker) this.currentSpeaker = speaker;
         if (language) this.currentLanguage = language;
         this._cleanupStaleOriginals();
         this._render();
+        if (text && text.trim()) this.onActivity?.();
     }
 
     /**
@@ -115,14 +110,6 @@ export class TranscriptUI {
         if (seg) {
             seg.translation = text;
             seg.status = 'translated';
-            // Mirror update in sessionLog: find matching entry by createdAt
-            const logSeg = this.sessionLog.find(
-                s => s.status === 'original' && s.createdAt === seg.createdAt
-            );
-            if (logSeg) {
-                logSeg.translation = text;
-                logSeg.status = 'translated';
-            }
         } else {
             const newSeg = {
                 original: '',
@@ -132,9 +119,29 @@ export class TranscriptUI {
                 createdAt: Date.now(),
             };
             this.segments.push(newSeg);
-            this.sessionLog.push({ ...newSeg });
         }
         this._render();
+        if (text && text.trim()) this.onActivity?.();
+    }
+
+    /** Add a finalized source/translation pair emitted by realtime providers. */
+    addSegment(original, translation, speaker = null, language = null) {
+        this._removeListening();
+        const createdAt = Date.now();
+        const seg = {
+            original: original || '',
+            translation: translation || '',
+            status: 'translated',
+            speaker,
+            language,
+            confidence: this.lastConfidence,
+            createdAt,
+        };
+        this.segments.push(seg);
+        if (speaker) this.currentSpeaker = speaker;
+        if (language) this.currentLanguage = language;
+        this._render();
+        if (seg.original.trim() || seg.translation.trim()) this.onActivity?.();
     }
 
     /**
@@ -146,6 +153,7 @@ export class TranscriptUI {
         this.provisionalSpeaker = speaker || null;
         this.provisionalLanguage = language || null;
         this._render();
+        if (text && text.trim()) this.onActivity?.();
     }
 
     /**
@@ -166,6 +174,7 @@ export class TranscriptUI {
         this._removeListening();
         this.sourceProvisionalText = text || '';
         this._render();
+        if (text && text.trim()) this.onActivity?.();
     }
 
     clearSourceProvisional() {
@@ -187,18 +196,17 @@ export class TranscriptUI {
     showPlaceholder() {
         this.container.innerHTML = `
       <div class="transcript-placeholder">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
           <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
           <line x1="12" y1="19" x2="12" y2="23"/>
           <line x1="8" y1="23" x2="16" y2="23"/>
         </svg>
         <p>Press ▶ to start translating</p>
-        <p class="shortcut-hint">⌘ Enter</p>
+        <p class="shortcut-hint">⌘S</p>
       </div>
     `;
         this.segments = [];
-        this.sessionLog = [];
         this.provisionalText = '';
         this.provisionalSpeaker = null;
         this.provisionalLanguage = null;
@@ -271,6 +279,38 @@ export class TranscriptUI {
     }
 
     /**
+     * Get all original/source text as plain text
+     */
+    getSourcePlainText() {
+        const lines = [];
+        for (const seg of this.segments) {
+            if (seg.original && seg.original.trim()) {
+                lines.push(seg.original.trim());
+            }
+        }
+        if (this.sourceProvisionalText && this.sourceProvisionalText.trim()) {
+            lines.push(this.sourceProvisionalText.trim());
+        }
+        return lines.join('\n').trim();
+    }
+
+    /**
+     * Get all translated/target text as plain text
+     */
+    getTranslationPlainText() {
+        const lines = [];
+        for (const seg of this.segments) {
+            if (seg.translation && seg.translation.trim()) {
+                lines.push(seg.translation.trim());
+            }
+        }
+        if (this.provisionalText && this.provisionalText.trim()) {
+            lines.push(this.provisionalText.trim());
+        }
+        return lines.join('\n').trim();
+    }
+
+    /**
      * Get formatted content for saving to file (markdown with metadata)
      */
     getFormattedContent(metadata = {}) {
@@ -309,18 +349,19 @@ export class TranscriptUI {
     }
 
     /**
-     * Check if sessionLog has content (full session, not display buffer)
+     * Check whether the current render buffer has content. Durable session
+     * history is owned by SessionStore.
      */
     hasSessionContent() {
-        return this.sessionLog.length > 0;
+        return this.segments.length > 0;
     }
 
     /**
-     * Get full session text from sessionLog (never trimmed).
-     * Returns formatted markdown with all segments.
+     * Returns formatted markdown for the visible buffer. Full-session export
+     * is handled by SessionStore, the single durable source of truth.
      */
     getFullSessionText(metadata = {}) {
-        if (this.sessionLog.length === 0) return null;
+        if (this.segments.length === 0) return null;
 
         const lines = [];
 
@@ -335,12 +376,12 @@ export class TranscriptUI {
         if (metadata.mode) lines.push(`mode: ${metadata.mode}`);
         if (metadata.audioSource) lines.push(`audio_source: ${metadata.audioSource}`);
         if (metadata.model) lines.push(`model: ${metadata.model}`);
-        lines.push(`segments: ${this.sessionLog.length}`);
+        lines.push(`segments: ${this.segments.length}`);
         lines.push('---');
         lines.push('');
 
         // Transcript entries
-        for (const seg of this.sessionLog) {
+        for (const seg of this.segments) {
             if (seg.speaker) lines.push(`**Speaker ${seg.speaker}:**`);
             if (seg.original) lines.push(`> ${seg.original}`);
             if (seg.translation) lines.push(seg.translation);
@@ -351,15 +392,14 @@ export class TranscriptUI {
     }
 
     /**
-     * Clear session log (call after saving)
+     * Kept for compatibility. SessionStore owns durable history.
      */
     clearSession() {
-        this.sessionLog = [];
+        // no-op
     }
 
     /**
-     * Clear display buffer only (segments array).
-     * sessionLog is NOT cleared — use clearSession() explicitly.
+     * Clear the display buffer only. SessionStore is unaffected.
      */
     clear() {
         this.container.innerHTML = '';
@@ -387,8 +427,57 @@ export class TranscriptUI {
             this.container.innerHTML = '';
             this.contentEl = document.createElement('div');
             this.contentEl.className = 'transcript-flow';
+
+            // Event delegation for copy buttons on headers
+            this.contentEl.addEventListener('click', async (e) => {
+                const copySrc = e.target.closest('.btn-copy-source');
+                if (copySrc) {
+                    e.stopPropagation();
+                    const text = this.getSourcePlainText();
+                    if (text) {
+                        try {
+                            await navigator.clipboard.writeText(text);
+                            this.onToast?.('Đã copy bản gốc ✓', 'success');
+                            this._flashCopyButton(copySrc);
+                        } catch (err) {
+                            console.error('Copy source failed:', err);
+                        }
+                    } else {
+                        this.onToast?.('Chưa có nội dung bản gốc để copy', 'info');
+                    }
+                    return;
+                }
+
+                const copyTgt = e.target.closest('.btn-copy-translation');
+                if (copyTgt) {
+                    e.stopPropagation();
+                    const text = this.getTranslationPlainText();
+                    if (text) {
+                        try {
+                            await navigator.clipboard.writeText(text);
+                            this.onToast?.('Đã copy bản dịch ✓', 'success');
+                            this._flashCopyButton(copyTgt);
+                        } catch (err) {
+                            console.error('Copy translation failed:', err);
+                        }
+                    } else {
+                        this.onToast?.('Chưa có nội dung bản dịch để copy', 'info');
+                    }
+                    return;
+                }
+            });
+
             this.container.appendChild(this.contentEl);
         }
+    }
+
+    _flashCopyButton(btn) {
+        if (!btn) return;
+        const originalSvg = btn.innerHTML;
+        btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+        setTimeout(() => {
+            if (btn) btn.innerHTML = originalSvg;
+        }, 1500);
     }
 
     _removeListening() {
@@ -403,7 +492,7 @@ export class TranscriptUI {
         // Qwen Live Flash is translation-only (no source transcript channel),
         // so force single-panel even when the user picked dual view — otherwise
         // the source panel sits empty / shows dim provisional noise.
-        if (this.viewMode === 'dual' && this.provider !== 'qwen') {
+        if ((this.viewMode === 'dual' || this.viewMode === 'both') && this.provider !== 'qwen') {
             this._renderDual();
         } else {
             this._renderSingle();
@@ -414,6 +503,24 @@ export class TranscriptUI {
         let html = '';
         let lastRenderedSpeaker = null;
         let lastRenderedLang = null;
+
+        const showOnlyOriginal = this.viewMode === 'original';
+
+        // Header for single mode with copy button
+        const headerTitle = showOnlyOriginal ? '📝 Bản gốc' : '🌐 Bản dịch';
+        const copyClass = showOnlyOriginal ? 'btn-copy-source' : 'btn-copy-translation';
+        const copyTitle = showOnlyOriginal ? 'Sao chép toàn bộ bản gốc' : 'Sao chép toàn bộ bản dịch';
+        const headerHtml = `
+            <div class="panel-column-header">
+                <span class="panel-header-title">${headerTitle}</span>
+                <button type="button" class="panel-copy-btn ${copyClass}" title="${copyTitle}">
+                    <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                </button>
+            </div>
+        `;
 
         for (const seg of this.segments) {
             // Speaker label
@@ -428,33 +535,42 @@ export class TranscriptUI {
                 lastRenderedLang = seg.language;
             }
 
-            if (seg.status === 'translated' && seg.translation) {
-                const confidenceClass = (seg.confidence !== null && seg.confidence < 0.7) ? ' low-confidence' : '';
-                html += `<div class="seg-block">`;
-                html += `<div class="seg-translated${confidenceClass}">${this._esc(seg.translation)}</div>`;
-                html += `</div>`;
+            if (showOnlyOriginal) {
+                if (seg.original) {
+                    html += `<div class="seg-block">`;
+                    html += `<div class="seg-translated">${this._esc(seg.original)}</div>`;
+                    html += `</div>`;
+                }
+            } else {
+                if (seg.status === 'translated' && seg.translation) {
+                    const confidenceClass = (seg.confidence !== null && seg.confidence < 0.7) ? ' low-confidence' : '';
+                    html += `<div class="seg-block">`;
+                    html += `<div class="seg-translated${confidenceClass}">${this._esc(seg.translation)}</div>`;
+                    html += `</div>`;
+                }
             }
-            // Skip 'original' segments in single mode — wait for translation
         }
 
-        if (this.provisionalText) {
+        if (this.provisionalText || (showOnlyOriginal && this.sourceProvisionalText)) {
             if (this.provisionalSpeaker && this.provisionalSpeaker !== lastRenderedSpeaker) {
                 html += `<span class="speaker-label">Speaker ${this.provisionalSpeaker}:</span> `;
             }
             if (this.provisionalLanguage && this.provisionalLanguage !== lastRenderedLang) {
                 html += `<span class="lang-badge">${this._langEmoji(this.provisionalLanguage)}</span> `;
             }
-            // OpenAI splits source/target streams: when sourceProvisionalText is
-            // present, provisionalText is already the translated stream → render
-            // as bright translated text. Qwen Live Flash is translation-only —
-            // provisionalText is the target language too. Soniox uses
-            // provisionalText for source ASR → keep dim italic.
-            const isTargetStream = this.sourceProvisionalText || this.provider === 'qwen';
+
+            let textToRender = this.provisionalText;
+            if (showOnlyOriginal && this.sourceProvisionalText) {
+                textToRender = this.sourceProvisionalText;
+            }
+            const isTargetStream = !showOnlyOriginal && (this.sourceProvisionalText || this.provider === 'qwen');
             const cls = isTargetStream ? 'seg-translated' : 'seg-provisional';
-            html += `<div class="seg-block"><div class="${cls}">${this._esc(this.provisionalText)}</div></div>`;
+            if (textToRender) {
+                html += `<div class="seg-block"><div class="${cls}">${this._esc(textToRender)}</div></div>`;
+            }
         }
 
-        this.contentEl.innerHTML = html;
+        this.contentEl.innerHTML = headerHtml + html;
         // #transcript-content is the scroller since the activity-shell redesign
         // (its parent #transcript-container is overflow:hidden). Scroll whichever
         // actually overflows so this stays correct if the layout shifts again.
@@ -472,6 +588,7 @@ export class TranscriptUI {
         const tgtScrollState = oldTgtPanel ? this._getScrollState(oldTgtPanel) : { nearBottom: true, scrollTop: 0 };
 
         let srcHtml = '';
+        let timeHtml = '';
         let tgtHtml = '';
         let lastSpeaker = null;
         let lastLang = null;
@@ -493,32 +610,59 @@ export class TranscriptUI {
                 const confidenceClass = (seg.confidence !== null && seg.confidence < 0.7) ? ' low-confidence' : '';
                 srcHtml += speakerHtml + langHtml;
                 srcHtml += `<div class="seg-text">${this._esc(seg.original || '')}</div>`;
+                timeHtml += speakerHtml ? '<div class="segment-time segment-time-spacer" aria-hidden="true">&nbsp;</div>' : '';
+                timeHtml += `<div class="segment-time">${this._formatSegmentTime(seg.createdAt)}</div>`;
                 tgtHtml += speakerHtml ? '<div class="speaker-label">&nbsp;</div>' : '';
                 tgtHtml += `<div class="seg-text${confidenceClass}">${this._esc(seg.translation)}</div>`;
             } else if (seg.status === 'original' && seg.original) {
                 srcHtml += speakerHtml + langHtml;
                 srcHtml += `<div class="seg-text pending">${this._esc(seg.original)}</div>`;
+                timeHtml += speakerHtml ? '<div class="segment-time segment-time-spacer" aria-hidden="true">&nbsp;</div>' : '';
+                timeHtml += `<div class="segment-time">${this._formatSegmentTime(seg.createdAt)}</div>`;
                 tgtHtml += speakerHtml ? '<div class="speaker-label">&nbsp;</div>' : '';
                 tgtHtml += `<div class="seg-text pending">...</div>`;
             }
         }
 
-        // Two providers feed provisional text differently:
-        // - Soniox: provisionalText is the source-language ASR (no separate source channel).
-        // - OpenAI Realtime: sourceProvisionalText is source ASR; provisionalText is target.
-        // Use explicit provider flag — checking !!sourceProvisionalText fails when
-        // whisper lags behind translation, dumping target deltas into the source panel.
         if (this.sourceProvisionalText || this.provisionalText) {
             const usingOpenAi = this.provider === 'openai';
             const srcText = usingOpenAi ? this.sourceProvisionalText : this.provisionalText;
             const tgtText = usingOpenAi ? this.provisionalText : '';
             if (srcText) srcHtml += `<div class="seg-text pending">${this._esc(srcText)}</div>`;
-            tgtHtml += `<div class="seg-text pending">${tgtText ? this._esc(tgtText) : '...'}</div>`;
+            if (tgtText) tgtHtml += `<div class="seg-text pending">${this._esc(tgtText)}</div>`;
         }
 
         this.contentEl.innerHTML = `
-            <div class="panel-source">${srcHtml}</div>
-            <div class="panel-translation">${tgtHtml}</div>
+            <div class="panel-source">
+                <div class="panel-column-header">
+                    <span class="panel-header-title">📝 Bản gốc</span>
+                    <button type="button" class="panel-copy-btn btn-copy-source" title="Sao chép toàn bộ bản gốc">
+                        <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </button>
+                </div>
+                ${srcHtml}
+            </div>
+            <div class="panel-timestamps" aria-label="Thời gian từng câu">
+                <div class="panel-column-header panel-time-header">
+                    <span class="panel-header-title">Thời gian</span>
+                </div>
+                ${timeHtml}
+            </div>
+            <div class="panel-translation">
+                <div class="panel-column-header">
+                    <span class="panel-header-title">🌐 Bản dịch</span>
+                    <button type="button" class="panel-copy-btn btn-copy-translation" title="Sao chép toàn bộ bản dịch">
+                        <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    </button>
+                </div>
+                ${tgtHtml}
+            </div>
         `;
 
         // Restore scroll: auto-scroll if was near bottom, otherwise keep position
@@ -540,6 +684,11 @@ export class TranscriptUI {
         }
     }
 
+    _formatSegmentTime(timestamp) {
+        if (!timestamp) return '--:--:--';
+        return this.segmentTimeFormatter.format(new Date(timestamp));
+    }
+
     _getScrollState(el) {
         return {
             nearBottom: (el.scrollHeight - el.scrollTop - el.clientHeight) < 100,
@@ -555,13 +704,9 @@ export class TranscriptUI {
     }
 
     _trimSegments() {
-        let totalLen = 0;
-        for (const seg of this.segments) {
-            totalLen += (seg.translation || seg.original || '').length;
-        }
-        while (totalLen > this.maxChars && this.segments.length > 2) {
-            const removed = this.segments.shift();
-            totalLen -= (removed.translation || removed.original || '').length;
+        // Keep up to 500 segments on screen so the full conversation is never lost
+        while (this.segments.length > 500) {
+            this.segments.shift();
         }
     }
 

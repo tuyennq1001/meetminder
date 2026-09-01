@@ -1,6 +1,6 @@
-mod audio;
-mod commands;
-mod settings;
+pub mod audio;
+pub mod commands;
+pub mod settings;
 
 use audio::microphone::MicCapture;
 use audio::SystemAudioCapture;
@@ -8,6 +8,7 @@ use commands::audio::AudioState;
 use commands::local_pipeline::LocalPipelineState;
 use commands::local_tts::LocalTtsState;
 use commands::openai_realtime::OpenAiState;
+use commands::gemini_realtime::GeminiState;
 use commands::qwen_realtime::QwenState;
 use settings::{Settings, SettingsState};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -97,6 +98,7 @@ pub fn run() {
         })
         .manage(LocalTtsState::default())
         .manage(OpenAiState::default())
+        .manage(GeminiState::default())
         .manage(QwenState::default())
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_settings,
@@ -104,6 +106,7 @@ pub fn run() {
             commands::audio::start_capture,
             commands::audio::stop_capture,
             commands::audio::check_permissions,
+            commands::audio::request_screen_capture_permission,
             commands::transcript::save_transcript,
             commands::transcript::open_transcript_dir,
             commands::transcript::list_transcripts,
@@ -113,10 +116,13 @@ pub fn run() {
             commands::session_store::read_session,
             commands::session_store::read_legacy_session,
             commands::session_store::delete_session,
+            commands::session_store::delete_sessions,
             commands::session_store::update_session_title,
             commands::session_store::export_session_srt,
             commands::session_store::export_session_txt,
             commands::session_store::search_sessions,
+            commands::session_store::get_session_record_path,
+            commands::session_store::read_session_audio,
             commands::local_pipeline::start_local_pipeline,
             commands::local_pipeline::send_audio_to_pipeline,
             commands::local_pipeline::stop_local_pipeline,
@@ -134,6 +140,10 @@ pub fn run() {
             commands::openai_realtime::openai_realtime_start,
             commands::openai_realtime::openai_realtime_send_audio,
             commands::openai_realtime::openai_realtime_stop,
+            commands::gemini_realtime::gemini_realtime_start,
+            commands::gemini_realtime::gemini_realtime_send_audio,
+            commands::gemini_realtime::gemini_realtime_set_target_lang,
+            commands::gemini_realtime::gemini_realtime_stop,
             commands::qwen_realtime::qwen_realtime_start,
             commands::qwen_realtime::qwen_realtime_send_audio,
             commands::qwen_realtime::qwen_realtime_stop,

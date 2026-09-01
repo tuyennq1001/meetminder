@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "MyTranslator",
   "version": "0.9.1",
-  "identifier": "com.personal.translator",
+  "identifier": "com.terry.translator",
   "build": {
     "frontendDist": "../src"
   },
@@ -13,20 +13,21 @@
       {
         "label": "main",
         "title": "My Translator",
-        "width": 900,
-        "height": 500,
+        "width": 1200,
+        "height": 750,
         "minWidth": 820,
         "minHeight": 240,
+        "maximized": true,
         "center": true,
         "transparent": false,
         "decorations": false,
-        "alwaysOnTop": true,
+        "alwaysOnTop": false,
         "resizable": true,
         "skipTaskbar": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ipc://localhost wss: https:; img-src 'self' data:"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ipc://localhost wss: https:; img-src 'self' data:; media-src 'self' data:"
     }
   },
   "bundle": {
@@ -43,12 +44,13 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "entitlements": "Entitlements.plist",
+      "entitlements": null,
       "frameworks": [],
       "minimumSystemVersion": "13.0",
-      "signingIdentity": "Developer ID Application: Trong Phuc Nguyen (75EN938B6L)"
+      "signingIdentity": "-",
+      "infoPlist": "Info.plist"
     },
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": false
   },
   "plugins": {
     "updater": {

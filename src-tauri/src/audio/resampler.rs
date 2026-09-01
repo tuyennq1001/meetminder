@@ -4,6 +4,7 @@
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
+use std::collections::VecDeque;
 
 const INPUT_RATE: usize = 16_000;
 const OUTPUT_RATE: usize = 24_000;
@@ -11,7 +12,7 @@ const CHUNK_SIZE: usize = 1024;
 
 pub struct UpsamplerTo24k {
     resampler: SincFixedIn<f32>,
-    input_buf: Vec<f32>,
+    input_buf: VecDeque<f32>,
 }
 
 impl UpsamplerTo24k {
@@ -34,7 +35,7 @@ impl UpsamplerTo24k {
 
         Ok(Self {
             resampler,
-            input_buf: Vec::with_capacity(CHUNK_SIZE * 2),
+            input_buf: VecDeque::with_capacity(CHUNK_SIZE * 2),
         })
     }
 
@@ -43,7 +44,7 @@ impl UpsamplerTo24k {
         // Decode s16le → f32 normalized
         for chunk in pcm_s16le.chunks_exact(2) {
             let s = i16::from_le_bytes([chunk[0], chunk[1]]);
-            self.input_buf.push(s as f32 / 32768.0);
+            self.input_buf.push_back(s as f32 / 32768.0);
         }
 
         let mut out_bytes = Vec::new();

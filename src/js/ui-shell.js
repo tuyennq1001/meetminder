@@ -8,7 +8,7 @@
  * dispatched from here.
  */
 
-const ACTIVITIES = ['live', 'read', 'library'];
+const ACTIVITIES = ['live', 'library'];
 
 let currentActivity = 'live';
 
@@ -36,9 +36,18 @@ export function setActivity(id) {
     }));
 }
 
-/** Red "recording" dot on the Live tab while a session runs in background. */
-export function setLiveBadge(on) {
-    document.getElementById('live-tab-badge')?.classList.toggle('visible', !!on);
+/** Dynamic status badge on Live tab: 'waiting' (orange blink) | 'listening' (green pulse) | 'error' (red) */
+export function setLiveBadge(status) {
+    const badge = document.getElementById('live-tab-badge');
+    if (!badge) return;
+    badge.className = 'live-tab-badge';
+    if (status === 'connected' || status === 'listening' || status === true) {
+        badge.classList.add('state-listening');
+    } else if (status === 'error') {
+        badge.classList.add('state-error');
+    } else {
+        badge.classList.add('state-waiting');
+    }
 }
 
 export function initShell() {
@@ -46,81 +55,7 @@ export function initShell() {
         btn.addEventListener('click', () => setActivity(btn.dataset.activity));
     });
     document.body.classList.add('activity-live');
-
-    // Auto-hide interaction watchers (armed only while a live session runs)
-    window.addEventListener('mousemove', onChromeInteract, { passive: true });
-    window.addEventListener('keydown', onChromeInteract);
-}
-
-/* ── Chrome hide/show — ONE mechanism for manual Compact and auto-hide ──
- * Reuses the existing compact CSS (drag-region.compact-hidden +
- * overlay.compact-mode with its hover-reveal). Manual compact wins over
- * the auto watcher: interactions never un-hide a manually compacted UI. */
-
-const AUTO_HIDE_IDLE_MS = 3000;
-
-let manualCompact = false;
-let chromeHidden = false;
-let autoWatching = false;
-let autoHideEnabled = localStorage.getItem('auto_hide_toolbar') !== '0'; // default ON
-let idleTimer = null;
-let lastInteract = 0;
-
-function setChromeHidden(hide) {
-    chromeHidden = hide;
-    document.getElementById('drag-region')?.classList.toggle('compact-hidden', hide);
-    document.getElementById('overlay-view')?.classList.toggle('compact-mode', hide);
-    document.querySelector('.live-status-row')?.classList.toggle('chrome-hidden', hide);
-    document.querySelector('.live-action-row')?.classList.toggle('chrome-hidden', hide);
-}
-
-function armIdleTimer() {
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-        if (autoWatching && autoHideEnabled && !manualCompact &&
-            currentActivity === 'live' && !anyMenuOpen()) {
-            setChromeHidden(true);
-        }
-    }, AUTO_HIDE_IDLE_MS);
-}
-
-function onChromeInteract() {
-    const now = Date.now();
-    if (now - lastInteract < 100) return; // throttle for transcript-stream perf
-    lastInteract = now;
-    if (!autoWatching) return;
-    if (chromeHidden && !manualCompact) setChromeHidden(false);
-    armIdleTimer();
-}
-
-/** Called by app when a live session starts/stops. */
-export function startAutoHideWatch() {
-    if (autoWatching) return;
-    autoWatching = true;
-    armIdleTimer();
-}
-
-export function stopAutoHideWatch() {
-    autoWatching = false;
-    clearTimeout(idleTimer);
-    if (!manualCompact && chromeHidden) setChromeHidden(false);
-}
-
-/** Manual Compact from the ⋯ menu — sticky until toggled back. */
-export function toggleManualCompact() {
-    manualCompact = !manualCompact;
-    setChromeHidden(manualCompact);
-    return manualCompact;
-}
-
-export function isAutoHideEnabled() {
-    return autoHideEnabled;
-}
-
-export function setAutoHideEnabled(on) {
-    autoHideEnabled = !!on;
-    localStorage.setItem('auto_hide_toolbar', on ? '1' : '0');
-    if (!on && !manualCompact && chromeHidden) setChromeHidden(false);
+    setLiveBadge('waiting');
 }
 
 /**
@@ -148,11 +83,7 @@ export function bindMenu(triggerId, menuId) {
     return { close };
 }
 
-/** True while any shell-managed menu/popover is open (used by auto-hide). */
-export function anyMenuOpen() {
-    const m = document.getElementById('more-menu');
-    return !!m && m.style.display !== 'none';
-}
+
 
 /* ── Window modes: overlay (small, floating) ↔ expanded (comfortable) ──
  * Sizes persist per-mode in localStorage (same store the app already uses

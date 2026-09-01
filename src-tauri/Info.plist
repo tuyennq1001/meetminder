@@ -2,9 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>NSScreenCaptureUsageDescription</key>
-    <string>Personal Translator needs screen recording access to capture system audio for translation.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Personal Translator needs microphone access for real-time speech translation.</string>
+    <string>MyTranslator needs access to the microphone to translate spoken audio.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>MyTranslator needs screen and system audio recording permission to translate live audio from meetings and videos.</string>
 </dict>
 </plist>

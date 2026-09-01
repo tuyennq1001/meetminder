@@ -7,6 +7,7 @@ pub mod local_tts;
 pub mod microsoft_tts;
 pub mod tiktok_tts;
 pub mod openai_realtime;
+pub mod gemini_realtime;
 pub mod qwen_realtime;
 pub mod session_store;
 pub mod settings;
