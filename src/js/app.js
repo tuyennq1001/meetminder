@@ -48,6 +48,7 @@ class App {
         this.isPaused = false;
         this._hasUnsavedMeetingData = false;
         this._inactivityTimer = null;
+        this._captureHealthTimer = null;
         this._isStopConfirmationOpen = false;
     }
 
@@ -1557,6 +1558,10 @@ class App {
             return;
         }
 
+        if (this.currentSource === 'microphone' || this.currentSource === 'both') {
+            if (!await this._ensureMicrophonePermission()) return;
+        }
+
         this.isRunning = true;
         this.isPaused = false;
         this._hasUnsavedMeetingData = false;
@@ -1619,6 +1624,58 @@ class App {
             }
         }
         return null;
+    }
+
+    async _ensureMicrophonePermission() {
+        try {
+            let status = await invoke('check_permissions');
+            if (status?.microphone === 'not_determined') {
+                await invoke('request_microphone_permission');
+                status = await invoke('check_permissions');
+            }
+            if (status?.microphone === 'granted') return true;
+
+            const state = status?.microphone || 'unknown';
+            this._showToast(
+                state === 'denied' || state === 'restricted'
+                    ? 'Microphone bị từ chối. Hãy bật Meet Minder trong System Settings → Privacy & Security → Microphone.'
+                    : `Không xác định được quyền microphone (trạng thái: ${state}).`,
+                'error',
+            );
+            this._updateStatus('error');
+            return false;
+        } catch (err) {
+            console.error('[App] Microphone permission check failed:', err);
+            this._showToast(`Không kiểm tra được quyền microphone: ${err}`, 'error');
+            return false;
+        }
+    }
+
+    _scheduleCaptureHealthCheck() {
+        if (this._captureHealthTimer) clearTimeout(this._captureHealthTimer);
+        this._captureHealthTimer = setTimeout(async () => {
+            this._captureHealthTimer = null;
+            if (!this.isRunning || this.currentSource === 'system') return;
+            try {
+                const status = await invoke('get_capture_status');
+                if (!this.isRunning) return;
+                const micSamples = status?.microphone_received_samples ?? status?.received_samples ?? 0;
+                if (micSamples === 0) {
+                    this._showToast('Microphone stream đã mở nhưng không nhận được sample. Hãy kiểm tra thiết bị input và quyền Microphone.', 'error');
+                } else {
+                    // RMS=0 can be legitimate while nobody is speaking. The
+                    // explicit 3-second recording test reports silence; live
+                    // capture only treats missing callbacks as a hard fault.
+                    console.log('[App] Microphone capture health:', {
+                        samples: micSamples,
+                        nonzeroSamples: status.microphone_nonzero_samples,
+                        rms: status.microphone_rms,
+                    });
+                }
+            } catch (err) {
+                console.warn('[App] Capture health check failed:', err);
+            }
+        }, 2000);
     }
 
     async _startOpenAiMode(settings) {
@@ -1695,6 +1752,7 @@ class App {
                 recordPath,
             });
             console.log('[OpenAI] start_capture invoked OK');
+            this._scheduleCaptureHealthCheck();
         } catch (err) {
             console.error('Failed to start audio capture:', err);
             this._showToast(`Audio error: ${err}`, 'error');
@@ -1717,12 +1775,59 @@ class App {
         this.geminiClient.onProvisional = (text) => {
             this.transcriptUI.setProvisional(text, null, null);
         };
-        this.geminiClient.onSegment = (sourceText, translatedText) => {
-            if (sourceText) {
-                this.transcriptUI.addOriginal(sourceText, null, null);
+        this.geminiClient.onSourceFinal = (sourceText, pendingId = null) => {
+            if (!sourceText || !sourceText.trim()) return;
+            const source = sourceText.trim();
+            // The final source event supersedes Gemini's interim line. Clear it
+            // before adding the durable pending-source segment, otherwise the
+            // same utterance is rendered twice (italic provisional + final).
+            this.transcriptUI.clearProvisional();
+            const existing = this.transcriptUI.segments.find(
+                segment => segment.status === 'original'
+                    && segment.original === source
+                    && (pendingId === null || segment.pendingId === null || segment.pendingId === pendingId),
+            );
+            if (existing) {
+                if (pendingId !== null && existing.pendingId === null) {
+                    existing.pendingId = pendingId;
+                    sessionStore.bindPendingSegmentId(source, pendingId);
+                }
+                return;
             }
-            this.transcriptUI.addTranslation(translatedText);
-            sessionStore.addSegment(sourceText || '', translatedText || '');
+            this.transcriptUI.addOriginal(source, null, null, pendingId);
+            // Persist the source immediately. Translation is allowed to arrive
+            // later, or time out during Stop, without losing this utterance.
+            sessionStore.addSegment(source, '', pendingId);
+        };
+        this.geminiClient.onSegment = (sourceText, translatedText, pendingId = null) => {
+            // New backend versions emit SourceTranscript first and attach the
+            // same id to the later REST translation. Never pair by whichever
+            // source happens to remain in the bounded UI buffer.
+            if (pendingId !== null) {
+                const hasSource = this.transcriptUI.segments.some(
+                    s => s.status === 'original' && s.pendingId === pendingId,
+                );
+                if (!hasSource) {
+                    this.transcriptUI.addOriginal(sourceText || '', null, null, pendingId);
+                    sessionStore.addSegment(sourceText || '', '', pendingId);
+                }
+                this.transcriptUI.addTranslation(translatedText, pendingId);
+                if (!sessionStore.completeFirstPendingTranslation(translatedText || '', pendingId)) {
+                    sessionStore.addSegment(sourceText || '', translatedText || '');
+                }
+            } else if (sourceText) {
+                // Compatibility fallback for direct/older events without an id.
+                this.transcriptUI.addOriginal(sourceText, null, null);
+                this.transcriptUI.addTranslation(translatedText);
+                if (!sessionStore.completeFirstPendingTranslation(translatedText || '')) {
+                    sessionStore.addSegment(sourceText, translatedText || '');
+                }
+            } else if (!this.transcriptUI.segments.some(s => s.status === 'original')) {
+                // A direct modelTurn translation has no source/job id. Do not
+                // attach it to a different pending source; REST owns that pair.
+                this.transcriptUI.addTranslation(translatedText);
+                sessionStore.addSegment('', translatedText || '');
+            }
             this.transcriptUI.clearProvisional();
         };
         this.geminiClient.onError = (code, msg) => {
@@ -1781,6 +1886,7 @@ class App {
                 recordPath,
             });
             console.log('[Gemini] start_capture invoked OK');
+            this._scheduleCaptureHealthCheck();
         } catch (err) {
             console.error('Failed to start audio capture:', err);
             const errStr = String(err);
@@ -1873,6 +1979,7 @@ class App {
                 recordPath,
             });
             console.log('[Qwen] start_capture invoked OK');
+            this._scheduleCaptureHealthCheck();
         } catch (err) {
             console.error('Failed to start audio capture:', err);
             this._showToast(`Audio error: ${err}`, 'error');
@@ -1921,6 +2028,7 @@ class App {
                 recordPath,
             });
             console.log('[App] Audio capture started successfully');
+            this._scheduleCaptureHealthCheck();
         } catch (err) {
             console.error('Failed to start audio capture:', err);
             this._showToast(`Audio error: ${err}`, 'error');
@@ -2033,6 +2141,7 @@ class App {
                 recordPath,
             });
             console.log('[App] Audio capture started');
+            this._scheduleCaptureHealthCheck();
         } catch (err) {
             console.error('Audio capture failed (pipeline still running):', err);
             this._showToast(`Audio: ${err}. Pipeline still loading...`, 'error');

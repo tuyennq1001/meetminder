@@ -94,7 +94,7 @@ export class TranscriptUI {
     /**
      * Add finalized original text (pending translation)
      */
-    addOriginal(text, speaker, language) {
+    addOriginal(text, speaker, language, pendingId = null) {
         this._removeListening();
         const seg = {
             original: text,
@@ -104,11 +104,11 @@ export class TranscriptUI {
             language: language || null,
             confidence: this.lastConfidence,
             createdAt: Date.now(),
+            pendingId,
         };
         this.segments.push(seg);
         if (speaker) this.currentSpeaker = speaker;
         if (language) this.currentLanguage = language;
-        this._cleanupStaleOriginals();
         this._render();
         if (text && text.trim()) this.onActivity?.();
     }
@@ -116,8 +116,10 @@ export class TranscriptUI {
     /**
      * Apply translation to the oldest untranslated segment
      */
-    addTranslation(text) {
-        const seg = this.segments.find(s => s.status === 'original');
+    addTranslation(text, pendingId = null) {
+        const seg = pendingId !== null
+            ? this.segments.find(s => s.status === 'original' && s.pendingId === pendingId)
+            : this.segments.find(s => s.status === 'original');
         if (seg) {
             seg.translation = text;
             seg.status = 'translated';
@@ -128,6 +130,7 @@ export class TranscriptUI {
                 status: 'translated',
                 speaker: null,
                 createdAt: Date.now(),
+                pendingId,
             };
             this.segments.push(newSeg);
         }
@@ -715,36 +718,12 @@ export class TranscriptUI {
     }
 
     _trimSegments() {
-        // Keep up to 500 segments on screen so the full conversation is never lost
+        // Keep up to 500 completed segments on screen. Never evict a pending
+        // source: a slow REST response must not make its source disappear.
         while (this.segments.length > 500) {
-            this.segments.shift();
-        }
-    }
-
-    /**
-     * Remove stale original segments that never received translation.
-     * - Originals older than 10s are removed
-     * - Max 3 pending originals allowed (oldest dropped)
-     */
-    _cleanupStaleOriginals() {
-        const now = Date.now();
-        const STALE_MS = 10000; // 10 seconds
-        const MAX_PENDING = 3;
-
-        // Remove originals older than STALE_MS
-        this.segments = this.segments.filter(seg => {
-            if (seg.status === 'original' && (now - seg.createdAt) > STALE_MS) {
-                return false; // drop stale
-            }
-            return true;
-        });
-
-        // If still too many pending originals, drop oldest
-        let pending = this.segments.filter(s => s.status === 'original');
-        while (pending.length > MAX_PENDING) {
-            const oldest = pending.shift();
-            const idx = this.segments.indexOf(oldest);
-            if (idx !== -1) this.segments.splice(idx, 1);
+            const completedIndex = this.segments.findIndex(seg => seg.status !== 'original');
+            if (completedIndex === -1) break;
+            this.segments.splice(completedIndex, 1);
         }
     }
 

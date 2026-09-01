@@ -1,5 +1,5 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 
@@ -9,6 +9,9 @@ use super::TARGET_SAMPLE_RATE;
 /// Captures from the default input device and converts to PCM s16le 16kHz mono.
 pub struct MicCapture {
     is_capturing: Arc<AtomicBool>,
+    received_samples: Arc<AtomicU64>,
+    nonzero_samples: Arc<AtomicU64>,
+    rms_milli: Arc<AtomicU64>,
     /// We store the stream here to keep it alive.
     /// cpal::Stream is !Send, so can't move to another thread.
     /// Using Box<dyn StreamTrait> to erase the concrete type.
@@ -24,6 +27,9 @@ impl MicCapture {
     pub fn new() -> Self {
         Self {
             is_capturing: Arc::new(AtomicBool::new(false)),
+            received_samples: Arc::new(AtomicU64::new(0)),
+            nonzero_samples: Arc::new(AtomicU64::new(0)),
+            rms_milli: Arc::new(AtomicU64::new(0)),
             _stream: None,
         }
     }
@@ -106,6 +112,9 @@ impl MicCapture {
 
         let (sender, receiver) = mpsc::channel::<Vec<u8>>();
         self.is_capturing.store(true, Ordering::SeqCst);
+        self.received_samples.store(0, Ordering::Relaxed);
+        self.nonzero_samples.store(0, Ordering::Relaxed);
+        self.rms_milli.store(0, Ordering::Relaxed);
         let is_capturing = self.is_capturing.clone();
 
         // Build the input config targeting our desired format
@@ -119,27 +128,41 @@ impl MicCapture {
         let err_fn = |err| eprintln!("[Mic] Input stream error: {}", err);
 
         let stream = match default_config.sample_format() {
-            cpal::SampleFormat::F32 => device.build_input_stream(
-                &stream_config,
-                move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                    if !is_capturing.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    let pcm = convert_f32_to_pcm_s16le(
-                        data,
-                        source_channels,
-                        source_sample_rate,
-                        target_rate,
-                    );
-                    if !pcm.is_empty() {
-                        let _ = sender.send(pcm);
-                    }
-                },
-                err_fn,
-                None,
-            ),
+            cpal::SampleFormat::F32 => {
+                let received_samples = self.received_samples.clone();
+                let nonzero_samples = self.nonzero_samples.clone();
+                let rms_milli = self.rms_milli.clone();
+                device.build_input_stream(
+                    &stream_config,
+                    move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                        if !is_capturing.load(Ordering::SeqCst) {
+                            return;
+                        }
+                        let pcm = convert_f32_to_pcm_s16le(
+                            data,
+                            source_channels,
+                            source_sample_rate,
+                            target_rate,
+                        );
+                        if !pcm.is_empty() {
+                            update_pcm_stats(
+                                &pcm,
+                                &received_samples,
+                                &nonzero_samples,
+                                &rms_milli,
+                            );
+                            let _ = sender.send(pcm);
+                        }
+                    },
+                    err_fn,
+                    None,
+                )
+            }
             cpal::SampleFormat::I16 => {
                 let is_capturing = self.is_capturing.clone();
+                let received_samples = self.received_samples.clone();
+                let nonzero_samples = self.nonzero_samples.clone();
+                let rms_milli = self.rms_milli.clone();
                 device.build_input_stream(
                     &stream_config,
                     move |data: &[i16], _: &cpal::InputCallbackInfo| {
@@ -153,6 +176,7 @@ impl MicCapture {
                             target_rate,
                         );
                         if !pcm.is_empty() {
+                            update_pcm_stats(&pcm, &received_samples, &nonzero_samples, &rms_milli);
                             let _ = sender.send(pcm);
                         }
                     },
@@ -162,6 +186,9 @@ impl MicCapture {
             }
             cpal::SampleFormat::U16 => {
                 let is_capturing = self.is_capturing.clone();
+                let received_samples = self.received_samples.clone();
+                let nonzero_samples = self.nonzero_samples.clone();
+                let rms_milli = self.rms_milli.clone();
                 device.build_input_stream(
                     &stream_config,
                     move |data: &[u16], _: &cpal::InputCallbackInfo| {
@@ -175,6 +202,7 @@ impl MicCapture {
                             target_rate,
                         );
                         if !pcm.is_empty() {
+                            update_pcm_stats(&pcm, &received_samples, &nonzero_samples, &rms_milli);
                             let _ = sender.send(pcm);
                         }
                     },
@@ -210,6 +238,48 @@ impl MicCapture {
 
     pub fn is_capturing(&self) -> bool {
         self.is_capturing.load(Ordering::SeqCst)
+    }
+
+    pub fn status(&self) -> MicCaptureStats {
+        MicCaptureStats {
+            received_samples: self.received_samples.load(Ordering::Relaxed),
+            nonzero_samples: self.nonzero_samples.load(Ordering::Relaxed),
+            rms: self.rms_milli.load(Ordering::Relaxed) as f64 / 1000.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MicCaptureStats {
+    pub received_samples: u64,
+    pub nonzero_samples: u64,
+    pub rms: f64,
+}
+
+fn update_pcm_stats(
+    pcm: &[u8],
+    received_samples: &AtomicU64,
+    nonzero_samples: &AtomicU64,
+    rms_milli: &AtomicU64,
+) {
+    let mut sum_squares = 0.0f64;
+    let mut samples = 0u64;
+    let mut nonzero = 0u64;
+    for chunk in pcm.chunks_exact(2) {
+        let sample = i16::from_le_bytes([chunk[0], chunk[1]]) as f64 / 32768.0;
+        sum_squares += sample * sample;
+        samples += 1;
+        if sample.abs() > 0.0005 {
+            nonzero += 1;
+        }
+    }
+    if samples > 0 {
+        received_samples.fetch_add(samples, Ordering::Relaxed);
+        nonzero_samples.fetch_add(nonzero, Ordering::Relaxed);
+        rms_milli.store(
+            ((sum_squares / samples as f64).sqrt() * 1000.0).round() as u64,
+            Ordering::Relaxed,
+        );
     }
 }
 
