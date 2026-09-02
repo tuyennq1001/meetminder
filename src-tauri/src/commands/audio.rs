@@ -83,8 +83,8 @@ pub fn start_capture(
             let (merged_tx, merged_rx) = mpsc::channel::<Vec<u8>>();
 
             std::thread::spawn(move || {
-                let mut sys_buf: VecDeque<i16> = VecDeque::with_capacity(16000);
-                let mut mic_buf: VecDeque<i16> = VecDeque::with_capacity(16000);
+                let mut sys_buf: VecDeque<i16> = VecDeque::with_capacity(8000);
+                let mut mic_buf: VecDeque<i16> = VecDeque::with_capacity(8000);
 
                 loop {
                     // Drain sys_rx
@@ -100,42 +100,29 @@ pub fn start_capture(
                         }
                     }
 
-                    let available = std::cmp::min(sys_buf.len(), mic_buf.len());
-                    if available >= 800 { // 50ms chunks at 16kHz
-                        let mut mixed_bytes = Vec::with_capacity(available * 2);
-                        for i in 0..available {
-                            let s1 = sys_buf[i] as i32;
-                            let s2 = mic_buf[i] as i32;
+                    // Prevent buffer bloat if one side produces more samples (> 1 sec = 16000 samples)
+                    if sys_buf.len() > 16000 {
+                        let excess = sys_buf.len() - 16000;
+                        sys_buf.drain(..excess);
+                    }
+                    if mic_buf.len() > 16000 {
+                        let excess = mic_buf.len() - 16000;
+                        mic_buf.drain(..excess);
+                    }
+
+                    let available = std::cmp::max(sys_buf.len(), mic_buf.len());
+                    if available >= 800 { // at least 50ms (800 samples at 16kHz)
+                        let chunk_len = available.min(1600); // up to 100ms
+                        let mut mixed_bytes = Vec::with_capacity(chunk_len * 2);
+                        for _ in 0..chunk_len {
+                            let s1 = sys_buf.pop_front().unwrap_or(0) as i32;
+                            let s2 = mic_buf.pop_front().unwrap_or(0) as i32;
                             let mixed = (s1 + s2).clamp(-32768, 32767) as i16;
                             mixed_bytes.extend_from_slice(&mixed.to_le_bytes());
                         }
                         if merged_tx.send(mixed_bytes).is_err() {
                             break;
                         }
-                        sys_buf.drain(..available);
-                        mic_buf.drain(..available);
-                    } else if sys_buf.len() >= 1600 && mic_buf.is_empty() {
-                        // System only active
-                        let len = sys_buf.len();
-                        let mut bytes = Vec::with_capacity(len * 2);
-                        for &s in &sys_buf {
-                            bytes.extend_from_slice(&s.to_le_bytes());
-                        }
-                        if merged_tx.send(bytes).is_err() {
-                            break;
-                        }
-                        sys_buf.clear();
-                    } else if mic_buf.len() >= 1600 && sys_buf.is_empty() {
-                        // Mic only active
-                        let len = mic_buf.len();
-                        let mut bytes = Vec::with_capacity(len * 2);
-                        for &s in &mic_buf {
-                            bytes.extend_from_slice(&s.to_le_bytes());
-                        }
-                        if merged_tx.send(bytes).is_err() {
-                            break;
-                        }
-                        mic_buf.clear();
                     }
 
                     std::thread::sleep(std::time::Duration::from_millis(20));

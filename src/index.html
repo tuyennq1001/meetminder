@@ -169,6 +169,7 @@
             <button type="button" class="note-fmt-btn" data-fmt="list" title="Gạch đầu dòng - ">• List</button>
             <button type="button" class="note-fmt-btn" data-fmt="todo" title="Checklist - [ ] ">☑ To-Do</button>
             <button type="button" class="note-fmt-btn" data-fmt="code" title="Mã code `code`"><code>&lt;/&gt;</code></button>
+            <button type="button" id="btn-note-fetch-prev" class="note-fmt-btn" title="Gợi ý nạp Notes từ buổi họp cùng tag gần nhất">📋 Từ trước</button>
             <div class="notes-sep"></div>
             <button type="button" id="btn-note-toggle-preview" class="note-preview-btn" title="Chuyển đổi Xem trước / Soạn thảo">👁️ Preview</button>
           </div>
@@ -196,12 +197,23 @@
       <!-- Session list -->
       <div id="sessions-list-panel" class="sessions-body">
         <div class="sessions-search-row">
-          <input id="input-session-search" type="text" placeholder="🔍 Tìm kiếm meeting log..." class="sessions-search-input" />
-          <button id="btn-open-transcripts" class="icon-btn small" title="Mở thư mục lưu file trong Finder">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            </svg>
-          </button>
+          <input id="input-session-search" type="text" placeholder="🔍 Tìm kiếm log (tiêu đề, KH, dự án, phân loại, tag, nội dung)..." class="sessions-search-input" />
+        </div>
+
+        <!-- Filter Toolbar: Customer, Project, Category, Tag Pulldowns -->
+        <div class="sessions-filter-toolbar">
+          <select id="select-session-customer-filter" class="sessions-project-select">
+            <option value="">🏢 Tất cả KH</option>
+          </select>
+          <select id="select-session-project-filter" class="sessions-project-select">
+            <option value="">📁 Tất cả dự án</option>
+          </select>
+          <select id="select-session-category-filter" class="sessions-project-select">
+            <option value="">📅 Tất cả phân loại</option>
+          </select>
+          <select id="select-session-tag-filter" class="sessions-project-select">
+            <option value="">#️⃣ Tất cả thẻ</option>
+          </select>
         </div>
 
         <!-- Batch Actions Bar -->
@@ -211,9 +223,17 @@
             <span>Chọn tất cả</span>
           </label>
           <span id="sessions-selected-count" class="sessions-selected-count">0 đã chọn</span>
-          <button type="button" id="btn-batch-delete-sessions" class="btn-danger-small" disabled title="Xoá các cuộc họp đã chọn">
-            🗑 Xoá đã chọn
-          </button>
+          <div class="batch-actions-group">
+            <button type="button" id="btn-batch-export-md" class="btn-secondary-small" disabled title="Gộp các cuộc họp đã chọn thành 1 file Markdown">
+              📄 Gộp .md
+            </button>
+            <button type="button" id="btn-batch-ai-digest" class="btn-primary-small" disabled title="Tóm tắt & Móc nối chuỗi cuộc họp đã chọn bằng AI">
+              ✨ Tóm tắt chuỗi
+            </button>
+            <button type="button" id="btn-batch-delete-sessions" class="btn-danger-small" disabled title="Xoá các cuộc họp đã chọn">
+              🗑 Xoá
+            </button>
+          </div>
         </div>
 
         <div id="sessions-list"></div>
@@ -229,26 +249,41 @@
             </svg>
           </button>
           <span id="session-viewer-title" class="session-viewer-title-text"></span>
-          <button id="btn-session-edit-title" class="icon-btn small" title="Đổi tên cuộc họp">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-            </svg>
-          </button>
-          <button id="btn-session-tts-play" class="btn-primary small session-tts-play-btn" title="Nghe lại bản ghi âm cuộc họp">
-            🔊 Nghe lại
-          </button>
-          <button id="btn-session-export-srt" class="btn-secondary small" title="Xuất file .srt">.srt</button>
-          <button id="btn-session-export-txt" class="btn-secondary small" title="Xuất file .txt">.txt</button>
-          <button id="btn-session-copy" class="session-copy-btn" title="Sao chép nội dung cuộc họp">
-            <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
-          </button>
-          <button id="btn-session-delete-single" class="icon-btn small delete-btn-single" title="Xóa cuộc họp này">
-            🗑
-          </button>
+          <input type="text" id="input-session-viewer-title" class="session-viewer-title-input" style="display:none" placeholder="Tiêu đề cuộc họp..." />
+          <div id="session-viewer-normal-actions" class="session-viewer-actions">
+            <button id="btn-session-edit-title" class="icon-btn small" title="Chỉnh sửa tiêu đề và nội dung (Edit)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+            <button id="btn-session-edit-tags" class="icon-btn small" title="Chỉnh sửa Thẻ / Tags">🏷️</button>
+            <button id="btn-session-resume" class="btn-primary small session-resume-btn" title="Nối tiếp ghi vào cuộc họp này">
+              ▶ Tiếp tục ghi
+            </button>
+            <button id="btn-session-tts-play" class="btn-primary small session-tts-play-btn" title="Nghe lại bản ghi âm cuộc họp">
+              🔊 Nghe lại
+            </button>
+            <button id="btn-session-export-srt" class="btn-secondary small" title="Xuất file .srt">.srt</button>
+            <button id="btn-session-export-txt" class="btn-secondary small" title="Xuất file .txt">.txt</button>
+            <button id="btn-session-copy" class="session-copy-btn" title="Sao chép nội dung cuộc họp">
+              <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+            <button id="btn-session-delete-single" class="icon-btn small delete-btn-single" title="Xóa cuộc họp này">
+              🗑
+            </button>
+          </div>
+          <div id="session-viewer-edit-actions" class="session-viewer-actions" style="display:none">
+            <button id="btn-session-save-edit" class="btn-primary small session-save-edit-btn" title="Lưu thay đổi (⌘S / Ctrl+S)">
+              💾 Lưu
+            </button>
+            <button id="btn-session-cancel-edit" class="btn-secondary small session-cancel-edit-btn" title="Hủy chỉnh sửa (Esc)">
+              ✕ Hủy
+            </button>
+          </div>
         </div>
         <div class="session-player session-player-detail" data-player-id="" aria-label="Trình phát bản ghi âm">
           <button type="button" class="session-player-toggle" data-player-toggle title="Phát bản ghi âm">▶</button>
@@ -257,6 +292,7 @@
           <span class="session-player-time" data-player-duration>0:00</span>
         </div>
         <div id="session-viewer-content" class="session-content-scroll"></div>
+        <textarea id="session-viewer-content-editor" class="session-content-editor" style="display:none" placeholder="Nội dung cuộc họp (Markdown)..." spellcheck="false"></textarea>
       </div>
     </div>
 
@@ -268,72 +304,142 @@
   <div id="settings-view" class="view">
     <div id="settings-drag" data-tauri-drag-region>
       <div class="settings-header">
-        <button id="btn-back" class="icon-btn" title="Back">
+        <button id="btn-back" class="icon-btn" title="Đóng cài đặt">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="19" y1="12" x2="5" y2="12" />
             <polyline points="12 19 5 12 12 5" />
           </svg>
         </button>
-        <h2>Settings</h2>
-        <button id="btn-save-settings-top" class="icon-btn save-btn-top" title="Save & Close">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        </button>
+        <h2>Cài đặt (Settings)</h2>
+        <div style="width: 32px;"></div>
       </div>
     </div>
 
-    <div class="settings-body">
-      <!-- Settings Home — 2-level wizard: cards navigate to detail screens -->
-      <div class="settings-tab-content active" id="settings-home">
-        <button class="settings-card" data-screen="tab-translation" id="card-translation">
-          <span class="settings-card-icon">🌐</span>
-          <span class="settings-card-text">
-            <span class="settings-card-title">Engine dịch</span>
-            <span class="settings-card-sub" id="card-translation-sub">—</span>
-          </span>
-          <span class="settings-card-chevron">›</span>
-        </button>
+    <div class="settings-container-2col">
+      <!-- Left Sidebar -->
+      <div class="settings-sidebar">
+        <div class="settings-nav-group">
+          <div class="settings-nav-group-title">QUẢN TRỊ DỮ LIỆU</div>
+          <button type="button" class="settings-nav-item active" data-screen="tab-customers">
+            <span class="settings-nav-icon">🏢</span>
+            <span class="settings-nav-label">Khách hàng</span>
+            <span class="settings-nav-badge" id="badge-nav-customers">0</span>
+          </button>
+          <button type="button" class="settings-nav-item" data-screen="tab-projects">
+            <span class="settings-nav-icon">📁</span>
+            <span class="settings-nav-label">Dự án</span>
+            <span class="settings-nav-badge" id="badge-nav-projects">0</span>
+          </button>
+          <button type="button" class="settings-nav-item" data-screen="tab-categories">
+            <span class="settings-nav-icon">📅</span>
+            <span class="settings-nav-label">Phân loại</span>
+            <span class="settings-nav-badge" id="badge-nav-categories">0</span>
+          </button>
+          <button type="button" class="settings-nav-item" data-screen="tab-tags">
+            <span class="settings-nav-icon">#️⃣</span>
+            <span class="settings-nav-label">Thẻ (Tags)</span>
+            <span class="settings-nav-badge" id="badge-nav-tags">0</span>
+          </button>
+        </div>
 
-        <button class="settings-card" data-screen="tab-display" id="card-display">
-          <span class="settings-card-icon">🎨</span>
-          <span class="settings-card-text">
-            <span class="settings-card-title">Hiển thị</span>
-            <span class="settings-card-sub" id="card-display-sub">Font, kích thước chữ</span>
-          </span>
-          <span class="settings-card-chevron">›</span>
-        </button>
-        <button class="settings-card" data-screen="tab-about" id="card-about">
-          <span class="settings-card-icon">ℹ️</span>
-          <span class="settings-card-text">
-            <span class="settings-card-title">Giới thiệu</span>
-            <span class="settings-card-sub" id="card-about-sub">Phiên bản, cập nhật</span>
-          </span>
-          <span class="settings-card-chevron">›</span>
-        </button>
+        <div class="settings-nav-group">
+          <div class="settings-nav-group-title">CẤU HÌNH HỆ THỐNG</div>
+          <button type="button" class="settings-nav-item" data-screen="tab-translation">
+            <span class="settings-nav-icon">🌐</span>
+            <span class="settings-nav-label">Engine & Dịch thuật</span>
+          </button>
+          <button type="button" class="settings-nav-item" data-screen="tab-display">
+            <span class="settings-nav-icon">🎨</span>
+            <span class="settings-nav-label">Hiển thị & Giao diện</span>
+          </button>
+          <button type="button" class="settings-nav-item" data-screen="tab-storage">
+            <span class="settings-nav-icon">📂</span>
+            <span class="settings-nav-label">Lưu trữ dữ liệu</span>
+          </button>
+          <button type="button" class="settings-nav-item" data-screen="tab-about">
+            <span class="settings-nav-icon">ℹ️</span>
+            <span class="settings-nav-label">Giới thiệu phần mềm</span>
+          </button>
+        </div>
       </div>
 
-      <!-- Detail: Translation -->
-      <div class="settings-tab-content" id="tab-translation">
-        <button class="settings-back-row" data-screen="settings-home">‹ Cài đặt</button>
-        <div class="settings-section">
-          <span class="field-label">Engine Dịch</span>
-          <select id="select-translation-mode">
-            <option value="gemini" selected>✨ Google Gemini Live (Khuyên dùng)</option>
-            <option value="openai">⚡ OpenAI Realtime</option>
-            <option value="qwen">🌏 Qwen LiveTranslate Flash</option>
-            <option value="soniox">☁️ Soniox</option>
-            <option value="local">🖥️ Local MLX</option>
-          </select>
-          <p class="hint" id="hint-mode-gemini">Cloud · Gemini 2.0 Flash · free on Google AI Studio · 100+ languages</p>
-          <p class="hint" id="hint-mode-soniox" style="display:none">Cloud · 70+ languages · ~$0.12/hr</p>
-          <p class="hint" id="hint-mode-local" style="display:none">Offline · free · ~3–4s delay</p>
-          <p class="hint" id="hint-mode-openai" style="display:none">Cloud · 13 languages · text-only captions</p>
-          <p class="hint" id="hint-mode-qwen" style="display:none">Cloud · 60+ languages · text-only · free preview · pick a source language</p>
-          <div id="openai-cost-warning" class="cost-warning" style="display:none">
-            ⚠️ ~$4/hr — much pricier than Soniox. Charged to your OpenAI account.
+      <!-- Right Content Panel -->
+      <div class="settings-content-panel">
+        <!-- 1. Detail: Customers -->
+        <div class="settings-tab-content active" id="tab-customers">
+          <div class="settings-panel-header">
+            <h3 class="settings-panel-title">🏢 Quản lý Khách hàng</h3>
+            <div class="settings-panel-actions">
+              <input type="text" id="input-search-customers" class="modal-input search-sm" placeholder="🔍 Tìm khách hàng..." style="width: 180px; padding: 5px 10px; font-size: 12px;" />
+              <button type="button" id="btn-open-add-customer" class="btn-primary-small">+ Thêm khách hàng</button>
+            </div>
           </div>
+          <div id="settings-customers-list" class="mgr-items-list"></div>
         </div>
+
+        <!-- 2. Detail: Projects -->
+        <div class="settings-tab-content" id="tab-projects">
+          <div class="settings-panel-header">
+            <h3 class="settings-panel-title">📁 Quản lý Dự án</h3>
+            <div class="settings-panel-actions">
+              <select id="select-settings-proj-cust-filter" class="modal-input modal-select filter-sm" style="max-width: 170px; padding: 5px 8px; font-size: 12px;">
+                <option value="">🏢 Tất cả khách hàng</option>
+              </select>
+              <input type="text" id="input-search-projects" class="modal-input search-sm" placeholder="🔍 Tìm dự án..." style="width: 150px; padding: 5px 10px; font-size: 12px;" />
+              <button type="button" id="btn-open-add-project" class="btn-primary-small">+ Thêm dự án</button>
+            </div>
+          </div>
+          <div id="settings-projects-list" class="mgr-items-list"></div>
+        </div>
+
+        <!-- 3. Detail: Categories -->
+        <div class="settings-tab-content" id="tab-categories">
+          <div class="settings-panel-header">
+            <h3 class="settings-panel-title">📅 Phân loại cuộc họp (Categories)</h3>
+          </div>
+          <div class="mgr-quick-add-row" style="display:flex; gap:8px; align-items:center; margin-bottom:14px;">
+            <input type="text" id="input-new-cat-name" class="modal-input" placeholder="Tên phân loại (vd: Sprint Planning, Sales, 1-on-1)..." style="flex:1;" />
+            <input type="color" id="input-new-cat-color" value="#10b981" class="color-picker-input" title="Chọn màu phân loại" />
+            <button type="button" id="btn-create-category" class="btn-primary-small">+ Thêm phân loại</button>
+          </div>
+          <div id="settings-categories-list" class="mgr-items-list"></div>
+        </div>
+
+        <!-- 4. Detail: Tags -->
+        <div class="settings-tab-content" id="tab-tags">
+          <div class="settings-panel-header">
+            <h3 class="settings-panel-title">#️⃣ Quản lý Thẻ (Tags)</h3>
+          </div>
+          <div class="mgr-quick-add-row" style="display:flex; gap:8px; align-items:center; margin-bottom:14px;">
+            <input type="text" id="input-new-tag-name" class="modal-input" placeholder="Tên thẻ (vd: frontend, backend, sprint-12)..." style="flex:1;" />
+            <button type="button" id="btn-create-tag" class="btn-primary-small">+ Thêm Thẻ</button>
+          </div>
+          <div id="settings-tags-list" class="mgr-tags-cloud"></div>
+        </div>
+
+        <!-- 5. Detail: Translation -->
+        <div class="settings-tab-content" id="tab-translation">
+          <div class="settings-panel-header">
+            <h3 class="settings-panel-title">🌐 Engine & Dịch thuật</h3>
+          </div>
+          <div class="settings-section">
+            <span class="field-label">Engine Dịch</span>
+            <select id="select-translation-mode">
+              <option value="gemini" selected>✨ Google Gemini Live (Khuyên dùng)</option>
+              <option value="openai">⚡ OpenAI Realtime</option>
+              <option value="qwen">🌏 Qwen LiveTranslate Flash</option>
+              <option value="soniox">☁️ Soniox</option>
+              <option value="local">🖥️ Local MLX</option>
+            </select>
+            <p class="hint" id="hint-mode-gemini">Cloud · Gemini 2.0 Flash · free on Google AI Studio · 100+ languages</p>
+            <p class="hint" id="hint-mode-soniox" style="display:none">Cloud · 70+ languages · ~$0.12/hr</p>
+            <p class="hint" id="hint-mode-local" style="display:none">Offline · free · ~3–4s delay</p>
+            <p class="hint" id="hint-mode-openai" style="display:none">Cloud · 13 languages · text-only captions</p>
+            <p class="hint" id="hint-mode-qwen" style="display:none">Cloud · 60+ languages · text-only · free preview · pick a source language</p>
+            <div id="openai-cost-warning" class="cost-warning" style="display:none">
+              ⚠️ ~$4/hr — much pricier than Soniox. Charged to your OpenAI account.
+            </div>
+          </div>
 
         <div class="settings-section">
           <span class="field-label">Auto-pause when silent</span>
@@ -707,106 +813,133 @@
         </div>
       </div>
 
-      <!-- Tab: Display -->
-      <div class="settings-tab-content" id="tab-display">
-        <button class="settings-back-row" data-screen="settings-home">‹ Cài đặt</button>
-        <div class="settings-section">
-          <div class="slider-field">
-            <span class="field-label">Opacity</span>
-            <input type="range" id="range-opacity" min="20" max="100" value="85" />
-            <span id="opacity-value" class="range-value">85%</span>
+        <!-- 6. Detail: Display -->
+        <div class="settings-tab-content" id="tab-display">
+          <div class="settings-panel-header">
+            <h3 class="settings-panel-title">🎨 Hiển thị & Giao diện</h3>
           </div>
-          <div class="slider-field">
-            <span class="field-label">Font Size</span>
-            <input type="range" id="range-font-size" min="12" max="140" value="16" />
-            <span id="font-size-value" class="range-value">16px</span>
+          <div class="settings-section">
+            <div class="slider-field">
+              <span class="field-label">Opacity</span>
+              <input type="range" id="range-opacity" min="20" max="100" value="85" />
+              <span id="opacity-value" class="range-value">85%</span>
+            </div>
+            <div class="slider-field">
+              <span class="field-label">Font Size</span>
+              <input type="range" id="range-font-size" min="12" max="140" value="16" />
+              <span id="font-size-value" class="range-value">16px</span>
+            </div>
+            <div class="display-field">
+              <label class="field-label" for="input-font-color">Font Color</label>
+              <div class="color-input-wrap">
+                <input type="color" id="input-font-color" value="#ffffff" />
+                <span id="font-color-value">#FFFFFF</span>
+              </div>
+            </div>
+            <div class="display-field">
+              <label class="field-label" for="select-font-family">Font Style</label>
+              <select id="select-font-family" class="source-select">
+                <option value="system">System</option>
+                <option value="inter">Inter</option>
+                <option value="arial">Arial</option>
+                <option value="georgia">Georgia</option>
+                <option value="monospace">Monospace</option>
+              </select>
+            </div>
+            <div class="slider-field">
+              <span class="field-label">Max Lines</span>
+              <input type="range" id="range-max-lines" min="2" max="15" value="5" />
+              <span id="max-lines-value" class="range-value">5</span>
+            </div>
+            <label class="checkbox-option" style="margin-top: 8px;">
+              <input type="checkbox" id="check-show-original" checked />
+              <span class="checkbox-label">Show original text</span>
+            </label>
           </div>
-          <div class="display-field">
-            <label class="field-label" for="input-font-color">Font Color</label>
-            <div class="color-input-wrap">
-              <input type="color" id="input-font-color" value="#ffffff" />
-              <span id="font-color-value">#FFFFFF</span>
+        </div>
+
+        <!-- 7. Detail: Storage -->
+        <div class="settings-tab-content" id="tab-storage">
+          <div class="settings-panel-header">
+            <h3 class="settings-panel-title">📂 Lưu trữ Dữ liệu (Data Storage)</h3>
+          </div>
+          <div class="settings-section">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <span class="field-label" style="margin:0;">Thư mục lưu trữ hiện tại</span>
+              <span id="storage-type-badge" class="status-pill active">Mặc định</span>
+            </div>
+            <p class="hint" style="margin-bottom: 10px;">Toàn bộ meeting log (.md & .json), bản ghi âm và danh mục dữ liệu được lưu an toàn tại máy cục bộ.</p>
+            <div style="background: var(--md-sys-color-surface-container); padding: 10px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); margin-bottom: 12px; font-family: monospace; font-size: 11px; word-break: break-all; color: var(--md-sys-color-primary);" id="storage-dir-path-text">
+              ~/Library/Application Support/com.meetminder.app/transcripts
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button type="button" id="btn-change-storage-dir" class="btn-primary-small" style="display:inline-flex; align-items:center; gap:6px;">
+                📂 Đổi thư mục lưu trữ...
+              </button>
+              <button type="button" id="btn-reset-storage-dir" class="btn-secondary-small" style="display:inline-flex; align-items:center; gap:6px;">
+                🔄 Đặt lại mặc định
+              </button>
+              <button type="button" id="btn-open-transcripts-dir" class="btn-secondary-small" style="display:inline-flex; align-items:center; gap:6px;">
+                ↗️ Mở trong Finder
+              </button>
             </div>
           </div>
-          <div class="display-field">
-            <label class="field-label" for="select-font-family">Font Style</label>
-            <select id="select-font-family" class="source-select">
-              <option value="system">System</option>
-              <option value="inter">Inter</option>
-              <option value="arial">Arial</option>
-              <option value="georgia">Georgia</option>
-              <option value="monospace">Monospace</option>
-            </select>
-          </div>
-          <div class="slider-field">
-            <span class="field-label">Max Lines</span>
-            <input type="range" id="range-max-lines" min="2" max="15" value="5" />
-            <span id="max-lines-value" class="range-value">5</span>
-          </div>
-          <label class="checkbox-option" style="margin-top: 8px;">
-            <input type="checkbox" id="check-show-original" checked />
-            <span class="checkbox-label">Show original text</span>
-          </label>
-        </div>
-      </div>
-
-
-
-      <!-- Tab: About -->
-      <div class="settings-tab-content" id="tab-about">
-        <button class="settings-back-row" data-screen="settings-home">‹ Cài đặt</button>
-        <div class="settings-section about-info">
-          <div class="about-app-header">
-            <span class="about-app-name">Meet Minder</span>
-            <span class="about-app-version" id="about-version">v0.9.1</span>
-          </div>
-          <p class="hint">Real-time speech translator for macOS & Windows</p>
-        </div>
-
-        <div class="settings-section" id="section-update">
-          <span class="field-label">Updates</span>
-          <div id="update-status" class="update-status">
-            <span id="update-status-text">Click to check for updates</span>
-            <button id="btn-check-update" class="check-update-btn" title="Check now">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="23 4 23 10 17 10"/>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-              </svg>
-            </button>
-          </div>
-          <div id="update-actions" style="margin-top:8px;display:none;">
-            <button id="btn-do-update" class="primary-btn update-btn">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              <span id="update-btn-text">Download & Install</span>
-            </button>
-          </div>
-          <div id="update-progress" class="update-progress" style="display:none;">
-            <div class="progress-bar"><div id="update-progress-fill" class="progress-fill"></div></div>
-            <span id="update-progress-pct" class="progress-pct">0%</span>
+          <div class="settings-section" style="margin-top: 14px;">
+            <span class="field-label">Thống kê dữ liệu</span>
+            <div id="storage-stats-info" style="font-size: 12px; color: var(--md-sys-color-on-surface-variant); line-height: 1.8;">
+              Đang tính toán thống kê...
+            </div>
           </div>
         </div>
 
-        <div class="settings-section">
-          <span class="field-label">Links</span>
-          <div class="about-links">
-            <a href="#" id="link-github">GitHub Repository</a>
-            <a href="#" id="link-issues">Report a Bug</a>
+        <!-- 8. Detail: About -->
+        <div class="settings-tab-content" id="tab-about">
+          <div class="settings-panel-header">
+            <h3 class="settings-panel-title">ℹ️ Giới thiệu Phần mềm</h3>
+          </div>
+          <div class="settings-section about-info">
+            <div class="about-app-header">
+              <span class="about-app-name">Meet Minder</span>
+              <span class="about-app-version" id="about-version">v0.9.1</span>
+            </div>
+            <p class="hint">Ứng dụng phiên dịch & quản lý ghi chú cuộc họp thời gian thực cho macOS</p>
+          </div>
+
+          <div class="settings-section" id="section-update">
+            <span class="field-label">Cập nhật ứng dụng (Updates)</span>
+            <div id="update-status" class="update-status">
+              <span id="update-status-text">Click to check for updates</span>
+              <button id="btn-check-update" class="check-update-btn" title="Kiểm tra ngay">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"/>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+              </button>
+            </div>
+            <div id="update-actions" style="margin-top:8px;display:none;">
+              <button id="btn-do-update" class="primary-btn update-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span id="update-btn-text">Download & Install</span>
+              </button>
+            </div>
+            <div id="update-progress" class="update-progress" style="display:none;">
+              <div class="progress-bar"><div id="update-progress-fill" class="progress-fill"></div></div>
+              <span id="update-progress-pct" class="progress-pct">0%</span>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <span class="field-label">Liên kết</span>
+            <div class="about-links">
+              <a href="#" id="link-github">GitHub Repository</a>
+              <a href="#" id="link-issues">Báo lỗi (Report a Bug)</a>
+            </div>
           </div>
         </div>
-      </div>
-
-      <!-- Save -->
-      <div class="settings-actions">
-        <button id="btn-save-settings" class="primary-btn">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-          Save & Close
-        </button>
       </div>
     </div>
   </div>
@@ -888,15 +1021,41 @@
 
   <!-- ═══════════════════ STOP & SAVE MEETING MODAL (UNIFIED) ═══════════════════ -->
   <div id="modal-confirm-stop" class="modal-overlay" style="display:none">
-    <div class="modal-card" style="max-width: 420px;">
+    <div class="modal-card" style="max-width: 480px;">
       <div class="modal-header">
         <h3>⏹ Kết thúc & Lưu cuộc họp</h3>
         <button type="button" id="btn-close-confirm-stop" class="icon-btn close-btn" title="Đóng">×</button>
       </div>
       <div class="modal-body">
-        <label for="input-stop-meeting-title" class="field-label" style="margin-bottom:8px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tên cuộc họp:</label>
+        <label for="input-stop-meeting-title" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tên cuộc họp:</label>
         <input type="text" id="input-stop-meeting-title" class="modal-input" placeholder="MM_20260901_11:00" />
-        <p class="modal-desc">Phiên dịch sẽ dừng lại. Bạn có thể lưu toàn bộ bản ghi âm, bản dịch và ghi chú vào tab 📚 Meeting Logs, hoặc kết thúc mà không lưu.</p>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+          <div>
+            <label for="select-stop-meeting-customer" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🏢 Khách hàng:</label>
+            <select id="select-stop-meeting-customer" class="modal-input modal-select">
+              <option value="">(Không chọn KH)</option>
+            </select>
+          </div>
+          <div>
+            <label for="select-stop-meeting-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">📁 Dự án (Active):</label>
+            <select id="select-stop-meeting-project" class="modal-input modal-select">
+              <option value="">(Không gán dự án)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-top: 10px;">
+          <label for="select-stop-meeting-category" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">📅 Phân loại cuộc họp:</label>
+          <select id="select-stop-meeting-category" class="modal-input modal-select">
+            <option value="">(Không phân loại)</option>
+          </select>
+        </div>
+
+        <label for="input-stop-meeting-tags" class="field-label" style="margin-top:10px; margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">#️⃣ Thẻ (Tags):</label>
+        <input type="text" id="input-stop-meeting-tags" class="modal-input" placeholder="#frontend, #api, #sprint-12 (cách nhau dấu phẩy)" />
+        
+        <p class="modal-desc" style="margin-top:10px;">Phiên dịch sẽ dừng lại. Toàn bộ bản ghi âm, bản dịch và ghi chú sẽ được lưu vào tab 📚 Logs theo khách hàng, dự án và danh mục đã chọn.</p>
       </div>
       <div class="modal-footer">
         <button type="button" id="btn-cancel-confirm-stop" class="secondary-btn modal-action-btn">Huỷ</button>
@@ -920,6 +1079,172 @@
       <div class="modal-footer">
         <button type="button" id="btn-cancel-rename-meeting" class="secondary-btn">Hủy</button>
         <button type="button" id="btn-confirm-rename-meeting" class="primary-action-btn">Lưu tên</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ EDIT SESSION METADATA MODAL ═══════════════════ -->
+  <div id="modal-edit-tags" class="modal-overlay" style="display:none">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3>⚙️ Chỉnh sửa thông tin cuộc họp</h3>
+        <button type="button" id="btn-close-edit-tags" class="icon-btn close-btn">×</button>
+      </div>
+      <div class="modal-body">
+        <label for="input-edit-session-title" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tiêu đề cuộc họp:</label>
+        <input type="text" id="input-edit-session-title" class="modal-input" />
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+          <div>
+            <label for="select-edit-session-customer" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🏢 Khách hàng:</label>
+            <select id="select-edit-session-customer" class="modal-input modal-select">
+              <option value="">(Không chọn KH)</option>
+            </select>
+          </div>
+          <div>
+            <label for="select-edit-session-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">📁 Dự án:</label>
+            <select id="select-edit-session-project" class="modal-input modal-select">
+              <option value="">(Không gán dự án)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-top: 10px;">
+          <label for="select-edit-session-category" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">📅 Phân loại:</label>
+          <select id="select-edit-session-category" class="modal-input modal-select">
+            <option value="">(Không phân loại)</option>
+          </select>
+        </div>
+
+        <label for="input-edit-tags-value" class="field-label" style="margin-top:10px; margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">#️⃣ Thẻ (Tags):</label>
+        <input type="text" id="input-edit-tags-value" class="modal-input" placeholder="#frontend, #api" />
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btn-cancel-edit-tags" class="secondary-btn">Hủy</button>
+        <button type="button" id="btn-confirm-edit-tags" class="primary-action-btn">Lưu thay đổi</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ AI CHAIN DIGEST MODAL ═══════════════════ -->
+  <div id="modal-ai-digest" class="modal-overlay" style="display:none">
+    <div class="modal-card modal-card-large" style="max-width: 680px; max-height: 85vh; display: flex; flex-direction: column;">
+      <div class="modal-header">
+        <h3 id="ai-digest-title">✨ Tổng hợp chuỗi cuộc họp (AI Digest)</h3>
+        <button type="button" id="btn-close-ai-digest" class="icon-btn close-btn">×</button>
+      </div>
+      <div class="modal-body" style="flex: 1; overflow-y: auto; min-height: 200px; padding: 16px;">
+        <div id="ai-digest-loading" class="ai-digest-loading" style="display:none; text-align: center; padding: 40px 20px;">
+          <div class="spinner-ring" style="margin: 0 auto 16px auto;"></div>
+          <p id="ai-digest-loading-text" style="color: var(--md-sys-color-on-surface-variant); font-size: 13px;">Đang phân tích & móc nối thông tin các cuộc họp...</p>
+        </div>
+        <div id="ai-digest-content" class="ai-digest-content session-content-scroll" style="display:none; white-space: pre-wrap; font-size: 13px; line-height: 1.6; user-select: text;"></div>
+      </div>
+      <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button type="button" id="btn-copy-ai-digest" class="secondary-btn">📋 Sao chép</button>
+        <button type="button" id="btn-export-ai-digest" class="secondary-btn">💾 Lưu file .md</button>
+        <button type="button" id="btn-close-ai-digest-bottom" class="primary-action-btn">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ UNIVERSAL CONFIRM DELETE MODAL ═══════════════════ -->
+  <div id="modal-confirm-delete" class="modal-overlay" style="display:none">
+    <div class="modal-card" style="max-width: 420px;">
+      <div class="modal-header">
+        <h3 id="confirm-delete-title" style="color: #ef4444; display: flex; align-items: center; gap: 6px;">
+          <span>🗑️</span> <span id="confirm-delete-title-text">Xác nhận xoá</span>
+        </h3>
+        <button type="button" id="btn-close-confirm-delete" class="icon-btn close-btn">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-delete-message" style="font-size: 13px; line-height: 1.5; color: var(--md-sys-color-on-surface); margin: 0;"></p>
+      </div>
+      <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button type="button" id="btn-cancel-confirm-delete" class="secondary-btn">Huỷ</button>
+        <button type="button" id="btn-agree-confirm-delete" class="danger-btn modal-action-btn">Xoá</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ CUSTOMER DETAILS / EDIT MODAL ═══════════════════ -->
+  <div id="modal-add-customer" class="modal-overlay" style="display:none">
+    <div class="modal-card" style="max-width: 460px;">
+      <div class="modal-header">
+        <h3 id="modal-cust-title">🏢 Thông tin Khách hàng</h3>
+        <button type="button" id="btn-close-add-customer" class="icon-btn close-btn">×</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+        <input type="hidden" id="input-modal-cust-id" value="" />
+        <div>
+          <label class="field-label" for="input-modal-cust-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Tên khách hàng (*):</label>
+          <input type="text" id="input-modal-cust-name" class="modal-input" placeholder="VD: Tập đoàn FPT, Công ty VNG..." />
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: flex-end;">
+          <div>
+            <label class="field-label" for="input-modal-cust-code" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Mã khách hàng:</label>
+            <input type="text" id="input-modal-cust-code" class="modal-input" placeholder="VD: FPT, VNG..." />
+          </div>
+          <div>
+            <label class="field-label" for="select-modal-cust-status" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Trạng thái:</label>
+            <select id="select-modal-cust-status" class="modal-input modal-select">
+              <option value="active">🟢 Đang hợp tác</option>
+              <option value="stopped">⚪ Đã dừng</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label" for="input-modal-cust-color" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Màu sắc:</label>
+            <input type="color" id="input-modal-cust-color" value="#3b82f6" class="color-picker-input" title="Chọn màu nhận diện" />
+          </div>
+        </div>
+        <div>
+          <label class="field-label" for="input-modal-cust-desc" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Ghi chú / Thông tin liên hệ:</label>
+          <textarea id="input-modal-cust-desc" class="modal-input" rows="3" placeholder="Thông tin liên hệ, ghi chú dự án (tuỳ chọn)..." style="resize: none;"></textarea>
+        </div>
+        <div id="modal-cust-projs-section" style="display:none; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border-subtle);">
+          <label class="field-label" style="margin-bottom: 6px; display: block; font-size: 11px; font-weight: 600;">Dự án liên kết:</label>
+          <div id="modal-cust-projs-list" class="table-proj-chips"></div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button type="button" id="btn-cancel-add-customer" class="secondary-btn">Huỷ</button>
+        <button type="button" id="btn-save-add-customer" class="primary-action-btn">Lưu thông tin</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ ADD PROJECT MODAL ═══════════════════ -->
+  <div id="modal-add-project" class="modal-overlay" style="display:none">
+    <div class="modal-card" style="max-width: 460px;">
+      <div class="modal-header">
+        <h3>📁 Thêm Dự án mới</h3>
+        <button type="button" id="btn-close-add-project" class="icon-btn close-btn">×</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+        <div>
+          <label class="field-label" for="select-modal-proj-customer" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Khách hàng trực thuộc:</label>
+          <select id="select-modal-proj-customer" class="modal-input modal-select">
+            <option value="">(Không chọn KH / Dự án nội bộ)</option>
+          </select>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: flex-end;">
+          <div>
+            <label class="field-label" for="input-modal-proj-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Tên dự án (*):</label>
+            <input type="text" id="input-modal-proj-name" class="modal-input" placeholder="VD: Core Banking V2, AI Translator..." />
+          </div>
+          <div>
+            <label class="field-label" for="input-modal-proj-color" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Màu nhận diện:</label>
+            <input type="color" id="input-modal-proj-color" value="#6366f1" class="color-picker-input" title="Chọn màu" />
+          </div>
+        </div>
+        <div>
+          <label class="field-label" for="input-modal-proj-desc" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Mô tả dự án:</label>
+          <textarea id="input-modal-proj-desc" class="modal-input" rows="2" placeholder="Mô tả mục tiêu dự án (tuỳ chọn)..." style="resize: none;"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button type="button" id="btn-cancel-add-project" class="secondary-btn">Huỷ</button>
+        <button type="button" id="btn-save-add-project" class="primary-action-btn">+ Tạo Dự án</button>
       </div>
     </div>
   </div>

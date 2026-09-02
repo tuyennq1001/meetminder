@@ -18,6 +18,10 @@ export class SessionStore {
         this.endedAt = null;
         this.title = '';
         this.notes = '';
+        this.tags = [];
+        this.customerId = null;
+        this.projectId = null;
+        this.category = null;
         this.engine = null;            // 'openai' | 'soniox' | 'local'
         this.sourceLang = '';
         this.targetLang = '';
@@ -36,13 +40,17 @@ export class SessionStore {
         this._autosaveTimer = null;
     }
 
-    init({ engine, sourceLang, targetLang } = {}) {
+    init({ engine, sourceLang, targetLang, tags, customerId, projectId, category } = {}) {
         this._cancelAutosave();
         this.id = this._generateId();
         this.createdAt = new Date().toISOString();
         this.endedAt = null;
         this.title = '';
         this.notes = '';
+        this.tags = Array.isArray(tags) ? tags : [];
+        this.customerId = customerId || null;
+        this.projectId = projectId || null;
+        this.category = category || null;
         this.engine = engine || null;
         this.sourceLang = sourceLang || '';
         this.targetLang = targetLang || '';
@@ -63,12 +71,40 @@ export class SessionStore {
         s.endedAt = j.ended_at;
         s.title = j.title || '';
         s.notes = j.notes || '';
+        s.tags = Array.isArray(j.tags) ? j.tags : [];
+        s.customerId = j.customer_id || null;
+        s.projectId = j.project_id || null;
+        s.category = j.category || null;
         s.engine = j.engine || null;
         s.sourceLang = j.source_lang || '';
         s.targetLang = j.target_lang || '';
         s.chunks = j.chunks || [];
         s.currentChunk = null;
         return s;
+    }
+
+    async resumeSession(id) {
+        const result = await invoke('read_session', { id });
+        const j = result.json;
+        this.id = j.id;
+        this.createdAt = j.created_at;
+        this.endedAt = null;
+        this.title = j.title || '';
+        this.notes = j.notes || '';
+        this.tags = Array.isArray(j.tags) ? j.tags : [];
+        this.customerId = j.customer_id || null;
+        this.projectId = j.project_id || null;
+        this.category = j.category || null;
+        this.engine = j.engine || null;
+        this.sourceLang = j.source_lang || '';
+        this.targetLang = j.target_lang || '';
+        this.chunks = j.chunks || [];
+        this.currentChunk = null;
+        this._mutations = 0;
+        this._persistedMutations = 0;
+        this._persistChain = Promise.resolve();
+        this._lastPersistAt = Date.now();
+        return this;
     }
 
     beginChunk({ engine, sourceLang, targetLang } = {}) {
@@ -204,6 +240,21 @@ export class SessionStore {
         }
     }
 
+    async setTags(newTags) {
+        const clean = (Array.isArray(newTags) ? newTags : [])
+            .map(t => String(t || '').trim().replace(/^#/, '').toLowerCase())
+            .filter(t => t.length > 0 && t.length <= 50);
+        this.tags = clean;
+        this._mutations++;
+        if (this.id) {
+            try {
+                await invoke('update_session_tags', { id: this.id, tags: clean });
+            } catch (err) {
+                console.error('[SessionStore] update_session_tags failed:', err);
+            }
+        }
+    }
+
     isEmpty() {
         const chunkSegs = this.chunks.reduce((n, c) => n + c.segments.length, 0);
         const liveSegs = this.currentChunk?.segments.length || 0;
@@ -310,6 +361,10 @@ export class SessionStore {
             ended_at: this.endedAt,
             title: this.title || this._autoTitle(),
             notes: this.notes || '',
+            tags: this.tags || [],
+            customer_id: this.customerId || null,
+            project_id: this.projectId || null,
+            category: this.category || null,
             engine: this.engine || 'unknown',
             source_lang: this.sourceLang || '',
             target_lang: this.targetLang || '',
@@ -339,10 +394,14 @@ export class SessionStore {
         const title = this.title || this._autoTitle();
         const dur = this._formatDuration(this._totalDurationSec());
         const langPair = (this.sourceLang || '?') + ' → ' + (this.targetLang || '?');
+        const metaExtras = [];
+        if (this.category) metaExtras.push(`📅 Phân loại: ${this.category}`);
+        if (this.tags && this.tags.length > 0) metaExtras.push(this.tags.map(t => `#${t}`).join(' '));
+        const extraStr = metaExtras.length > 0 ? ' · ' + metaExtras.join(' · ') : '';
 
         lines.push(`# ${title}`);
         lines.push('');
-        lines.push(`**Thông tin**: Engine ${this.engine || 'unknown'} · ${langPair} · ${this._formatDateTime(this.createdAt)} · ${dur}`);
+        lines.push(`**Thông tin**: Engine ${this.engine || 'unknown'} · ${langPair} · ${this._formatDateTime(this.createdAt)} · ${dur}${extraStr}`);
         lines.push('');
         lines.push('---');
         lines.push('');

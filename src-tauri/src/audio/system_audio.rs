@@ -93,15 +93,6 @@ impl SystemAudioCapture {
             return Err("Already capturing".to_string());
         }
 
-        #[cfg(target_os = "macos")]
-        unsafe {
-            #[link(name = "CoreGraphics", kind = "framework")]
-            extern "C" {
-                fn CGRequestScreenCaptureAccess() -> bool;
-            }
-            CGRequestScreenCaptureAccess();
-        }
-
         // Get available displays
         let content = SCShareableContent::get().map_err(|e| {
             format!(
@@ -154,7 +145,7 @@ impl SystemAudioCapture {
     /// Stop capturing
     pub fn stop(&mut self) {
         self.is_capturing.store(false, Ordering::SeqCst);
-        if let Some(mut stream) = self._stream.take() {
+        if let Some(stream) = self._stream.take() {
             let _ = stream.stop_capture();
         }
     }

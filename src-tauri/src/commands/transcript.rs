@@ -6,14 +6,7 @@ use tauri::{AppHandle, Manager};
 
 /// Get the transcript directory path
 fn transcript_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?
-        .join("transcripts");
-
-    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create transcript dir: {}", e))?;
-    Ok(dir)
+    crate::commands::session_store::sessions_dir(app)
 }
 
 /// Save a complete transcript session to a timestamped file

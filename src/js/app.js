@@ -7,7 +7,7 @@ import { settingsManager } from './settings.js';
 import { TranscriptUI } from './ui.js';
 import { sonioxClient } from './soniox.js';
 import { updater } from './updater.js';
-import { sessionStore } from './session-store.js';
+import { sessionStore, SessionStore } from './session-store.js';
 import { QWEN_LANGS } from './qwen-langs.js';
 import {
     initShell, setActivity, getActivity, setLiveBadge, bindMenu, initWindowModes,
@@ -50,6 +50,15 @@ class App {
         this._inactivityTimer = null;
         this._captureHealthTimer = null;
         this._isStopConfirmationOpen = false;
+        this._projectRegistry = null;
+        this._activeCustomerFilter = null;
+        this._activeProjectFilter = null;
+        this._activeCategoryFilter = null;
+        this._activeTagFilter = null;
+        this._custSort = { field: 'name', dir: 'asc' };
+        this._projSort = { field: 'name', dir: 'asc' };
+        this._catSort = { field: 'name', dir: 'asc' };
+        this._tagSort = { field: 'name', dir: 'asc' };
     }
 
     async init() {
@@ -189,6 +198,7 @@ class App {
 
         // Back from session viewer to session list
         document.getElementById('btn-session-back-to-list')?.addEventListener('click', () => {
+            this._exitSessionEditMode();
             document.getElementById('sessions-list-panel').style.display = '';
             document.getElementById('session-viewer').style.display = 'none';
             this._showSessions();
@@ -218,6 +228,88 @@ class App {
             });
         }
 
+        // Customer filter dropdown
+        document.getElementById('select-session-customer-filter')?.addEventListener('change', (e) => {
+            this._activeCustomerFilter = e.target.value || null;
+            this._renderProjectFilterBar();
+            this._renderFilteredSessions();
+        });
+
+        // Project filter dropdown
+        document.getElementById('select-session-project-filter')?.addEventListener('change', (e) => {
+            this._activeProjectFilter = e.target.value || null;
+            this._renderFilteredSessions();
+        });
+
+        // Category filter dropdown
+        document.getElementById('select-session-category-filter')?.addEventListener('change', (e) => {
+            this._activeCategoryFilter = e.target.value || null;
+            this._renderFilteredSessions();
+        });
+
+        // Tag filter dropdown
+        document.getElementById('select-session-tag-filter')?.addEventListener('change', (e) => {
+            this._activeTagFilter = e.target.value || null;
+            this._renderFilteredSessions();
+        });
+        // Settings Sidebar 2-Column Navigation
+        document.querySelectorAll('.settings-nav-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._showSettingsScreen(btn.dataset.screen);
+            });
+        });
+
+        // Add Customer Modal Triggers
+        document.getElementById('btn-open-add-customer')?.addEventListener('click', () => {
+            this._openAddCustomerModal();
+        });
+        document.getElementById('btn-close-add-customer')?.addEventListener('click', () => {
+            this._closeAddCustomerModal();
+        });
+        document.getElementById('btn-cancel-add-customer')?.addEventListener('click', () => {
+            this._closeAddCustomerModal();
+        });
+        document.getElementById('btn-save-add-customer')?.addEventListener('click', async () => {
+            await this._handleSaveCustomerFromModal();
+        });
+
+        // Add Project Modal Triggers
+        document.getElementById('btn-open-add-project')?.addEventListener('click', async () => {
+            await this._openAddProjectModal();
+        });
+        document.getElementById('btn-close-add-project')?.addEventListener('click', () => {
+            this._closeAddProjectModal();
+        });
+        document.getElementById('btn-cancel-add-project')?.addEventListener('click', () => {
+            this._closeAddProjectModal();
+        });
+        document.getElementById('btn-save-add-project')?.addEventListener('click', async () => {
+            await this._handleSaveProjectFromModal();
+        });
+
+        // Customer Search & Project Filter
+        document.getElementById('input-search-customers')?.addEventListener('input', (e) => {
+            this._renderSettingsCustomersTab(e.target.value);
+        });
+        document.getElementById('input-search-projects')?.addEventListener('input', (e) => {
+            const custFilter = document.getElementById('select-settings-proj-cust-filter')?.value;
+            this._renderSettingsProjectsTab(custFilter, e.target.value);
+        });
+        document.getElementById('select-settings-proj-cust-filter')?.addEventListener('change', (e) => {
+            const searchVal = document.getElementById('input-search-projects')?.value;
+            this._renderSettingsProjectsTab(e.target.value, searchVal);
+        });
+
+        // Quick create Category button
+        document.getElementById('btn-create-category')?.addEventListener('click', async () => {
+            await this._handleCreateCategory();
+        });
+
+        // Quick create Tag button
+        document.getElementById('btn-create-tag')?.addEventListener('click', async () => {
+            await this._handleCreateTag();
+        });
+
         // Select all sessions checkbox
         document.getElementById('chk-select-all-sessions')?.addEventListener('change', (e) => {
             const checked = e.target.checked;
@@ -233,6 +325,83 @@ class App {
         // Batch delete sessions
         document.getElementById('btn-batch-delete-sessions')?.addEventListener('click', async () => {
             await this._deleteSelectedSessions();
+        });
+
+        // Batch export markdown
+        document.getElementById('btn-batch-export-md')?.addEventListener('click', async () => {
+            await this._batchExportMarkdown();
+        });
+
+        // Batch AI Digest
+        document.getElementById('btn-batch-ai-digest')?.addEventListener('click', async () => {
+            await this._batchAiDigest();
+        });
+
+        // AI Digest Modal events
+        document.getElementById('btn-close-ai-digest')?.addEventListener('click', () => {
+            const modal = document.getElementById('modal-ai-digest');
+            if (modal) modal.style.display = 'none';
+        });
+        document.getElementById('btn-close-ai-digest-bottom')?.addEventListener('click', () => {
+            const modal = document.getElementById('modal-ai-digest');
+            if (modal) modal.style.display = 'none';
+        });
+        document.getElementById('btn-copy-ai-digest')?.addEventListener('click', async () => {
+            if (this._currentAiDigestText) {
+                await navigator.clipboard.writeText(this._currentAiDigestText);
+                this._showToast('Đã sao chép nội dung tổng hợp ✓', 'success');
+            }
+        });
+        document.getElementById('btn-export-ai-digest')?.addEventListener('click', () => {
+            if (this._currentAiDigestText) {
+                const blob = new Blob([this._currentAiDigestText], { type: 'text/markdown;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `meeting-chain-digest-${new Date().toISOString().slice(0, 10)}.md`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                this._showToast('Đã lưu file Markdown ✓', 'success');
+            }
+        });
+
+        // Resume session from viewer
+        document.getElementById('btn-session-resume')?.addEventListener('click', async () => {
+            const cur = this._currentViewedSession;
+            if (cur) await this._resumeSession(cur.id, cur.isLegacy);
+        });
+
+        // Edit metadata from viewer
+        document.getElementById('btn-session-edit-tags')?.addEventListener('click', async () => {
+            const cur = this._currentViewedSession;
+            if (!cur || cur.isLegacy) {
+                this._showToast('Không thể sửa thông tin cuộc họp định dạng cũ', 'info');
+                return;
+            }
+            const res = await invoke('read_session', { id: cur.id });
+            await this._editSessionMetadata({
+                id: cur.id,
+                title: res.json?.title || cur.title,
+                project_id: res.json?.project_id || null,
+                category: res.json?.category || null,
+                tags: res.json?.tags || [],
+            });
+            if (this._currentViewedSession && this._currentViewedSession.id === cur.id) {
+                try {
+                    const refreshed = await invoke('read_session', { id: cur.id });
+                    const contentEl = document.getElementById('session-viewer-content');
+                    if (contentEl) contentEl.textContent = refreshed.md;
+                    const titleEl = document.getElementById('session-viewer-title');
+                    if (titleEl) titleEl.textContent = refreshed.json?.title || cur.id;
+                } catch {}
+            }
+        });
+
+        // Fetch previous notes button in notes drawer
+        document.getElementById('btn-note-fetch-prev')?.addEventListener('click', async () => {
+            await this._fetchPreviousNotes();
         });
 
         // TTS play session
@@ -263,16 +432,48 @@ class App {
             }
         });
 
-        // Edit session title (modal/prompt)
-        document.getElementById('btn-session-edit-title')?.addEventListener('click', async () => {
-            const cur = this._currentViewedSession;
-            if (!cur || cur.isLegacy) {
-                this._showToast('Cannot rename legacy sessions', 'error');
-                return;
+        // Edit session inline (title + content)
+        document.getElementById('btn-session-edit-title')?.addEventListener('click', () => {
+            this._enterSessionEditMode();
+        });
+
+        // Save session inline edit
+        document.getElementById('btn-session-save-edit')?.addEventListener('click', () => {
+            this._saveSessionEdit();
+        });
+
+        // Cancel session inline edit
+        document.getElementById('btn-session-cancel-edit')?.addEventListener('click', () => {
+            this._exitSessionEditMode();
+        });
+
+        // Keybindings inside inline session inputs
+        const inputSessionTitle = document.getElementById('input-session-viewer-title');
+        const sessionContentEditor = document.getElementById('session-viewer-content-editor');
+
+        inputSessionTitle?.addEventListener('keydown', (e) => {
+            if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                e.stopPropagation();
+                this._saveSessionEdit();
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                sessionContentEditor?.focus();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                this._exitSessionEditMode();
             }
-            const titleEl = document.getElementById('session-viewer-title');
-            const oldTitle = titleEl?.textContent || '';
-            await this._renameSession(cur.id, oldTitle);
+        });
+
+        sessionContentEditor?.addEventListener('keydown', (e) => {
+            if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                e.stopPropagation();
+                this._saveSessionEdit();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                this._exitSessionEditMode();
+            }
         });
 
         // Export session
@@ -371,7 +572,7 @@ class App {
                 if (stopAction.discard) {
                     await this.discardSession();
                 } else {
-                    await this.stopSession(stopAction.title);
+                    await this.stopSession(stopAction.title, stopAction.tags, stopAction.customerId, stopAction.projectId, stopAction.category);
                 }
             } catch (err) {
                 console.error('[App] Stop session error:', err);
@@ -406,12 +607,50 @@ class App {
             }
         });
 
-        // Open saved transcripts folder (kept for Finder access)
+        // Open saved transcripts folder in Finder
+        document.getElementById('btn-open-transcripts-dir')?.addEventListener('click', async () => {
+            try {
+                await invoke('open_transcript_dir');
+            } catch (err) {
+                this._showToast('Failed to open folder: ' + err, 'error');
+            }
+        });
         document.getElementById('btn-open-transcripts')?.addEventListener('click', async () => {
             try {
                 await invoke('open_transcript_dir');
             } catch (err) {
                 this._showToast('Failed to open folder: ' + err, 'error');
+            }
+        });
+
+        // Storage Directory Customization
+        document.getElementById('btn-change-storage-dir')?.addEventListener('click', async () => {
+            try {
+                const info = await invoke('select_custom_transcripts_dir');
+                if (info) {
+                    this._showToast('Đã đổi thư mục lưu trữ thành công ✓', 'success');
+                    this._renderSettingsStorageTab();
+                    await this._showSessions();
+                }
+            } catch (err) {
+                this._showToast(`Đổi thư mục thất bại: ${err}`, 'error');
+            }
+        });
+
+        document.getElementById('btn-reset-storage-dir')?.addEventListener('click', async () => {
+            const agreed = await this._promptConfirmDelete({
+                title: 'Đặt lại thư mục mặc định',
+                message: 'Bạn có muốn chuyển vị trí lưu trữ về lại thư mục mặc định của ứng dụng?',
+                confirmText: 'Đặt lại'
+            });
+            if (!agreed) return;
+            try {
+                await invoke('set_custom_transcripts_dir', { path: null });
+                this._showToast('Đã chuyển về thư mục mặc định ✓', 'success');
+                this._renderSettingsStorageTab();
+                await this._showSessions();
+            } catch (err) {
+                this._showToast(`Lỗi: ${err}`, 'error');
             }
         });
 
@@ -422,8 +661,6 @@ class App {
         this._bindSettingsForm();
 
         // Manual drag for settings view
-        // data-tauri-drag-region doesn't work well when parent contains buttons
-        // Using Tauri's recommended appWindow.startDragging() approach instead
         document.getElementById('settings-view')?.addEventListener('mousedown', (e) => {
             const interactive = e.target.closest('button, input, select, label, a, textarea, .settings-section, .settings-actions');
             if (!interactive && e.buttons === 1) {
@@ -435,7 +672,7 @@ class App {
         // Toggle API key visibility
         document.getElementById('btn-toggle-key')?.addEventListener('click', () => {
             const input = document.getElementById('input-api-key');
-            input.type = input.type === 'password' ? 'text' : 'password';
+            if (input) input.type = input.type === 'password' ? 'text' : 'password';
         });
 
         document.getElementById('btn-toggle-openai-key')?.addEventListener('click', () => {
@@ -448,20 +685,24 @@ class App {
             if (input) input.type = input.type === 'password' ? 'text' : 'password';
         });
 
+        document.getElementById('btn-toggle-qwen-key')?.addEventListener('click', () => {
+            const input = document.getElementById('input-qwen-key');
+            if (input) input.type = input.type === 'password' ? 'text' : 'password';
+        });
+
         document.getElementById('select-gemini-model')?.addEventListener('change', (e) => {
             const customSection = document.getElementById('section-gemini-custom-model');
             if (customSection) {
                 customSection.style.display = e.target.value === 'custom' ? 'block' : 'none';
             }
-            this._saveSettingsFromForm().then(() => settingsManager.save(settingsManager.get()));
+            this._autoSaveSettingsFromForm();
         });
 
-        document.getElementById('input-gemini-custom-model')?.addEventListener('change', () => {
-            this._saveSettingsFromForm().then(() => settingsManager.save(settingsManager.get()));
+        document.getElementById('input-gemini-custom-model')?.addEventListener('input', () => {
+            this._debouncedAutoSave();
         });
 
-        // Toolbar-only Gemini option — save immediately so it is ready for the
-        // next session without requiring the Settings screen to be opened.
+        // Toolbar-only Gemini option
         document.getElementById('check-gemini-diarization')?.addEventListener('change', async (e) => {
             const enabled = e.target.checked;
             try {
@@ -488,13 +729,33 @@ class App {
             window.__TAURI__.opener.openUrl('https://aistudio.google.com/app/apikey');
         });
 
-        // Inline key format validation + engine-option enable/disable
+        document.getElementById('link-soniox')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.__TAURI__.opener.openUrl('https://console.soniox.com/signup/');
+        });
+
+        // Inline key format validation + auto-save on change
         const sonioxInput = document.getElementById('input-api-key');
         const openaiInput = document.getElementById('input-openai-key');
         const geminiInput = document.getElementById('input-gemini-key');
-        sonioxInput?.addEventListener('input', () => this._refreshKeyStatus());
-        openaiInput?.addEventListener('input', () => this._refreshKeyStatus());
-        geminiInput?.addEventListener('input', () => this._refreshKeyStatus());
+        const qwenInput = document.getElementById('input-qwen-key');
+
+        sonioxInput?.addEventListener('input', () => {
+            this._refreshKeyStatus();
+            this._debouncedAutoSave();
+        });
+        openaiInput?.addEventListener('input', () => {
+            this._refreshKeyStatus();
+            this._debouncedAutoSave();
+        });
+        geminiInput?.addEventListener('input', () => {
+            this._refreshKeyStatus();
+            this._debouncedAutoSave();
+        });
+        qwenInput?.addEventListener('input', () => {
+            this._refreshKeyStatus();
+            this._debouncedAutoSave();
+        });
 
         // Test-connection buttons
         document.getElementById('btn-test-soniox')?.addEventListener('click', () => this._testConnection('soniox'));
@@ -503,6 +764,15 @@ class App {
         // Translation mode toggle
         document.getElementById('select-translation-mode')?.addEventListener('change', (e) => {
             this._updateModeUI(e.target.value);
+            this._autoSaveSettingsFromForm();
+        });
+
+        // Language Selects
+        document.getElementById('select-source-lang')?.addEventListener('change', () => {
+            this._autoSaveSettingsFromForm();
+        });
+        document.getElementById('select-target-lang')?.addEventListener('change', () => {
+            this._autoSaveSettingsFromForm();
         });
 
         // Inactivity timeout change
@@ -512,8 +782,7 @@ class App {
             this._resetInactivityTimer();
         });
 
-        // Welcome-screen engine cards: pick a class (standard / openai),
-        // remember it, hide the picker, sync the rest of the UI.
+        // Welcome-screen engine cards
         document.querySelectorAll('#engine-picker .engine-card').forEach(card => {
             card.addEventListener('click', () => {
                 this._selectEngineClass(card.dataset.engineClass);
@@ -521,8 +790,7 @@ class App {
             });
         });
 
-        // Toolbar engine pill: same switch, available any time the session isn't
-        // running. While running, the pill is locked (visual feedback only).
+        // Toolbar engine pill
         document.querySelectorAll('#engine-pill .engine-pill-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 if (this.isRunning || this.isStarting) {
@@ -536,50 +804,61 @@ class App {
         // Translation type toggle (one-way / two-way)
         document.getElementById('select-translation-type')?.addEventListener('change', (e) => {
             this._updateTranslationTypeUI(e.target.value);
+            this._autoSaveSettingsFromForm();
         });
 
-        // Soniox link
-        document.getElementById('link-soniox').addEventListener('click', (e) => {
-            e.preventDefault();
-            window.__TAURI__.opener.openUrl('https://console.soniox.com/signup/');
+        document.getElementById('select-lang-a')?.addEventListener('change', () => this._autoSaveSettingsFromForm());
+        document.getElementById('select-lang-b')?.addEventListener('change', () => this._autoSaveSettingsFromForm());
+        document.getElementById('check-strict-lang')?.addEventListener('change', () => this._autoSaveSettingsFromForm());
+
+        // Audio Source radio change
+        document.querySelectorAll('input[name="audio-source"]').forEach(r => {
+            r.addEventListener('change', () => this._autoSaveSettingsFromForm());
         });
 
-        // ElevenLabs link
-        document.getElementById('link-elevenlabs')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            window.__TAURI__.opener.openUrl('https://elevenlabs.io/app/sign-up');
+        // Slider live updates & auto-save
+        document.getElementById('range-opacity')?.addEventListener('input', (e) => {
+            const valEl = document.getElementById('opacity-value');
+            if (valEl) valEl.textContent = `${e.target.value}%`;
+            this._autoSaveSettingsFromForm();
         });
 
-        // Save settings — both top and bottom buttons
-        document.getElementById('btn-save-settings').addEventListener('click', () => {
-            this._saveSettingsFromForm();
-        });
-        document.getElementById('btn-save-settings-top')?.addEventListener('click', () => {
-            this._saveSettingsFromForm();
+        document.getElementById('range-font-size')?.addEventListener('input', (e) => {
+            const valEl = document.getElementById('font-size-value');
+            if (valEl) valEl.textContent = `${e.target.value}px`;
+            this._autoSaveSettingsFromForm();
         });
 
-        // Slider live updates
-        document.getElementById('range-opacity').addEventListener('input', (e) => {
-            document.getElementById('opacity-value').textContent = `${e.target.value}%`;
+        document.getElementById('input-font-color')?.addEventListener('input', (e) => {
+            const valEl = document.getElementById('font-color-value');
+            if (valEl) valEl.textContent = e.target.value.toUpperCase();
+            this._autoSaveSettingsFromForm();
         });
 
-        document.getElementById('range-font-size').addEventListener('input', (e) => {
-            document.getElementById('font-size-value').textContent = `${e.target.value}px`;
+        document.getElementById('select-font-family')?.addEventListener('change', () => {
+            this._autoSaveSettingsFromForm();
         });
 
-        document.getElementById('input-font-color').addEventListener('input', (e) => {
-            document.getElementById('font-color-value').textContent = e.target.value.toUpperCase();
+        document.getElementById('range-max-lines')?.addEventListener('input', (e) => {
+            const valEl = document.getElementById('max-lines-value');
+            if (valEl) valEl.textContent = e.target.value;
+            this._autoSaveSettingsFromForm();
         });
 
-        document.getElementById('range-max-lines').addEventListener('input', (e) => {
-            document.getElementById('max-lines-value').textContent = e.target.value;
+        document.getElementById('check-show-original')?.addEventListener('change', () => {
+            this._autoSaveSettingsFromForm();
         });
 
         document.getElementById('range-endpoint-delay')?.addEventListener('input', (e) => {
-            document.getElementById('endpoint-delay-value').textContent = `${(e.target.value / 1000).toFixed(1)}s`;
+            const valEl = document.getElementById('endpoint-delay-value');
+            if (valEl) valEl.textContent = `${(e.target.value / 1000).toFixed(1)}s`;
+            this._autoSaveSettingsFromForm();
         });
 
-        // Toggle ElevenLabs API key visibility
+        // Context fields
+        document.getElementById('input-context-terms')?.addEventListener('input', () => this._debouncedAutoSave());
+        document.getElementById('input-context-text')?.addEventListener('input', () => this._debouncedAutoSave());
+
         // Audio Diagnostics & Test buttons
         document.getElementById('btn-test-mic-rec')?.addEventListener('click', () => {
             this._startAudioRecordingTest();
@@ -654,6 +933,20 @@ class App {
             const hasModifier = e.metaKey || e.ctrlKey;
             const isTyping = (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) && !e.target.readOnly;
 
+            // Inline session editing shortcuts
+            if (this._isSessionEditing) {
+                if (hasModifier && (e.key === 's' || e.key === 'S')) {
+                    e.preventDefault();
+                    this._saveSessionEdit();
+                    return;
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    this._exitSessionEditMode();
+                    return;
+                }
+            }
+
             // Cmd/Ctrl + L/O: switch the top-level activity.
             if (hasModifier && !isTyping && (e.key === 'l' || e.key === 'L')) {
                 e.preventDefault();
@@ -713,7 +1006,7 @@ class App {
                             if (stopAction.discard) {
                                 await this.discardSession();
                             } else {
-                                await this.stopSession(stopAction.title);
+                                await this.stopSession(stopAction.title, stopAction.tags, stopAction.customerId, stopAction.projectId, stopAction.category);
                             }
                         } catch (err) {
                             console.error('[App] Keyboard stop session error:', err);
@@ -847,7 +1140,7 @@ class App {
 
         if (view === 'settings') {
             this._populateSettingsForm();
-            this._showSettingsScreen('settings-home'); // wizard always opens at home
+            this._showSettingsScreen('tab-customers');
         }
         // Returning to the overlay while in Read mode: a voice/provider may have
         // changed in Settings — refresh both the capability hint AND the voice
@@ -858,28 +1151,37 @@ class App {
         }
     }
 
-    /** Wizard: show one settings screen (home or a detail) inside the settings view. */
+    /** Show one settings screen (sidebar item selected) inside the 2-column settings view. */
     _showSettingsScreen(id) {
-        if (!id || !document.getElementById(id)) id = 'settings-home';
-        document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.remove('active'));
-        document.getElementById(id).classList.add('active');
-        if (id === 'settings-home') this._updateSettingsCards();
-        document.querySelector('.settings-body')?.scrollTo(0, 0);
-    }
+        if (!id || !document.getElementById(id)) id = 'tab-customers';
+        this._currentSettingsScreen = id;
 
-    /** Wizard: refresh the home cards' status subtitles from current settings. */
-    _updateSettingsCards() {
-        const s = settingsManager.get();
-        const mode = s.translation_mode || 'soniox';
-        const engineNames = { soniox: 'Soniox', local: 'Local MLX', openai: 'OpenAI Realtime', gemini: 'Google Gemini Live', qwen: 'Qwen LiveTranslate' };
-        const keyField = { soniox: 'soniox_api_key', openai: 'openai_api_key', gemini: 'gemini_api_key', qwen: 'qwen_api_key' };
-        const hasKey = mode === 'local' || !!(s[keyField[mode]] || '').trim();
-        const subT = document.getElementById('card-translation-sub');
-        if (subT) {
-            subT.textContent =
-                `${engineNames[mode] || mode} · ${s.source_language || 'ja'} → ${s.target_language || 'vi'}` +
-                (hasKey ? '' : ' · ⚠️ chưa có API key');
+        // Highlight sidebar nav item
+        document.querySelectorAll('.settings-nav-item').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.screen === id);
+        });
+
+        // Show active content tab
+        document.querySelectorAll('.settings-tab-content').forEach(c => {
+            c.classList.toggle('active', c.id === id);
+        });
+
+        if (id === 'tab-customers') {
+            this._renderSettingsCustomersTab(document.getElementById('input-search-customers')?.value || '');
+        } else if (id === 'tab-projects') {
+            const custFilter = document.getElementById('select-settings-proj-cust-filter')?.value || '';
+            const searchVal = document.getElementById('input-search-projects')?.value || '';
+            this._renderSettingsProjectsTab(custFilter, searchVal);
+        } else if (id === 'tab-categories') {
+            this._renderSettingsCategoriesTab();
+        } else if (id === 'tab-tags') {
+            this._renderSettingsTagsTab();
+        } else if (id === 'tab-storage') {
+            this._renderSettingsStorageTab();
         }
+
+        this._updateSidebarBadges();
+        document.querySelector('.settings-content-panel')?.scrollTo(0, 0);
     }
 
     // ─── Settings Form ─────────────────────────────────────
@@ -988,9 +1290,16 @@ class App {
         }
     }
 
-    async _saveSettingsFromForm() {
+    _debouncedAutoSave() {
+        clearTimeout(this._autoSaveTimer);
+        this._autoSaveTimer = setTimeout(() => {
+            this._autoSaveSettingsFromForm();
+        }, 300);
+    }
+
+    async _autoSaveSettingsFromForm() {
         const settings = {
-            soniox_api_key: document.getElementById('input-api-key').value.trim(),
+            soniox_api_key: document.getElementById('input-api-key')?.value.trim() || '',
             openai_api_key: document.getElementById('input-openai-key')?.value.trim() || '',
             gemini_api_key: document.getElementById('input-gemini-key')?.value.trim() || '',
             gemini_model: (() => {
@@ -1002,9 +1311,9 @@ class App {
             })(),
             gemini_diarization: document.getElementById('check-gemini-diarization')?.checked || false,
             qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
-            source_language: document.getElementById('select-source-lang').value,
-            target_language: document.getElementById('select-target-lang').value,
-            translation_mode: document.getElementById('select-translation-mode').value,
+            source_language: document.getElementById('select-source-lang')?.value || 'ja',
+            target_language: document.getElementById('select-target-lang')?.value || 'vi',
+            translation_mode: document.getElementById('select-translation-mode')?.value || 'gemini',
             inactivity_timeout_min: parseInt(document.getElementById('select-inactivity-timeout')?.value || '10', 10),
             translation_type: document.getElementById('select-translation-type')?.value || 'one_way',
             language_a: document.getElementById('select-lang-a')?.value || 'ja',
@@ -1012,17 +1321,16 @@ class App {
             language_hints_strict: document.getElementById('check-strict-lang')?.checked || false,
             endpoint_delay: parseInt(document.getElementById('range-endpoint-delay')?.value || 3000),
             audio_source: document.querySelector('input[name="audio-source"]:checked')?.value || 'system',
-            overlay_opacity: parseInt(document.getElementById('range-opacity').value) / 100,
-            font_size: parseInt(document.getElementById('range-font-size').value),
-            font_color: document.getElementById('input-font-color').value,
-            font_family: document.getElementById('select-font-family').value,
-            max_lines: parseInt(document.getElementById('range-max-lines').value),
-            show_original: document.getElementById('check-show-original').checked,
+            overlay_opacity: parseInt(document.getElementById('range-opacity')?.value || 85) / 100,
+            font_size: parseInt(document.getElementById('range-font-size')?.value || 16),
+            font_color: document.getElementById('input-font-color')?.value || '#ffffff',
+            font_family: document.getElementById('select-font-family')?.value || 'system',
+            max_lines: parseInt(document.getElementById('range-max-lines')?.value || 5),
+            show_original: document.getElementById('check-show-original')?.checked !== false,
             custom_context: null,
         };
 
         // Parse custom context (rich format)
-        // General key-value pairs
         const generalPairs = [];
         document.querySelectorAll('#context-general-list .general-row').forEach(row => {
             const key = row.querySelector('.general-key')?.value.trim();
@@ -1030,14 +1338,10 @@ class App {
             if (key && value) generalPairs.push({ key, value });
         });
 
-        // Transcription terms
         const termsRaw = document.getElementById('input-context-terms')?.value.trim() || '';
-        const terms = termsRaw ? termsRaw.split('\n').map(t => t.trim()).filter(t => t) : [];
-
-        // Background text
+        const terms = termsRaw ? termsRaw.split('\n').map(t => t.trim()).filter(Boolean) : [];
         const contextText = document.getElementById('input-context-text')?.value.trim() || '';
 
-        // Translation terms
         const translationTerms = [];
         document.querySelectorAll('#translation-terms-list .term-row').forEach(row => {
             const source = row.querySelector('.term-source')?.value.trim();
@@ -1056,11 +1360,16 @@ class App {
 
         try {
             await settingsManager.save(settings);
-            this._showToast('Settings saved', 'success');
-            this._showView('overlay');
+            this._applySettings(settings);
         } catch (err) {
-            this._showToast(`Failed to save: ${err}`, 'error');
+            console.error('Auto-save settings error:', err);
         }
+    }
+
+    async _saveSettingsFromForm() {
+        await this._autoSaveSettingsFromForm();
+        this._showToast('Đã lưu cài đặt ✓', 'success');
+        this._showView('overlay');
     }
 
     // ─── Apply Settings ────────────────────────────────────
@@ -1773,31 +2082,34 @@ class App {
             return;
         }
 
-        try {
-            let audioBatchCount = 0;
-            const channel = new window.__TAURI__.core.Channel();
-            channel.onmessage = (pcmData) => {
-                audioBatchCount++;
-                if (audioBatchCount <= 3 || audioBatchCount % 50 === 0) {
-                    console.log(`[OpenAI capture] batch #${audioBatchCount}, size:`, pcmData?.length || 0);
-                }
-                const bytes = new Uint8Array(pcmData);
-                this.openAiClient.sendAudio(bytes.buffer);
-                this._updateAudioMeter(bytes);
-            };
-            console.log('[OpenAI] Starting audio capture, source:', this.currentSource);
-            const recordPath = await this._getSessionRecordPath();
-            await invoke('start_capture', {
-                source: this.currentSource,
-                channel,
-                recordPath,
-            });
-            console.log('[OpenAI] start_capture invoked OK');
-            this._scheduleCaptureHealthCheck();
-        } catch (err) {
-            console.error('Failed to start audio capture:', err);
-            this._showToast(`Audio error: ${err}`, 'error');
-            await this.pause();
+        if (!this._audioCaptureActive) {
+            try {
+                let audioBatchCount = 0;
+                const channel = new window.__TAURI__.core.Channel();
+                channel.onmessage = (pcmData) => {
+                    audioBatchCount++;
+                    if (audioBatchCount <= 3 || audioBatchCount % 50 === 0) {
+                        console.log(`[OpenAI capture] batch #${audioBatchCount}, size:`, pcmData?.length || 0);
+                    }
+                    const bytes = new Uint8Array(pcmData);
+                    if (this.openAiClient) this.openAiClient.sendAudio(bytes.buffer);
+                    this._updateAudioMeter(bytes);
+                };
+                console.log('[OpenAI] Starting audio capture, source:', this.currentSource);
+                const recordPath = await this._getSessionRecordPath();
+                await invoke('start_capture', {
+                    source: this.currentSource,
+                    channel,
+                    recordPath,
+                });
+                this._audioCaptureActive = true;
+                console.log('[OpenAI] start_capture invoked OK');
+                this._scheduleCaptureHealthCheck();
+            } catch (err) {
+                console.error('Failed to start audio capture:', err);
+                this._showToast(`Audio error: ${err}`, 'error');
+                await this.pause();
+            }
         }
     }
 
@@ -1908,39 +2220,42 @@ class App {
             return;
         }
 
-        try {
-            let audioBatchCount = 0;
-            const channel = new window.__TAURI__.core.Channel();
-            channel.onmessage = (pcmData) => {
-                audioBatchCount++;
-                if (audioBatchCount <= 3 || audioBatchCount % 50 === 0) {
-                    console.log(`[Gemini capture] batch #${audioBatchCount}, size:`, pcmData?.length || 0);
+        if (!this._audioCaptureActive) {
+            try {
+                let audioBatchCount = 0;
+                const channel = new window.__TAURI__.core.Channel();
+                channel.onmessage = (pcmData) => {
+                    audioBatchCount++;
+                    if (audioBatchCount <= 3 || audioBatchCount % 50 === 0) {
+                        console.log(`[Gemini capture] batch #${audioBatchCount}, size:`, pcmData?.length || 0);
+                    }
+                    const bytes = new Uint8Array(pcmData);
+                    if (this.geminiClient) this.geminiClient.sendAudio(bytes.buffer);
+                    this._updateAudioMeter(bytes);
+                };
+                console.log('[Gemini] Starting audio capture, source:', this.currentSource);
+                const recordPath = await this._getSessionRecordPath();
+                await invoke('start_capture', {
+                    source: this.currentSource,
+                    channel,
+                    recordPath,
+                });
+                this._audioCaptureActive = true;
+                console.log('[Gemini] start_capture invoked OK');
+                this._scheduleCaptureHealthCheck();
+            } catch (err) {
+                console.error('Failed to start audio capture:', err);
+                const errStr = String(err);
+                if (errStr.includes('Screen Recording') || errStr.includes('TCC') || errStr.includes('shareable content')) {
+                    this._showToast('Vui lòng bật quyền Screen & System Audio trong System Settings', 'error');
+                    try {
+                        await invoke('request_screen_capture_permission');
+                    } catch {}
+                } else {
+                    this._showToast(`Audio error: ${err}`, 'error');
                 }
-                const bytes = new Uint8Array(pcmData);
-                this.geminiClient.sendAudio(bytes.buffer);
-                this._updateAudioMeter(bytes);
-            };
-            console.log('[Gemini] Starting audio capture, source:', this.currentSource);
-            const recordPath = await this._getSessionRecordPath();
-            await invoke('start_capture', {
-                source: this.currentSource,
-                channel,
-                recordPath,
-            });
-            console.log('[Gemini] start_capture invoked OK');
-            this._scheduleCaptureHealthCheck();
-        } catch (err) {
-            console.error('Failed to start audio capture:', err);
-            const errStr = String(err);
-            if (errStr.includes('Screen Recording') || errStr.includes('TCC') || errStr.includes('shareable content')) {
-                this._showToast('Vui lòng bật quyền Screen & System Audio trong System Settings', 'error');
-                try {
-                    await invoke('request_screen_capture_permission');
-                } catch {}
-            } else {
-                this._showToast(`Audio error: ${err}`, 'error');
+                await this.pause();
             }
-            await this.pause();
         }
     }
 
@@ -2001,31 +2316,34 @@ class App {
             return;
         }
 
-        try {
-            let audioBatchCount = 0;
-            const channel = new window.__TAURI__.core.Channel();
-            channel.onmessage = (pcmData) => {
-                audioBatchCount++;
-                if (audioBatchCount <= 3 || audioBatchCount % 50 === 0) {
-                    console.log(`[Qwen capture] batch #${audioBatchCount}, size:`, pcmData?.length || 0);
-                }
-                const bytes = new Uint8Array(pcmData);
-                this.qwenClient.sendAudio(bytes.buffer);
-                this._updateAudioMeter(bytes);
-            };
-            console.log('[Qwen] Starting audio capture, source:', this.currentSource);
-            const recordPath = await this._getSessionRecordPath();
-            await invoke('start_capture', {
-                source: this.currentSource,
-                channel,
-                recordPath,
-            });
-            console.log('[Qwen] start_capture invoked OK');
-            this._scheduleCaptureHealthCheck();
-        } catch (err) {
-            console.error('Failed to start audio capture:', err);
-            this._showToast(`Audio error: ${err}`, 'error');
-            await this.pause();
+        if (!this._audioCaptureActive) {
+            try {
+                let audioBatchCount = 0;
+                const channel = new window.__TAURI__.core.Channel();
+                channel.onmessage = (pcmData) => {
+                    audioBatchCount++;
+                    if (audioBatchCount <= 3 || audioBatchCount % 50 === 0) {
+                        console.log(`[Qwen capture] batch #${audioBatchCount}, size:`, pcmData?.length || 0);
+                    }
+                    const bytes = new Uint8Array(pcmData);
+                    if (this.qwenClient) this.qwenClient.sendAudio(bytes.buffer);
+                    this._updateAudioMeter(bytes);
+                };
+                console.log('[Qwen] Starting audio capture, source:', this.currentSource);
+                const recordPath = await this._getSessionRecordPath();
+                await invoke('start_capture', {
+                    source: this.currentSource,
+                    channel,
+                    recordPath,
+                });
+                this._audioCaptureActive = true;
+                console.log('[Qwen] start_capture invoked OK');
+                this._scheduleCaptureHealthCheck();
+            } catch (err) {
+                console.error('Failed to start audio capture:', err);
+                this._showToast(`Audio error: ${err}`, 'error');
+                await this.pause();
+            }
         }
     }
 
@@ -2348,6 +2666,7 @@ class App {
     }
 
     async _stopTranslationEngine() {
+        this._audioCaptureActive = false;
         // Stop audio capture
         try {
             await invoke('stop_capture');
@@ -2429,21 +2748,93 @@ class App {
         // lives across many Start/Pause cycles. stopSession() resets it.
     }
 
-    // Stop: pause (if running), finalize the current session file, then start a
     // Stop: pause (if running), finalize the current session file with custom title,
     // then start a fresh session so the next Start writes a new file pair.
     async _promptConfirmStop() {
         const modal = document.getElementById('modal-confirm-stop');
         const input = document.getElementById('input-stop-meeting-title');
+        const inputTags = document.getElementById('input-stop-meeting-tags');
+        const selectCust = document.getElementById('select-stop-meeting-customer');
+        const selectProj = document.getElementById('select-stop-meeting-project');
+        const selectCat = document.getElementById('select-stop-meeting-category');
         const defaultTitle = sessionStore.title || this._formatDefaultMeetingTitle(this.sessionStartTime || this.recordingStartTime);
+
+        const reg = await this._loadProjectRegistry();
+        const activeCustomers = (reg.customers || []).filter(c => c.status === 'active');
+        const activeProjects = (reg.projects || []).filter(p => p.status === 'active');
+
+        // Populate customer select
+        if (selectCust) {
+            let custHtml = '<option value="">(Không chọn KH)</option>';
+            for (const c of activeCustomers) {
+                custHtml += `<option value="${this._escAttr(c.id)}">🏢 ${this._esc(c.name)}</option>`;
+            }
+            selectCust.innerHTML = custHtml;
+            selectCust.value = sessionStore.customerId || '';
+        }
+
+        // Helper to populate projects filtered by selected customer
+        const updateProjectsDropdown = (selectedCustomerId) => {
+            if (!selectProj) return;
+            const filteredProjs = selectedCustomerId
+                ? activeProjects.filter(p => p.customer_id === selectedCustomerId)
+                : activeProjects;
+            let projHtml = '<option value="">(Không gán dự án)</option>';
+            for (const p of filteredProjs) {
+                projHtml += `<option value="${this._escAttr(p.id)}">📁 ${this._esc(p.name)}</option>`;
+            }
+            selectProj.innerHTML = projHtml;
+            if (filteredProjs.some(p => p.id === sessionStore.projectId)) {
+                selectProj.value = sessionStore.projectId;
+            } else {
+                selectProj.value = '';
+            }
+        };
+
+        updateProjectsDropdown(selectCust?.value || sessionStore.customerId);
+
+        const onCustChange = () => {
+            updateProjectsDropdown(selectCust?.value);
+        };
+        const onProjChange = () => {
+            const pId = selectProj?.value;
+            if (pId) {
+                const foundProj = activeProjects.find(p => p.id === pId);
+                if (foundProj && foundProj.customer_id && selectCust) {
+                    selectCust.value = foundProj.customer_id;
+                }
+            }
+        };
+
+        selectCust?.addEventListener('change', onCustChange);
+        selectProj?.addEventListener('change', onProjChange);
+
+        if (selectCat) {
+            let catHtml = '<option value="">(Không phân loại)</option>';
+            for (const c of (reg.categories || [])) {
+                catHtml += `<option value="${this._escAttr(c.name)}">📅 ${this._esc(c.name)}</option>`;
+            }
+            selectCat.innerHTML = catHtml;
+            selectCat.value = sessionStore.category || '';
+        }
 
         if (!modal) {
             const entered = prompt('Nhập tên cuộc họp để kết thúc & lưu:', defaultTitle);
-            return entered !== null ? { title: entered.trim() || defaultTitle, discard: false } : null;
+            return entered !== null ? {
+                title: entered.trim() || defaultTitle,
+                tags: sessionStore.tags || [],
+                customerId: sessionStore.customerId,
+                projectId: sessionStore.projectId,
+                category: sessionStore.category,
+                discard: false
+            } : null;
         }
 
         if (input) {
             input.value = defaultTitle;
+        }
+        if (inputTags) {
+            inputTags.value = (sessionStore.tags || []).map(t => `#${t}`).join(', ');
         }
         this._isStopConfirmationOpen = true;
         modal.style.display = 'flex';
@@ -2456,8 +2847,22 @@ class App {
             const onConfirm = () => {
                 cleanup();
                 const chosenTitle = (input ? input.value.trim() : '') || defaultTitle;
+                const chosenTags = (inputTags ? inputTags.value : '')
+                    .split(',')
+                    .map(t => t.trim().replace(/^#/, '').toLowerCase())
+                    .filter(Boolean);
+                const chosenCustomerId = selectCust?.value || null;
+                const chosenProjectId = selectProj?.value || null;
+                const chosenCategory = selectCat?.value || null;
                 modal.style.display = 'none';
-                resolve({ title: chosenTitle, discard: false });
+                resolve({
+                    title: chosenTitle,
+                    tags: chosenTags,
+                    customerId: chosenCustomerId,
+                    projectId: chosenProjectId,
+                    category: chosenCategory,
+                    discard: false,
+                });
             };
             const onDiscard = () => {
                 cleanup();
@@ -2480,11 +2885,14 @@ class App {
             };
             const cleanup = () => {
                 this._isStopConfirmationOpen = false;
+                selectCust?.removeEventListener('change', onCustChange);
+                selectProj?.removeEventListener('change', onProjChange);
                 document.getElementById('btn-agree-confirm-stop')?.removeEventListener('click', onConfirm);
                 document.getElementById('btn-discard-confirm-stop')?.removeEventListener('click', onDiscard);
                 document.getElementById('btn-cancel-confirm-stop')?.removeEventListener('click', onCancel);
                 document.getElementById('btn-close-confirm-stop')?.removeEventListener('click', onCancel);
                 input?.removeEventListener('keydown', onKeyDown);
+                inputTags?.removeEventListener('keydown', onKeyDown);
                 window.removeEventListener('keydown', onKeyDown);
             };
 
@@ -2493,17 +2901,30 @@ class App {
             document.getElementById('btn-cancel-confirm-stop')?.addEventListener('click', onCancel);
             document.getElementById('btn-close-confirm-stop')?.addEventListener('click', onCancel);
             input?.addEventListener('keydown', onKeyDown);
+            inputTags?.addEventListener('keydown', onKeyDown);
             window.addEventListener('keydown', onKeyDown);
         });
     }
 
-    async stopSession(chosenTitle = null) {
+    async stopSession(chosenTitle = null, chosenTags = null, chosenCustomerId = null, chosenProjectId = null, chosenCategory = null) {
         if (this.isRunning) await this.pause();
 
         const hadData = !sessionStore.isEmpty() && sessionStore.totalSegmentCount() > 0;
 
         if (chosenTitle) {
             sessionStore.title = chosenTitle;
+        }
+        if (chosenTags && Array.isArray(chosenTags)) {
+            sessionStore.tags = chosenTags;
+        }
+        if (chosenCustomerId !== undefined) {
+            sessionStore.customerId = chosenCustomerId;
+        }
+        if (chosenProjectId !== undefined) {
+            sessionStore.projectId = chosenProjectId;
+        }
+        if (chosenCategory !== undefined) {
+            sessionStore.category = chosenCategory;
         }
 
         if (!hadData) {
@@ -2939,11 +3360,15 @@ class App {
         const count = this._selectedSessionIds.size;
         const countEl = document.getElementById('sessions-selected-count');
         const batchBtn = document.getElementById('btn-batch-delete-sessions');
+        const batchExportBtn = document.getElementById('btn-batch-export-md');
+        const batchAiBtn = document.getElementById('btn-batch-ai-digest');
         const selectAllChk = document.getElementById('chk-select-all-sessions');
         const totalItems = document.querySelectorAll('.session-item-chk').length;
 
         if (countEl) countEl.textContent = `${count} đã chọn`;
         if (batchBtn) batchBtn.disabled = count === 0;
+        if (batchExportBtn) batchExportBtn.disabled = count === 0;
+        if (batchAiBtn) batchAiBtn.disabled = count === 0;
         if (selectAllChk) selectAllChk.checked = totalItems > 0 && count === totalItems;
     }
 
@@ -3241,6 +3666,81 @@ class App {
         });
     }
 
+    async _loadProjectRegistry() {
+        try {
+            this._projectRegistry = await invoke('get_project_registry');
+        } catch (err) {
+            console.error('Failed to load project registry:', err);
+            this._projectRegistry = { projects: [], categories: [], tags: [] };
+        }
+        return this._projectRegistry;
+    }
+
+    _renderCustomerFilterBar() {
+        const select = document.getElementById('select-session-customer-filter');
+        if (!select) return;
+        const customers = this._projectRegistry?.customers || [];
+        let html = '<option value="">🏢 Tất cả KH</option>';
+        for (const c of customers) {
+            const statusIcon = c.status === 'active' ? '🟢' : '⚪';
+            const selected = this._activeCustomerFilter === c.id ? 'selected' : '';
+            html += `<option value="${this._escAttr(c.id)}" ${selected}>${statusIcon} ${this._esc(c.name)}</option>`;
+        }
+        select.innerHTML = html;
+        select.value = this._activeCustomerFilter || '';
+    }
+
+    _renderProjectFilterBar() {
+        const select = document.getElementById('select-session-project-filter');
+        if (!select) return;
+        let projects = this._projectRegistry?.projects || [];
+        if (this._activeCustomerFilter) {
+            projects = projects.filter(p => p.customer_id === this._activeCustomerFilter);
+        }
+        let html = '<option value="">📁 Tất cả dự án</option>';
+        for (const p of projects) {
+            const statusIcon = p.status === 'active' ? '🟢' : '⚪';
+            const selected = this._activeProjectFilter === p.id ? 'selected' : '';
+            html += `<option value="${this._escAttr(p.id)}" ${selected}>${statusIcon} ${this._esc(p.name)}</option>`;
+        }
+        select.innerHTML = html;
+        if (projects.some(p => p.id === this._activeProjectFilter)) {
+            select.value = this._activeProjectFilter;
+        } else {
+            this._activeProjectFilter = null;
+            select.value = '';
+        }
+    }
+
+    _renderCategoryFilterSelect() {
+        const select = document.getElementById('select-session-category-filter');
+        if (!select) return;
+        const categories = this._projectRegistry?.categories || [];
+        let html = '<option value="">📅 Tất cả phân loại</option>';
+        for (const c of categories) {
+            const selected = this._activeCategoryFilter === c.name ? 'selected' : '';
+            html += `<option value="${this._escAttr(c.name)}" ${selected}>📅 ${this._esc(c.name)}</option>`;
+        }
+        select.innerHTML = html;
+        select.value = this._activeCategoryFilter || '';
+    }
+
+    _renderTagFilterSelect() {
+        const select = document.getElementById('select-session-tag-filter');
+        if (!select) return;
+        const sessionTags = (this._cachedSessions || []).flatMap(s => s.tags || []);
+        const regTags = this._projectRegistry?.tags || [];
+        const allTags = Array.from(new Set([...regTags, ...sessionTags])).filter(Boolean);
+        let html = '<option value="">#️⃣ Tất cả thẻ</option>';
+        for (const tag of allTags) {
+            const count = (this._cachedSessions || []).filter(s => (s.tags || []).includes(tag)).length;
+            const selected = this._activeTagFilter === tag ? 'selected' : '';
+            html += `<option value="${this._escAttr(tag)}" ${selected}>#${this._esc(tag)} (${count})</option>`;
+        }
+        select.innerHTML = html;
+        select.value = this._activeTagFilter || '';
+    }
+
     async _showSessions(query) {
         if (this._sessionAudioElement) {
             this._sessionAudioElement.pause();
@@ -3259,112 +3759,212 @@ class App {
         listEl.innerHTML = '<div class="sessions-loading">Loading...</div>';
 
         try {
+            await this._loadProjectRegistry();
             const cmd = query && query.trim() ? 'search_sessions' : 'list_sessions';
             const args = query && query.trim() ? { query: query.trim() } : {};
             const sessions = await invoke(cmd, args);
-            if (sessions.length === 0) {
+            this._cachedSessions = sessions || [];
+
+            this._renderCustomerFilterBar();
+            this._renderProjectFilterBar();
+            this._renderCategoryFilterSelect();
+            this._renderTagFilterSelect();
+
+            if (this._cachedSessions.length === 0) {
                 listEl.innerHTML = '<div class="sessions-empty">Chưa có meeting log nào được lưu.</div>';
                 this._updateBatchSelectionUI();
                 return;
             }
 
             // Ensure newest first sorting
-            sessions.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+            this._cachedSessions.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
 
-            listEl.innerHTML = sessions.map(s => this._renderSessionItem(s)).join('');
-            this._updateBatchSelectionUI();
-
-            // Checkbox changes
-            listEl.querySelectorAll('.session-item-chk').forEach(chk => {
-                chk.addEventListener('click', (e) => e.stopPropagation());
-                chk.addEventListener('change', (e) => {
-                    const id = e.target.dataset.id;
-                    if (e.target.checked) this._selectedSessionIds.add(id);
-                    else this._selectedSessionIds.delete(id);
-                    this._updateBatchSelectionUI();
-                });
-            });
-
-            // TTS play
-            listEl.querySelectorAll('.session-btn-action.play-tts').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const id = btn.dataset.id;
-                    const legacy = btn.dataset.legacy === '1';
-                    this._playSessionTTS(id, legacy);
-                });
-            });
-
-            // Rename
-            listEl.querySelectorAll('.session-btn-action.rename').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const id = btn.dataset.id;
-                    const oldTitle = btn.dataset.title;
-                    this._renameSession(id, oldTitle);
-                });
-            });
-
-            // Copy session
-            listEl.querySelectorAll('.session-btn-action.copy-session').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const id = btn.dataset.id;
-                    const legacy = btn.dataset.legacy === '1';
-                    try {
-                        let text = '';
-                        if (legacy) {
-                            text = await invoke('read_legacy_session', { id });
-                        } else {
-                            const res = await invoke('read_session', { id });
-                            text = res.md;
-                        }
-                        if (text) {
-                            await navigator.clipboard.writeText(text);
-                            this._showToast('Đã sao chép nội dung cuộc họp ✓', 'success');
-                            const orig = btn.innerHTML;
-                            btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
-                            setTimeout(() => { if (btn) btn.innerHTML = orig; }, 1500);
-                        }
-                    } catch (err) {
-                        this._showToast(`Lỗi sao chép: ${err}`, 'error');
-                    }
-                });
-            });
-
-            // Delete
-            listEl.querySelectorAll('.session-delete-btn').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const id = btn.dataset.id;
-                    if (id === sessionStore.id) {
-                        this._showToast('Không thể xoá cuộc họp đang chạy — hãy Dừng trước', 'error');
-                        return;
-                    }
-                    if (!confirm('Xóa vĩnh viễn cuộc họp này?')) return;
-                    try {
-                        await invoke('delete_session', { id });
-                        this._selectedSessionIds.delete(id);
-                        await this._showSessions();
-                        this._showToast('Đã xóa cuộc họp', 'success');
-                    } catch (err) {
-                        this._showToast(`Delete failed: ${err}`, 'error');
-                    }
-                });
-            });
-
-            // Item click
-            listEl.querySelectorAll('.session-item').forEach(item => {
-                item.addEventListener('click', (e) => {
-                    if (e.target.closest('.session-delete-btn, .session-btn-action, .session-item-chk')) return;
-                    const id = item.dataset.id;
-                    const legacy = item.dataset.legacy === '1';
-                    this._openSession(id, legacy);
-                });
-            });
+            this._renderFilteredSessions();
         } catch (err) {
             listEl.innerHTML = `<div class="sessions-empty">Error: ${err}</div>`;
         }
+    }
+
+    _renderFilteredSessions() {
+        const listEl = document.getElementById('sessions-list');
+        if (!listEl) return;
+
+        let filtered = this._cachedSessions || [];
+        if (this._activeCustomerFilter) {
+            filtered = filtered.filter(s => s.customer_id === this._activeCustomerFilter);
+        }
+        if (this._activeProjectFilter) {
+            filtered = filtered.filter(s => s.project_id === this._activeProjectFilter);
+        }
+        if (this._activeCategoryFilter) {
+            filtered = filtered.filter(s => s.category === this._activeCategoryFilter);
+        }
+        if (this._activeTagFilter) {
+            filtered = filtered.filter(s => (s.tags || []).includes(this._activeTagFilter));
+        }
+
+        if (filtered.length === 0) {
+            listEl.innerHTML = `<div class="sessions-empty">Không tìm thấy cuộc họp nào phù hợp bộ lọc.</div>`;
+            this._updateBatchSelectionUI();
+            return;
+        }
+
+        listEl.innerHTML = filtered.map(s => this._renderSessionItem(s)).join('');
+        this._updateBatchSelectionUI();
+
+        // Checkbox changes
+        listEl.querySelectorAll('.session-item-chk').forEach(chk => {
+            chk.addEventListener('click', (e) => e.stopPropagation());
+            chk.addEventListener('change', (e) => {
+                const id = e.target.dataset.id;
+                if (e.target.checked) this._selectedSessionIds.add(id);
+                else this._selectedSessionIds.delete(id);
+                this._updateBatchSelectionUI();
+            });
+        });
+
+        // Resume session
+        listEl.querySelectorAll('.session-btn-action.resume').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.id;
+                const legacy = btn.dataset.legacy === '1';
+                this._resumeSession(id, legacy);
+            });
+        });
+
+        // Edit session metadata & rename combined
+        listEl.querySelectorAll('.session-btn-action.edit-meta').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.id;
+                const sess = this._cachedSessions.find(s => s.id === id);
+                if (sess) {
+                    this._editSessionMetadata(sess);
+                }
+            });
+        });
+
+        // Customer badge click on item (filters by that customer)
+        listEl.querySelectorAll('.session-customer-badge').forEach(badge => {
+            badge.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const cid = badge.dataset.customerId;
+                if (cid) {
+                    this._activeCustomerFilter = (this._activeCustomerFilter === cid) ? null : cid;
+                    this._renderCustomerFilterBar();
+                    this._renderProjectFilterBar();
+                    this._renderFilteredSessions();
+                }
+            });
+        });
+
+        // Project badge click on item (filters by that project)
+        listEl.querySelectorAll('.session-project-badge').forEach(badge => {
+            badge.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const pid = badge.dataset.projectId;
+                if (pid) {
+                    this._activeProjectFilter = (this._activeProjectFilter === pid) ? null : pid;
+                    this._renderProjectFilterBar();
+                    this._renderFilteredSessions();
+                }
+            });
+        });
+
+        // Category badge click on item (filters by that category)
+        listEl.querySelectorAll('.session-category-badge').forEach(badge => {
+            badge.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const cat = badge.dataset.category;
+                if (cat) {
+                    this._activeCategoryFilter = (this._activeCategoryFilter === cat) ? null : cat;
+                    this._renderCategoryFilterSelect();
+                    this._renderFilteredSessions();
+                }
+            });
+        });
+
+        // Tag badge click on item (filters by that tag)
+        listEl.querySelectorAll('.session-tag-badge').forEach(badge => {
+            badge.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const tag = badge.dataset.tag;
+                if (tag) {
+                    this._activeTagFilter = (this._activeTagFilter === tag) ? null : tag;
+                    this._renderTagFilterSelect();
+                    this._renderFilteredSessions();
+                }
+            });
+        });
+
+        // TTS play
+        listEl.querySelectorAll('.session-btn-action.play-tts').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.id;
+                const legacy = btn.dataset.legacy === '1';
+                this._playSessionTTS(id, legacy);
+            });
+        });
+
+        // Copy session
+        listEl.querySelectorAll('.session-btn-action.copy-session').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.id;
+                const legacy = btn.dataset.legacy === '1';
+                try {
+                    let text = '';
+                    if (legacy) {
+                        text = await invoke('read_legacy_session', { id });
+                    } else {
+                        const res = await invoke('read_session', { id });
+                        text = res.md;
+                    }
+                    if (text) {
+                        await navigator.clipboard.writeText(text);
+                        this._showToast('Đã sao chép nội dung cuộc họp ✓', 'success');
+                        const orig = btn.innerHTML;
+                        btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                        setTimeout(() => { if (btn) btn.innerHTML = orig; }, 1500);
+                    }
+                } catch (err) {
+                    this._showToast(`Lỗi sao chép: ${err}`, 'error');
+                }
+            });
+        });
+
+        // Delete
+        listEl.querySelectorAll('.session-delete-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.id;
+                if (id === sessionStore.id) {
+                    this._showToast('Không thể xoá cuộc họp đang chạy — hãy Dừng trước', 'error');
+                    return;
+                }
+                if (!confirm('Xóa vĩnh viễn cuộc họp này?')) return;
+                try {
+                    await invoke('delete_session', { id });
+                    this._selectedSessionIds.delete(id);
+                    await this._showSessions();
+                    this._showToast('Đã xóa cuộc họp', 'success');
+                } catch (err) {
+                    this._showToast(`Delete failed: ${err}`, 'error');
+                }
+            });
+        });
+
+        // Item click
+        listEl.querySelectorAll('.session-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                if (e.target.closest('.session-delete-btn, .session-btn-action, .session-tag-badge, .session-project-badge, .session-customer-badge, .session-category-badge, .session-item-chk')) return;
+                const id = item.dataset.id;
+                const legacy = item.dataset.legacy === '1';
+                this._openSession(id, legacy);
+            });
+        });
     }
 
     _renderSessionItem(s) {
@@ -3381,29 +3981,1370 @@ class App {
         const segCount = s.segment_count > 0 ? `<span class="session-meta-dim">${s.segment_count} câu</span>` : '';
         const isChecked = this._selectedSessionIds.has(s.id);
 
+        // Customer badge
+        const customerBadge = (!s.has_legacy_only && s.customer_name)
+            ? `<span class="session-customer-badge" data-customer-id="${this._escAttr(s.customer_id || '')}" style="border-color:${this._escAttr(s.customer_color || '#3b82f6')}44; color:${this._escAttr(s.customer_color || '#93c5fd')}; background:${this._escAttr(s.customer_color || '#3b82f6')}1a;" title="Khách hàng: ${this._escAttr(s.customer_name)}">🏢 ${this._esc(s.customer_name)}</span>`
+            : '';
+
+        // Project badge
+        const projectBadge = (!s.has_legacy_only && s.project_name)
+            ? `<span class="session-project-badge ${s.project_status === 'archived' ? 'archived' : ''}" data-project-id="${this._escAttr(s.project_id || '')}" style="border-color:${this._escAttr(s.project_color || '#6366f1')}44; color:${this._escAttr(s.project_color || '#a5b4fc')}; background:${this._escAttr(s.project_color || '#6366f1')}1a;" title="Dự án: ${this._escAttr(s.project_name)}${s.project_status === 'archived' ? ' (Đã dừng)' : ''}">📁 ${this._esc(s.project_name)}</span>`
+            : '';
+
+        // Category badge
+        const categoryBadge = (!s.has_legacy_only && s.category)
+            ? `<span class="session-category-badge" data-category="${this._escAttr(s.category)}" title="Phân loại: ${this._escAttr(s.category)}">📅 ${this._esc(s.category)}</span>`
+            : '';
+
+        // Tags
+        const tagsHtml = (!s.has_legacy_only && s.tags && s.tags.length > 0)
+            ? s.tags.map(t => `<span class="session-tag-badge" data-tag="${this._escAttr(t)}" title="Lọc theo #${this._escAttr(t)}">#${this._esc(t)}</span>`).join('')
+            : '';
+
+        const resumeBtn = !s.has_legacy_only
+            ? `<button type="button" class="session-btn-action resume" data-id="${this._escAttr(s.id)}" data-legacy="0" title="Tiếp tục ghi vào cuộc họp này">▶ Nối tiếp</button>`
+            : '';
+        const editBtn = !s.has_legacy_only
+            ? `<button type="button" class="session-btn-action edit-meta" data-id="${this._escAttr(s.id)}" title="Sửa thông tin / Đổi tên / Dự án / Phân loại / Thẻ">✏️ Sửa</button>`
+            : '';
+
         return `<div class="session-item" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}">
             <div class="session-item-row1">
                 <input type="checkbox" class="session-item-chk" data-id="${this._escAttr(s.id)}" ${isChecked ? 'checked' : ''} />
                 <span class="session-item-title">${title}</span>
                 <div class="session-actions-inline">
+                    ${resumeBtn}
+                    ${editBtn}
                     <button type="button" class="session-btn-action copy-session" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}" title="Sao chép nội dung cuộc họp">
                         <svg class="icon-copy-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                         </svg>
                     </button>
-                    <button type="button" class="session-btn-action rename" data-id="${this._escAttr(s.id)}" data-title="${this._escAttr(s.title || '')}" title="Đổi tên">✏️</button>
                     <button type="button" class="session-delete-btn" data-id="${this._escAttr(s.id)}" title="Xóa">×</button>
                 </div>
             </div>
             <div class="session-item-row2">
+                ${customerBadge}
+                ${projectBadge}
+                ${categoryBadge}
                 ${engineBadge}
                 ${langPair}
+                ${tagsHtml}
                 <span class="session-meta-dim">${created}</span>
                 ${duration ? `<span class="session-meta-dim">${duration}</span>` : ''}
                 ${segCount}
             </div>
         </div>`;
+    }
+
+    async _editSessionMetadata(sess) {
+        const modal = document.getElementById('modal-edit-tags');
+        const inputTitle = document.getElementById('input-edit-session-title');
+        const selectCust = document.getElementById('select-edit-session-customer');
+        const selectProj = document.getElementById('select-edit-session-project');
+        const selectCat = document.getElementById('select-edit-session-category');
+        const inputTags = document.getElementById('input-edit-tags-value');
+        if (!modal) return;
+
+        const reg = await this._loadProjectRegistry();
+        const id = sess.id;
+        const currentTitle = sess.title || '';
+        const currentCustomerId = sess.customer_id || '';
+        const currentProjectId = sess.project_id || '';
+        const currentCategory = sess.category || '';
+        const currentTags = Array.isArray(sess.tags) ? sess.tags : [];
+
+        if (inputTitle) inputTitle.value = currentTitle;
+        if (inputTags) inputTags.value = currentTags.map(t => `#${t}`).join(', ');
+
+        const allCustomers = reg.customers || [];
+        const allProjects = reg.projects || [];
+
+        // Populate customer select
+        if (selectCust) {
+            let custHtml = '<option value="">(Không chọn KH)</option>';
+            for (const c of allCustomers) {
+                const statusSuffix = c.status === 'archived' ? ' (Đã dừng)' : '';
+                custHtml += `<option value="${this._escAttr(c.id)}">🏢 ${this._esc(c.name)}${statusSuffix}</option>`;
+            }
+            selectCust.innerHTML = custHtml;
+            selectCust.value = currentCustomerId;
+        }
+
+        // Helper to populate projects
+        const updateProjectsDropdown = (selectedCustomerId) => {
+            if (!selectProj) return;
+            const filteredProjs = selectedCustomerId
+                ? allProjects.filter(p => p.customer_id === selectedCustomerId || p.id === currentProjectId)
+                : allProjects;
+            let projHtml = '<option value="">(Không gán dự án)</option>';
+            for (const p of filteredProjs) {
+                const statusSuffix = p.status === 'archived' ? ' (Đã dừng)' : '';
+                projHtml += `<option value="${this._escAttr(p.id)}">📁 ${this._esc(p.name)}${statusSuffix}</option>`;
+            }
+            selectProj.innerHTML = projHtml;
+            if (filteredProjs.some(p => p.id === currentProjectId)) {
+                selectProj.value = currentProjectId;
+            } else {
+                selectProj.value = '';
+            }
+        };
+
+        updateProjectsDropdown(currentCustomerId);
+
+        const onCustChange = () => {
+            updateProjectsDropdown(selectCust?.value);
+        };
+        const onProjChange = () => {
+            const pId = selectProj?.value;
+            if (pId) {
+                const foundProj = allProjects.find(p => p.id === pId);
+                if (foundProj && foundProj.customer_id && selectCust) {
+                    selectCust.value = foundProj.customer_id;
+                }
+            }
+        };
+
+        selectCust?.addEventListener('change', onCustChange);
+        selectProj?.addEventListener('change', onProjChange);
+
+        if (selectCat) {
+            let catHtml = '<option value="">(Không phân loại)</option>';
+            for (const c of (reg.categories || [])) {
+                catHtml += `<option value="${this._escAttr(c.name)}">📅 ${this._esc(c.name)}</option>`;
+            }
+            selectCat.innerHTML = catHtml;
+            selectCat.value = currentCategory;
+        }
+
+        modal.style.display = 'flex';
+        inputTitle?.focus();
+
+        return new Promise((resolve) => {
+            const onConfirm = async () => {
+                cleanup();
+                modal.style.display = 'none';
+                const newTitle = inputTitle?.value.trim() || currentTitle;
+                const newCustomerId = selectCust?.value || null;
+                const newProjectId = selectProj?.value || null;
+                const newCategory = selectCat?.value || null;
+                const cleanTags = (inputTags?.value || '')
+                    .split(',')
+                    .map(t => t.trim().replace(/^#/, '').toLowerCase())
+                    .filter(Boolean);
+                try {
+                    await invoke('update_session_metadata', {
+                        id,
+                        title: newTitle,
+                        customerId: newCustomerId,
+                        projectId: newProjectId,
+                        category: newCategory,
+                        tags: cleanTags,
+                    });
+                    if (sessionStore.id === id) {
+                        sessionStore.title = newTitle;
+                        sessionStore.customerId = newCustomerId;
+                        sessionStore.projectId = newProjectId;
+                        sessionStore.category = newCategory;
+                        sessionStore.tags = cleanTags;
+                    }
+                    this._showToast('Đã lưu thông tin cuộc họp ✓', 'success');
+                    await this._showSessions();
+                } catch (err) {
+                    this._showToast(`Lỗi lưu thông tin: ${err}`, 'error');
+                }
+                resolve();
+            };
+            const onCancel = () => {
+                cleanup();
+                modal.style.display = 'none';
+                resolve();
+            };
+            const onKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onConfirm();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onCancel();
+                }
+            };
+            const cleanup = () => {
+                selectCust?.removeEventListener('change', onCustChange);
+                selectProj?.removeEventListener('change', onProjChange);
+                document.getElementById('btn-confirm-edit-tags')?.removeEventListener('click', onConfirm);
+                document.getElementById('btn-cancel-edit-tags')?.removeEventListener('click', onCancel);
+                document.getElementById('btn-close-edit-tags')?.removeEventListener('click', onCancel);
+                inputTitle?.removeEventListener('keydown', onKeyDown);
+                inputTags?.removeEventListener('keydown', onKeyDown);
+            };
+
+            document.getElementById('btn-confirm-edit-tags')?.addEventListener('click', onConfirm);
+            document.getElementById('btn-cancel-edit-tags')?.addEventListener('click', onCancel);
+            document.getElementById('btn-close-edit-tags')?.addEventListener('click', onCancel);
+            inputTitle?.addEventListener('keydown', onKeyDown);
+            inputTags?.addEventListener('keydown', onKeyDown);
+        });
+    }
+
+    // ─── Settings Data Management Tabs ─────────────────────────────────────
+
+    // ─── Universal Confirm Delete Modal ─────────────────────────────────────
+
+    _promptConfirmDelete({ title = 'Xác nhận xoá', message = 'Bạn có chắc chắn muốn xoá mục này?', confirmText = 'Xoá' }) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('modal-confirm-delete');
+            const titleEl = document.getElementById('confirm-delete-title-text');
+            const msgEl = document.getElementById('confirm-delete-message');
+            const agreeBtn = document.getElementById('btn-agree-confirm-delete');
+            const cancelBtn = document.getElementById('btn-cancel-confirm-delete');
+            const closeBtn = document.getElementById('btn-close-confirm-delete');
+
+            if (!modal) {
+                resolve(window.confirm(message));
+                return;
+            }
+
+            if (titleEl) titleEl.textContent = title;
+            if (msgEl) msgEl.textContent = message;
+            if (agreeBtn) agreeBtn.textContent = confirmText;
+
+            const cleanup = () => {
+                modal.style.display = 'none';
+                agreeBtn?.removeEventListener('click', onAgree);
+                cancelBtn?.removeEventListener('click', onCancel);
+                closeBtn?.removeEventListener('click', onCancel);
+                modal.removeEventListener('click', onBackdrop);
+            };
+
+            const onAgree = () => {
+                cleanup();
+                resolve(true);
+            };
+
+            const onCancel = () => {
+                cleanup();
+                resolve(false);
+            };
+
+            const onBackdrop = (e) => {
+                if (e.target === modal) {
+                    cleanup();
+                    resolve(false);
+                }
+            };
+
+            agreeBtn?.addEventListener('click', onAgree);
+            cancelBtn?.addEventListener('click', onCancel);
+            closeBtn?.addEventListener('click', onCancel);
+            modal.addEventListener('click', onBackdrop);
+
+            modal.style.display = 'flex';
+        });
+    }
+
+    // ─── Add Customer / Add Project Modals ──────────────────────────────────
+
+    // ─── Add / Edit Customer & Add Project Modals ──────────────────────────
+
+    _openAddCustomerModal() {
+        const modal = document.getElementById('modal-add-customer');
+        if (!modal) return;
+        const titleEl = document.getElementById('modal-cust-title');
+        const idInput = document.getElementById('input-modal-cust-id');
+        const nameInput = document.getElementById('input-modal-cust-name');
+        const codeInput = document.getElementById('input-modal-cust-code');
+        const statusSelect = document.getElementById('select-modal-cust-status');
+        const colorInput = document.getElementById('input-modal-cust-color');
+        const descInput = document.getElementById('input-modal-cust-desc');
+        const projsSec = document.getElementById('modal-cust-projs-section');
+        const saveBtn = document.getElementById('btn-save-add-customer');
+
+        if (titleEl) titleEl.textContent = '🏢 Thêm Khách hàng mới';
+        if (idInput) idInput.value = '';
+        if (nameInput) nameInput.value = '';
+        if (codeInput) codeInput.value = '';
+        if (statusSelect) statusSelect.value = 'active';
+        if (colorInput) colorInput.value = '#3b82f6';
+        if (descInput) descInput.value = '';
+        if (projsSec) projsSec.style.display = 'none';
+        if (saveBtn) saveBtn.textContent = '+ Thêm Khách hàng';
+
+        modal.style.display = 'flex';
+        setTimeout(() => nameInput?.focus(), 50);
+    }
+
+    async _openEditCustomerModal(customer) {
+        if (!customer) return;
+        const modal = document.getElementById('modal-add-customer');
+        if (!modal) return;
+        const titleEl = document.getElementById('modal-cust-title');
+        const idInput = document.getElementById('input-modal-cust-id');
+        const nameInput = document.getElementById('input-modal-cust-name');
+        const codeInput = document.getElementById('input-modal-cust-code');
+        const statusSelect = document.getElementById('select-modal-cust-status');
+        const colorInput = document.getElementById('input-modal-cust-color');
+        const descInput = document.getElementById('input-modal-cust-desc');
+        const projsSec = document.getElementById('modal-cust-projs-section');
+        const projsList = document.getElementById('modal-cust-projs-list');
+        const saveBtn = document.getElementById('btn-save-add-customer');
+
+        if (titleEl) titleEl.textContent = `🏢 Chi tiết: ${customer.name}`;
+        if (idInput) idInput.value = customer.id || '';
+        if (nameInput) nameInput.value = customer.name || '';
+        if (codeInput) codeInput.value = customer.code || '';
+        if (statusSelect) statusSelect.value = customer.status || 'active';
+        if (colorInput) colorInput.value = customer.color || '#3b82f6';
+        if (descInput) descInput.value = customer.description || '';
+        if (saveBtn) saveBtn.textContent = 'Lưu thay đổi';
+
+        if (projsSec && projsList) {
+            const reg = await this._loadProjectRegistry();
+            const projs = (reg.projects || []).filter(p => p.customer_id === customer.id);
+            if (projs.length > 0) {
+                projsSec.style.display = 'block';
+                projsList.innerHTML = projs.map(p => `
+                    <span class="table-proj-chip" style="cursor:default;" title="${this._escAttr(p.name)}">
+                        <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${this._escAttr(p.color || '#6366f1')};"></span>
+                        ${this._esc(p.name)} (${p.status === 'active' ? '🟢' : '⚪'})
+                    </span>
+                `).join('');
+            } else {
+                projsSec.style.display = 'none';
+            }
+        }
+
+        modal.style.display = 'flex';
+        setTimeout(() => nameInput?.focus(), 50);
+    }
+
+    _closeAddCustomerModal() {
+        const modal = document.getElementById('modal-add-customer');
+        if (modal) modal.style.display = 'none';
+    }
+
+    async _handleSaveCustomerFromModal() {
+        const id = document.getElementById('input-modal-cust-id')?.value.trim() || '';
+        const nameInput = document.getElementById('input-modal-cust-name');
+        const codeInput = document.getElementById('input-modal-cust-code');
+        const statusSelect = document.getElementById('select-modal-cust-status');
+        const colorInput = document.getElementById('input-modal-cust-color');
+        const descInput = document.getElementById('input-modal-cust-desc');
+        const name = nameInput?.value.trim();
+        if (!name) {
+            this._showToast('Vui lòng nhập tên khách hàng', 'error');
+            return;
+        }
+        const code = codeInput?.value.trim().toUpperCase() || '';
+        const status = statusSelect?.value || 'active';
+        const color = colorInput?.value || '#3b82f6';
+        const description = descInput?.value.trim() || '';
+        try {
+            await invoke('save_customer', {
+                customer: {
+                    id,
+                    name,
+                    code,
+                    description,
+                    color,
+                    status,
+                    created_at: '',
+                    updated_at: '',
+                }
+            });
+            this._closeAddCustomerModal();
+            this._showToast(id ? `Đã cập nhật khách hàng "${name}" ✓` : `Đã thêm khách hàng "${name}" ✓`, 'success');
+            await this._loadProjectRegistry();
+            this._renderSettingsCustomersTab(document.getElementById('input-search-customers')?.value || '');
+            this._renderCustomerFilterBar();
+            this._updateSidebarBadges();
+            await this._showSessions();
+        } catch (err) {
+            this._showToast(`Lưu khách hàng thất bại: ${err}`, 'error');
+        }
+    }
+
+    async _openAddProjectModal() {
+        const modal = document.getElementById('modal-add-project');
+        if (!modal) return;
+        const reg = await this._loadProjectRegistry();
+        const customers = (reg.customers || []).filter(c => c.status === 'active');
+        const custSelect = document.getElementById('select-modal-proj-customer');
+        const nameInput = document.getElementById('input-modal-proj-name');
+        const colorInput = document.getElementById('input-modal-proj-color');
+        const descInput = document.getElementById('input-modal-proj-desc');
+
+        if (custSelect) {
+            let html = '<option value="">(Không chọn KH / Dự án nội bộ)</option>';
+            for (const c of customers) {
+                html += `<option value="${this._escAttr(c.id)}">🏢 ${this._esc(c.name)}</option>`;
+            }
+            custSelect.innerHTML = html;
+            const activeFilter = document.getElementById('select-settings-proj-cust-filter')?.value;
+            if (activeFilter) custSelect.value = activeFilter;
+        }
+
+        if (nameInput) nameInput.value = '';
+        if (colorInput) colorInput.value = '#6366f1';
+        if (descInput) descInput.value = '';
+        modal.style.display = 'flex';
+        setTimeout(() => nameInput?.focus(), 50);
+    }
+
+    _closeAddProjectModal() {
+        const modal = document.getElementById('modal-add-project');
+        if (modal) modal.style.display = 'none';
+    }
+
+    async _handleSaveProjectFromModal() {
+        const custSelect = document.getElementById('select-modal-proj-customer');
+        const nameInput = document.getElementById('input-modal-proj-name');
+        const colorInput = document.getElementById('input-modal-proj-color');
+        const descInput = document.getElementById('input-modal-proj-desc');
+        const name = nameInput?.value.trim();
+        if (!name) {
+            this._showToast('Vui lòng nhập tên dự án', 'error');
+            return;
+        }
+        const customer_id = custSelect?.value || null;
+        const color = colorInput?.value || '#6366f1';
+        const description = descInput?.value.trim() || '';
+        try {
+            await invoke('save_project', {
+                project: {
+                    id: '',
+                    name,
+                    customer_id,
+                    description,
+                    color,
+                    status: 'active',
+                    created_at: '',
+                    updated_at: '',
+                }
+            });
+            this._closeAddProjectModal();
+            this._showToast(`Đã tạo dự án "${name}" ✓`, 'success');
+            await this._loadProjectRegistry();
+            this._renderSettingsProjectsTab(document.getElementById('select-settings-proj-cust-filter')?.value || '');
+            this._renderProjectFilterBar();
+            this._updateSidebarBadges();
+            await this._showSessions();
+        } catch (err) {
+            this._showToast(`Tạo dự án thất bại: ${err}`, 'error');
+        }
+    }
+
+    // ─── Settings Data Management Tabs (Structured Data Tables) ───────────
+
+    _getSortIcon(sortState, field) {
+        if (!sortState || sortState.field !== field) {
+            return '<span class="sort-icon">⇅</span>';
+        }
+        return sortState.dir === 'desc' ? '<span class="sort-icon">▼</span>' : '<span class="sort-icon">▲</span>';
+    }
+
+    _sortItems(items, sortState, getFieldVal) {
+        if (!sortState || !sortState.field || sortState.field === 'index') {
+            return sortState?.dir === 'desc' ? [...items].reverse() : [...items];
+        }
+        const field = sortState.field;
+        const dir = sortState.dir === 'desc' ? -1 : 1;
+        return [...items].sort((a, b) => {
+            const valA = getFieldVal(a, field);
+            const valB = getFieldVal(b, field);
+            if (typeof valA === 'number' && typeof valB === 'number') {
+                return (valA - valB) * dir;
+            }
+            return String(valA || '').localeCompare(String(valB || ''), undefined, { numeric: true, sensitivity: 'base' }) * dir;
+        });
+    }
+
+    async _updateSidebarBadges() {
+        try {
+            const reg = await this._loadProjectRegistry();
+            const customers = reg.customers || [];
+            const projects = reg.projects || [];
+            const categories = reg.categories || [];
+            const sessionTags = (this._cachedSessions || []).flatMap(sess => sess.tags || []);
+            const allTags = Array.from(new Set([...(reg.tags || []), ...sessionTags])).filter(Boolean);
+
+            const badgeCust = document.getElementById('badge-nav-customers');
+            if (badgeCust) badgeCust.textContent = String(customers.length);
+
+            const badgeProj = document.getElementById('badge-nav-projects');
+            if (badgeProj) badgeProj.textContent = String(projects.length);
+
+            const badgeCat = document.getElementById('badge-nav-categories');
+            if (badgeCat) badgeCat.textContent = String(categories.length);
+
+            const badgeTags = document.getElementById('badge-nav-tags');
+            if (badgeTags) badgeTags.textContent = String(allTags.length);
+        } catch (err) {
+            console.error('Failed to update sidebar badges:', err);
+        }
+    }
+
+    async _renderSettingsStorageTab() {
+        const pathEl = document.getElementById('storage-dir-path-text');
+        const badgeEl = document.getElementById('storage-type-badge');
+        const statsEl = document.getElementById('storage-stats-info');
+        if (!pathEl || !statsEl) return;
+
+        try {
+            const info = await invoke('get_storage_info');
+            pathEl.textContent = info.current_path;
+            if (badgeEl) {
+                badgeEl.textContent = info.is_custom ? 'Tùy chỉnh' : 'Mặc định';
+                badgeEl.className = `status-pill ${info.is_custom ? 'archived' : 'active'}`;
+            }
+
+            const sizeMb = (info.total_size_bytes / (1024 * 1024)).toFixed(2);
+            statsEl.innerHTML = `
+                <div>• <b>Tổng số cuộc họp đã lưu:</b> ${info.session_count} cuộc họp</div>
+                <div>• <b>Dung lượng dữ liệu trên đĩa:</b> ${sizeMb} MB (${info.total_size_bytes.toLocaleString()} bytes)</div>
+                <div>• <b>Định dạng tệp:</b> Markdown (.md), JSON metadata (.json) và Audio (.wav)</div>
+                <div>• <b>Vị trí mặc định:</b> <span style="font-family:monospace; font-size:11px; opacity:0.8;">${this._esc(info.default_path)}</span></div>
+            `;
+        } catch (err) {
+            console.error('Failed to get storage info:', err);
+            statsEl.textContent = `Lỗi tải thông tin lưu trữ: ${err}`;
+        }
+    }
+
+    async _renderSettingsCustomersTab(searchFilter = '') {
+        const listEl = document.getElementById('settings-customers-list');
+        if (!listEl) return;
+        const reg = await this._loadProjectRegistry();
+        let customers = reg.customers || [];
+        const projects = reg.projects || [];
+
+        const q = (searchFilter || '').trim().toLowerCase();
+        if (q) {
+            customers = customers.filter(c => (c.name || '').toLowerCase().includes(q) || (c.code || '').toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q));
+        }
+
+        if (customers.length === 0) {
+            listEl.innerHTML = '<div class="sessions-empty" style="padding: 24px;">Chưa có khách hàng nào. Bấm nút "+ Thêm khách hàng" ở góc trên để tạo mới.</div>';
+            return;
+        }
+
+        // Sort items
+        const sortedCustomers = this._sortItems(customers, this._custSort, (c, field) => {
+            if (field === 'code') return c.code || '';
+            if (field === 'name') return c.name || '';
+            if (field === 'description') return c.description || '';
+            if (field === 'status') return c.status || 'active';
+            if (field === 'projects') return projects.filter(p => p.customer_id === c.id).length;
+            return 0;
+        });
+
+        const sort = this._custSort;
+        let html = `
+        <div class="mgr-table-container">
+          <table class="mgr-table">
+            <thead>
+              <tr>
+                <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
+                <th class="sortable ${sort.field === 'code' ? 'active-sort' : ''}" data-sort="code" style="width: 95px;">Mã KH ${this._getSortIcon(sort, 'code')}</th>
+                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên khách hàng ${this._getSortIcon(sort, 'name')}</th>
+                <th class="sortable ${sort.field === 'description' ? 'active-sort' : ''}" data-sort="description">Mô tả ${this._getSortIcon(sort, 'description')}</th>
+                <th class="sortable ${sort.field === 'status' ? 'active-sort' : ''}" data-sort="status" style="width: 120px;">Trạng thái ${this._getSortIcon(sort, 'status')}</th>
+                <th class="sortable ${sort.field === 'projects' ? 'active-sort' : ''}" data-sort="projects" style="width: 220px;">Dự án đang làm ${this._getSortIcon(sort, 'projects')}</th>
+                <th style="width: 90px; text-align: center;">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        sortedCustomers.forEach((c, idx) => {
+            const isActive = c.status === 'active';
+            const custProjects = projects.filter(p => p.customer_id === c.id);
+            const activeProjects = custProjects.filter(p => p.status === 'active');
+            const targetProjects = activeProjects.length > 0 ? activeProjects : custProjects;
+
+            const maxChips = 3;
+            const visibleProjects = targetProjects.slice(0, maxChips);
+            const remaining = targetProjects.length - maxChips;
+
+            let projChipsHtml = '';
+            if (targetProjects.length === 0) {
+                projChipsHtml = '<span style="opacity:0.4; font-size:11px;">(Chưa có dự án)</span>';
+            } else {
+                projChipsHtml = `<div class="table-proj-chips">` +
+                    visibleProjects.map(p => `
+                        <span class="table-proj-chip btn-view-cust-projs" data-id="${this._escAttr(c.id)}" title="${this._escAttr(p.name)}">
+                            <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${this._escAttr(p.color || '#6366f1')};"></span>
+                            ${this._esc(p.name)}
+                        </span>
+                    `).join('') +
+                    (remaining > 0 ? `<span class="table-proj-more btn-view-cust-projs" data-id="${this._escAttr(c.id)}" title="Xem tất cả ${targetProjects.length} dự án">+${remaining} khác</span>` : '') +
+                    `</div>`;
+            }
+
+            const codeBadge = c.code ? `<span class="mgr-customer-code">${this._esc(c.code)}</span>` : '<span style="opacity:0.3;">-</span>';
+
+            html += `
+              <tr class="cust-row" data-id="${this._escAttr(c.id)}">
+                <td style="text-align: center; color: var(--md-sys-color-on-surface-variant); font-size: 11px;">${idx + 1}</td>
+                <td class="btn-open-cust-details" data-id="${this._escAttr(c.id)}" style="cursor: pointer;">${codeBadge}</td>
+                <td class="btn-open-cust-details" data-id="${this._escAttr(c.id)}" style="cursor: pointer;">
+                  <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(c.color || '#3b82f6')}; flex-shrink:0;"></span>
+                    <span style="color: var(--md-sys-color-primary); text-decoration: underline; text-underline-offset: 2px;">${this._esc(c.name)}</span>
+                  </div>
+                </td>
+                <td class="btn-open-cust-details" data-id="${this._escAttr(c.id)}" style="cursor: pointer; color: var(--md-sys-color-on-surface-variant); font-size:11px; max-width: 200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${this._escAttr(c.description || '')}">
+                  ${c.description ? this._esc(c.description) : '<span style="opacity:0.3;">-</span>'}
+                </td>
+                <td class="btn-open-cust-details" data-id="${this._escAttr(c.id)}" style="cursor: pointer;">
+                  <span class="status-pill ${isActive ? 'active' : 'archived'}">${isActive ? '🟢 Đang hợp tác' : '⚪ Đã dừng'}</span>
+                </td>
+                <td>${projChipsHtml}</td>
+                <td style="text-align: center;">
+                  <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
+                    <button type="button" class="btn-secondary-small btn-toggle-cust" data-id="${this._escAttr(c.id)}" title="${isActive ? 'Tạm dừng hợp tác' : 'Kích hoạt hợp tác'}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      ${isActive ? '⏸' : '▶'}
+                    </button>
+                    <button type="button" class="btn-danger-small btn-del-cust" data-id="${this._escAttr(c.id)}" data-name="${this._escAttr(c.name)}" title="Xoá khách hàng" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      🗑
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            `;
+        });
+
+        html += `
+            </tbody>
+          </table>
+        </div>
+        `;
+
+        listEl.innerHTML = html;
+
+        // Sort header listeners
+        listEl.querySelectorAll('th.sortable').forEach(th => {
+            th.addEventListener('click', () => {
+                const field = th.dataset.sort;
+                if (this._custSort.field === field) {
+                    this._custSort.dir = this._custSort.dir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    this._custSort.field = field;
+                    this._custSort.dir = 'asc';
+                }
+                this._renderSettingsCustomersTab(searchFilter);
+            });
+        });
+
+        // Click customer name / info opens Details Modal
+        listEl.querySelectorAll('.btn-open-cust-details').forEach(cell => {
+            cell.addEventListener('click', () => {
+                const cid = cell.dataset.id;
+                const cust = customers.find(c => c.id === cid);
+                if (cust) {
+                    this._openEditCustomerModal(cust);
+                }
+            });
+        });
+
+        // Click project chip jumps to Projects tab
+        listEl.querySelectorAll('.btn-view-cust-projs').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const cid = btn.dataset.id;
+                this._showSettingsScreen('tab-projects');
+                const filterSelect = document.getElementById('select-settings-proj-cust-filter');
+                if (filterSelect) {
+                    filterSelect.value = cid;
+                    this._renderSettingsProjectsTab(cid);
+                }
+            });
+        });
+
+        // Toggle status (icon only)
+        listEl.querySelectorAll('.btn-toggle-cust').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.id;
+                try {
+                    const newStatus = await invoke('toggle_customer_status', { id });
+                    this._showToast(`Đã chuyển trạng thái KH: ${newStatus === 'active' ? 'Đang hợp tác' : 'Đã dừng'}`, 'success');
+                    await this._loadProjectRegistry();
+                    this._renderSettingsCustomersTab(document.getElementById('input-search-customers')?.value);
+                    this._renderCustomerFilterBar();
+                    this._updateSidebarBadges();
+                    await this._showSessions();
+                } catch (err) {
+                    this._showToast(`Lỗi: ${err}`, 'error');
+                }
+            });
+        });
+
+        // Delete customer
+        listEl.querySelectorAll('.btn-del-cust').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.id;
+                const name = btn.dataset.name || 'khách hàng';
+                const agreed = await this._promptConfirmDelete({
+                    title: 'Xoá khách hàng',
+                    message: `Bạn có chắc muốn xoá khách hàng "${name}"?\nCác dự án liên kết sẽ được huỷ gán nhưng không bị xoá, toàn bộ meeting log cũ vẫn an toàn.`,
+                    confirmText: 'Xoá khách hàng'
+                });
+                if (!agreed) return;
+                try {
+                    await invoke('delete_customer', { id });
+                    this._showToast('Đã xóa khách hàng', 'success');
+                    await this._loadProjectRegistry();
+                    this._renderSettingsCustomersTab(document.getElementById('input-search-customers')?.value);
+                    this._renderCustomerFilterBar();
+                    this._updateSidebarBadges();
+                    await this._showSessions();
+                } catch (err) {
+                    this._showToast(`Lỗi: ${err}`, 'error');
+                }
+            });
+        });
+    }
+
+    async _renderSettingsProjectsTab(customerFilter = '', searchFilter = '') {
+        const listEl = document.getElementById('settings-projects-list');
+        const selectFilterCust = document.getElementById('select-settings-proj-cust-filter');
+        if (!listEl) return;
+
+        const reg = await this._loadProjectRegistry();
+        const customers = reg.customers || [];
+        let projects = reg.projects || [];
+        const sessions = this._cachedSessions || [];
+
+        // Populate project list filter dropdown
+        if (selectFilterCust) {
+            const currentVal = customerFilter !== undefined ? customerFilter : selectFilterCust.value || '';
+            let filterHtml = '<option value="">🏢 Tất cả khách hàng</option>';
+            for (const c of customers) {
+                const sel = currentVal === c.id ? 'selected' : '';
+                filterHtml += `<option value="${this._escAttr(c.id)}" ${sel}>🏢 ${this._esc(c.name)}</option>`;
+            }
+            selectFilterCust.innerHTML = filterHtml;
+            if (customerFilter) selectFilterCust.value = customerFilter;
+        }
+
+        const effectiveFilter = customerFilter || selectFilterCust?.value || '';
+        if (effectiveFilter) {
+            projects = projects.filter(p => p.customer_id === effectiveFilter);
+        }
+
+        const q = (searchFilter || '').trim().toLowerCase();
+        if (q) {
+            projects = projects.filter(p => (p.name || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q));
+        }
+
+        if (projects.length === 0) {
+            listEl.innerHTML = '<div class="sessions-empty" style="padding: 24px;">Chưa có dự án nào phù hợp. Bấm nút "+ Thêm dự án" ở góc trên để tạo mới.</div>';
+            return;
+        }
+
+        // Sort items
+        const sortedProjects = this._sortItems(projects, this._projSort, (p, field) => {
+            if (field === 'name') return p.name || '';
+            if (field === 'customer') {
+                const cust = customers.find(c => c.id === p.customer_id);
+                return cust ? cust.name : '';
+            }
+            if (field === 'description') return p.description || '';
+            if (field === 'status') return p.status || 'active';
+            if (field === 'sessions') return sessions.filter(s => s.project_id === p.id).length;
+            return 0;
+        });
+
+        const sort = this._projSort;
+        let html = `
+        <div class="mgr-table-container">
+          <table class="mgr-table">
+            <thead>
+              <tr>
+                <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
+                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên dự án ${this._getSortIcon(sort, 'name')}</th>
+                <th class="sortable ${sort.field === 'customer' ? 'active-sort' : ''}" data-sort="customer" style="width: 170px;">Khách hàng ${this._getSortIcon(sort, 'customer')}</th>
+                <th class="sortable ${sort.field === 'description' ? 'active-sort' : ''}" data-sort="description">Mô tả ${this._getSortIcon(sort, 'description')}</th>
+                <th class="sortable ${sort.field === 'status' ? 'active-sort' : ''}" data-sort="status" style="width: 110px;">Trạng thái ${this._getSortIcon(sort, 'status')}</th>
+                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 100px; text-align: center;">Số cuộc họp ${this._getSortIcon(sort, 'sessions')}</th>
+                <th style="width: 90px; text-align: center;">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        sortedProjects.forEach((p, idx) => {
+            const isActive = p.status === 'active';
+            const cust = customers.find(c => c.id === p.customer_id);
+            const sessCount = sessions.filter(s => s.project_id === p.id).length;
+
+            const custBadge = cust
+                ? `<span class="session-customer-badge btn-jump-to-customer" data-cust-id="${this._escAttr(cust.id)}" style="border-color:${this._escAttr(cust.color || '#3b82f6')}44; color:${this._escAttr(cust.color || '#93c5fd')}; background:${this._escAttr(cust.color || '#3b82f6')}1a; cursor:pointer;" title="Mở thông tin khách hàng ${this._escAttr(cust.name)}">🏢 ${this._esc(cust.name)} ↗</span>`
+                : `<span style="font-size:11px; opacity:0.4;">(Chưa gán KH)</span>`;
+
+            html += `
+              <tr>
+                <td style="text-align: center; color: var(--md-sys-color-on-surface-variant); font-size: 11px;">${idx + 1}</td>
+                <td>
+                  <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(p.color || '#6366f1')}; flex-shrink:0;"></span>
+                    <span>${this._esc(p.name)}</span>
+                  </div>
+                </td>
+                <td>${custBadge}</td>
+                <td style="color: var(--md-sys-color-on-surface-variant); font-size:11px; max-width: 220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${this._escAttr(p.description || '')}">
+                  ${p.description ? this._esc(p.description) : '<span style="opacity:0.3;">-</span>'}
+                </td>
+                <td>
+                  <span class="status-pill ${isActive ? 'active' : 'archived'}">${isActive ? '🟢 Đang chạy' : '⚪ Đã dừng'}</span>
+                </td>
+                <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
+                  ${sessCount > 0 ? `${sessCount} cuộc họp` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                </td>
+                <td style="text-align: center;">
+                  <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
+                    <button type="button" class="btn-secondary-small btn-toggle-proj" data-id="${this._escAttr(p.id)}" title="${isActive ? 'Tạm dừng dự án' : 'Kích hoạt dự án'}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      ${isActive ? '⏸' : '▶'}
+                    </button>
+                    <button type="button" class="btn-danger-small btn-del-proj" data-id="${this._escAttr(p.id)}" data-name="${this._escAttr(p.name)}" title="Xoá dự án" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      🗑
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            `;
+        });
+
+        html += `
+            </tbody>
+          </table>
+        </div>
+        `;
+
+        listEl.innerHTML = html;
+
+        // Sort header listeners
+        listEl.querySelectorAll('th.sortable').forEach(th => {
+            th.addEventListener('click', () => {
+                const field = th.dataset.sort;
+                if (this._projSort.field === field) {
+                    this._projSort.dir = this._projSort.dir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    this._projSort.field = field;
+                    this._projSort.dir = 'asc';
+                }
+                this._renderSettingsProjectsTab(customerFilter, searchFilter);
+            });
+        });
+
+        // Click customer badge in project table opens Customer Details
+        listEl.querySelectorAll('.btn-jump-to-customer').forEach(badge => {
+            badge.addEventListener('click', async () => {
+                const custId = badge.dataset.custId;
+                const reg = await this._loadProjectRegistry();
+                const targetCust = (reg.customers || []).find(c => c.id === custId);
+                this._showSettingsScreen('tab-customers');
+                if (targetCust) {
+                    this._openEditCustomerModal(targetCust);
+                }
+            });
+        });
+
+        // Toggle project status (icon only)
+        listEl.querySelectorAll('.btn-toggle-proj').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = btn.dataset.id;
+                try {
+                    const newStatus = await invoke('toggle_project_status', { id });
+                    this._showToast(`Đã chuyển dự án sang: ${newStatus === 'active' ? 'Đang chạy' : 'Đã dừng'}`, 'success');
+                    await this._loadProjectRegistry();
+                    this._renderSettingsProjectsTab(selectFilterCust?.value, document.getElementById('input-search-projects')?.value);
+                    this._renderProjectFilterBar();
+                    this._updateSidebarBadges();
+                    await this._showSessions();
+                } catch (err) {
+                    this._showToast(`Lỗi: ${err}`, 'error');
+                }
+            });
+        });
+
+        // Delete project
+        listEl.querySelectorAll('.btn-del-proj').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = btn.dataset.id;
+                const name = btn.dataset.name || 'dự án';
+                const agreed = await this._promptConfirmDelete({
+                    title: 'Xoá dự án',
+                    message: `Bạn có chắc muốn xoá dự án "${name}"?\nToàn bộ meeting log đã ghi trước đây vẫn được giữ nguyên an toàn.`,
+                    confirmText: 'Xoá dự án'
+                });
+                if (!agreed) return;
+                try {
+                    await invoke('delete_project', { id });
+                    this._showToast('Đã xóa dự án', 'success');
+                    await this._loadProjectRegistry();
+                    this._renderSettingsProjectsTab(selectFilterCust?.value, document.getElementById('input-search-projects')?.value);
+                    this._renderProjectFilterBar();
+                    this._updateSidebarBadges();
+                    await this._showSessions();
+                } catch (err) {
+                    this._showToast(`Lỗi: ${err}`, 'error');
+                }
+            });
+        });
+    }
+
+    async _renderSettingsCategoriesTab() {
+        const listEl = document.getElementById('settings-categories-list');
+        if (!listEl) return;
+        const reg = await this._loadProjectRegistry();
+        const categories = reg.categories || [];
+        const sessions = this._cachedSessions || [];
+
+        if (categories.length === 0) {
+            listEl.innerHTML = '<div class="sessions-empty" style="padding: 24px;">Chưa có phân loại nào. Hãy thêm phân loại ở ô trên.</div>';
+            return;
+        }
+
+        // Sort categories
+        const sortedCategories = this._sortItems(categories, this._catSort, (c, field) => {
+            if (field === 'name') return c.name || '';
+            if (field === 'sessions') return sessions.filter(s => s.category === c.name || s.category === c.id).length;
+            return 0;
+        });
+
+        const sort = this._catSort;
+        let html = `
+        <div class="mgr-table-container">
+          <table class="mgr-table">
+            <thead>
+              <tr>
+                <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
+                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên phân loại cuộc họp ${this._getSortIcon(sort, 'name')}</th>
+                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 140px; text-align: center;">Số cuộc họp gắn ${this._getSortIcon(sort, 'sessions')}</th>
+                <th style="width: 80px; text-align: center;">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        sortedCategories.forEach((c, idx) => {
+            const sessCount = sessions.filter(s => s.category === c.name || s.category === c.id).length;
+            html += `
+              <tr>
+                <td style="text-align: center; color: var(--md-sys-color-on-surface-variant); font-size: 11px;">${idx + 1}</td>
+                <td>
+                  <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(c.color || '#3b82f6')}; flex-shrink:0;"></span>
+                    <span>${this._esc(c.name)}</span>
+                  </div>
+                </td>
+                <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
+                  ${sessCount > 0 ? `${sessCount} cuộc họp` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                </td>
+                <td style="text-align: center;">
+                  <button type="button" class="btn-danger-small btn-del-cat" data-id="${this._escAttr(c.id)}" data-name="${this._escAttr(c.name)}" title="Xoá phân loại">
+                    🗑
+                  </button>
+                </td>
+              </tr>
+            `;
+        });
+
+        html += `
+            </tbody>
+          </table>
+        </div>
+        `;
+
+        listEl.innerHTML = html;
+
+        // Sort header listeners
+        listEl.querySelectorAll('th.sortable').forEach(th => {
+            th.addEventListener('click', () => {
+                const field = th.dataset.sort;
+                if (this._catSort.field === field) {
+                    this._catSort.dir = this._catSort.dir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    this._catSort.field = field;
+                    this._catSort.dir = 'asc';
+                }
+                this._renderSettingsCategoriesTab();
+            });
+        });
+
+        // Delete category
+        listEl.querySelectorAll('.btn-del-cat').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = btn.dataset.id;
+                const name = btn.dataset.name || 'phân loại';
+                const agreed = await this._promptConfirmDelete({
+                    title: 'Xoá phân loại',
+                    message: `Bạn có chắc muốn xoá phân loại "${name}" khỏi hệ thống?`,
+                    confirmText: 'Xoá phân loại'
+                });
+                if (!agreed) return;
+                try {
+                    await invoke('delete_category', { id });
+                    this._showToast('Đã xóa phân loại', 'success');
+                    await this._loadProjectRegistry();
+                    this._renderSettingsCategoriesTab();
+                    this._renderCategoryFilterBar();
+                    this._updateSidebarBadges();
+                    await this._showSessions();
+                } catch (err) {
+                    this._showToast(`Lỗi: ${err}`, 'error');
+                }
+            });
+        });
+    }
+
+    async _renderSettingsTagsTab() {
+        const listEl = document.getElementById('settings-tags-list');
+        if (!listEl) return;
+        const reg = await this._loadProjectRegistry();
+        const sessionTags = (this._cachedSessions || []).flatMap(s => s.tags || []);
+        const allTags = Array.from(new Set([...(reg.tags || []), ...sessionTags])).filter(Boolean);
+        const sessions = this._cachedSessions || [];
+
+        if (allTags.length === 0) {
+            listEl.innerHTML = '<div class="sessions-empty" style="padding: 24px;">Chưa có thẻ nào trong hệ thống. Hãy thêm thẻ mới ở ô trên.</div>';
+            return;
+        }
+
+        const tagObjects = allTags.map(t => ({
+            name: t,
+            count: sessions.filter(s => (s.tags || []).includes(t)).length
+        }));
+
+        const sortedTags = this._sortItems(tagObjects, this._tagSort, (t, field) => {
+            if (field === 'name') return t.name || '';
+            if (field === 'sessions') return t.count;
+            return 0;
+        });
+
+        const sort = this._tagSort;
+        let html = `
+        <div class="mgr-table-container">
+          <table class="mgr-table">
+            <thead>
+              <tr>
+                <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
+                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên thẻ (Tag) ${this._getSortIcon(sort, 'name')}</th>
+                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 140px; text-align: center;">Số cuộc họp gắn ${this._getSortIcon(sort, 'sessions')}</th>
+                <th style="width: 80px; text-align: center;">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        sortedTags.forEach((t, idx) => {
+            html += `
+              <tr>
+                <td style="text-align: center; color: var(--md-sys-color-on-surface-variant); font-size: 11px;">${idx + 1}</td>
+                <td>
+                  <span class="mgr-tag-chip" style="font-size:12px; font-weight:600;">#${this._esc(t.name)}</span>
+                </td>
+                <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
+                  ${t.count > 0 ? `${t.count} cuộc họp` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                </td>
+                <td style="text-align: center;">
+                  <button type="button" class="btn-danger-small btn-del-tag-tbl" data-tag="${this._escAttr(t.name)}" title="Xoá thẻ">
+                    🗑
+                  </button>
+                </td>
+              </tr>
+            `;
+        });
+
+        html += `
+            </tbody>
+          </table>
+        </div>
+        `;
+
+        listEl.innerHTML = html;
+
+        // Sort header listeners
+        listEl.querySelectorAll('th.sortable').forEach(th => {
+            th.addEventListener('click', () => {
+                const field = th.dataset.sort;
+                if (this._tagSort.field === field) {
+                    this._tagSort.dir = this._tagSort.dir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    this._tagSort.field = field;
+                    this._tagSort.dir = 'asc';
+                }
+                this._renderSettingsTagsTab();
+            });
+        });
+
+        // Delete tag
+        listEl.querySelectorAll('.btn-del-tag-tbl').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const tag = btn.dataset.tag;
+                const agreed = await this._promptConfirmDelete({
+                    title: 'Xoá thẻ',
+                    message: `Bạn có chắc muốn xoá thẻ #${tag} khỏi hệ thống?`,
+                    confirmText: 'Xoá thẻ'
+                });
+                if (!agreed) return;
+                try {
+                    await invoke('delete_tag', { tag });
+                    this._showToast(`Đã xóa thẻ #${tag}`, 'success');
+                    await this._loadProjectRegistry();
+                    this._renderSettingsTagsTab();
+                    this._renderTagFilterBar();
+                    this._updateSidebarBadges();
+                    await this._showSessions();
+                } catch (err) {
+                    this._showToast(`Lỗi: ${err}`, 'error');
+                }
+            });
+        });
+    }
+
+    async _handleCreateCategory() {
+        const nameInput = document.getElementById('input-new-cat-name');
+        const colorInput = document.getElementById('input-new-cat-color');
+        const name = nameInput?.value.trim();
+        if (!name) {
+            this._showToast('Vui lòng nhập tên phân loại', 'error');
+            return;
+        }
+        const color = colorInput?.value || '#10b981';
+        try {
+            await invoke('save_category', {
+                category: {
+                    id: '',
+                    name,
+                    color,
+                }
+            });
+            if (nameInput) nameInput.value = '';
+            this._showToast(`Đã thêm phân loại "${name}" ✓`, 'success');
+            await this._loadProjectRegistry();
+            this._renderSettingsCategoriesTab();
+            this._renderCategoryFilterBar();
+            this._updateSidebarBadges();
+            await this._showSessions();
+        } catch (err) {
+            this._showToast(`Thêm phân loại thất bại: ${err}`, 'error');
+        }
+    }
+
+    async _handleCreateTag() {
+        const tagInput = document.getElementById('input-new-tag-name');
+        const tag = tagInput?.value.trim().replace(/^#+/, '');
+        if (!tag) {
+            this._showToast('Vui lòng nhập tên thẻ', 'error');
+            return;
+        }
+        try {
+            await invoke('save_tag', { tag });
+            if (tagInput) tagInput.value = '';
+            this._showToast(`Đã thêm thẻ #${tag} ✓`, 'success');
+            await this._loadProjectRegistry();
+            this._renderSettingsTagsTab();
+            this._renderTagFilterBar();
+            this._updateSidebarBadges();
+            await this._showSessions();
+        } catch (err) {
+            this._showToast(`Thêm thẻ thất bại: ${err}`, 'error');
+        }
+    }
+
+    async _batchExportMarkdown() {
+        if (this._selectedSessionIds.size === 0) return;
+        const ids = Array.from(this._selectedSessionIds);
+        try {
+            const text = await invoke('export_batch_sessions_md', { ids });
+            const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `project-meetings-export-${new Date().toISOString().slice(0, 10)}.md`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            await navigator.clipboard.writeText(text);
+            this._showToast(`Đã xuất & sao chép ${ids.length} cuộc họp ✓`, 'success');
+        } catch (err) {
+            this._showToast(`Xuất thất bại: ${err}`, 'error');
+        }
+    }
+
+    async _batchAiDigest() {
+        if (this._selectedSessionIds.size === 0) return;
+        const ids = Array.from(this._selectedSessionIds);
+        const modal = document.getElementById('modal-ai-digest');
+        const loadingEl = document.getElementById('ai-digest-loading');
+        const loadingText = document.getElementById('ai-digest-loading-text');
+        const contentEl = document.getElementById('ai-digest-content');
+        const titleEl = document.getElementById('ai-digest-title');
+
+        if (!modal) return;
+        modal.style.display = 'flex';
+        if (loadingEl) loadingEl.style.display = 'block';
+        if (contentEl) {
+            contentEl.style.display = 'none';
+            contentEl.textContent = '';
+        }
+        if (titleEl) titleEl.textContent = `✨ Tổng hợp ${ids.length} cuộc họp (AI Digest)`;
+
+        const settings = settingsManager.get();
+        const geminiKey = settings.gemini_api_key?.trim();
+        const openaiKey = settings.openai_api_key?.trim();
+
+        if (!geminiKey && !openaiKey) {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (contentEl) {
+                contentEl.style.display = 'block';
+                contentEl.innerHTML = '<p style="color:var(--md-sys-color-error);">⚠️ Bạn chưa cài đặt <b>Gemini API Key</b> hoặc <b>OpenAI API Key</b> trong phần Cài đặt (⌘,). Vui lòng thêm API Key để sử dụng tính năng AI Tổng hợp.</p>';
+            }
+            return;
+        }
+
+        try {
+            if (loadingText) loadingText.textContent = `Đang đọc nội dung ${ids.length} cuộc họp...`;
+            const combinedMd = await invoke('export_batch_sessions_md', { ids });
+
+            if (loadingText) loadingText.textContent = `Đang phân tích & móc nối quyết định, việc cần làm bằng AI...`;
+
+            const prompt = `Bạn là trợ lý quản lý dự án và phân tích cuộc họp thông minh.
+Dưới đây là biên bản ghi chép chi tiết của ${ids.length} cuộc họp thuộc cùng một dự án/chuỗi chủ đề:
+
+---
+${combinedMd}
+---
+
+Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN TỔNG HỢP MÓC NỐI THÔNG TIN DỰ ÁN hoàn chỉnh bằng tiếng Việt theo định dạng Markdown rõ ràng, súc tích:
+
+# 📊 TỔNG HỢP CHUỖI CUỘC HỌP DỰ ÁN
+
+## 1. 📌 Tóm tắt tiến độ & Diễn biến chính
+(Tóm tắt ngắn gọn mạch câu chuyện và sự tiến triển từ buổi đầu đến buổi gần nhất)
+
+## 2. 🎯 Nhật ký Quyết định (Decision Log)
+(Liệt kê các quyết định đã được chốt qua các buổi, ghi rõ ngày/buổi nếu có)
+
+## 3. 📋 Kế hoạch & Danh sách việc cần làm (Action Items)
+(Bảng hoặc checklist: Ai làm gì? Việc nào đã xong, việc nào còn tồn đọng cần làm tiếp?)
+
+## 4. ⚠️ Các vấn đề cần theo dõi / Blockers
+(Những điểm còn tranh luận, vướng mắc chưa giải quyết cho buổi họp tiếp theo)
+`;
+
+            let resultText = '';
+            if (geminiKey) {
+                resultText = await this._callGeminiAi(geminiKey, prompt);
+            } else {
+                resultText = await this._callOpenAi(openaiKey, prompt);
+            }
+
+            this._currentAiDigestText = resultText;
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (contentEl) {
+                contentEl.style.display = 'block';
+                contentEl.textContent = resultText;
+            }
+        } catch (err) {
+            console.error('[App] _batchAiDigest failed:', err);
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (contentEl) {
+                contentEl.style.display = 'block';
+                contentEl.textContent = `Lỗi tổng hợp AI: ${err.message || err}`;
+            }
+        }
+    }
+
+    async _callGeminiAi(apiKey, promptText) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: promptText }] }],
+                generationConfig: {
+                    temperature: 0.3,
+                    maxOutputTokens: 4096,
+                }
+            })
+        });
+        if (!res.ok) {
+            const err = await res.text();
+            throw new Error(`Gemini API error (${res.status}): ${err}`);
+        }
+        const data = await res.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || 'Không có kết quả trả về từ Gemini.';
+    }
+
+    async _callOpenAi(apiKey, promptText) {
+        const url = 'https://api.openai.com/v1/chat/completions';
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: 'gpt-4o-mini',
+                messages: [{ role: 'user', content: promptText }],
+                temperature: 0.3,
+            })
+        });
+        if (!res.ok) {
+            const err = await res.text();
+            throw new Error(`OpenAI API error (${res.status}): ${err}`);
+        }
+        const data = await res.json();
+        return data.choices?.[0]?.message?.content || 'Không có kết quả trả về từ OpenAI.';
+    }
+
+    async _fetchPreviousNotes() {
+        try {
+            const sessions = await invoke('list_sessions');
+            if (!sessions || sessions.length === 0) {
+                this._showToast('Chưa có cuộc họp trước đó nào để nạp ghi chú', 'info');
+                return;
+            }
+            const others = sessions.filter(s => s.id !== sessionStore.id && !s.has_legacy_only);
+            if (others.length === 0) {
+                this._showToast('Chưa có cuộc họp trước đó nào', 'info');
+                return;
+            }
+
+            let target = null;
+            if (sessionStore.tags && sessionStore.tags.length > 0) {
+                target = others.find(s => s.tags && s.tags.some(t => sessionStore.tags.includes(t)));
+            }
+            if (!target) {
+                target = others[0];
+            }
+
+            const res = await invoke('read_session', { id: target.id });
+            const prevNotes = res.json?.notes?.trim();
+            if (!prevNotes) {
+                this._showToast(`Cuộc họp "${target.title}" không có ghi chú`, 'info');
+                return;
+            }
+
+            const noteTextarea = document.getElementById('live-note-textarea');
+            if (noteTextarea) {
+                const currentVal = noteTextarea.value.trim();
+                const header = `\n\n--- 📌 Ghi chú từ [${target.title || target.id}] ---\n`;
+                noteTextarea.value = currentVal ? `${currentVal}${header}${prevNotes}` : `${header}${prevNotes}`;
+                sessionStore.notes = noteTextarea.value;
+                this._toggleNotesDrawer(true);
+                this._showToast(`Đã nạp ghi chú từ "${target.title}" ✓`, 'success');
+            }
+        } catch (err) {
+            this._showToast(`Lỗi nạp ghi chú: ${err}`, 'error');
+        }
     }
 
     _formatLanguage(code) {
@@ -3413,6 +5354,7 @@ class App {
     }
 
     async _openSession(id, isLegacy = false) {
+        this._exitSessionEditMode();
         if (this._sessionAudioElement) {
             this._sessionAudioElement.pause();
             this._sessionAudioElement = null;
@@ -3451,6 +5393,106 @@ class App {
             }
         } catch (err) {
             if (content) content.textContent = `Error loading session: ${err}`;
+        }
+    }
+
+    _enterSessionEditMode() {
+        const cur = this._currentViewedSession;
+        if (!cur) return;
+
+        const titleEl = document.getElementById('session-viewer-title');
+        const contentEl = document.getElementById('session-viewer-content');
+        const inputTitle = document.getElementById('input-session-viewer-title');
+        const contentEditor = document.getElementById('session-viewer-content-editor');
+        const normalActions = document.getElementById('session-viewer-normal-actions');
+        const editActions = document.getElementById('session-viewer-edit-actions');
+
+        if (!titleEl || !contentEl || !inputTitle || !contentEditor) return;
+
+        this._isSessionEditing = true;
+
+        const currentTitle = titleEl.textContent || '';
+        const currentContent = contentEl.textContent || '';
+
+        inputTitle.value = currentTitle;
+        contentEditor.value = currentContent;
+
+        titleEl.style.display = 'none';
+        inputTitle.style.display = '';
+
+        if (normalActions) normalActions.style.display = 'none';
+        if (editActions) editActions.style.display = '';
+
+        contentEl.style.display = 'none';
+        contentEditor.style.display = '';
+
+        inputTitle.focus();
+        inputTitle.select();
+    }
+
+    _exitSessionEditMode() {
+        this._isSessionEditing = false;
+        const titleEl = document.getElementById('session-viewer-title');
+        const inputTitle = document.getElementById('input-session-viewer-title');
+        const contentEl = document.getElementById('session-viewer-content');
+        const contentEditor = document.getElementById('session-viewer-content-editor');
+        const normalActions = document.getElementById('session-viewer-normal-actions');
+        const editActions = document.getElementById('session-viewer-edit-actions');
+
+        if (titleEl) titleEl.style.display = '';
+        if (inputTitle) inputTitle.style.display = 'none';
+        if (normalActions) normalActions.style.display = '';
+        if (editActions) editActions.style.display = 'none';
+        if (contentEl) contentEl.style.display = '';
+        if (contentEditor) contentEditor.style.display = 'none';
+    }
+
+    async _saveSessionEdit() {
+        const cur = this._currentViewedSession;
+        if (!cur) return;
+
+        const inputTitle = document.getElementById('input-session-viewer-title');
+        const contentEditor = document.getElementById('session-viewer-content-editor');
+        const titleEl = document.getElementById('session-viewer-title');
+        const contentEl = document.getElementById('session-viewer-content');
+
+        const newTitle = inputTitle?.value.trim() || 'Cuộc họp chưa đặt tên';
+        let newContent = contentEditor?.value || '';
+
+        // If markdown starts with # <heading>, sync heading with newTitle
+        if (newTitle && newContent.startsWith('# ')) {
+            const firstEol = newContent.indexOf('\n');
+            if (firstEol !== -1) {
+                newContent = `# ${newTitle}\n${newContent.slice(firstEol + 1)}`;
+            } else {
+                newContent = `# ${newTitle}`;
+            }
+        }
+
+        try {
+            await invoke('update_session_content', {
+                id: cur.id,
+                title: newTitle,
+                mdContent: newContent,
+            });
+
+            if (titleEl) titleEl.textContent = newTitle;
+            if (contentEl) contentEl.textContent = newContent;
+
+            if (sessionStore.id === cur.id) {
+                sessionStore.title = newTitle;
+            }
+
+            if (this._cachedSessions) {
+                const s = this._cachedSessions.find(item => item.id === cur.id);
+                if (s) s.title = newTitle;
+            }
+
+            this._exitSessionEditMode();
+            this._showToast('Đã lưu thay đổi ✓', 'success');
+            await this._showSessions();
+        } catch (err) {
+            this._showToast(`Lỗi lưu thay đổi: ${err}`, 'error');
         }
     }
 
@@ -3903,6 +5945,143 @@ class App {
                 this._renderNotePreview();
             }
         });
+
+        noteTextarea?.addEventListener('keydown', (e) => {
+            this._handleNoteKeydown(e);
+        });
+    }
+
+    _handleNoteKeydown(e) {
+        const textarea = e.target;
+        const val = textarea.value;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+
+        // ─── 1. TAB & SHIFT+TAB (Indent / Outdent) ───
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const isShift = e.shiftKey;
+
+            // Find start of first line and end of last line
+            const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+            let lineEnd = val.indexOf('\n', end);
+            if (lineEnd === -1) lineEnd = val.length;
+
+            const selectedText = val.substring(lineStart, lineEnd);
+            const lines = selectedText.split('\n');
+
+            if (isShift) {
+                // Outdent: remove up to 2 leading spaces from each line
+                let removedCountFirstLine = 0;
+                let totalRemoved = 0;
+                const newLines = lines.map((l, idx) => {
+                    let count = 0;
+                    if (l.startsWith('  ')) count = 2;
+                    else if (l.startsWith(' ')) count = 1;
+                    else if (l.startsWith('\t')) count = 1;
+
+                    if (idx === 0) removedCountFirstLine = count;
+                    totalRemoved += count;
+                    return l.slice(count);
+                });
+                const replacement = newLines.join('\n');
+                textarea.setRangeText(replacement, lineStart, lineEnd, 'preserve');
+                textarea.selectionStart = Math.max(lineStart, start - removedCountFirstLine);
+                textarea.selectionEnd = Math.max(lineStart, end - totalRemoved);
+            } else {
+                // Indent: add 2 leading spaces to each line
+                if (start === end && !val.substring(lineStart, start).match(/^\s*([*\-+]|\d+\.|\[[ xX]\])/)) {
+                    // Plain text position without list marker
+                    textarea.setRangeText('  ', start, end, 'end');
+                } else {
+                    // Indent entire line(s) (e.g. nested bullet / checklist)
+                    const newLines = lines.map(l => '  ' + l);
+                    const replacement = newLines.join('\n');
+                    textarea.setRangeText(replacement, lineStart, lineEnd, 'preserve');
+                    textarea.selectionStart = start + 2;
+                    textarea.selectionEnd = end + (lines.length * 2);
+                }
+            }
+
+            sessionStore.notes = textarea.value;
+            if (this._isNotePreviewActive) this._renderNotePreview();
+            return;
+        }
+
+        // ─── 2. ENTER (Copy format & auto list continuation) ───
+        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+            const lineBeforeCursor = val.substring(lineStart, start);
+            const lineEndIdx = val.indexOf('\n', start);
+            const lineAfterCursor = val.substring(start, lineEndIdx === -1 ? val.length : lineEndIdx);
+
+            // Checkbox: ^(\s*)-\s+\[([ xX])\]\s*(.*)$
+            const todoMatch = lineBeforeCursor.match(/^(\s*)-\s+\[([ xX])\]\s*(.*)$/);
+            if (todoMatch) {
+                e.preventDefault();
+                const indent = todoMatch[1];
+                const textContent = todoMatch[3].trim();
+                if (textContent === '' && lineAfterCursor.trim() === '') {
+                    // Empty checklist item -> remove marker to exit list
+                    textarea.setRangeText('', lineStart, start, 'end');
+                } else {
+                    const nextItem = `\n${indent}- [ ] `;
+                    textarea.setRangeText(nextItem, start, end, 'end');
+                }
+                sessionStore.notes = textarea.value;
+                if (this._isNotePreviewActive) this._renderNotePreview();
+                return;
+            }
+
+            // Numbered list: ^(\s*)(\d+)\.\s+(.*)$
+            const numMatch = lineBeforeCursor.match(/^(\s*)(\d+)\.\s+(.*)$/);
+            if (numMatch) {
+                e.preventDefault();
+                const indent = numMatch[1];
+                const num = parseInt(numMatch[2], 10);
+                const textContent = numMatch[3].trim();
+                if (textContent === '' && lineAfterCursor.trim() === '') {
+                    // Empty numbered item -> remove marker to exit list
+                    textarea.setRangeText('', lineStart, start, 'end');
+                } else {
+                    const nextItem = `\n${indent}${num + 1}. `;
+                    textarea.setRangeText(nextItem, start, end, 'end');
+                }
+                sessionStore.notes = textarea.value;
+                if (this._isNotePreviewActive) this._renderNotePreview();
+                return;
+            }
+
+            // Bullet list: ^(\s*)([-*+])\s+(.*)$
+            const bulletMatch = lineBeforeCursor.match(/^(\s*)([-*+])\s+(.*)$/);
+            if (bulletMatch) {
+                e.preventDefault();
+                const indent = bulletMatch[1];
+                const bullet = bulletMatch[2];
+                const textContent = bulletMatch[3].trim();
+                if (textContent === '' && lineAfterCursor.trim() === '') {
+                    // Empty bullet -> remove marker to exit list
+                    textarea.setRangeText('', lineStart, start, 'end');
+                } else {
+                    const nextItem = `\n${indent}${bullet} `;
+                    textarea.setRangeText(nextItem, start, end, 'end');
+                }
+                sessionStore.notes = textarea.value;
+                if (this._isNotePreviewActive) this._renderNotePreview();
+                return;
+            }
+
+            // Plain indentation: ^(\s+)(.*)$
+            const indentMatch = lineBeforeCursor.match(/^(\s+)(.*)$/);
+            if (indentMatch && indentMatch[2].trim() !== '') {
+                e.preventDefault();
+                const indent = indentMatch[1];
+                textarea.setRangeText(`\n${indent}`, start, end, 'end');
+                sessionStore.notes = textarea.value;
+                if (this._isNotePreviewActive) this._renderNotePreview();
+                return;
+            }
+        }
     }
 
     _getNoteTemplate() {
@@ -4031,9 +6210,10 @@ class App {
             // Checkboxes: - [ ] or - [x]
             const todoMatch = line.match(/^(\s*)-\s+\[([ xX])\]\s+(.*)$/);
             if (todoMatch) {
+                const indent = Math.floor(todoMatch[1].length / 2);
                 const checked = todoMatch[2].toLowerCase() === 'x';
                 const text = this._esc(todoMatch[3]);
-                htmlLines.push(`<div class="todo-item ${checked ? 'done' : ''}" data-line="${i}"><input type="checkbox" ${checked ? 'checked' : ''} data-line="${i}"> <span>${this._formatInlineMarkdown(text)}</span></div>`);
+                htmlLines.push(`<div class="todo-item ${checked ? 'done' : ''}" data-line="${i}" style="margin-left: ${indent * 16}px;"><input type="checkbox" ${checked ? 'checked' : ''} data-line="${i}"> <span>${this._formatInlineMarkdown(text)}</span></div>`);
                 continue;
             }
 
@@ -4044,9 +6224,14 @@ class App {
                 htmlLines.push(`<h2>${this._formatInlineMarkdown(this._esc(line.slice(3)))}</h2>`);
             } else if (line.startsWith('### ')) {
                 htmlLines.push(`<h3>${this._formatInlineMarkdown(this._esc(line.slice(4)))}</h3>`);
-            } else if (line.match(/^(\s*)-\s+(.*)$/)) {
-                const m = line.match(/^(\s*)-\s+(.*)$/);
-                htmlLines.push(`<ul><li>${this._formatInlineMarkdown(this._esc(m[2]))}</li></ul>`);
+            } else if (line.match(/^(\s*)[-*+]\s+(.*)$/)) {
+                const m = line.match(/^(\s*)[-*+]\s+(.*)$/);
+                const indent = Math.floor(m[1].length / 2);
+                htmlLines.push(`<ul style="margin-left: ${indent * 16}px; margin-top: 2px; margin-bottom: 2px;"><li>${this._formatInlineMarkdown(this._esc(m[2]))}</li></ul>`);
+            } else if (line.match(/^(\s*)(\d+)\.\s+(.*)$/)) {
+                const m = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+                const indent = Math.floor(m[1].length / 2);
+                htmlLines.push(`<ol start="${m[2]}" style="margin-left: ${indent * 16}px; margin-top: 2px; margin-bottom: 2px;"><li>${this._formatInlineMarkdown(this._esc(m[3]))}</li></ol>`);
             } else if (!line.trim()) {
                 htmlLines.push('<div style="height:6px;"></div>');
             } else {
@@ -4097,36 +6282,38 @@ class App {
         msgSpan.textContent = message;
         toast.appendChild(msgSpan);
 
-        // Add copy button for all toasts (especially useful for error messages)
-        const copyBtn = document.createElement('button');
-        copyBtn.type = 'button';
-        copyBtn.className = 'toast-copy-btn';
-        copyBtn.title = 'Sao chép thông báo';
-        const copySvg = `<svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
-        const checkSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
-        copyBtn.innerHTML = copySvg;
-        copyBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            try {
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    await navigator.clipboard.writeText(String(message));
-                } else {
-                    const ta = document.createElement('textarea');
-                    ta.value = String(message);
-                    document.body.appendChild(ta);
-                    ta.select();
-                    document.execCommand('copy');
-                    ta.remove();
+        // Only add copy button for error/bug messages
+        if (type === 'error') {
+            const copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'toast-copy-btn';
+            copyBtn.title = 'Sao chép thông báo lỗi';
+            const copySvg = `<svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+            const checkSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+            copyBtn.innerHTML = copySvg;
+            copyBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                try {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        await navigator.clipboard.writeText(String(message));
+                    } else {
+                        const ta = document.createElement('textarea');
+                        ta.value = String(message);
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand('copy');
+                        ta.remove();
+                    }
+                    copyBtn.innerHTML = checkSvg;
+                    setTimeout(() => {
+                        if (copyBtn) copyBtn.innerHTML = copySvg;
+                    }, 1500);
+                } catch (err) {
+                    console.error('Failed to copy toast message:', err);
                 }
-                copyBtn.innerHTML = checkSvg;
-                setTimeout(() => {
-                    if (copyBtn) copyBtn.innerHTML = copySvg;
-                }, 1500);
-            } catch (err) {
-                console.error('Failed to copy toast message:', err);
-            }
-        });
-        toast.appendChild(copyBtn);
+            });
+            toast.appendChild(copyBtn);
+        }
 
         document.body.appendChild(toast);
 
