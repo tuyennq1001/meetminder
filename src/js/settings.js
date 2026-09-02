@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS = {
   audio_source: 'system',
   overlay_opacity: 0.85,
   font_size: 16,
+  note_font_size: 14,
   font_color: '#ffffff',
   font_family: 'system',
   max_lines: 5,

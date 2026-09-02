@@ -48,6 +48,9 @@ pub struct Settings {
     pub overlay_opacity: f64,
     /// Font size in px
     pub font_size: u32,
+    /// Note editor font size in px
+    #[serde(default = "default_note_font_size")]
+    pub note_font_size: u32,
     /// Transcript font color as a CSS color string
     #[serde(default = "default_font_color")]
     pub font_color: String,
@@ -136,6 +139,7 @@ impl Default for Settings {
             audio_source: "system".to_string(),
             overlay_opacity: 0.85,
             font_size: 16,
+            note_font_size: default_note_font_size(),
             font_color: default_font_color(),
             font_family: default_font_family(),
             max_lines: 5,
@@ -172,6 +176,10 @@ impl Default for Settings {
 
 fn default_inactivity_timeout_min() -> u32 {
     10
+}
+
+fn default_note_font_size() -> u32 {
+    14
 }
 
 /// Serde default for `local_tts_speed` (field-level default would give 0.0).

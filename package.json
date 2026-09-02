@@ -5,18 +5,27 @@
   "type": "module",
   "scripts": {
     "tauri": "tauri",
-    "dev": "node scripts/tauri-with-env.mjs dev",
+    "dev": "npm run build:editor && node scripts/tauri-with-env.mjs dev",
     "dev:default": "tauri dev",
     "dev:web": "npx serve src -p 3111",
-    "build": "tauri build --bundles app",
-    "build:dev": "node scripts/tauri-with-env.mjs build",
+    "build": "npm run build:editor && tauri build --bundles app",
+    "build:dev": "npm run build:editor && node scripts/tauri-with-env.mjs build",
+    "build:editor": "node scripts/build-editor.mjs",
     "lint": "cd src-tauri && cargo clippy",
     "format": "cd src-tauri && cargo fmt"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "@tauri-apps/cli": "^2",
+    "esbuild": "^0.28.2"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.11.0",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.2",
+    "@codemirror/view": "^6.43.10",
+    "@lezer/highlight": "^1.2.3",
+    "@lezer/markdown": "^1.7.2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.0"
   }

@@ -9,6 +9,7 @@ import { sonioxClient } from './soniox.js';
 import { updater } from './updater.js';
 import { sessionStore, SessionStore } from './session-store.js';
 import { QWEN_LANGS } from './qwen-langs.js';
+import { NotesEditor } from './notes-editor.js';
 import {
     initShell, setActivity, getActivity, setLiveBadge, bindMenu, initWindowModes,
 } from './ui-shell.js';
@@ -46,6 +47,8 @@ class App {
         this._closing = false;    // Guard so the exit flush runs exactly once
         this._selectedSessionIds = new Set();
         this.isPaused = false;
+        this._liveNotesEditor = null;
+        this._sessionViewerEditor = null;
         this._hasUnsavedMeetingData = false;
         this._inactivityTimer = null;
         this._captureHealthTimer = null;
@@ -207,7 +210,7 @@ class App {
         // Copy session content
         const btnSessionCopy = document.getElementById('btn-session-copy');
         btnSessionCopy?.addEventListener('click', async () => {
-            const content = document.getElementById('session-viewer-content')?.textContent || '';
+            const content = this._sessionViewerEditor ? this._sessionViewerEditor.getContent() : '';
             if (content) {
                 await navigator.clipboard.writeText(content);
                 this._showToast('Đã copy nội dung cuộc họp ✓', 'success');
@@ -391,8 +394,7 @@ class App {
             if (this._currentViewedSession && this._currentViewedSession.id === cur.id) {
                 try {
                     const refreshed = await invoke('read_session', { id: cur.id });
-                    const contentEl = document.getElementById('session-viewer-content');
-                    if (contentEl) contentEl.textContent = refreshed.md;
+                    if (this._sessionViewerEditor) this._sessionViewerEditor.setContent(refreshed.md);
                     const titleEl = document.getElementById('session-viewer-title');
                     if (titleEl) titleEl.textContent = refreshed.json?.title || cur.id;
                 } catch {}
@@ -449,7 +451,6 @@ class App {
 
         // Keybindings inside inline session inputs
         const inputSessionTitle = document.getElementById('input-session-viewer-title');
-        const sessionContentEditor = document.getElementById('session-viewer-content-editor');
 
         inputSessionTitle?.addEventListener('keydown', (e) => {
             if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
@@ -458,18 +459,7 @@ class App {
                 this._saveSessionEdit();
             } else if (e.key === 'Enter') {
                 e.preventDefault();
-                sessionContentEditor?.focus();
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                this._exitSessionEditMode();
-            }
-        });
-
-        sessionContentEditor?.addEventListener('keydown', (e) => {
-            if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
-                e.preventDefault();
-                e.stopPropagation();
-                this._saveSessionEdit();
+                this._sessionViewerEditor?.focus();
             } else if (e.key === 'Escape') {
                 e.preventDefault();
                 this._exitSessionEditMode();
@@ -825,6 +815,12 @@ class App {
 
         document.getElementById('range-font-size')?.addEventListener('input', (e) => {
             const valEl = document.getElementById('font-size-value');
+            if (valEl) valEl.textContent = `${e.target.value}px`;
+            this._autoSaveSettingsFromForm();
+        });
+
+        document.getElementById('range-note-font-size')?.addEventListener('input', (e) => {
+            const valEl = document.getElementById('note-font-size-value');
             if (valEl) valEl.textContent = `${e.target.value}px`;
             this._autoSaveSettingsFromForm();
         });
@@ -1252,6 +1248,12 @@ class App {
         document.getElementById('range-font-size').value = s.font_size || 16;
         document.getElementById('font-size-value').textContent = `${s.font_size || 16}px`;
 
+        const noteFontSize = s.note_font_size || 14;
+        const noteFontRange = document.getElementById('range-note-font-size');
+        const noteFontVal = document.getElementById('note-font-size-value');
+        if (noteFontRange) noteFontRange.value = noteFontSize;
+        if (noteFontVal) noteFontVal.textContent = `${noteFontSize}px`;
+
         const fontColor = s.font_color || '#ffffff';
         document.getElementById('input-font-color').value = fontColor;
         document.getElementById('font-color-value').textContent = fontColor.toUpperCase();
@@ -1323,6 +1325,7 @@ class App {
             audio_source: document.querySelector('input[name="audio-source"]:checked')?.value || 'system',
             overlay_opacity: parseInt(document.getElementById('range-opacity')?.value || 85) / 100,
             font_size: parseInt(document.getElementById('range-font-size')?.value || 16),
+            note_font_size: parseInt(document.getElementById('range-note-font-size')?.value || 14),
             font_color: document.getElementById('input-font-color')?.value || '#ffffff',
             font_family: document.getElementById('select-font-family')?.value || 'system',
             max_lines: parseInt(document.getElementById('range-max-lines')?.value || 5),
@@ -1375,6 +1378,10 @@ class App {
     // ─── Apply Settings ────────────────────────────────────
 
     _applySettings(settings) {
+        // Update note editor font size
+        const noteFontSize = settings.note_font_size || 14;
+        document.documentElement.style.setProperty('--note-font-size', `${noteFontSize}px`);
+
         // Update overlay opacity
         const overlayView = document.getElementById('overlay-view');
         overlayView.style.opacity = settings.overlay_opacity || 0.85;
@@ -2953,9 +2960,8 @@ class App {
         }
         this._updateStatus('idle');
 
-        // Clear live note textarea and close note drawer
-        const noteTextarea = document.getElementById('live-note-textarea');
-        if (noteTextarea) noteTextarea.value = '';
+        // Clear live notes and close note drawer
+        if (this._liveNotesEditor) this._liveNotesEditor.setContent('');
         this._toggleNotesDrawer(false);
 
         const settings = settingsManager.get();
@@ -2998,8 +3004,7 @@ class App {
             this.transcriptUI.clear();
             this.transcriptUI.showPlaceholder();
         }
-        const noteTextarea = document.getElementById('live-note-textarea');
-        if (noteTextarea) noteTextarea.value = '';
+        if (this._liveNotesEditor) this._liveNotesEditor.setContent('');
         this._toggleNotesDrawer(false);
 
         const settings = settingsManager.get();
@@ -5333,12 +5338,12 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 return;
             }
 
-            const noteTextarea = document.getElementById('live-note-textarea');
-            if (noteTextarea) {
-                const currentVal = noteTextarea.value.trim();
-                const header = `\n\n--- 📌 Ghi chú từ [${target.title || target.id}] ---\n`;
-                noteTextarea.value = currentVal ? `${currentVal}${header}${prevNotes}` : `${header}${prevNotes}`;
-                sessionStore.notes = noteTextarea.value;
+            const currentVal = this._liveNotesEditor ? this._liveNotesEditor.getContent().trim() : '';
+            const header = `\n\n--- 📌 Ghi chú từ [${target.title || target.id}] ---\n`;
+            const newVal = currentVal ? `${currentVal}${header}${prevNotes}` : `${header}${prevNotes}`;
+            if (this._liveNotesEditor) {
+                this._liveNotesEditor.setContent(newVal);
+                sessionStore.notes = newVal;
                 this._toggleNotesDrawer(true);
                 this._showToast(`Đã nạp ghi chú từ "${target.title}" ✓`, 'success');
             }
@@ -5365,13 +5370,12 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const listPanel = document.getElementById('sessions-list-panel');
         const viewer = document.getElementById('session-viewer');
         const title = document.getElementById('session-viewer-title');
-        const content = document.getElementById('session-viewer-content');
+        const editorContainer = document.getElementById('session-viewer-editor-container');
         const detailPlayer = document.querySelector('.session-player-detail');
 
         if (listPanel) listPanel.style.display = 'none';
         if (viewer) viewer.style.display = '';
         if (title) title.textContent = id;
-        if (content) content.textContent = 'Loading...';
         if (detailPlayer) {
             detailPlayer.dataset.playerId = id;
             detailPlayer.dataset.legacy = isLegacy ? '1' : '0';
@@ -5381,18 +5385,34 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
         this._currentViewedSession = { id, isLegacy };
 
+        if (!this._sessionViewerEditor && editorContainer) {
+            this._sessionViewerEditor = new NotesEditor();
+            this._sessionViewerEditor.mount(editorContainer, {
+                initialContent: 'Loading...',
+                readOnly: true,
+                placeholderText: 'Nội dung cuộc họp...',
+                onSave: () => {
+                    if (this._isSessionEditing) this._saveSessionEdit();
+                },
+                onCancel: () => {
+                    if (this._isSessionEditing) this._exitSessionEditMode();
+                },
+            });
+        }
+
         try {
             if (isLegacy) {
                 const text = await invoke('read_legacy_session', { id });
-                if (content) content.textContent = text;
+                if (this._sessionViewerEditor) this._sessionViewerEditor.setContent(text);
                 if (title) title.textContent = id;
             } else {
                 const result = await invoke('read_session', { id });
-                if (content) content.textContent = result.md;
+                if (this._sessionViewerEditor) this._sessionViewerEditor.setContent(result.md);
                 if (title) title.textContent = result.json.title || id;
             }
+            if (this._sessionViewerEditor) this._sessionViewerEditor.setReadOnly(true);
         } catch (err) {
-            if (content) content.textContent = `Error loading session: ${err}`;
+            if (this._sessionViewerEditor) this._sessionViewerEditor.setContent(`Error loading session: ${err}`);
         }
     }
 
@@ -5401,21 +5421,16 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (!cur) return;
 
         const titleEl = document.getElementById('session-viewer-title');
-        const contentEl = document.getElementById('session-viewer-content');
         const inputTitle = document.getElementById('input-session-viewer-title');
-        const contentEditor = document.getElementById('session-viewer-content-editor');
         const normalActions = document.getElementById('session-viewer-normal-actions');
         const editActions = document.getElementById('session-viewer-edit-actions');
 
-        if (!titleEl || !contentEl || !inputTitle || !contentEditor) return;
+        if (!titleEl || !inputTitle) return;
 
         this._isSessionEditing = true;
 
         const currentTitle = titleEl.textContent || '';
-        const currentContent = contentEl.textContent || '';
-
         inputTitle.value = currentTitle;
-        contentEditor.value = currentContent;
 
         titleEl.style.display = 'none';
         inputTitle.style.display = '';
@@ -5423,8 +5438,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (normalActions) normalActions.style.display = 'none';
         if (editActions) editActions.style.display = '';
 
-        contentEl.style.display = 'none';
-        contentEditor.style.display = '';
+        if (this._sessionViewerEditor) {
+            this._sessionViewerEditor.setReadOnly(false);
+            this._sessionViewerEditor.focus();
+        }
 
         inputTitle.focus();
         inputTitle.select();
@@ -5434,8 +5451,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         this._isSessionEditing = false;
         const titleEl = document.getElementById('session-viewer-title');
         const inputTitle = document.getElementById('input-session-viewer-title');
-        const contentEl = document.getElementById('session-viewer-content');
-        const contentEditor = document.getElementById('session-viewer-content-editor');
         const normalActions = document.getElementById('session-viewer-normal-actions');
         const editActions = document.getElementById('session-viewer-edit-actions');
 
@@ -5443,8 +5458,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (inputTitle) inputTitle.style.display = 'none';
         if (normalActions) normalActions.style.display = '';
         if (editActions) editActions.style.display = 'none';
-        if (contentEl) contentEl.style.display = '';
-        if (contentEditor) contentEditor.style.display = 'none';
+
+        if (this._sessionViewerEditor) {
+            this._sessionViewerEditor.setReadOnly(true);
+        }
     }
 
     async _saveSessionEdit() {
@@ -5452,12 +5469,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (!cur) return;
 
         const inputTitle = document.getElementById('input-session-viewer-title');
-        const contentEditor = document.getElementById('session-viewer-content-editor');
         const titleEl = document.getElementById('session-viewer-title');
-        const contentEl = document.getElementById('session-viewer-content');
 
         const newTitle = inputTitle?.value.trim() || 'Cuộc họp chưa đặt tên';
-        let newContent = contentEditor?.value || '';
+        let newContent = this._sessionViewerEditor ? this._sessionViewerEditor.getContent() : '';
 
         // If markdown starts with # <heading>, sync heading with newTitle
         if (newTitle && newContent.startsWith('# ')) {
@@ -5467,6 +5482,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             } else {
                 newContent = `# ${newTitle}`;
             }
+            if (this._sessionViewerEditor) this._sessionViewerEditor.setContent(newContent);
         }
 
         try {
@@ -5477,7 +5493,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             });
 
             if (titleEl) titleEl.textContent = newTitle;
-            if (contentEl) contentEl.textContent = newContent;
 
             if (sessionStore.id === cur.id) {
                 sessionStore.title = newTitle;
@@ -5490,7 +5505,12 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
             this._exitSessionEditMode();
             this._showToast('Đã lưu thay đổi ✓', 'success');
-            await this._showSessions();
+
+            // Refresh sessions list in background without closing detail viewer
+            try {
+                const sessions = await invoke('list_sessions');
+                this._cachedSessions = sessions || [];
+            } catch {}
         } catch (err) {
             this._showToast(`Lỗi lưu thay đổi: ${err}`, 'error');
         }
@@ -5903,11 +5923,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const btnToggleNotes = document.getElementById('btn-toggle-notes');
         const btnClose = document.getElementById('btn-note-close');
         const btnCopy = document.getElementById('btn-note-copy');
-        const btnPreview = document.getElementById('btn-note-toggle-preview');
-        const noteTextarea = document.getElementById('live-note-textarea');
+        const editorContainer = document.getElementById('live-note-editor');
         const fmtButtons = document.querySelectorAll('.note-fmt-btn');
-
-        this._isNotePreviewActive = false;
 
         btnToggleNotes?.addEventListener('click', () => {
             this._toggleNotesDrawer();
@@ -5918,7 +5935,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         });
 
         btnCopy?.addEventListener('click', async () => {
-            const text = noteTextarea?.value;
+            const text = this._liveNotesEditor?.getContent();
             if (text && text.trim()) {
                 await navigator.clipboard.writeText(text);
                 this._showToast('📋 Đã copy ghi chú vào clipboard', 'success');
@@ -5927,160 +5944,24 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             }
         });
 
-        btnPreview?.addEventListener('click', () => {
-            this._toggleNotePreview();
-        });
-
         fmtButtons.forEach(btn => {
             btn.addEventListener('click', () => {
                 const fmt = btn.dataset.fmt;
-                if (fmt) this._applyNoteFormat(fmt);
+                if (fmt && this._liveNotesEditor) {
+                    this._liveNotesEditor.applyFormat(fmt);
+                }
             });
         });
 
-        noteTextarea?.addEventListener('input', (e) => {
-            const val = e.target.value;
-            sessionStore.notes = val;
-            if (this._isNotePreviewActive) {
-                this._renderNotePreview();
-            }
-        });
-
-        noteTextarea?.addEventListener('keydown', (e) => {
-            this._handleNoteKeydown(e);
-        });
-    }
-
-    _handleNoteKeydown(e) {
-        const textarea = e.target;
-        const val = textarea.value;
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-
-        // ─── 1. TAB & SHIFT+TAB (Indent / Outdent) ───
-        if (e.key === 'Tab') {
-            e.preventDefault();
-            const isShift = e.shiftKey;
-
-            // Find start of first line and end of last line
-            const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-            let lineEnd = val.indexOf('\n', end);
-            if (lineEnd === -1) lineEnd = val.length;
-
-            const selectedText = val.substring(lineStart, lineEnd);
-            const lines = selectedText.split('\n');
-
-            if (isShift) {
-                // Outdent: remove up to 2 leading spaces from each line
-                let removedCountFirstLine = 0;
-                let totalRemoved = 0;
-                const newLines = lines.map((l, idx) => {
-                    let count = 0;
-                    if (l.startsWith('  ')) count = 2;
-                    else if (l.startsWith(' ')) count = 1;
-                    else if (l.startsWith('\t')) count = 1;
-
-                    if (idx === 0) removedCountFirstLine = count;
-                    totalRemoved += count;
-                    return l.slice(count);
-                });
-                const replacement = newLines.join('\n');
-                textarea.setRangeText(replacement, lineStart, lineEnd, 'preserve');
-                textarea.selectionStart = Math.max(lineStart, start - removedCountFirstLine);
-                textarea.selectionEnd = Math.max(lineStart, end - totalRemoved);
-            } else {
-                // Indent: add 2 leading spaces to each line
-                if (start === end && !val.substring(lineStart, start).match(/^\s*([*\-+]|\d+\.|\[[ xX]\])/)) {
-                    // Plain text position without list marker
-                    textarea.setRangeText('  ', start, end, 'end');
-                } else {
-                    // Indent entire line(s) (e.g. nested bullet / checklist)
-                    const newLines = lines.map(l => '  ' + l);
-                    const replacement = newLines.join('\n');
-                    textarea.setRangeText(replacement, lineStart, lineEnd, 'preserve');
-                    textarea.selectionStart = start + 2;
-                    textarea.selectionEnd = end + (lines.length * 2);
-                }
-            }
-
-            sessionStore.notes = textarea.value;
-            if (this._isNotePreviewActive) this._renderNotePreview();
-            return;
-        }
-
-        // ─── 2. ENTER (Copy format & auto list continuation) ───
-        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-            const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-            const lineBeforeCursor = val.substring(lineStart, start);
-            const lineEndIdx = val.indexOf('\n', start);
-            const lineAfterCursor = val.substring(start, lineEndIdx === -1 ? val.length : lineEndIdx);
-
-            // Checkbox: ^(\s*)-\s+\[([ xX])\]\s*(.*)$
-            const todoMatch = lineBeforeCursor.match(/^(\s*)-\s+\[([ xX])\]\s*(.*)$/);
-            if (todoMatch) {
-                e.preventDefault();
-                const indent = todoMatch[1];
-                const textContent = todoMatch[3].trim();
-                if (textContent === '' && lineAfterCursor.trim() === '') {
-                    // Empty checklist item -> remove marker to exit list
-                    textarea.setRangeText('', lineStart, start, 'end');
-                } else {
-                    const nextItem = `\n${indent}- [ ] `;
-                    textarea.setRangeText(nextItem, start, end, 'end');
-                }
-                sessionStore.notes = textarea.value;
-                if (this._isNotePreviewActive) this._renderNotePreview();
-                return;
-            }
-
-            // Numbered list: ^(\s*)(\d+)\.\s+(.*)$
-            const numMatch = lineBeforeCursor.match(/^(\s*)(\d+)\.\s+(.*)$/);
-            if (numMatch) {
-                e.preventDefault();
-                const indent = numMatch[1];
-                const num = parseInt(numMatch[2], 10);
-                const textContent = numMatch[3].trim();
-                if (textContent === '' && lineAfterCursor.trim() === '') {
-                    // Empty numbered item -> remove marker to exit list
-                    textarea.setRangeText('', lineStart, start, 'end');
-                } else {
-                    const nextItem = `\n${indent}${num + 1}. `;
-                    textarea.setRangeText(nextItem, start, end, 'end');
-                }
-                sessionStore.notes = textarea.value;
-                if (this._isNotePreviewActive) this._renderNotePreview();
-                return;
-            }
-
-            // Bullet list: ^(\s*)([-*+])\s+(.*)$
-            const bulletMatch = lineBeforeCursor.match(/^(\s*)([-*+])\s+(.*)$/);
-            if (bulletMatch) {
-                e.preventDefault();
-                const indent = bulletMatch[1];
-                const bullet = bulletMatch[2];
-                const textContent = bulletMatch[3].trim();
-                if (textContent === '' && lineAfterCursor.trim() === '') {
-                    // Empty bullet -> remove marker to exit list
-                    textarea.setRangeText('', lineStart, start, 'end');
-                } else {
-                    const nextItem = `\n${indent}${bullet} `;
-                    textarea.setRangeText(nextItem, start, end, 'end');
-                }
-                sessionStore.notes = textarea.value;
-                if (this._isNotePreviewActive) this._renderNotePreview();
-                return;
-            }
-
-            // Plain indentation: ^(\s+)(.*)$
-            const indentMatch = lineBeforeCursor.match(/^(\s+)(.*)$/);
-            if (indentMatch && indentMatch[2].trim() !== '') {
-                e.preventDefault();
-                const indent = indentMatch[1];
-                textarea.setRangeText(`\n${indent}`, start, end, 'end');
-                sessionStore.notes = textarea.value;
-                if (this._isNotePreviewActive) this._renderNotePreview();
-                return;
-            }
+        if (editorContainer && !this._liveNotesEditor) {
+            this._liveNotesEditor = new NotesEditor();
+            this._liveNotesEditor.mount(editorContainer, {
+                initialContent: sessionStore.notes || '',
+                placeholderText: 'Nhập ghi chú cuộc họp dạng Markdown (Live Preview)...',
+                onChange: (val) => {
+                    sessionStore.notes = val;
+                },
+            });
         }
     }
 
@@ -6088,14 +5969,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const now = new Date();
         const p = n => String(n).padStart(2, '0');
         const dateStr = `${now.getFullYear()}/${p(now.getMonth() + 1)}/${p(now.getDate())}`;
-        return `# MTG Title\n## Thông tin cuộc họp\n- Người tham gia: \n- Ngày tháng: ${dateStr}\n\n## Nội dung cuộc họp \n\n\n## TODO\n- \n`;
+        return `# MTG Title\n## Thông tin cuộc họp\n- Người tham gia: \n- Ngày tháng: ${dateStr}\n\n## Nội dung cuộc họp \n\n\n## TODO\n- [ ] \n`;
     }
 
     _toggleNotesDrawer(forceOpen = null) {
         const drawer = document.getElementById('live-notes-drawer');
-        const textarea = document.getElementById('live-note-textarea');
         const btnToggleNotes = document.getElementById('btn-toggle-notes');
-        if (!drawer || !textarea) return;
+        if (!drawer) return;
 
         const isOpen = drawer.style.display !== 'none';
         const shouldOpen = forceOpen !== null ? forceOpen : !isOpen;
@@ -6103,161 +5983,19 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (shouldOpen) {
             drawer.style.display = 'flex';
             if (btnToggleNotes) btnToggleNotes.classList.add('active');
-            if (!textarea.value.trim()) {
-                textarea.value = this._getNoteTemplate();
-                sessionStore.notes = textarea.value;
+            if (this._liveNotesEditor) {
+                const content = this._liveNotesEditor.getContent();
+                if (!content || !content.trim()) {
+                    const template = this._getNoteTemplate();
+                    this._liveNotesEditor.setContent(template);
+                    sessionStore.notes = template;
+                }
+                this._liveNotesEditor.focus();
             }
-            if (this._isNotePreviewActive) {
-                this._renderNotePreview();
-            }
-            textarea.focus();
         } else {
             drawer.style.display = 'none';
             if (btnToggleNotes) btnToggleNotes.classList.remove('active');
         }
-    }
-
-    _toggleNotePreview() {
-        const textarea = document.getElementById('live-note-textarea');
-        const preview = document.getElementById('live-note-preview');
-        const btnPreview = document.getElementById('btn-note-toggle-preview');
-        if (!textarea || !preview || !btnPreview) return;
-
-        this._isNotePreviewActive = !this._isNotePreviewActive;
-
-        if (this._isNotePreviewActive) {
-            this._renderNotePreview();
-            textarea.style.display = 'none';
-            preview.style.display = 'block';
-            btnPreview.classList.add('active');
-            btnPreview.textContent = '✏️ Edit';
-        } else {
-            textarea.style.display = 'block';
-            preview.style.display = 'none';
-            btnPreview.classList.remove('active');
-            btnPreview.textContent = '👁️ Preview';
-            textarea.focus();
-        }
-    }
-
-    _applyNoteFormat(fmt) {
-        const textarea = document.getElementById('live-note-textarea');
-        if (!textarea) return;
-
-        // If preview is active, switch back to edit mode first
-        if (this._isNotePreviewActive) {
-            this._toggleNotePreview();
-        }
-
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        const text = textarea.value;
-        const selected = text.substring(start, end);
-
-        let replacement = '';
-        let newCursorPos = end;
-
-        switch (fmt) {
-            case 'bold':
-                replacement = `**${selected || 'in đậm'}**`;
-                newCursorPos = selected ? start + replacement.length : start + 2;
-                break;
-            case 'italic':
-                replacement = `*${selected || 'in nghiêng'}*`;
-                newCursorPos = selected ? start + replacement.length : start + 1;
-                break;
-            case 'h1':
-                replacement = selected ? `# ${selected}` : '# ';
-                newCursorPos = start + replacement.length;
-                break;
-            case 'h2':
-                replacement = selected ? `## ${selected}` : '## ';
-                newCursorPos = start + replacement.length;
-                break;
-            case 'list':
-                replacement = selected ? `- ${selected}` : '- ';
-                newCursorPos = start + replacement.length;
-                break;
-            case 'todo':
-                replacement = selected ? `- [ ] ${selected}` : '- [ ] ';
-                newCursorPos = start + replacement.length;
-                break;
-            case 'code':
-                replacement = `\`${selected || 'code'}\``;
-                newCursorPos = selected ? start + replacement.length : start + 1;
-                break;
-        }
-
-        textarea.setRangeText(replacement, start, end, 'end');
-        textarea.selectionStart = newCursorPos;
-        textarea.selectionEnd = newCursorPos;
-        sessionStore.notes = textarea.value;
-        textarea.focus();
-    }
-
-    _renderNotePreview() {
-        const textarea = document.getElementById('live-note-textarea');
-        const preview = document.getElementById('live-note-preview');
-        if (!textarea || !preview) return;
-
-        const raw = textarea.value;
-        const lines = raw.split('\n');
-        const htmlLines = [];
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-
-            // Checkboxes: - [ ] or - [x]
-            const todoMatch = line.match(/^(\s*)-\s+\[([ xX])\]\s+(.*)$/);
-            if (todoMatch) {
-                const indent = Math.floor(todoMatch[1].length / 2);
-                const checked = todoMatch[2].toLowerCase() === 'x';
-                const text = this._esc(todoMatch[3]);
-                htmlLines.push(`<div class="todo-item ${checked ? 'done' : ''}" data-line="${i}" style="margin-left: ${indent * 16}px;"><input type="checkbox" ${checked ? 'checked' : ''} data-line="${i}"> <span>${this._formatInlineMarkdown(text)}</span></div>`);
-                continue;
-            }
-
-            // Headers
-            if (line.startsWith('# ')) {
-                htmlLines.push(`<h1>${this._formatInlineMarkdown(this._esc(line.slice(2)))}</h1>`);
-            } else if (line.startsWith('## ')) {
-                htmlLines.push(`<h2>${this._formatInlineMarkdown(this._esc(line.slice(3)))}</h2>`);
-            } else if (line.startsWith('### ')) {
-                htmlLines.push(`<h3>${this._formatInlineMarkdown(this._esc(line.slice(4)))}</h3>`);
-            } else if (line.match(/^(\s*)[-*+]\s+(.*)$/)) {
-                const m = line.match(/^(\s*)[-*+]\s+(.*)$/);
-                const indent = Math.floor(m[1].length / 2);
-                htmlLines.push(`<ul style="margin-left: ${indent * 16}px; margin-top: 2px; margin-bottom: 2px;"><li>${this._formatInlineMarkdown(this._esc(m[2]))}</li></ul>`);
-            } else if (line.match(/^(\s*)(\d+)\.\s+(.*)$/)) {
-                const m = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
-                const indent = Math.floor(m[1].length / 2);
-                htmlLines.push(`<ol start="${m[2]}" style="margin-left: ${indent * 16}px; margin-top: 2px; margin-bottom: 2px;"><li>${this._formatInlineMarkdown(this._esc(m[3]))}</li></ol>`);
-            } else if (!line.trim()) {
-                htmlLines.push('<div style="height:6px;"></div>');
-            } else {
-                htmlLines.push(`<p style="margin:2px 0;">${this._formatInlineMarkdown(this._esc(line))}</p>`);
-            }
-        }
-
-        preview.innerHTML = htmlLines.join('');
-
-        // Wire checkbox clicking to toggle in underlying markdown
-        preview.querySelectorAll('input[type="checkbox"]').forEach(chk => {
-            chk.addEventListener('change', (e) => {
-                const lineIdx = parseInt(e.target.dataset.line);
-                const currentLines = textarea.value.split('\n');
-                if (currentLines[lineIdx]) {
-                    if (e.target.checked) {
-                        currentLines[lineIdx] = currentLines[lineIdx].replace(/-\s+\[ \]/, '- [x]');
-                    } else {
-                        currentLines[lineIdx] = currentLines[lineIdx].replace(/-\s+\[[xX]\]/, '- [ ]');
-                    }
-                    textarea.value = currentLines.join('\n');
-                    sessionStore.notes = textarea.value;
-                    this._renderNotePreview();
-                }
-            });
-        });
     }
 
     _formatInlineMarkdown(text) {

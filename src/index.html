@@ -170,8 +170,6 @@
             <button type="button" class="note-fmt-btn" data-fmt="todo" title="Checklist - [ ] ">☑ To-Do</button>
             <button type="button" class="note-fmt-btn" data-fmt="code" title="Mã code `code`"><code>&lt;/&gt;</code></button>
             <button type="button" id="btn-note-fetch-prev" class="note-fmt-btn" title="Gợi ý nạp Notes từ buổi họp cùng tag gần nhất">📋 Từ trước</button>
-            <div class="notes-sep"></div>
-            <button type="button" id="btn-note-toggle-preview" class="note-preview-btn" title="Chuyển đổi Xem trước / Soạn thảo">👁️ Preview</button>
           </div>
           <div class="notes-tools-right">
             <button type="button" id="btn-note-copy" class="note-copy-btn" title="Sao chép nội dung ghi chú">
@@ -184,10 +182,9 @@
           </div>
         </div>
 
-        <!-- Editor & Preview containers -->
+        <!-- Live Preview Editor Container -->
         <div class="notes-body">
-          <textarea id="live-note-textarea" class="live-note-textarea" placeholder="Nhập ghi chú cuộc họp dạng Markdown..."></textarea>
-          <div id="live-note-preview" class="live-note-preview" style="display:none"></div>
+          <div id="live-note-editor" class="live-note-editor-container"></div>
         </div>
       </div>
     </div>
@@ -291,8 +288,7 @@
           <input class="session-player-timeline" data-player-timeline type="range" min="0" max="0" step="0.1" value="0" aria-label="Timeline bản ghi âm" />
           <span class="session-player-time" data-player-duration>0:00</span>
         </div>
-        <div id="session-viewer-content" class="session-content-scroll"></div>
-        <textarea id="session-viewer-content-editor" class="session-content-editor" style="display:none" placeholder="Nội dung cuộc họp (Markdown)..." spellcheck="false"></textarea>
+        <div id="session-viewer-editor-container" class="session-viewer-editor-container"></div>
       </div>
     </div>
 
@@ -818,26 +814,38 @@
           <div class="settings-panel-header">
             <h3 class="settings-panel-title">🎨 Hiển thị & Giao diện</h3>
           </div>
-          <div class="settings-section">
-            <div class="slider-field">
-              <span class="field-label">Opacity</span>
-              <input type="range" id="range-opacity" min="20" max="100" value="85" />
-              <span id="opacity-value" class="range-value">85%</span>
+
+          <!-- Note Editor Display Settings -->
+          <div class="settings-group-card">
+            <div class="settings-group-header">📝 Ghi chú cuộc họp (Take Note & Logs)</div>
+            <div class="settings-grid-row">
+              <span class="field-label">Font Size Note</span>
+              <div class="slider-control-wrap">
+                <input type="range" id="range-note-font-size" min="12" max="36" value="14" />
+                <span id="note-font-size-value" class="range-value">14px</span>
+              </div>
             </div>
-            <div class="slider-field">
-              <span class="field-label">Font Size</span>
-              <input type="range" id="range-font-size" min="12" max="140" value="16" />
-              <span id="font-size-value" class="range-value">16px</span>
+          </div>
+
+          <!-- Transcript Display Settings -->
+          <div class="settings-group-card">
+            <div class="settings-group-header">💬 Bản dịch & Phụ đề trực tiếp (Live Transcript)</div>
+            <div class="settings-grid-row">
+              <span class="field-label">Font Size Dịch</span>
+              <div class="slider-control-wrap">
+                <input type="range" id="range-font-size" min="12" max="36" value="16" />
+                <span id="font-size-value" class="range-value">16px</span>
+              </div>
             </div>
-            <div class="display-field">
-              <label class="field-label" for="input-font-color">Font Color</label>
+            <div class="settings-grid-row">
+              <span class="field-label">Font Color</span>
               <div class="color-input-wrap">
                 <input type="color" id="input-font-color" value="#ffffff" />
                 <span id="font-color-value">#FFFFFF</span>
               </div>
             </div>
-            <div class="display-field">
-              <label class="field-label" for="select-font-family">Font Style</label>
+            <div class="settings-grid-row">
+              <span class="field-label">Font Style</span>
               <select id="select-font-family" class="source-select">
                 <option value="system">System</option>
                 <option value="inter">Inter</option>
@@ -846,15 +854,32 @@
                 <option value="monospace">Monospace</option>
               </select>
             </div>
-            <div class="slider-field">
+            <div class="settings-grid-row">
               <span class="field-label">Max Lines</span>
-              <input type="range" id="range-max-lines" min="2" max="15" value="5" />
-              <span id="max-lines-value" class="range-value">5</span>
+              <div class="slider-control-wrap">
+                <input type="range" id="range-max-lines" min="2" max="15" value="5" />
+                <span id="max-lines-value" class="range-value">5</span>
+              </div>
             </div>
-            <label class="checkbox-option" style="margin-top: 8px;">
-              <input type="checkbox" id="check-show-original" checked />
-              <span class="checkbox-label">Show original text</span>
-            </label>
+            <div class="settings-grid-row" style="border-bottom: none;">
+              <span class="field-label">Show Original</span>
+              <label class="checkbox-option">
+                <input type="checkbox" id="check-show-original" checked />
+                <span class="checkbox-label">Hiển thị song song câu gốc</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Window & Overlay Settings -->
+          <div class="settings-group-card">
+            <div class="settings-group-header">🪟 Cửa sổ ứng dụng</div>
+            <div class="settings-grid-row" style="border-bottom: none;">
+              <span class="field-label">Opacity (Độ trong)</span>
+              <div class="slider-control-wrap">
+                <input type="range" id="range-opacity" min="20" max="100" value="85" />
+                <span id="opacity-value" class="range-value">85%</span>
+              </div>
+            </div>
           </div>
         </div>
 
