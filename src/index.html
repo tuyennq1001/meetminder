@@ -77,11 +77,11 @@
             <span id="btn-stop-label">S<u>t</u>op</span>
           </button>
 
-          <!-- Quick Gemini speaker diarization toggle -->
-          <label id="toolbar-gemini-diarization" class="toolbar-checkbox" title="Bật/tắt phân biệt người nói cho Gemini (⌘E, áp dụng từ phiên tiếp theo)">
-            <input type="checkbox" id="check-gemini-diarization" />
-            <span>Show sp<u>e</u>aker</span>
-          </label>
+          <!-- Live Meeting Duration -->
+          <div id="live-meeting-duration" class="live-duration-badge is-idle" title="Thời gian diễn ra cuộc họp">
+            <span class="duration-dot"></span>
+            <span id="live-duration-text">00:00:00</span>
+          </div>
 
           <!-- Take Note button -->
           <button id="btn-toggle-notes" class="btn-notes-action" title="Ghi chú cuộc họp (⌘N)">
@@ -1098,7 +1098,6 @@
         <tr><td><kbd>⌘S</kbd> / <kbd>⌘P</kbd> / <kbd>⌘C</kbd></td><td>Start / Pause / Continue</td></tr>
         <tr><td><kbd>⌘T</kbd></td><td>Kết thúc cuộc họp & Lưu (Stop)</td></tr>
         <tr><td><kbd>⌘N</kbd></td><td>Mở / Đóng ghi chú (Take Note)</td></tr>
-        <tr><td><kbd>⌘E</kbd></td><td>Bật / tắt Show speaker</td></tr>
         <tr><td><kbd>⌘1</kbd> / <kbd>⌘2</kbd> / <kbd>⌘3</kbd></td><td>Nguồn: System / Mic / Cả 2</td></tr>
         <tr><td><kbd>⌘,</kbd></td><td>Mở Cài đặt</td></tr>
         <tr><td><kbd>⌘P</kbd></td><td>Ghim cửa sổ nổi</td></tr>

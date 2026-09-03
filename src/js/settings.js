@@ -10,7 +10,6 @@ const DEFAULT_SETTINGS = {
   openai_api_key: '',
   gemini_api_key: '',
   gemini_model: 'models/gemini-3.5-transcribe-live',
-  gemini_diarization: false,
   qwen_api_key: '',
   source_language: 'ja',
   target_language: 'vi',

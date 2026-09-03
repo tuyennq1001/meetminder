@@ -16,7 +16,6 @@ if (!window.__TAURI__ && location.port === '3111') {
         elevenlabs_api_key: '',
         google_tts_api_key: '',
         openai_api_key: '',
-        gemini_diarization: false,
         qwen_api_key: '',
         tts_provider: 'edge',
         edge_tts_voice: 'vi-VN-HoaiMyNeural',

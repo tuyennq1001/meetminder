@@ -143,6 +143,8 @@ class App {
         this._templateEditor = null;
         this._activeTemplateTab = 'notes';
         this._templateDrafts = {};
+        this._geminiReconnectTimer = null;
+        this._liveDurationTimer = null;
     }
 
     async init() {
@@ -765,23 +767,6 @@ class App {
             this._debouncedAutoSave();
         });
 
-        // Toolbar-only Gemini option
-        document.getElementById('check-gemini-diarization')?.addEventListener('change', async (e) => {
-            const enabled = e.target.checked;
-            try {
-                await settingsManager.save({ gemini_diarization: enabled });
-                this._showToast(
-                    enabled
-                        ? 'Đã bật phân biệt người nói cho phiên Gemini tiếp theo'
-                        : 'Đã tắt phân biệt người nói',
-                    'success',
-                );
-            } catch (err) {
-                e.target.checked = !enabled;
-                this._showToast(`Không thể lưu tuỳ chọn: ${err}`, 'error');
-            }
-        });
-
         document.getElementById('link-openai')?.addEventListener('click', (e) => {
             e.preventDefault();
             window.__TAURI__.opener.openUrl('https://platform.openai.com/api-keys');
@@ -1083,16 +1068,6 @@ class App {
                 return;
             }
 
-            // Cmd/Ctrl + E: toggle Gemini speaker labels.
-            if (hasModifier && !isTyping && (e.key === 'e' || e.key === 'E')) {
-                const diarizationCheckbox = document.getElementById('check-gemini-diarization');
-                if (diarizationCheckbox && !diarizationCheckbox.disabled) {
-                    e.preventDefault();
-                    diarizationCheckbox.click();
-                    return;
-                }
-            }
-
             // Cmd/Ctrl + Enter: Start / Pause fallback
             if (hasModifier && e.key === 'Enter') {
                 e.preventDefault();
@@ -1373,8 +1348,6 @@ class App {
                 if (customModelInput) customModelInput.value = savedModel;
             }
         }
-        const geminiDiarization = document.getElementById('check-gemini-diarization');
-        if (geminiDiarization) geminiDiarization.checked = s.gemini_diarization === true;
         const qwenKeyInput = document.getElementById('input-qwen-key');
         if (qwenKeyInput) qwenKeyInput.value = s.qwen_api_key || '';
         document.getElementById('select-source-lang').value = s.source_language || 'ja';
@@ -1479,7 +1452,6 @@ class App {
                 }
                 return sel || 'models/gemini-2.0-flash-exp';
             })(),
-            gemini_diarization: document.getElementById('check-gemini-diarization')?.checked || false,
             qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
             source_language: document.getElementById('select-source-lang')?.value || 'ja',
             target_language: document.getElementById('select-target-lang')?.value || 'vi',
@@ -1575,11 +1547,6 @@ class App {
         this._setViewMode(viewMode);
 
         // Update quick language and timing in toolbar
-        const diarizationCheckbox = document.getElementById('check-gemini-diarization');
-        const diarizationLabel = document.getElementById('toolbar-gemini-diarization');
-        if (diarizationCheckbox) diarizationCheckbox.checked = settings.gemini_diarization === true;
-        if (diarizationCheckbox) diarizationCheckbox.disabled = settings.translation_mode !== 'gemini';
-        if (diarizationLabel) diarizationLabel.classList.toggle('is-disabled', settings.translation_mode !== 'gemini');
         const quickSrc = document.getElementById('quick-select-source-lang');
         const quickTgt = document.getElementById('quick-select-target-lang');
         if (quickSrc) quickSrc.value = settings.source_language || 'ja';
@@ -1830,11 +1797,6 @@ class App {
         if (sectionOpenAiKey) sectionOpenAiKey.style.display = isOpenAi ? '' : 'none';
         if (sectionGeminiKey) sectionGeminiKey.style.display = isGemini ? '' : 'none';
         if (sectionQwenKey) sectionQwenKey.style.display = isQwen ? '' : 'none';
-
-        const diarizationCheckbox = document.getElementById('check-gemini-diarization');
-        const diarizationLabel = document.getElementById('toolbar-gemini-diarization');
-        if (diarizationCheckbox) diarizationCheckbox.disabled = !isGemini;
-        if (diarizationLabel) diarizationLabel.classList.toggle('is-disabled', !isGemini);
 
         // Soniox-only features: Custom context, Strict language detection,
         // Endpoint delay. The realtime engines manage these internally.
@@ -2118,6 +2080,8 @@ class App {
             targetLang: this.sessionTargetLang,
         });
 
+        this._startLiveDurationTimer();
+
         // Clear transcript only if nothing is showing
         if (!this.transcriptUI.hasContent()) {
             this.transcriptUI.showListening();
@@ -2356,28 +2320,22 @@ class App {
                 this.transcriptUI.addTranslation(translatedText);
                 sessionStore.addSegment('', translatedText || '');
             }
-            this.transcriptUI.clearProvisional();
         };
         this.geminiClient.onError = (code, msg) => {
             console.error('[Gemini Realtime]', code, msg);
-            if (code === 'connect_failed' && String(msg).includes('API key')) {
-                this._showToast(`Gemini: ${msg || code}`, 'error');
+            const msgStr = String(msg || '');
+            if ((code === 'connect_failed' || code === 'session_failed') && (msgStr.includes('API key') || msgStr.includes('PERMISSION_DENIED'))) {
+                this._showToast(`Gemini: ${msgStr || code}`, 'error');
                 this._updateStatus('error');
                 this.pause();
             } else if (this.isRunning) {
-                console.log('[Gemini Realtime] Connection error, auto-reconnecting...');
-                setTimeout(() => {
-                    if (this.isRunning) this._startGeminiMode(settingsManager.get());
-                }, 1000);
+                this._scheduleGeminiReconnect(1000);
             }
         };
         this.geminiClient.onClosed = (reason) => {
             console.warn('[Gemini Realtime] closed:', reason);
             if (this.isRunning) {
-                console.log('[Gemini Realtime] Session closed, auto-reconnecting...');
-                setTimeout(() => {
-                    if (this.isRunning) this._startGeminiMode(settingsManager.get());
-                }, 500);
+                this._scheduleGeminiReconnect(500);
             }
         };
 
@@ -2387,11 +2345,19 @@ class App {
                 sourceLanguage: settings.source_language || 'ja',
                 targetLanguage: settings.target_language || 'vi',
                 model: settings.gemini_model || 'models/gemini-3.5-transcribe-live',
-                diarization: settings.gemini_diarization === true,
             });
         } catch (err) {
-            this._showToast(`Gemini connect failed: ${err}`, 'error');
-            await this.pause();
+            console.error('[Gemini Realtime] connect error:', err);
+            const errStr = String(err);
+            if (errStr.includes('API key') || errStr.includes('PERMISSION_DENIED')) {
+                this._showToast(`Gemini connect failed: ${err}`, 'error');
+                await this.pause();
+                return;
+            }
+            if (this.isRunning) {
+                console.log('[Gemini Realtime] Connection failed, retrying in 2000ms...');
+                this._scheduleGeminiReconnect(2000);
+            }
             return;
         }
 
@@ -2432,6 +2398,29 @@ class App {
                 await this.pause();
             }
         }
+    }
+
+    _scheduleGeminiReconnect(delayMs = 500) {
+        if (!this.isRunning) return;
+        if (this._geminiReconnectTimer) {
+            clearTimeout(this._geminiReconnectTimer);
+            this._geminiReconnectTimer = null;
+        }
+        console.log(`[Gemini Realtime] Scheduling auto-reconnect in ${delayMs}ms...`);
+        this._geminiReconnectTimer = setTimeout(async () => {
+            this._geminiReconnectTimer = null;
+            if (!this.isRunning) return;
+            try {
+                if (this.geminiClient) {
+                    await this.geminiClient.disconnect();
+                }
+            } catch (err) {
+                console.warn('[Gemini Realtime] Error cleaning up client before reconnect:', err);
+            }
+            if (this.isRunning) {
+                this._startGeminiMode(settingsManager.get());
+            }
+        }, delayMs);
     }
 
     async _startQwenMode(settings) {
@@ -2539,35 +2528,38 @@ class App {
             endpointDelay: settings.endpoint_delay || 3000,
         });
 
-        // Start audio capture — Rust batches audio every 200ms, JS just forwards
-        try {
-            let audioChunkCount = 0;
+        if (!this._audioCaptureActive) {
+            // Start audio capture — Rust batches audio every 200ms, JS just forwards
+            try {
+                let audioChunkCount = 0;
 
-            const channel = new window.__TAURI__.core.Channel();
-            channel.onmessage = (pcmData) => {
-                audioChunkCount++;
-                if (audioChunkCount <= 3 || audioChunkCount % 50 === 0) {
-                    console.log(`[Audio] Batch #${audioChunkCount}, size:`, pcmData?.length || 0);
-                }
-                // Forward batched audio to Soniox
-                const bytes = new Uint8Array(pcmData);
-                sonioxClient.sendAudio(bytes.buffer);
-                this._updateAudioMeter(bytes);
-            };
+                const channel = new window.__TAURI__.core.Channel();
+                channel.onmessage = (pcmData) => {
+                    audioChunkCount++;
+                    if (audioChunkCount <= 3 || audioChunkCount % 50 === 0) {
+                        console.log(`[Audio] Batch #${audioChunkCount}, size:`, pcmData?.length || 0);
+                    }
+                    // Forward batched audio to Soniox
+                    const bytes = new Uint8Array(pcmData);
+                    sonioxClient.sendAudio(bytes.buffer);
+                    this._updateAudioMeter(bytes);
+                };
 
-            console.log('[App] Starting audio capture, source:', this.currentSource);
-            const recordPath = await this._getSessionRecordPath();
-            await invoke('start_capture', {
-                source: this.currentSource,
-                channel: channel,
-                recordPath,
-            });
-            console.log('[App] Audio capture started successfully');
-            this._scheduleCaptureHealthCheck();
-        } catch (err) {
-            console.error('Failed to start audio capture:', err);
-            this._showToast(`Audio error: ${err}`, 'error');
-            await this.pause();
+                console.log('[App] Starting audio capture, source:', this.currentSource);
+                const recordPath = await this._getSessionRecordPath();
+                await invoke('start_capture', {
+                    source: this.currentSource,
+                    channel: channel,
+                    recordPath,
+                });
+                this._audioCaptureActive = true;
+                console.log('[App] Audio capture started successfully');
+                this._scheduleCaptureHealthCheck();
+            } catch (err) {
+                console.error('Failed to start audio capture:', err);
+                this._showToast(`Audio error: ${err}`, 'error');
+                await this.pause();
+            }
         }
     }
 
@@ -2874,14 +2866,12 @@ class App {
                 try { await this.geminiClient.disconnect(); } catch {}
                 this.geminiClient = null;
             }
-            try { await invoke('stop_capture'); } catch {}
             this._updateStatus('disconnected');
         } else if (this.translationMode === 'qwen') {
             if (this.qwenClient) {
                 try { await this.qwenClient.disconnect(); } catch {}
                 this.qwenClient = null;
             }
-            try { await invoke('stop_capture'); } catch {}
             this._updateStatus('disconnected');
         } else {
             // Disconnect Soniox
@@ -2899,6 +2889,10 @@ class App {
     // file open. The next Start appends a new chunk to the same file. Finalizing
     // into a new file is stopSession()'s job.
     async pause() {
+        if (this._geminiReconnectTimer) {
+            clearTimeout(this._geminiReconnectTimer);
+            this._geminiReconnectTimer = null;
+        }
         this.isRunning = false;
         this.isPaused = true;
         this._updateStartButton();
@@ -3139,6 +3133,7 @@ class App {
         this.isPaused = false;
         this.sessionStartTime = null;
         this.recordingStartTime = null;
+        this._stopLiveDurationTimer();
         this._clearInactivityTimer();
 
         // Clear transcript UI back to fresh empty placeholder screen
@@ -3216,6 +3211,7 @@ class App {
         this._hasUnsavedMeetingData = false;
         this.sessionStartTime = null;
         this.recordingStartTime = null;
+        this._stopLiveDurationTimer();
         this._clearInactivityTimer();
         if (this.transcriptUI) {
             this.transcriptUI.clear();
@@ -3272,7 +3268,56 @@ class App {
         });
     }
 
+    _startLiveDurationTimer() {
+        if (this._liveDurationTimer) clearInterval(this._liveDurationTimer);
+        this._updateLiveDurationDisplay();
+        this._liveDurationTimer = setInterval(() => {
+            this._updateLiveDurationDisplay();
+        }, 1000);
+    }
+
+    _stopLiveDurationTimer() {
+        if (this._liveDurationTimer) {
+            clearInterval(this._liveDurationTimer);
+            this._liveDurationTimer = null;
+        }
+        this._updateLiveDurationDisplay();
+    }
+
+    _updateLiveDurationDisplay() {
+        const badge = document.getElementById('live-meeting-duration');
+        const text = document.getElementById('live-duration-text');
+        if (!badge || !text) return;
+
+        if (!this.sessionStartTime) {
+            badge.className = 'live-duration-badge is-idle';
+            text.textContent = '00:00:00';
+            badge.title = 'Thời gian diễn ra cuộc họp';
+            return;
+        }
+
+        const elapsed = Math.max(0, Math.floor((Date.now() - this.sessionStartTime.getTime()) / 1000));
+        const hrs = Math.floor(elapsed / 3600);
+        const mins = Math.floor((elapsed % 3600) / 60);
+        const secs = elapsed % 60;
+        const p = (n) => String(n).padStart(2, '0');
+        text.textContent = `${p(hrs)}:${p(mins)}:${p(secs)}`;
+
+        if (this.isRunning) {
+            badge.className = 'live-duration-badge is-running';
+            badge.title = `Cuộc họp đang diễn ra: ${text.textContent}`;
+        } else if (this.isPaused) {
+            badge.className = 'live-duration-badge is-paused';
+            badge.title = `Cuộc họp đang tạm dừng: ${text.textContent}`;
+        } else {
+            badge.className = 'live-duration-badge is-idle';
+            badge.title = 'Thời gian diễn ra cuộc họp';
+        }
+    }
+
     _updateStartButton() {
+        this._updateLiveDurationDisplay();
+
         const btnStart = document.getElementById('btn-start');
         const iconPlay = document.getElementById('icon-play');
         const iconPause = document.getElementById('icon-pause');

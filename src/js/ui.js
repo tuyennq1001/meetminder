@@ -346,7 +346,6 @@ export class TranscriptUI {
 
         // Transcript entries
         for (const seg of this.segments) {
-            if (seg.speaker) lines.push(`**Speaker ${seg.speaker}:**`);
             if (seg.original) lines.push(`> ${seg.original}`);
             if (seg.translation) lines.push(seg.translation);
             lines.push('');
@@ -396,7 +395,6 @@ export class TranscriptUI {
 
         // Transcript entries
         for (const seg of this.segments) {
-            if (seg.speaker) lines.push(`**Speaker ${seg.speaker}:**`);
             if (seg.original) lines.push(`> ${seg.original}`);
             if (seg.translation) lines.push(seg.translation);
             lines.push('');
@@ -515,7 +513,6 @@ export class TranscriptUI {
 
     _renderSingle() {
         let html = '';
-        let lastRenderedSpeaker = null;
         let lastRenderedLang = null;
 
         const showOnlyOriginal = this.viewMode === 'original';
@@ -537,12 +534,6 @@ export class TranscriptUI {
         `;
 
         for (const seg of this.segments) {
-            // Speaker label
-            if (seg.speaker && seg.speaker !== lastRenderedSpeaker) {
-                html += `<span class="speaker-label">Speaker ${seg.speaker}:</span> `;
-                lastRenderedSpeaker = seg.speaker;
-            }
-
             // Language badge
             if (seg.language && seg.language !== lastRenderedLang) {
                 html += `<span class="lang-badge">${this._langEmoji(seg.language)}</span> `;
@@ -566,9 +557,6 @@ export class TranscriptUI {
         }
 
         if (this.provisionalText || (showOnlyOriginal && this.sourceProvisionalText)) {
-            if (this.provisionalSpeaker && this.provisionalSpeaker !== lastRenderedSpeaker) {
-                html += `<span class="speaker-label">Speaker ${this.provisionalSpeaker}:</span> `;
-            }
             if (this.provisionalLanguage && this.provisionalLanguage !== lastRenderedLang) {
                 html += `<span class="lang-badge">${this._langEmoji(this.provisionalLanguage)}</span> `;
             }
@@ -604,15 +592,10 @@ export class TranscriptUI {
         let srcHtml = '';
         let timeHtml = '';
         let tgtHtml = '';
-        let lastSpeaker = null;
         let lastLang = null;
 
-        for (const seg of this.segments) {
-            let speakerHtml = '';
-            if (seg.speaker && seg.speaker !== lastSpeaker) {
-                speakerHtml = `<div class="speaker-label">Speaker ${seg.speaker}:</div>`;
-                lastSpeaker = seg.speaker;
-            }
+        for (let i = 0; i < this.segments.length; i++) {
+            const seg = this.segments[i];
 
             let langHtml = '';
             if (seg.language && seg.language !== lastLang) {
@@ -622,19 +605,13 @@ export class TranscriptUI {
 
             if (seg.status === 'translated' && seg.translation) {
                 const confidenceClass = (seg.confidence !== null && seg.confidence < 0.7) ? ' low-confidence' : '';
-                srcHtml += speakerHtml + langHtml;
-                srcHtml += `<div class="seg-text">${this._esc(seg.original || '')}</div>`;
-                timeHtml += speakerHtml ? '<div class="segment-time segment-time-spacer" aria-hidden="true">&nbsp;</div>' : '';
-                timeHtml += `<div class="segment-time">${this._formatSegmentTime(seg.createdAt)}</div>`;
-                tgtHtml += speakerHtml ? '<div class="speaker-label">&nbsp;</div>' : '';
-                tgtHtml += `<div class="seg-text${confidenceClass}">${this._esc(seg.translation)}</div>`;
+                srcHtml += `${langHtml}<div class="seg-text" data-seg-idx="${i}">${this._esc(seg.original || '')}</div>`;
+                timeHtml += `<div class="segment-time clickable-time" data-seg-idx="${i}" title="Nhấp để cuộn cả 2 khung tới đoạn này">${this._formatSegmentTime(seg.createdAt)}</div>`;
+                tgtHtml += `<div class="seg-text${confidenceClass}" data-seg-idx="${i}">${this._esc(seg.translation)}</div>`;
             } else if (seg.status === 'original' && seg.original) {
-                srcHtml += speakerHtml + langHtml;
-                srcHtml += `<div class="seg-text pending">${this._esc(seg.original)}</div>`;
-                timeHtml += speakerHtml ? '<div class="segment-time segment-time-spacer" aria-hidden="true">&nbsp;</div>' : '';
-                timeHtml += `<div class="segment-time">${this._formatSegmentTime(seg.createdAt)}</div>`;
-                tgtHtml += speakerHtml ? '<div class="speaker-label">&nbsp;</div>' : '';
-                tgtHtml += `<div class="seg-text pending">...</div>`;
+                srcHtml += `${langHtml}<div class="seg-text pending" data-seg-idx="${i}">${this._esc(seg.original)}</div>`;
+                timeHtml += `<div class="segment-time clickable-time" data-seg-idx="${i}" title="Nhấp để cuộn cả 2 khung tới đoạn này">${this._formatSegmentTime(seg.createdAt)}</div>`;
+                tgtHtml += `<div class="seg-text pending" data-seg-idx="${i}">...</div>`;
             }
         }
 
@@ -679,6 +656,16 @@ export class TranscriptUI {
             </div>
         `;
 
+        // Click on timestamp scrolls both source and translation panels in sync
+        const timePanel = this.contentEl.querySelector('.panel-timestamps');
+        if (timePanel) {
+            timePanel.addEventListener('click', (e) => {
+                const timeEl = e.target.closest('.segment-time.clickable-time');
+                if (!timeEl || timeEl.dataset.segIdx === undefined) return;
+                this._scrollToSegmentIndex(timeEl.dataset.segIdx);
+            });
+        }
+
         // Restore scroll: auto-scroll if was near bottom, otherwise keep position
         const srcPanel = this.contentEl.querySelector('.panel-source');
         const tgtPanel = this.contentEl.querySelector('.panel-translation');
@@ -696,6 +683,41 @@ export class TranscriptUI {
                 tgtPanel.scrollTop = tgtScrollState.scrollTop;
             }
         }
+    }
+
+    _scrollToSegmentIndex(idx) {
+        const srcPanel = this.contentEl.querySelector('.panel-source');
+        const tgtPanel = this.contentEl.querySelector('.panel-translation');
+        const timePanel = this.contentEl.querySelector('.panel-timestamps');
+        if (!srcPanel || !tgtPanel) return;
+
+        const srcEl = srcPanel.querySelector(`.seg-text[data-seg-idx="${idx}"]`);
+        const tgtEl = tgtPanel.querySelector(`.seg-text[data-seg-idx="${idx}"]`);
+        const timeEl = timePanel?.querySelector(`.segment-time[data-seg-idx="${idx}"]`);
+
+        // Clear existing highlights
+        this.contentEl.querySelectorAll('.seg-text-active, .segment-time-active').forEach(el => {
+            el.classList.remove('seg-text-active', 'segment-time-active');
+        });
+
+        if (srcEl) {
+            srcEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            srcEl.classList.add('seg-text-active');
+        }
+        if (tgtEl) {
+            tgtEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            tgtEl.classList.add('seg-text-active');
+        }
+        if (timeEl) {
+            timeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            timeEl.classList.add('segment-time-active');
+        }
+
+        setTimeout(() => {
+            srcEl?.classList.remove('seg-text-active');
+            tgtEl?.classList.remove('seg-text-active');
+            timeEl?.classList.remove('segment-time-active');
+        }, 2500);
     }
 
     _formatSegmentTime(timestamp) {
@@ -719,18 +741,27 @@ export class TranscriptUI {
 
     _trimSegments() {
         // Keep up to 500 completed segments on screen. Never evict a pending
-        // source: a slow REST response must not make its source disappear.
+        // source: a slow REST response must not make its source disappear unless necessary.
+        if (this.segments.length <= 500) return;
         while (this.segments.length > 500) {
             const completedIndex = this.segments.findIndex(seg => seg.status !== 'original');
-            if (completedIndex === -1) break;
-            this.segments.splice(completedIndex, 1);
+            if (completedIndex === -1) {
+                // Prevent unbounded growth if all segments are original
+                this.segments.shift();
+            } else {
+                this.segments.splice(completedIndex, 1);
+            }
         }
     }
 
     _esc(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        if (!text) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
     /**

@@ -55,7 +55,7 @@ pub struct CaptureStatus {
 /// Start audio capture and forward data to the frontend via IPC channel.
 /// If `record_path` is specified, also streams PCM audio to a valid .wav file.
 #[tauri::command]
-pub fn start_capture(
+pub async fn start_capture(
     source: String,
     channel: Channel<Vec<u8>>,
     record_path: Option<String>,
@@ -146,14 +146,14 @@ pub fn start_capture(
     let record_path_clone = record_path;
 
     let worker = std::thread::spawn(move || {
-        use std::io::{Read, Seek, Write};
+        use std::io::{BufWriter, Read, Seek, Write};
         let mut buffer: Vec<u8> = Vec::with_capacity(32000); // ~1 sec at 16kHz s16le
         let batch_interval = std::time::Duration::from_millis(200);
         let mut last_flush = std::time::Instant::now();
 
-        // Optional WAV file recording
+        // Optional WAV file recording with 64KB buffer
         let mut total_pcm_bytes: u32 = 0;
-        let mut wav_file: Option<std::fs::File> = if let Some(ref path_str) = record_path_clone {
+        let mut wav_writer: Option<BufWriter<std::fs::File>> = if let Some(ref path_str) = record_path_clone {
             let path = std::path::Path::new(path_str);
             if path.exists() {
                 // Resume existing session audio file
@@ -164,7 +164,7 @@ pub fn start_capture(
                             total_pcm_bytes = u32::from_le_bytes(len_bytes);
                         }
                         let _ = f.seek(std::io::SeekFrom::End(0));
-                        Some(f)
+                        Some(BufWriter::with_capacity(64 * 1024, f))
                     }
                     Err(_) => None,
                 }
@@ -188,7 +188,7 @@ pub fn start_capture(
                         header[34..36].copy_from_slice(&16u16.to_le_bytes()); // 16 bits
                         header[36..40].copy_from_slice(b"data");
                         let _ = f.write_all(&header);
-                        Some(f)
+                        Some(BufWriter::with_capacity(64 * 1024, f))
                     }
                     Err(_) => None,
                 }
@@ -225,8 +225,8 @@ pub fn start_capture(
                         let rms = (sum_squares / samples as f64).sqrt();
                         rms_milli_clone.store((rms * 1000.0).round() as u64, Ordering::Relaxed);
                     }
-                    if let Some(ref mut f) = wav_file {
-                        let _ = f.write_all(&data);
+                    if let Some(ref mut writer) = wav_writer {
+                        let _ = writer.write_all(&data);
                         total_pcm_bytes = total_pcm_bytes.saturating_add(data.len() as u32);
                     }
                     buffer.extend_from_slice(&data);
@@ -250,14 +250,17 @@ pub fn start_capture(
         }
 
         // Finalize WAV file header
-        if let Some(mut f) = wav_file {
-            if f.seek(std::io::SeekFrom::Start(4)).is_ok() {
-                let _ = f.write_all(&(total_pcm_bytes.saturating_add(36)).to_le_bytes());
+        if let Some(mut writer) = wav_writer {
+            let _ = writer.flush();
+            if let Ok(mut f) = writer.into_inner() {
+                if f.seek(std::io::SeekFrom::Start(4)).is_ok() {
+                    let _ = f.write_all(&(total_pcm_bytes.saturating_add(36)).to_le_bytes());
+                }
+                if f.seek(std::io::SeekFrom::Start(40)).is_ok() {
+                    let _ = f.write_all(&total_pcm_bytes.to_le_bytes());
+                }
+                let _ = f.flush();
             }
-            if f.seek(std::io::SeekFrom::Start(40)).is_ok() {
-                let _ = f.write_all(&total_pcm_bytes.to_le_bytes());
-            }
-            let _ = f.flush();
         }
     });
 
@@ -305,7 +308,7 @@ pub fn get_capture_status(state: State<'_, AudioState>) -> Result<CaptureStatus,
 
 /// Stop audio capture
 #[tauri::command]
-pub fn stop_capture(state: State<'_, AudioState>) -> Result<(), String> {
+pub async fn stop_capture(state: State<'_, AudioState>) -> Result<(), String> {
     stop_capture_inner(&state);
     Ok(())
 }

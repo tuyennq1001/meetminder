@@ -62,10 +62,18 @@ impl SCStreamOutputTrait for AudioHandler {
                     }
                 }
             }
-            _ => {
-                // Ignore video frames
-            }
+            _ => {}
         }
+    }
+}
+
+/// Dummy video handler to silently absorb minimal video frames required by ScreenCaptureKit.
+/// Without this handler, ScreenCaptureKit logs "stream output NOT found. Dropping frame" at 60Hz and leaks memory.
+struct DummyVideoHandler;
+
+impl SCStreamOutputTrait for DummyVideoHandler {
+    fn did_output_sample_buffer(&self, _sample: CMSampleBuffer, _output_type: SCStreamOutputType) {
+        // Drop video frame cleanly
     }
 }
 
@@ -114,10 +122,14 @@ impl SystemAudioCapture {
             .build();
 
         // Configure: audio only, 48kHz mono
-        // Downsampling to 16kHz mono happens in AudioHandler
+        // Downsampling to 16kHz mono happens in AudioHandler.
+        // Set minimal frame rate (1 frame per 60s) and queue depth 1 so replayd doesn't flood video frames at 60-120fps.
+        let min_frame_interval = screencapturekit::cm::CMTime::new(60, 1);
         let config = SCStreamConfiguration::new()
             .with_width(2) // minimal video (required by API)
             .with_height(2)
+            .with_minimum_frame_interval(&min_frame_interval)
+            .with_queue_depth(1)
             .with_captures_audio(true)
             .with_excludes_current_process_audio(true) // Prevent TTS audio feedback loop
             .with_sample_rate(48000)
@@ -131,6 +143,9 @@ impl SystemAudioCapture {
         // Create and start the stream
         let mut stream = SCStream::new(&filter, &config);
         stream.add_output_handler(handler, SCStreamOutputType::Audio);
+        // Register a dummy video output handler so ScreenCaptureKit does not flood
+        // "_SCStream_RemoteVideoQueueOperationHandlerWithError: stream output NOT found" errors and leak memory.
+        stream.add_output_handler(DummyVideoHandler, SCStreamOutputType::Screen);
 
         stream
             .start_capture()

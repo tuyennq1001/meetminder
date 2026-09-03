@@ -411,6 +411,66 @@ body:not(.activity-live) .header-divider {
   color: var(--text-primary);
 }
 
+/* Live meeting duration badge */
+.live-duration-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: var(--radius-sm);
+  background: var(--md-sys-color-surface-container, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  color: var(--md-sys-color-on-surface-variant, #94a3b8);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  transition: all 0.2s ease;
+}
+
+.live-duration-badge .duration-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #64748b;
+  flex-shrink: 0;
+  transition: background 0.25s ease, box-shadow 0.25s ease;
+}
+
+.live-duration-badge.is-running {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: var(--md-sys-color-on-surface, #f1f5f9);
+}
+
+.live-duration-badge.is-running .duration-dot {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.8);
+  animation: duration-dot-pulse 1.4s infinite;
+}
+
+.live-duration-badge.is-paused {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fcd34d;
+}
+
+.live-duration-badge.is-paused .duration-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 4px rgba(245, 158, 11, 0.7);
+}
+
+@keyframes duration-dot-pulse {
+  0% { transform: scale(0.85); opacity: 0.7; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.85); opacity: 0.7; }
+}
+
 .close-btn:hover {
   background: rgba(248, 113, 113, 0.2);
   color: var(--error);
@@ -921,6 +981,37 @@ body:not(.activity-live) .header-divider {
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.segment-time.clickable-time {
+  cursor: pointer !important;
+  user-select: none;
+  padding: 1px 4px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  -webkit-app-region: no-drag;
+}
+
+.segment-time.clickable-time:hover {
+  background: rgba(96, 165, 250, 0.18);
+  color: var(--md-sys-color-primary, #60a5fa);
+}
+
+.segment-time.clickable-time:active {
+  transform: scale(0.95);
+}
+
+.segment-time-active {
+  background: rgba(96, 165, 250, 0.28) !important;
+  color: var(--md-sys-color-primary, #60a5fa) !important;
+  font-weight: 700 !important;
+}
+
+.seg-text-active {
+  background: rgba(96, 165, 250, 0.18) !important;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.35);
+  transition: background 0.3s ease, box-shadow 0.3s ease;
 }
 
 .segment-time-spacer {
