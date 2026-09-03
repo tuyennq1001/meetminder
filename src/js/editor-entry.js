@@ -371,7 +371,7 @@ const livePreviewPlugin = ViewPlugin.fromClass(
                   const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
                   if (!isOverlapping) {
                     const leadingSpaces = (line.text.match(/^(\s*)/)?.[1] || '').length;
-                    const level = Math.floor(leadingSpaces / 2);
+                    const level = Math.floor(leadingSpaces / 4);
                     decos.push({
                       from: nodeFrom,
                       to: nodeTo,
@@ -482,8 +482,8 @@ const smartListKeymap = [
 
       // If bullet line is empty (user hit Enter on empty bullet) -> unindent or clear bullet
       if (!content.trim()) {
-        if (indent.length >= 2) {
-          const newIndent = indent.slice(2);
+        if (indent.length >= 4) {
+          const newIndent = indent.slice(4);
           const fullPrefix = `${newIndent}${bullet}${taskMarker || ''}${space}`;
           dispatch({
             changes: { from: line.from, to: line.to, insert: fullPrefix },
@@ -533,21 +533,21 @@ const smartListKeymap = [
         const changes = [];
         for (let l = startLine; l <= endLine; l++) {
           const lineObj = doc.line(l);
-          changes.push({ from: lineObj.from, to: lineObj.from, insert: '  ' });
+          changes.push({ from: lineObj.from, to: lineObj.from, insert: '    ' });
         }
         dispatch({
           changes,
           selection: {
-            anchor: main.anchor + 2,
-            head: main.head + (main.head >= main.anchor ? 2 * (endLine - startLine + 1) : 2),
+            anchor: main.anchor + 4,
+            head: main.head + (main.head >= main.anchor ? 4 * (endLine - startLine + 1) : 4),
           },
         });
         return true;
       }
       
       dispatch({
-        changes: { from: main.from, to: main.to, insert: '  ' },
-        selection: { anchor: main.from + 2 },
+        changes: { from: main.from, to: main.to, insert: '    ' },
+        selection: { anchor: main.from + 4 },
       });
       return true;
     },
@@ -566,7 +566,7 @@ const smartListKeymap = [
         const lineObj = doc.line(l);
         const text = lineObj.text;
         let removeLen = 0;
-        if (text.startsWith('  ')) removeLen = 2;
+        if (text.startsWith('    ')) removeLen = 4;
         else if (text.startsWith(' ')) removeLen = 1;
 
         if (removeLen > 0) {

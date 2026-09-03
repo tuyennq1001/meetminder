@@ -107,6 +107,8 @@ class App {
         this.isStarting = false; // Guard against re-entry
         this.currentSource = 'system'; // 'system' | 'microphone' | 'both'
         this.currentViewMode = 'dual'; // 'dual' | 'original' | 'translation'
+        this._viewModeBeforeNoTranslation = null;
+        this._forcedOriginalForNoTranslation = false;
         this.translationMode = 'gemini'; // 'gemini' | 'soniox' | 'openai' | 'qwen' | 'local'
         this.appWindow = getCurrentWindow();
         this.sessionStartTime = null;
@@ -144,6 +146,9 @@ class App {
         this._activeTemplateTab = 'notes';
         this._templateDrafts = {};
         this._geminiReconnectTimer = null;
+        this._liveEngineRestart = Promise.resolve();
+        this._liveEngineGeneration = 0;
+        this._quickLanguageUpdate = Promise.resolve();
         this._liveDurationTimer = null;
         this._geminiDiscoveredModels = null;
         this._geminiModelsCacheTime = 0;
@@ -2090,17 +2095,7 @@ class App {
             this.transcriptUI.clearProvisional();
         }
 
-        if (this.translationMode === 'local') {
-            await this._startLocalMode(settings);
-        } else if (this.translationMode === 'openai') {
-            await this._startOpenAiMode(settings);
-        } else if (this.translationMode === 'gemini') {
-            await this._startGeminiMode(settings);
-        } else if (this.translationMode === 'qwen') {
-            await this._startQwenMode(settings);
-        } else {
-            await this._startSonioxMode(settings);
-        }
+        await this._startTranslationEngine(settings);
 
         this._resetInactivityTimer();
     }
@@ -2114,6 +2109,20 @@ class App {
             }
         }
         return null;
+    }
+
+    async _startTranslationEngine(settings) {
+        if (this.translationMode === 'local') {
+            await this._startLocalMode(settings);
+        } else if (this.translationMode === 'openai') {
+            await this._startOpenAiMode(settings);
+        } else if (this.translationMode === 'gemini') {
+            await this._startGeminiMode(settings);
+        } else if (this.translationMode === 'qwen') {
+            await this._startQwenMode(settings);
+        } else {
+            await this._startSonioxMode(settings);
+        }
     }
 
     async _ensureMicrophonePermission() {
@@ -2190,7 +2199,7 @@ class App {
         this.openAiClient.onSourceProvisional = (text) => {
             this.transcriptUI.setSourceProvisional(text);
         };
-        this.openAiClient.onFinal = (original, translation) => {
+        this.openAiClient.onSegment = (original, translation) => {
             this.transcriptUI.addSegment(original, translation, null, null);
             sessionStore.addSegment(original, translation);
         };
@@ -2204,7 +2213,7 @@ class App {
             if (this.isRunning) {
                 this._showToast('OpenAI session closed — reconnecting…', 'success');
                 setTimeout(() => {
-                    if (this.isRunning) this._startOpenAiMode(settingsManager.get());
+                    if (this.isRunning) this._restartLiveEngineForSettings();
                 }, 1000);
             }
         };
@@ -2411,16 +2420,7 @@ class App {
         this._geminiReconnectTimer = setTimeout(async () => {
             this._geminiReconnectTimer = null;
             if (!this.isRunning) return;
-            try {
-                if (this.geminiClient) {
-                    await this.geminiClient.disconnect();
-                }
-            } catch (err) {
-                console.warn('[Gemini Realtime] Error cleaning up client before reconnect:', err);
-            }
-            if (this.isRunning) {
-                this._startGeminiMode(settingsManager.get());
-            }
+            await this._restartLiveEngineForSettings();
         }, delayMs);
     }
 
@@ -2457,7 +2457,7 @@ class App {
             if (this.isRunning) {
                 this._showToast('Qwen session closed — reconnecting…', 'success');
                 setTimeout(() => {
-                    if (this.isRunning) this._startQwenMode(settingsManager.get());
+                    if (this.isRunning) this._restartLiveEngineForSettings();
                 }, 1000);
             }
         };
@@ -2894,6 +2894,7 @@ class App {
             clearTimeout(this._geminiReconnectTimer);
             this._geminiReconnectTimer = null;
         }
+        this._liveEngineGeneration++;
         this.isRunning = false;
         this.isPaused = true;
         this._updateStartButton();
@@ -3566,10 +3567,107 @@ class App {
         this._setViewMode(newMode);
     }
 
+    /**
+     * Serialize quick language changes. Change events can arrive while the
+     * previous settings write is still in flight; reading the current selects
+     * here prevents a fast source/target toggle from restoring stale values.
+     */
+    _saveQuickLanguageSettings(changes) {
+        this._quickLanguageUpdate = this._quickLanguageUpdate
+            .catch(() => {})
+            .then(async () => {
+                const next = { ...settingsManager.get(), ...changes };
+                const sourceSelect = document.getElementById('quick-select-source-lang');
+                const targetSelect = document.getElementById('quick-select-target-lang');
+                if (sourceSelect?.value) next.source_language = sourceSelect.value;
+                if (targetSelect?.value) next.target_language = targetSelect.value;
+                await settingsManager.save(next);
+                return next;
+            });
+        return this._quickLanguageUpdate;
+    }
+
+    /**
+     * Stop only the translation provider while leaving the shared audio
+     * capture alive. The old client's callbacks are detached first because
+     * disconnect() may flush an in-flight partial result.
+     */
+    async _disconnectLiveEngine() {
+        if (this.translationMode === 'gemini' && this.geminiClient) {
+            const client = this.geminiClient;
+            this.geminiClient = null;
+            client.onStatusChange = () => {};
+            client.onSegment = () => {};
+            client.onSourceFinal = () => {};
+            client.onProvisional = () => {};
+            client.onError = () => {};
+            client.onClosed = () => {};
+            try { await client.disconnect(); } catch (err) {
+                console.warn('[Gemini Realtime] Error stopping old client:', err);
+            }
+        } else if (this.translationMode === 'openai' && this.openAiClient) {
+            const client = this.openAiClient;
+            this.openAiClient = null;
+            client.onStatusChange = () => {};
+            client.onSegment = () => {};
+            client.onSourceProvisional = () => {};
+            client.onProvisional = () => {};
+            client.onError = () => {};
+            client.onClosed = () => {};
+            try { await client.disconnect(); } catch (err) {
+                console.warn('[OpenAI Realtime] Error stopping old client:', err);
+            }
+            if (this.openAiOutputQueue) {
+                this.openAiOutputQueue.close();
+                this.openAiOutputQueue = null;
+            }
+        } else if (this.translationMode === 'qwen' && this.qwenClient) {
+            const client = this.qwenClient;
+            this.qwenClient = null;
+            client.onStatusChange = () => {};
+            client.onSegment = () => {};
+            client.onProvisional = () => {};
+            client.onError = () => {};
+            client.onClosed = () => {};
+            try { await client.disconnect(); } catch (err) {
+                console.warn('[Qwen Realtime] Error stopping old client:', err);
+            }
+        } else if (this.translationMode === 'soniox') {
+            sonioxClient.disconnect();
+        }
+        this.transcriptUI.clearProvisional();
+    }
+
+    /**
+     * Reconnect the current provider in order, so rapid language and
+     * translate/no-translate toggles cannot leave multiple providers sending
+     * results into the same transcript.
+     */
+    _restartLiveEngineForSettings() {
+        const generation = ++this._liveEngineGeneration;
+        if (this._geminiReconnectTimer) {
+            clearTimeout(this._geminiReconnectTimer);
+            this._geminiReconnectTimer = null;
+        }
+        this._liveEngineRestart = this._liveEngineRestart
+            .catch(() => {})
+            .then(async () => {
+                if (!this.isRunning || generation !== this._liveEngineGeneration) return;
+                if (this.translationMode === 'local') {
+                    // The local pipeline reads its language pair only at
+                    // startup, so it also needs the shared capture restarted.
+                    await this._stopTranslationEngine();
+                } else {
+                    await this._disconnectLiveEngine();
+                }
+                if (!this.isRunning || generation !== this._liveEngineGeneration) return;
+                await this._startTranslationEngine(settingsManager.get());
+            });
+        return this._liveEngineRestart;
+    }
+
     async _handleQuickSourceLangChange(srcLang) {
-        const s = settingsManager.get();
-        s.source_language = srcLang;
-        await settingsManager.save(s);
+        const s = await this._saveQuickLanguageSettings({ source_language: srcLang });
         const srcName = this._getQuickLangName(srcLang);
         this._showToast(`Ngôn ngữ gốc: ${srcName}`, 'info');
         const langEl = document.getElementById('live-lang');
@@ -3577,28 +3675,30 @@ class App {
             const tgtName = this._getQuickLangName(s.target_language || 'none');
             langEl.textContent = `${srcName} → ${tgtName}`;
         }
-        if (this.isRunning && this.translationMode === 'gemini') {
-            this._startGeminiMode(s);
-        }
+        if (this.isRunning) await this._restartLiveEngineForSettings();
     }
 
     async _handleQuickTargetLangChange(tgtLang) {
-        const s = settingsManager.get();
-        s.target_language = tgtLang;
-        await settingsManager.save(s);
+        const s = await this._saveQuickLanguageSettings({ target_language: tgtLang });
         if (this.transcriptUI) {
             this.transcriptUI.configure({ targetLanguage: tgtLang });
         }
-        if (this.geminiClient && this.geminiClient.isConnected) {
-            await this.geminiClient.setTargetLanguage(tgtLang);
-        }
         const tgtName = this._getQuickLangName(tgtLang);
         if (tgtLang === 'none') {
+            if (this.transcriptUI.viewMode !== 'original') {
+                this._viewModeBeforeNoTranslation = this.transcriptUI.viewMode;
+            }
+            this._forcedOriginalForNoTranslation = true;
             const selectViewMode = document.getElementById('select-view-mode');
             if (selectViewMode) selectViewMode.value = 'original';
             this._setViewMode('original');
             this._showToast('Đã tắt dịch (Chỉ chép lời)', 'info');
         } else {
+            if (this._forcedOriginalForNoTranslation) {
+                this._forcedOriginalForNoTranslation = false;
+                this._setViewMode(this._viewModeBeforeNoTranslation || 'dual');
+                this._viewModeBeforeNoTranslation = null;
+            }
             this._showToast(`Ngôn ngữ dịch: ${tgtName}`, 'info');
         }
         const langEl = document.getElementById('live-lang');
@@ -3606,12 +3706,13 @@ class App {
             const srcName = this._getQuickLangName(s.source_language || 'vi');
             langEl.textContent = `${srcName} → ${tgtName}`;
         }
+        if (this.isRunning) await this._restartLiveEngineForSettings();
     }
 
     async _handleQuickLangSwap() {
-        const s = settingsManager.get();
-        const curSrc = s.source_language || 'vi';
-        const curTgt = s.target_language || 'ja';
+        const current = settingsManager.get();
+        const curSrc = current.source_language || 'vi';
+        const curTgt = current.target_language || 'ja';
 
         if (curTgt === 'none') {
             this._showToast('Không thể đổi chiều khi đang tắt dịch', 'warning');
@@ -3621,21 +3722,18 @@ class App {
         const newSrc = curTgt;
         const newTgt = curSrc === 'auto' ? 'en' : curSrc;
 
-        s.source_language = newSrc;
-        s.target_language = newTgt;
-
         const quickSrc = document.getElementById('quick-select-source-lang');
         const quickTgt = document.getElementById('quick-select-target-lang');
 
         if (quickSrc) quickSrc.value = newSrc;
         if (quickTgt) quickTgt.value = newTgt;
 
-        await settingsManager.save(s);
+        await this._saveQuickLanguageSettings({
+            source_language: newSrc,
+            target_language: newTgt,
+        });
         if (this.transcriptUI) {
             this.transcriptUI.configure({ targetLanguage: newTgt });
-        }
-        if (this.geminiClient && this.geminiClient.isConnected) {
-            await this.geminiClient.setTargetLanguage(newTgt);
         }
         const newSrcName = this._getQuickLangName(newSrc);
         const newTgtName = this._getQuickLangName(newTgt);
@@ -3646,9 +3744,7 @@ class App {
             langEl.textContent = `${newSrcName} → ${newTgtName}`;
         }
 
-        if (this.isRunning && this.translationMode === 'gemini') {
-            this._startGeminiMode(s);
-        }
+        if (this.isRunning) await this._restartLiveEngineForSettings();
     }
 
     async _setTranslationTiming(timing) {

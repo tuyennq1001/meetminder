@@ -578,8 +578,10 @@ export class TranscriptUI {
         // Save scroll state before re-render
         const oldSrcPanel = this.contentEl.querySelector('.panel-source');
         const oldTgtPanel = this.contentEl.querySelector('.panel-translation');
+        const oldTimePanel = this.contentEl.querySelector('.panel-timestamps');
         const srcScrollState = oldSrcPanel ? this._getScrollState(oldSrcPanel) : { nearBottom: true, scrollTop: 0 };
         const tgtScrollState = oldTgtPanel ? this._getScrollState(oldTgtPanel) : { nearBottom: true, scrollTop: 0 };
+        const timeScrollState = oldTimePanel ? this._getScrollState(oldTimePanel) : { nearBottom: true, scrollTop: 0 };
 
         let srcHtml = '';
         let timeHtml = '';
@@ -628,11 +630,14 @@ export class TranscriptUI {
                 </div>
                 ${srcHtml}
             </div>
-            <div class="panel-timestamps" aria-label="Thời gian từng câu">
-                <div class="panel-column-header panel-time-header">
-                    <span class="panel-header-title">Thời gian</span>
+            <div class="panel-timestamps-wrap">
+                <div class="panel-timestamps" aria-label="Thời gian từng câu">
+                    <div class="panel-column-header panel-time-header">
+                        <span class="panel-header-title">Thời gian</span>
+                    </div>
+                    ${timeHtml}
                 </div>
-                ${timeHtml}
+                <button type="button" class="timeline-scroll-bottom" aria-label="Cuộn các khung xuống đoạn mới nhất" aria-hidden="true" title="Cuộn xuống đoạn mới nhất">↓</button>
             </div>
             <div class="panel-translation">
                 <div class="panel-column-header">
@@ -675,6 +680,26 @@ export class TranscriptUI {
                 tgtPanel.scrollTop = tgtScrollState.scrollTop;
             }
         }
+        const timePanelAfterRender = this.contentEl.querySelector('.panel-timestamps');
+        if (timePanelAfterRender) {
+            if (timeScrollState.nearBottom) {
+                timePanelAfterRender.scrollTop = timePanelAfterRender.scrollHeight;
+            } else {
+                timePanelAfterRender.scrollTop = timeScrollState.scrollTop;
+            }
+
+            const jumpToBottomButton = this.contentEl.querySelector('.timeline-scroll-bottom');
+            const updateJumpToBottomButton = () => {
+                const isAwayFromBottom = !this._isNearBottom(timePanelAfterRender, 120);
+                jumpToBottomButton?.classList.toggle('is-visible', isAwayFromBottom);
+                jumpToBottomButton?.setAttribute('aria-hidden', String(!isAwayFromBottom));
+            };
+            timePanelAfterRender.addEventListener('scroll', updateJumpToBottomButton, { passive: true });
+            jumpToBottomButton?.addEventListener('click', () => {
+                this._scrollPanelsToBottom();
+            });
+            updateJumpToBottomButton();
+        }
     }
 
     _scrollToSegmentIndex(idx) {
@@ -712,6 +737,17 @@ export class TranscriptUI {
         }, 2500);
     }
 
+    _scrollPanelsToBottom() {
+        const panels = [
+            this.contentEl.querySelector('.panel-source'),
+            this.contentEl.querySelector('.panel-timestamps'),
+            this.contentEl.querySelector('.panel-translation'),
+        ];
+        panels.forEach((panel) => {
+            panel?.scrollTo({ top: panel.scrollHeight, behavior: 'smooth' });
+        });
+    }
+
     _formatSegmentTime(timestamp) {
         if (!timestamp) return '--:--:--';
         return this.segmentTimeFormatter.format(new Date(timestamp));
@@ -719,13 +755,17 @@ export class TranscriptUI {
 
     _getScrollState(el) {
         return {
-            nearBottom: (el.scrollHeight - el.scrollTop - el.clientHeight) < 100,
+            nearBottom: this._isNearBottom(el),
             scrollTop: el.scrollTop
         };
     }
 
+    _isNearBottom(el, threshold = 100) {
+        return (el.scrollHeight - el.scrollTop - el.clientHeight) < threshold;
+    }
+
     _smartScroll(el) {
-        const isNearBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 100;
+        const isNearBottom = this._isNearBottom(el);
         if (isNearBottom) {
             el.scrollTop = el.scrollHeight;
         }

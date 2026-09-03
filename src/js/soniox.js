@@ -123,7 +123,7 @@ export class SonioxClient {
                 };
                 // For two-way, set language hints to both languages
                 configMsg.language_hints = [languageA, languageB];
-            } else if (targetLanguage) {
+            } else if (targetLanguage && targetLanguage !== 'none' && targetLanguage !== 'off') {
                 configMsg.translation = {
                     type: 'one_way',
                     target_language: targetLanguage,
