@@ -25133,6 +25133,118 @@ var BulletWidget = class extends WidgetType {
     return false;
   }
 };
+function escapeTableHtml(text) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function splitTableRow(line) {
+  let content2 = line.trim();
+  if (content2.startsWith("|")) content2 = content2.slice(1);
+  if (content2.endsWith("|") && !content2.endsWith("\\|")) content2 = content2.slice(0, -1);
+  const cells = [];
+  let cell = "";
+  let escaped = false;
+  for (const char of content2) {
+    if (char === "|" && !escaped) {
+      cells.push(cell.trim());
+      cell = "";
+    } else {
+      cell += char;
+    }
+    escaped = char === "\\" && !escaped;
+  }
+  cells.push(cell.trim());
+  return cells;
+}
+function formatTableCell(text) {
+  const escaped = escapeTableHtml(text.replace(/\\([|*_])/g, "$1"));
+  const codeDelimiter = String.fromCharCode(96);
+  const codePattern = new RegExp(codeDelimiter + "([^" + codeDelimiter + "]+)" + codeDelimiter, "g");
+  return escaped.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(codePattern, "<code>$1</code>").replace(/\*([^*]+)\*/g, "<em>$1</em>");
+}
+function getTableAlignment(delimiter) {
+  return splitTableRow(delimiter).map((cell) => {
+    const value = cell.trim();
+    if (value.startsWith(":") && value.endsWith(":")) return "center";
+    if (value.endsWith(":")) return "right";
+    return "left";
+  });
+}
+var TableWidget = class extends WidgetType {
+  constructor(markdownText) {
+    super();
+    this.markdownText = markdownText;
+  }
+  eq(other) {
+    return other.markdownText === this.markdownText;
+  }
+  toDOM() {
+    const wrapper = document.createElement("div");
+    wrapper.className = "cm-md-table-widget";
+    const lines = this.markdownText.split(/\r?\n/);
+    const header = splitTableRow(lines[0] || "");
+    const alignments = getTableAlignment(lines[1] || "");
+    const table = document.createElement("table");
+    table.className = "cm-md-table";
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    header.forEach((cell, index) => {
+      const th = document.createElement("th");
+      th.style.textAlign = alignments[index] || "left";
+      th.innerHTML = formatTableCell(cell);
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    const tbody = document.createElement("tbody");
+    for (const line of lines.slice(2)) {
+      if (!line.trim()) continue;
+      const row = document.createElement("tr");
+      splitTableRow(line).forEach((cell, index) => {
+        const td = document.createElement("td");
+        td.style.textAlign = alignments[index] || "left";
+        td.innerHTML = formatTableCell(cell);
+        row.appendChild(td);
+      });
+      tbody.appendChild(row);
+    }
+    table.appendChild(tbody);
+    wrapper.appendChild(table);
+    return wrapper;
+  }
+  ignoreEvent() {
+    return false;
+  }
+};
+function buildTableDecorations(state) {
+  if (!state.readOnly) return Decoration.none;
+  const builder = new RangeSetBuilder();
+  syntaxTree(state).iterate({
+    enter: (node) => {
+      if (node.name === "Table") {
+        builder.add(
+          node.from,
+          node.to,
+          Decoration.replace({
+            widget: new TableWidget(state.sliceDoc(node.from, node.to)),
+            block: true
+          })
+        );
+        return false;
+      }
+    }
+  });
+  return builder.finish();
+}
+var tableDecorationsField = StateField.define({
+  create: buildTableDecorations,
+  update(decorations2, transaction) {
+    if (transaction.docChanged || transaction.reconfigured) {
+      return buildTableDecorations(transaction.state);
+    }
+    return decorations2;
+  },
+  provide: (field) => EditorView.decorations.from(field)
+});
 function isSelectionOverlapping(selection, from, to) {
   for (const range of selection.ranges) {
     if (range.from <= to && range.to >= from) {
@@ -25682,6 +25794,7 @@ var NotesEditor = class {
         meetMinderDarkTheme,
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(markdownHighlightStyle),
+        tableDecorationsField,
         livePreviewPlugin,
         keymap.of([...actionKeymap, ...smartListKeymap, ...defaultKeymap, ...historyKeymap]),
         history(),

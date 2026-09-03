@@ -4279,6 +4279,48 @@ body.resizing-vertical * {
   font-style: italic !important;
 }
 
+.cm-md-table-widget {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+
+.cm-md-table {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: collapse;
+  color: #f4f4f5;
+  font-size: var(--note-font-size, 14px);
+  line-height: 1.45;
+}
+
+.cm-md-table th,
+.cm-md-table td {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  padding: 7px 10px;
+  vertical-align: top;
+}
+
+.cm-md-table th {
+  background: rgba(126, 62, 135, 0.22);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.cm-md-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.cm-md-table code {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #c88dce;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9em;
+}
+
 .cm-md-hr {
   border: none;
   border-top: 1px solid rgba(255, 255, 255, 0.15);
