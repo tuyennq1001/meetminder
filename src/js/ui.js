@@ -41,19 +41,27 @@ export class TranscriptUI {
         this.lastConfidence = null; // Last confidence score from Soniox
     }
 
+    isDualView() {
+        return (this.viewMode === 'dual' || this.viewMode === 'both') &&
+               this._provider !== 'qwen' &&
+               this.targetLanguage !== 'none';
+    }
+
+    _syncDualViewClass() {
+        const overlay = document.getElementById('overlay-view');
+        if (overlay) {
+            overlay.classList.toggle('dual-view', this.isDualView());
+        }
+    }
+
     get provider() {
         return this._provider;
     }
 
     set provider(value) {
         this._provider = value;
-        // Qwen Live Flash has no source channel — strip the dual-view CSS class
-        // so the overlay reverts to single-column layout even if viewMode='dual'.
-        const overlay = document.getElementById('overlay-view');
-        if (overlay) {
-            const wantsDual = this.viewMode === 'dual' && value !== 'qwen';
-            overlay.classList.toggle('dual-view', wantsDual);
-        }
+        this._syncDualViewClass();
+        this._render();
     }
 
     /**
@@ -83,13 +91,9 @@ export class TranscriptUI {
         }
         if (viewMode !== undefined) {
             this.viewMode = viewMode;
-            const overlay = document.getElementById('overlay-view');
-            if (overlay) {
-                const wantsDual = viewMode === 'dual' && this._provider !== 'qwen' && this.targetLanguage !== 'none';
-                overlay.classList.toggle('dual-view', wantsDual);
-            }
-            this._render();
         }
+        this._syncDualViewClass();
+        this._render();
     }
 
     /**
@@ -201,8 +205,7 @@ export class TranscriptUI {
      * Check if there is any content to display
      */
     hasContent() {
-        return this.segments.length > 0 || this.provisionalText ||
-            !!this.container.querySelector('.listening-indicator');
+        return this.segments.length > 0 || !!this.provisionalText || !!this.sourceProvisionalText;
     }
 
     /**
@@ -223,6 +226,7 @@ export class TranscriptUI {
     `;
         this.segments = [];
         this.provisionalText = '';
+        this.sourceProvisionalText = '';
         this.provisionalSpeaker = null;
         this.provisionalLanguage = null;
         this.currentSpeaker = null;
@@ -232,26 +236,17 @@ export class TranscriptUI {
     }
 
     /**
-     * Show listening state
+     * Show listening state (clears placeholder and renders clean empty transcript panel)
      */
     showListening() {
-        // Remove existing indicators first (prevent duplicates)
         this.container.querySelectorAll('.listening-indicator').forEach(el => el.remove());
 
         const placeholder = this.container.querySelector('.transcript-placeholder');
         if (placeholder) placeholder.remove();
 
         this._ensureContent();
-
-        const indicator = document.createElement('div');
-        indicator.className = 'listening-indicator';
-        indicator.innerHTML = `
-            <div class="listening-waves">
-                <span></span><span></span><span></span><span></span><span></span>
-            </div>
-            <p>Listening...</p>
-        `;
-        this.contentEl.appendChild(indicator);
+        this._render();
+        if (this.container) this.container.scrollTop = 0;
     }
 
     /**
@@ -499,13 +494,11 @@ export class TranscriptUI {
     }
 
     _render() {
+        this._syncDualViewClass();
         this._ensureContent();
         this._trimSegments();
 
-        // Qwen Live Flash is translation-only (no source transcript channel),
-        // so force single-panel even when the user picked dual view — otherwise
-        // the source panel sits empty / shows dim provisional noise.
-        if ((this.viewMode === 'dual' || this.viewMode === 'both') && this.provider !== 'qwen' && this.targetLanguage !== 'none') {
+        if (this.isDualView()) {
             this._renderDual();
         } else {
             this._renderSingle();
@@ -574,13 +567,11 @@ export class TranscriptUI {
         }
 
         this.contentEl.innerHTML = headerHtml + html;
-        // #transcript-content is the scroller since the activity-shell redesign
-        // (its parent #transcript-container is overflow:hidden). Scroll whichever
-        // actually overflows so this stays correct if the layout shifts again.
-        const parent = this.container.parentElement;
-        const scroller = (this.container.scrollHeight > this.container.clientHeight || !parent)
-            ? this.container : parent;
-        this._smartScroll(scroller);
+        if (this.segments.length === 0 && !this.provisionalText && !this.sourceProvisionalText) {
+            if (this.container) this.container.scrollTop = 0;
+        } else {
+            this._smartScroll(this.container);
+        }
     }
 
     _renderDual() {

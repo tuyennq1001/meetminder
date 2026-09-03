@@ -145,6 +145,9 @@ class App {
         this._templateDrafts = {};
         this._geminiReconnectTimer = null;
         this._liveDurationTimer = null;
+        this._geminiDiscoveredModels = null;
+        this._geminiModelsCacheTime = 0;
+        this._geminiBlacklistedModels = new Set();
     }
 
     async init() {
@@ -5577,7 +5580,21 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
             let resultText = '';
             if (geminiKey) {
-                resultText = await this._callGeminiAi(geminiKey, prompt);
+                try {
+                    resultText = await this._callGeminiAi(geminiKey, prompt, (statusMsg) => {
+                        if (loadingEl) {
+                            const p = loadingEl.querySelector('p');
+                            if (p) p.textContent = statusMsg;
+                        }
+                    });
+                } catch (geminiErr) {
+                    if (openaiKey) {
+                        console.warn('[App] Gemini không khả dụng, tự động chuyển sang OpenAI...', geminiErr);
+                        resultText = await this._callOpenAi(openaiKey, prompt);
+                    } else {
+                        throw geminiErr;
+                    }
+                }
             } else {
                 resultText = await this._callOpenAi(openaiKey, prompt);
             }
@@ -5598,48 +5615,188 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
     }
 
-    async _callGeminiAi(apiKey, promptText) {
-        const candidateModels = [
+    async _getGeminiCandidateModels(apiKey) {
+        const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+        const cacheKey = 'meet_minder_gemini_models_cache';
+
+        // 1. Kiểm tra cache trong memory
+        if (this._geminiDiscoveredModels && (Date.now() - this._geminiModelsCacheTime < CACHE_TTL_MS)) {
+            return this._filterAvailableModels(this._geminiDiscoveredModels);
+        }
+
+        // 2. Kiểm tra cache trong localStorage
+        try {
+            const raw = localStorage.getItem(cacheKey);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed.timestamp && (Date.now() - parsed.timestamp < CACHE_TTL_MS) && Array.isArray(parsed.models) && parsed.models.length > 0) {
+                    this._geminiDiscoveredModels = parsed.models;
+                    this._geminiModelsCacheTime = parsed.timestamp;
+                    return this._filterAvailableModels(this._geminiDiscoveredModels);
+                }
+            }
+        } catch (_) {}
+
+        // 3. Tự động truy vấn danh sách model thời gian thực từ Google API
+        try {
+            console.log('[App] Đang phát hiện tự động các model Gemini từ Google Generative Language API...');
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+            if (res.ok) {
+                const data = await res.json();
+                const rawModels = (data.models || [])
+                    .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+                    .map(m => (m.name || '').replace(/^models\//, ''))
+                    .filter(name => {
+                        if (!name.startsWith('gemini-')) return false;
+                        const lower = name.toLowerCase();
+                        return !lower.includes('tts') &&
+                               !lower.includes('image') &&
+                               !lower.includes('robotics') &&
+                               !lower.includes('clip') &&
+                               !lower.includes('banana') &&
+                               !lower.includes('embedding');
+                    });
+
+                // Chấm điểm ưu tiên: Flash model phiên bản cao nhất đứng đầu, kế đến là Pro, sau cùng là preview/exp
+                const scoreModel = (name) => {
+                    let s = 0;
+                    if (name.includes('flash')) s += 100;
+                    if (name.includes('pro')) s += 40;
+                    if (name.includes('latest')) s += 15;
+                    if (name.includes('lite')) s -= 5;
+                    if (name.includes('preview') || name.includes('exp')) s -= 10;
+                    // Điểm theo version: v4 > v3.8 > v3.7 > v3.6 > v3.5
+                    const vMatch = name.match(/gemini-(\d+(?:\.\d+)?)/);
+                    if (vMatch) {
+                        s += parseFloat(vMatch[1]) * 20;
+                    }
+                    return s;
+                };
+
+                rawModels.sort((a, b) => scoreModel(b) - scoreModel(a));
+
+                // Bổ sung các alias chính thức của Google vào chuỗi nếu chưa có
+                if (!rawModels.includes('gemini-flash-latest')) rawModels.push('gemini-flash-latest');
+                if (!rawModels.includes('gemini-flash-lite-latest')) rawModels.push('gemini-flash-lite-latest');
+
+                if (rawModels.length > 0) {
+                    this._geminiDiscoveredModels = rawModels;
+                    this._geminiModelsCacheTime = Date.now();
+                    try {
+                        localStorage.setItem(cacheKey, JSON.stringify({
+                            timestamp: this._geminiModelsCacheTime,
+                            models: rawModels,
+                        }));
+                    } catch (_) {}
+                    console.log('[App] Đã tự động phát hiện danh sách model Gemini khả dụng:', rawModels);
+                    return this._filterAvailableModels(rawModels);
+                }
+            }
+        } catch (err) {
+            console.warn('[App] Không thể tải danh sách model động từ Google, dùng danh sách dự phòng:', err);
+        }
+
+        // 4. Danh sách tĩnh dự phòng nếu không kết nối được API discovery
+        const fallback = [
             'gemini-3.6-flash',
-            'gemini-2.5-flash',
-            'gemini-1.5-flash',
+            'gemini-3.7-flash',
+            'gemini-3.5-flash',
+            'gemini-3.5-flash-lite',
+            'gemini-3.8-flash',
+            'gemini-flash-latest',
+            'gemini-flash-lite-latest',
         ];
+        return this._filterAvailableModels(fallback);
+    }
+
+    _filterAvailableModels(models) {
+        if (!this._geminiBlacklistedModels) this._geminiBlacklistedModels = new Set();
+        return models.filter(m => !this._geminiBlacklistedModels.has(m));
+    }
+
+    async _callGeminiAi(apiKey, promptText, onProgress = null) {
+        const candidateModels = await this._getGeminiCandidateModels(apiKey);
 
         let lastErr = null;
-        for (const model of candidateModels) {
+        for (let i = 0; i < candidateModels.length; i++) {
+            const model = candidateModels[i];
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-            try {
-                const res = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: promptText }] }],
-                        generationConfig: {
-                            temperature: 0.3,
-                            maxOutputTokens: 4096,
+
+            // Tối đa 2 lần thử cho mỗi model nếu gặp lỗi tạm thời (503/429/5xx)
+            const maxAttempts = 2;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    if (onProgress) {
+                        if (i > 0 || attempt > 1) {
+                            onProgress(`Đang gọi ${model}${attempt > 1 ? ` (thử lại lần ${attempt})` : ''}...`);
                         }
-                    })
-                });
-                if (!res.ok) {
-                    const err = await res.text();
-                    lastErr = new Error(`Gemini API error (${res.status}): ${err}`);
-                    if (res.status === 404) {
-                        console.warn(`[App] Gemini model ${model} not found (404), trying next candidate...`);
+                    }
+
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: promptText }] }],
+                            generationConfig: {
+                                temperature: 0.3,
+                                maxOutputTokens: 8192,
+                            }
+                        })
+                    });
+
+                    if (!res.ok) {
+                        const errText = await res.text();
+                        let parsedMsg = errText;
+                        try {
+                            const errJson = JSON.parse(errText);
+                            parsedMsg = errJson.error?.message || errText;
+                        } catch (_) {}
+
+                        lastErr = new Error(`Gemini API error (${res.status}): ${parsedMsg}`);
+
+                        // 404: Model không tồn tại hoặc đã bị Google ngừng phục vụ -> blacklist và chuyển model tiếp theo ngay
+                        if (res.status === 404) {
+                            console.warn(`[App] Gemini model ${model} không khả dụng (404), thêm vào blacklist và chuyển model tiếp theo...`);
+                            if (!this._geminiBlacklistedModels) this._geminiBlacklistedModels = new Set();
+                            this._geminiBlacklistedModels.add(model);
+                            break;
+                        }
+
+                        // 503 (quá tải), 429 (rate limit), hoặc 5xx (lỗi server): thử lại sau 1.5s
+                        if (attempt < maxAttempts && (res.status === 503 || res.status === 429 || res.status >= 500)) {
+                            console.warn(`[App] Gemini model ${model} trả về ${res.status}. Thử lại sau 1.5s...`);
+                            if (onProgress) {
+                                onProgress(`${model} quá tải tạm thời (${res.status}), thử lại sau 1.5s...`);
+                            }
+                            await new Promise(r => setTimeout(r, 1500));
+                            continue;
+                        }
+
+                        // Nếu đã hết số lần thử của model này: chuyển sang model kế tiếp trong candidateModels
+                        console.warn(`[App] Gemini model ${model} thất bại (${res.status}), chuyển sang model tiếp theo...`);
+                        break;
+                    }
+
+                    const data = await res.json();
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text && text.trim()) {
+                        return text;
+                    } else {
+                        throw new Error(`Model ${model} không trả về nội dung văn bản hợp lệ.`);
+                    }
+                } catch (fetchErr) {
+                    lastErr = fetchErr;
+                    console.warn(`[App] Lỗi kết nối tới model ${model} (lần ${attempt}):`, fetchErr);
+                    if (attempt < maxAttempts) {
+                        await new Promise(r => setTimeout(r, 1200));
                         continue;
                     }
-                    throw lastErr;
+                    break;
                 }
-                const data = await res.json();
-                return data.candidates?.[0]?.content?.parts?.[0]?.text || 'Không có kết quả trả về từ Gemini.';
-            } catch (err) {
-                lastErr = err;
-                if (err.message && err.message.includes('404')) {
-                    continue;
-                }
-                throw err;
             }
         }
-        throw lastErr || new Error('Không có model Gemini khả dụng.');
+
+        throw lastErr || new Error('Tất cả các model Gemini đều không khả dụng vào lúc này.');
     }
 
     async _callOpenAi(apiKey, promptText) {
@@ -6165,8 +6322,22 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             const prompt = this._buildMeetingMinutesPrompt(res.json, lang);
 
             let resultText = '';
+            const onStatusUpdate = (msg) => {
+                if (loadingText) loadingText.textContent = msg;
+            };
+
             if (geminiKey) {
-                resultText = await this._callGeminiAi(geminiKey, prompt);
+                try {
+                    resultText = await this._callGeminiAi(geminiKey, prompt, onStatusUpdate);
+                } catch (geminiErr) {
+                    if (openaiKey) {
+                        console.warn('[App] Gemini không khả dụng, tự động chuyển sang OpenAI...', geminiErr);
+                        onStatusUpdate('Gemini quá tải, đang chuyển sang OpenAI gpt-4o-mini...');
+                        resultText = await this._callOpenAi(openaiKey, prompt);
+                    } else {
+                        throw geminiErr;
+                    }
+                }
             } else {
                 resultText = await this._callOpenAi(openaiKey, prompt);
             }
@@ -6187,7 +6358,12 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             console.error('[App] _generateMeetingMinutesForSession error:', err);
             if (loadingEl) loadingEl.style.display = 'none';
             this._renderCurrentMinutesSubtab();
-            this._showToast(`Lỗi tạo Meeting Minutes: ${err.message || err}`, 'error');
+            const errMsg = err.message || String(err);
+            if (errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('quá tải')) {
+                this._showToast('Máy chủ AI đang quá tải tạm thời. Vui lòng bấm tạo lại sau giây lát.', 'error');
+            } else {
+                this._showToast(`Lỗi tạo Meeting Minutes: ${errMsg}`, 'error');
+            }
         }
     }
 
