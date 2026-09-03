@@ -25599,7 +25599,7 @@ var meetMinderDarkTheme = EditorView.theme(
       height: "100%"
     },
     ".cm-content": {
-      caretColor: "#818cf8",
+      caretColor: "#d9b0de",
       padding: "8px 12px",
       minHeight: "100%"
     },
@@ -25607,14 +25607,14 @@ var meetMinderDarkTheme = EditorView.theme(
       outline: "none"
     },
     ".cm-cursor, .cm-dropCursor": {
-      borderLeftColor: "#818cf8",
+      borderLeftColor: "#d9b0de",
       borderLeftWidth: "2px"
     },
     "&.cm-focused .cm-selectionBackground, ::selection": {
-      backgroundColor: "rgba(99, 102, 241, 0.35) !important"
+      backgroundColor: "rgba(126, 62, 135, 0.35) !important"
     },
     ".cm-selectionMatch": {
-      backgroundColor: "rgba(99, 102, 241, 0.2)"
+      backgroundColor: "rgba(126, 62, 135, 0.2)"
     },
     ".cm-activeLine": {
       backgroundColor: "rgba(255, 255, 255, 0.025)"
@@ -25638,10 +25638,10 @@ var markdownHighlightStyle = HighlightStyle.define([
   { tag: tags.heading2, color: "#e4e4e7", fontWeight: "600" },
   { tag: tags.heading3, color: "#d4d4d8", fontWeight: "600" },
   { tag: tags.strong, fontWeight: "700", color: "#fef08a" },
-  { tag: tags.emphasis, fontStyle: "italic", color: "#93c5fd" },
+  { tag: tags.emphasis, fontStyle: "italic", color: "#d9b0de" },
   { tag: tags.strikethrough, textDecoration: "line-through", color: "#71717a" },
-  { tag: tags.monospace, color: "#38bdf8", fontFamily: "SFMono-Regular, Menlo, Monaco, Consolas, monospace" },
-  { tag: tags.link, color: "#818cf8", textDecoration: "underline" },
+  { tag: tags.monospace, color: "#c88dce", fontFamily: "SFMono-Regular, Menlo, Monaco, Consolas, monospace" },
+  { tag: tags.link, color: "#d9b0de", textDecoration: "underline" },
   { tag: tags.quote, color: "#a1a1aa", fontStyle: "italic" }
 ]);
 var NotesEditor = class {

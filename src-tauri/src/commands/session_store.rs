@@ -177,7 +177,7 @@ pub fn load_project_registry(app: &AppHandle) -> Result<ProjectRegistry, String>
             projects: Vec::new(),
             categories: vec![
                 Category { id: "cat_weekly".into(), name: "Weekly".into(), color: "#10b981".into() },
-                Category { id: "cat_daily".into(), name: "Daily".into(), color: "#3b82f6".into() },
+                Category { id: "cat_daily".into(), name: "Daily".into(), color: "#431A46".into() },
                 Category { id: "cat_sales".into(), name: "Sales".into(), color: "#f59e0b".into() },
                 Category { id: "cat_1on1".into(), name: "1-on-1".into(), color: "#ec4899".into() },
                 Category { id: "cat_planning".into(), name: "Planning".into(), color: "#8b5cf6".into() },
@@ -287,7 +287,7 @@ pub fn save_customer(app: AppHandle, mut customer: Customer) -> Result<Customer,
     customer.code = customer.code.trim().to_uppercase();
     customer.description = customer.description.trim().to_string();
     if customer.color.is_empty() {
-        customer.color = "#3b82f6".to_string();
+        customer.color = "#431A46".to_string();
     }
     if customer.status.is_empty() {
         customer.status = "active".to_string();
@@ -356,7 +356,7 @@ pub fn save_project(app: AppHandle, mut project: Project) -> Result<Project, Str
     project.name = sanitize_title(project.name.trim());
     project.description = project.description.trim().to_string();
     if project.color.is_empty() {
-        project.color = "#6366f1".to_string();
+        project.color = "#431A46".to_string();
     }
     if project.status.is_empty() {
         project.status = "active".to_string();
@@ -418,7 +418,7 @@ pub fn save_category(app: AppHandle, mut category: Category) -> Result<Category,
     }
     category.name = sanitize_title(category.name.trim());
     if category.color.is_empty() {
-        category.color = "#3b82f6".to_string();
+        category.color = "#431A46".to_string();
     }
     let mut reg = load_project_registry(&app)?;
     if category.id.is_empty() {

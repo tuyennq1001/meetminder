@@ -4317,12 +4317,12 @@ class App {
 
         // Customer badge
         const customerBadge = (!s.has_legacy_only && s.customer_name)
-            ? `<span class="session-customer-badge" data-customer-id="${this._escAttr(s.customer_id || '')}" style="border-color:${this._escAttr(s.customer_color || '#3b82f6')}44; color:${this._escAttr(s.customer_color || '#93c5fd')}; background:${this._escAttr(s.customer_color || '#3b82f6')}1a;" title="Khách hàng: ${this._escAttr(s.customer_name)}">🏢 ${this._esc(s.customer_name)}</span>`
+            ? `<span class="session-customer-badge" data-customer-id="${this._escAttr(s.customer_id || '')}" style="border-color:${this._escAttr(s.customer_color || '#431A46')}44; color:${this._escAttr(s.customer_color || '#D9B0DE')}; background:${this._escAttr(s.customer_color || '#431A46')}1a;" title="Khách hàng: ${this._escAttr(s.customer_name)}">🏢 ${this._esc(s.customer_name)}</span>`
             : '';
 
         // Project badge
         const projectBadge = (!s.has_legacy_only && s.project_name)
-            ? `<span class="session-project-badge ${s.project_status === 'archived' ? 'archived' : ''}" data-project-id="${this._escAttr(s.project_id || '')}" style="border-color:${this._escAttr(s.project_color || '#6366f1')}44; color:${this._escAttr(s.project_color || '#a5b4fc')}; background:${this._escAttr(s.project_color || '#6366f1')}1a;" title="Dự án: ${this._escAttr(s.project_name)}${s.project_status === 'archived' ? ' (Đã dừng)' : ''}">📁 ${this._esc(s.project_name)}</span>`
+            ? `<span class="session-project-badge ${s.project_status === 'archived' ? 'archived' : ''}" data-project-id="${this._escAttr(s.project_id || '')}" style="border-color:${this._escAttr(s.project_color || '#431A46')}44; color:${this._escAttr(s.project_color || '#D9B0DE')}; background:${this._escAttr(s.project_color || '#431A46')}1a;" title="Dự án: ${this._escAttr(s.project_name)}${s.project_status === 'archived' ? ' (Đã dừng)' : ''}">📁 ${this._esc(s.project_name)}</span>`
             : '';
 
         // Category badge
@@ -4605,7 +4605,7 @@ class App {
         if (nameInput) nameInput.value = '';
         if (codeInput) codeInput.value = '';
         if (statusSelect) statusSelect.value = 'active';
-        if (colorInput) colorInput.value = '#3b82f6';
+        if (colorInput) colorInput.value = '#431A46';
         if (descInput) descInput.value = '';
         if (projsSec) projsSec.style.display = 'none';
         if (saveBtn) saveBtn.textContent = '+ Thêm Khách hàng';
@@ -4634,7 +4634,7 @@ class App {
         if (nameInput) nameInput.value = customer.name || '';
         if (codeInput) codeInput.value = customer.code || '';
         if (statusSelect) statusSelect.value = customer.status || 'active';
-        if (colorInput) colorInput.value = customer.color || '#3b82f6';
+        if (colorInput) colorInput.value = customer.color || '#431A46';
         if (descInput) descInput.value = customer.description || '';
         if (saveBtn) saveBtn.textContent = 'Lưu thay đổi';
 
@@ -4645,7 +4645,7 @@ class App {
                 projsSec.style.display = 'block';
                 projsList.innerHTML = projs.map(p => `
                     <span class="table-proj-chip" style="cursor:default;" title="${this._escAttr(p.name)}">
-                        <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${this._escAttr(p.color || '#6366f1')};"></span>
+                        <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${this._escAttr(p.color || '#431A46')};"></span>
                         ${this._esc(p.name)} (${p.status === 'active' ? '🟢' : '⚪'})
                     </span>
                 `).join('');
@@ -4677,7 +4677,7 @@ class App {
         }
         const code = codeInput?.value.trim().toUpperCase() || '';
         const status = statusSelect?.value || 'active';
-        const color = colorInput?.value || '#3b82f6';
+        const color = colorInput?.value || '#431A46';
         const description = descInput?.value.trim() || '';
         try {
             await invoke('save_customer', {
@@ -4725,7 +4725,7 @@ class App {
         }
 
         if (nameInput) nameInput.value = '';
-        if (colorInput) colorInput.value = '#6366f1';
+        if (colorInput) colorInput.value = '#431A46';
         if (descInput) descInput.value = '';
         modal.style.display = 'flex';
         setTimeout(() => nameInput?.focus(), 50);
@@ -4747,7 +4747,7 @@ class App {
             return;
         }
         const customer_id = custSelect?.value || null;
-        const color = colorInput?.value || '#6366f1';
+        const color = colorInput?.value || '#431A46';
         const description = descInput?.value.trim() || '';
         try {
             await invoke('save_project', {
@@ -4913,7 +4913,7 @@ class App {
                 projChipsHtml = `<div class="table-proj-chips">` +
                     visibleProjects.map(p => `
                         <span class="table-proj-chip btn-view-cust-projs" data-id="${this._escAttr(c.id)}" title="${this._escAttr(p.name)}">
-                            <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${this._escAttr(p.color || '#6366f1')};"></span>
+                            <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${this._escAttr(p.color || '#431A46')};"></span>
                             ${this._esc(p.name)}
                         </span>
                     `).join('') +
@@ -4929,7 +4929,7 @@ class App {
                 <td class="btn-open-cust-details" data-id="${this._escAttr(c.id)}" style="cursor: pointer;">${codeBadge}</td>
                 <td class="btn-open-cust-details" data-id="${this._escAttr(c.id)}" style="cursor: pointer;">
                   <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
-                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(c.color || '#3b82f6')}; flex-shrink:0;"></span>
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(c.color || '#431A46')}; flex-shrink:0;"></span>
                     <span style="color: var(--md-sys-color-primary); text-decoration: underline; text-underline-offset: 2px;">${this._esc(c.name)}</span>
                   </div>
                 </td>
@@ -5121,7 +5121,7 @@ class App {
             const sessCount = sessions.filter(s => s.project_id === p.id).length;
 
             const custBadge = cust
-                ? `<span class="session-customer-badge btn-jump-to-customer" data-cust-id="${this._escAttr(cust.id)}" style="border-color:${this._escAttr(cust.color || '#3b82f6')}44; color:${this._escAttr(cust.color || '#93c5fd')}; background:${this._escAttr(cust.color || '#3b82f6')}1a; cursor:pointer;" title="Mở thông tin khách hàng ${this._escAttr(cust.name)}">🏢 ${this._esc(cust.name)} ↗</span>`
+                ? `<span class="session-customer-badge btn-jump-to-customer" data-cust-id="${this._escAttr(cust.id)}" style="border-color:${this._escAttr(cust.color || '#431A46')}44; color:${this._escAttr(cust.color || '#D9B0DE')}; background:${this._escAttr(cust.color || '#431A46')}1a; cursor:pointer;" title="Mở thông tin khách hàng ${this._escAttr(cust.name)}">🏢 ${this._esc(cust.name)} ↗</span>`
                 : `<span style="font-size:11px; opacity:0.4;">(Chưa gán KH)</span>`;
 
             html += `
@@ -5129,7 +5129,7 @@ class App {
                 <td style="text-align: center; color: var(--md-sys-color-on-surface-variant); font-size: 11px;">${idx + 1}</td>
                 <td>
                   <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
-                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(p.color || '#6366f1')}; flex-shrink:0;"></span>
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(p.color || '#431A46')}; flex-shrink:0;"></span>
                     <span>${this._esc(p.name)}</span>
                   </div>
                 </td>
@@ -5277,7 +5277,7 @@ class App {
                 <td style="text-align: center; color: var(--md-sys-color-on-surface-variant); font-size: 11px;">${idx + 1}</td>
                 <td>
                   <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
-                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(c.color || '#3b82f6')}; flex-shrink:0;"></span>
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(c.color || '#431A46')}; flex-shrink:0;"></span>
                     <span>${this._esc(c.name)}</span>
                   </div>
                 </td>
