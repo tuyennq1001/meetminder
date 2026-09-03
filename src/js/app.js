@@ -6882,6 +6882,81 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 },
             });
         }
+
+        this._initNotesResize();
+    }
+
+    _initNotesResize() {
+        const drawer = document.getElementById('live-notes-drawer');
+        const resizer = document.getElementById('live-notes-resizer');
+        const container = document.getElementById('transcript-container');
+        if (!drawer || !resizer) return;
+
+        const DEFAULT_HEIGHT = 190;
+        const MIN_HEIGHT = 100;
+
+        // Restore saved height if available
+        const savedHeight = parseInt(localStorage.getItem('live_notes_height'), 10);
+        if (!isNaN(savedHeight) && savedHeight >= MIN_HEIGHT) {
+            drawer.style.height = `${savedHeight}px`;
+        }
+
+        let isDragging = false;
+        let startY = 0;
+        let startHeight = 0;
+
+        const onPointerDown = (e) => {
+            if (e.button !== undefined && e.button !== 0) return;
+            isDragging = true;
+            startY = e.clientY;
+            startHeight = drawer.getBoundingClientRect().height;
+
+            try {
+                resizer.setPointerCapture(e.pointerId);
+            } catch (_) {}
+
+            drawer.classList.add('is-resizing');
+            document.body.classList.add('resizing-vertical');
+            e.preventDefault();
+        };
+
+        const onPointerMove = (e) => {
+            if (!isDragging) return;
+            const deltaY = startY - e.clientY; // moving up increases drawer height
+            const containerHeight = container ? container.clientHeight : window.innerHeight;
+            const maxHeight = Math.max(MIN_HEIGHT + 50, containerHeight - 60);
+            const targetHeight = Math.round(Math.min(Math.max(startHeight + deltaY, MIN_HEIGHT), maxHeight));
+
+            drawer.style.height = `${targetHeight}px`;
+        };
+
+        const onPointerUp = (e) => {
+            if (!isDragging) return;
+            isDragging = false;
+
+            try {
+                resizer.releasePointerCapture(e.pointerId);
+            } catch (_) {}
+
+            drawer.classList.remove('is-resizing');
+            document.body.classList.remove('resizing-vertical');
+
+            const currentHeight = Math.round(drawer.getBoundingClientRect().height);
+            if (currentHeight >= MIN_HEIGHT) {
+                localStorage.setItem('live_notes_height', String(currentHeight));
+            }
+        };
+
+        resizer.addEventListener('pointerdown', onPointerDown);
+        resizer.addEventListener('pointermove', onPointerMove);
+        resizer.addEventListener('pointerup', onPointerUp);
+        resizer.addEventListener('pointercancel', onPointerUp);
+
+        // Double-click to reset to default height
+        resizer.addEventListener('dblclick', () => {
+            drawer.style.height = `${DEFAULT_HEIGHT}px`;
+            localStorage.setItem('live_notes_height', String(DEFAULT_HEIGHT));
+        });
     }
 
     _getNoteTemplate() {
@@ -6908,6 +6983,16 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         if (shouldOpen) {
             drawer.style.display = 'flex';
             if (btnToggleNotes) btnToggleNotes.classList.add('active');
+
+            const container = document.getElementById('transcript-container');
+            if (container && drawer.style.height) {
+                const currentHeight = parseInt(drawer.style.height, 10);
+                const maxHeight = Math.max(150, container.clientHeight - 60);
+                if (currentHeight > maxHeight) {
+                    drawer.style.height = `${maxHeight}px`;
+                }
+            }
+
             if (this._liveNotesEditor) {
                 const content = this._liveNotesEditor.getContent();
                 if (!content || !content.trim()) {

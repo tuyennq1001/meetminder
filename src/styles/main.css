@@ -3758,8 +3758,8 @@ body:not(.activity-live) .floating-controls { display: none; }
   display: flex;
   flex-direction: column;
   height: 190px;
-  min-height: 120px;
-  max-height: 55%;
+  min-height: 100px;
+  max-height: calc(100% - 60px);
   background: var(--md-sys-color-surface-container);
   border-top: 1px solid var(--border-light);
   border-radius: 16px 16px 0 0;
@@ -3768,6 +3768,51 @@ body:not(.activity-live) .floating-controls { display: none; }
   z-index: 10;
   transition: height 0.2s ease;
   overflow: hidden;
+}
+
+.live-notes-drawer.is-resizing {
+  transition: none !important;
+  user-select: none !important;
+}
+
+/* Take Note Resize Handle */
+.notes-resize-handle {
+  height: 10px;
+  width: 100%;
+  cursor: ns-resize;
+  background: var(--md-sys-color-surface-container-high);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+  user-select: none;
+  padding-top: 2px;
+}
+
+.notes-resize-bar {
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+  transition: background var(--transition-fast, 0.15s ease), width var(--transition-fast, 0.15s ease);
+}
+
+.notes-resize-handle:hover .notes-resize-bar,
+.live-notes-drawer.is-resizing .notes-resize-bar {
+  background: var(--md-sys-color-primary, #6366f1);
+  width: 48px;
+}
+
+body.resizing-vertical {
+  cursor: ns-resize !important;
+  user-select: none !important;
+}
+
+body.resizing-vertical * {
+  user-select: none !important;
 }
 
 .notes-toolbar {
