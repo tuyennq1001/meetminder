@@ -31,6 +31,76 @@ const LANGUAGE_DISPLAY = {
     tl: ['🇵🇭', 'Filipino'], bn: ['🇧🇩', 'বাংলা'], ta: ['🇱🇰', 'தமிழ்'],
 };
 
+const PENCIL_YELLOW_ICON = `<svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="13" height="13" style="display:inline-block;vertical-align:-2px;margin-right:3px;" aria-hidden="true"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>`;
+
+const DEFAULT_TEMPLATE_NOTES = `# MTG Title
+## Thông tin cuộc họp
+- Người tham gia: 
+- Ngày tháng: {{date}}
+
+## Nội dung cuộc họp 
+
+
+## TODO
+- [ ] 
+`;
+
+const DEFAULT_TEMPLATE_MINUTES_JA = `# 📋 会議議事録 (Meeting Minutes)
+
+### 📌 基本情報
+- **会議名**: {{title}}
+- **日時**: {{date}} (所要時間: 約 {{duration}} 分)
+- **参加者**: {{participants}}
+
+---
+
+### 🎯 1. 背景と目的 (Background & Objectives)
+(なぜこの会議が行われたのか、今回の主な討議の狙い・背景)
+
+---
+
+### 📝 2. 主な協議内容と決定事項 (Key Discussion & Decisions)
+- **協議内容の要約**:
+  - (要点をトピックごとに整理して箇条書きで記載)
+- **決定事項 (Key Decisions)**:
+  - (合意された決定内容)
+
+---
+
+### ✅ 3. 今後のアクションプラン (Action Items / Next Steps)
+| No | タスク (Task) | 担当者 (Assignee) | 期日 (Deadline) | 備考 |
+|:---|:---|:---|:---|:---|
+| 1 | ... | ... | ... | ... |
+`;
+
+const DEFAULT_TEMPLATE_MINUTES_VI = `# 📋 BIÊN BẢN CUỘC HỌP (MEETING MINUTES)
+
+### 📌 THÔNG TIN CHUNG
+- **Tiêu đề cuộc họp**: {{title}}
+- **Thời gian**: {{date}} (Thời lượng: ~{{duration}} phút)
+- **Người tham gia**: {{participants}}
+
+---
+
+### 🎯 1. BỐI CẢNH & MỤC ĐÍCH (CONTEXT & OBJECTIVES)
+(Bối cảnh diễn ra cuộc họp, các vấn đề cần thảo luận và mục tiêu cần đạt được)
+
+---
+
+### 📝 2. NỘI DUNG TÓM TẮT & CÁC ĐIỂM THỐNG NHẤT (SUMMARY & DECISIONS)
+- **Tóm tắt nội dung trao đổi chính**:
+  - (Các luận điểm chính được trình bày mạch lạc, dễ hiểu)
+- **Các quyết định đã chốt (Key Decisions)**:
+  - (Các điểm hai bên đã thống nhất)
+
+---
+
+### ✅ 3. VIỆC CẦN LÀM & KẾ HOẠCH TIẾP THEO (ACTION ITEMS / NEXT STEPS)
+| STT | Công việc (Task) | Người phụ trách (Assignee) | Hạn chót (Deadline) | Ghi chú |
+|:---|:---|:---|:---|:---|
+| 1 | ... | ... | ... | ... |
+`;
+
 class App {
     constructor() {
         this.isRunning = false;
@@ -49,6 +119,14 @@ class App {
         this.isPaused = false;
         this._liveNotesEditor = null;
         this._sessionViewerEditor = null;
+        this._sessionMinutesEditor = null;
+        this._sessionNotesEditor = null;
+        this._sessionLogsEditor = null;
+        this._activeSessionTab = 'minutes';
+        this._activeMinutesLang = 'ja';
+        this._loadedMinutes = { ja: '', vi: '' };
+        this._isMinutesEditing = false;
+        this._isNotesEditing = false;
         this._hasUnsavedMeetingData = false;
         this._inactivityTimer = null;
         this._captureHealthTimer = null;
@@ -62,6 +140,9 @@ class App {
         this._projSort = { field: 'name', dir: 'asc' };
         this._catSort = { field: 'name', dir: 'asc' };
         this._tagSort = { field: 'name', dir: 'asc' };
+        this._templateEditor = null;
+        this._activeTemplateTab = 'notes';
+        this._templateDrafts = {};
     }
 
     async init() {
@@ -261,6 +342,7 @@ class App {
                 this._showSettingsScreen(btn.dataset.screen);
             });
         });
+        this._initSettingsTemplatesTab();
 
         // Add Customer Modal Triggers
         document.getElementById('btn-open-add-customer')?.addEventListener('click', () => {
@@ -352,7 +434,7 @@ class App {
         document.getElementById('btn-copy-ai-digest')?.addEventListener('click', async () => {
             if (this._currentAiDigestText) {
                 await navigator.clipboard.writeText(this._currentAiDigestText);
-                this._showToast('Đã sao chép nội dung tổng hợp ✓', 'success');
+                this._showToast('Đã copy nội dung tổng hợp ✓', 'success');
             }
         });
         document.getElementById('btn-export-ai-digest')?.addEventListener('click', () => {
@@ -448,6 +530,8 @@ class App {
         document.getElementById('btn-session-cancel-edit')?.addEventListener('click', () => {
             this._exitSessionEditMode();
         });
+
+        this._initSessionViewerTabs();
 
         // Keybindings inside inline session inputs
         const inputSessionTitle = document.getElementById('input-session-viewer-title');
@@ -556,18 +640,7 @@ class App {
         document.getElementById('btn-stop')?.addEventListener('click', async () => {
             if (this._isStopConfirmationOpen) return;
             const stopAction = await this._promptConfirmStop();
-            if (!stopAction) return;
-
-            try {
-                if (stopAction.discard) {
-                    await this.discardSession();
-                } else {
-                    await this.stopSession(stopAction.title, stopAction.tags, stopAction.customerId, stopAction.projectId, stopAction.category);
-                }
-            } catch (err) {
-                console.error('[App] Stop session error:', err);
-                this._showToast(`Lỗi kết thúc: ${err}`, 'error');
-            }
+            await this._handleStopSessionAction(stopAction);
         });
 
         // Source buttons
@@ -997,17 +1070,7 @@ class App {
                     // users must be able to confirm the action and name the log.
                     (async () => {
                         const stopAction = await this._promptConfirmStop();
-                        if (!stopAction) return;
-                        try {
-                            if (stopAction.discard) {
-                                await this.discardSession();
-                            } else {
-                                await this.stopSession(stopAction.title, stopAction.tags, stopAction.customerId, stopAction.projectId, stopAction.category);
-                            }
-                        } catch (err) {
-                            console.error('[App] Keyboard stop session error:', err);
-                            this._showToast(`Lỗi kết thúc: ${err}`, 'error');
-                        }
+                        await this._handleStopSessionAction(stopAction);
                     })();
                 }
                 return;
@@ -1174,10 +1237,115 @@ class App {
             this._renderSettingsTagsTab();
         } else if (id === 'tab-storage') {
             this._renderSettingsStorageTab();
+        } else if (id === 'tab-templates') {
+            this._renderSettingsTemplatesTab();
         }
 
         this._updateSidebarBadges();
         document.querySelector('.settings-content-panel')?.scrollTo(0, 0);
+    }
+
+    // ─── Settings: Templates Manager ─────────────────────────
+
+    _initSettingsTemplatesTab() {
+        const subtabs = ['notes', 'minutes-ja', 'minutes-vi'];
+        subtabs.forEach(tabKey => {
+            const btn = document.getElementById(`subtab-template-${tabKey}`);
+            btn?.addEventListener('click', () => {
+                this._switchSettingsTemplateTab(tabKey);
+            });
+        });
+
+        document.getElementById('btn-template-reset')?.addEventListener('click', () => {
+            this._resetCurrentSettingsTemplate();
+        });
+
+        document.getElementById('btn-template-save')?.addEventListener('click', async () => {
+            await this._saveSettingsTemplates();
+        });
+    }
+
+    _renderSettingsTemplatesTab() {
+        const s = settingsManager.get();
+        if (this._templateDrafts.notes === undefined) {
+            this._templateDrafts = {
+                notes: (s.template_notes !== undefined && s.template_notes !== null && s.template_notes !== '') ? s.template_notes : DEFAULT_TEMPLATE_NOTES,
+                'minutes-ja': (s.template_minutes_ja !== undefined && s.template_minutes_ja !== null && s.template_minutes_ja !== '') ? s.template_minutes_ja : DEFAULT_TEMPLATE_MINUTES_JA,
+                'minutes-vi': (s.template_minutes_vi !== undefined && s.template_minutes_vi !== null && s.template_minutes_vi !== '') ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI,
+            };
+        }
+
+        const container = document.getElementById('template-codemirror-container');
+        if (container && !this._templateEditor) {
+            this._templateEditor = new NotesEditor();
+            this._templateEditor.mount(container, {
+                initialContent: this._templateDrafts[this._activeTemplateTab] || '',
+                placeholderText: 'Nhập cấu trúc mẫu markdown...',
+                onChange: (content) => {
+                    this._templateDrafts[this._activeTemplateTab] = content;
+                },
+                onSave: () => {
+                    this._saveSettingsTemplates();
+                },
+            });
+        }
+
+        this._switchSettingsTemplateTab(this._activeTemplateTab);
+    }
+
+    _switchSettingsTemplateTab(tabKey) {
+        if (this._templateEditor) {
+            this._templateDrafts[this._activeTemplateTab] = this._templateEditor.getContent();
+        }
+        this._activeTemplateTab = tabKey;
+
+        const subtabs = ['notes', 'minutes-ja', 'minutes-vi'];
+        subtabs.forEach(k => {
+            const btn = document.getElementById(`subtab-template-${k}`);
+            if (btn) btn.classList.toggle('active', k === tabKey);
+        });
+
+        const hintEl = document.getElementById('template-editor-hint');
+        if (hintEl) {
+            if (tabKey === 'notes') {
+                hintEl.innerHTML = 'Biến tự động: <code>{{date}}</code>, <code>{{time}}</code>, <code>{{title}}</code>';
+            } else {
+                hintEl.innerHTML = 'Biến tự động: <code>{{title}}</code>, <code>{{date}}</code>, <code>{{duration}}</code>, <code>{{participants}}</code>';
+            }
+        }
+
+        if (this._templateEditor) {
+            this._templateEditor.setContent(this._templateDrafts[tabKey] || '');
+        }
+    }
+
+    _resetCurrentSettingsTemplate() {
+        let def = '';
+        if (this._activeTemplateTab === 'notes') def = DEFAULT_TEMPLATE_NOTES;
+        else if (this._activeTemplateTab === 'minutes-ja') def = DEFAULT_TEMPLATE_MINUTES_JA;
+        else if (this._activeTemplateTab === 'minutes-vi') def = DEFAULT_TEMPLATE_MINUTES_VI;
+
+        this._templateDrafts[this._activeTemplateTab] = def;
+        if (this._templateEditor) {
+            this._templateEditor.setContent(def);
+        }
+        this._showToast('Đã khôi phục mẫu mặc định ✓', 'info');
+    }
+
+    async _saveSettingsTemplates() {
+        if (this._templateEditor) {
+            this._templateDrafts[this._activeTemplateTab] = this._templateEditor.getContent();
+        }
+        try {
+            await settingsManager.save({
+                template_notes: this._templateDrafts.notes,
+                template_minutes_ja: this._templateDrafts['minutes-ja'],
+                template_minutes_vi: this._templateDrafts['minutes-vi'],
+            });
+            this._showToast('Đã lưu mẫu văn bản ✓', 'success');
+        } catch (err) {
+            this._showToast(`Lỗi lưu mẫu: ${err}`, 'error');
+        }
     }
 
     // ─── Settings Form ─────────────────────────────────────
@@ -2825,6 +2993,19 @@ class App {
             selectCat.value = sessionStore.category || '';
         }
 
+        const chkAutoMinutes = document.getElementById('chk-stop-auto-minutes');
+
+        const savedAutoMinutes = localStorage.getItem('meet_minder_auto_minutes');
+        if (chkAutoMinutes) {
+            chkAutoMinutes.checked = savedAutoMinutes !== 'false';
+        }
+
+        const onAutoMinutesChange = () => {
+            if (!chkAutoMinutes) return;
+            localStorage.setItem('meet_minder_auto_minutes', chkAutoMinutes.checked ? 'true' : 'false');
+        };
+        chkAutoMinutes?.addEventListener('change', onAutoMinutesChange);
+
         if (!modal) {
             const entered = prompt('Nhập tên cuộc họp để kết thúc & lưu:', defaultTitle);
             return entered !== null ? {
@@ -2833,6 +3014,8 @@ class App {
                 customerId: sessionStore.customerId,
                 projectId: sessionStore.projectId,
                 category: sessionStore.category,
+                autoGenerateMinutes: chkAutoMinutes ? chkAutoMinutes.checked : false,
+                minutesLang: 'ja',
                 discard: false
             } : null;
         }
@@ -2861,6 +3044,7 @@ class App {
                 const chosenCustomerId = selectCust?.value || null;
                 const chosenProjectId = selectProj?.value || null;
                 const chosenCategory = selectCat?.value || null;
+                const autoGenerateMinutes = chkAutoMinutes ? chkAutoMinutes.checked : false;
                 modal.style.display = 'none';
                 resolve({
                     title: chosenTitle,
@@ -2868,6 +3052,8 @@ class App {
                     customerId: chosenCustomerId,
                     projectId: chosenProjectId,
                     category: chosenCategory,
+                    autoGenerateMinutes,
+                    minutesLang: 'ja',
                     discard: false,
                 });
             };
@@ -2894,6 +3080,7 @@ class App {
                 this._isStopConfirmationOpen = false;
                 selectCust?.removeEventListener('change', onCustChange);
                 selectProj?.removeEventListener('change', onProjChange);
+                chkAutoMinutes?.removeEventListener('change', onAutoMinutesChange);
                 document.getElementById('btn-agree-confirm-stop')?.removeEventListener('click', onConfirm);
                 document.getElementById('btn-discard-confirm-stop')?.removeEventListener('click', onDiscard);
                 document.getElementById('btn-cancel-confirm-stop')?.removeEventListener('click', onCancel);
@@ -2917,6 +3104,7 @@ class App {
         if (this.isRunning) await this.pause();
 
         const hadData = !sessionStore.isEmpty() && sessionStore.totalSegmentCount() > 0;
+        const savedSessionId = sessionStore.id;
 
         if (chosenTitle) {
             sessionStore.title = chosenTitle;
@@ -2971,6 +3159,35 @@ class App {
             targetLang: settings.target_language || 'vi',
         });
         this._updateStartButton();
+
+        return hadData ? savedSessionId : null;
+    }
+
+    async _handleStopSessionAction(stopAction) {
+        if (!stopAction) return;
+        try {
+            if (stopAction.discard) {
+                await this.discardSession();
+            } else {
+                const savedId = await this.stopSession(
+                    stopAction.title,
+                    stopAction.tags,
+                    stopAction.customerId,
+                    stopAction.projectId,
+                    stopAction.category
+                );
+
+                if (stopAction.autoGenerateMinutes && savedId) {
+                    setActivity('library');
+                    await this._openSession(savedId);
+                    this._switchSessionTab('minutes');
+                    await this._generateMeetingMinutesForSession(savedId, stopAction.minutesLang || 'vi');
+                }
+            }
+        } catch (err) {
+            console.error('[App] Stop session error:', err);
+            this._showToast(`Lỗi kết thúc: ${err}`, 'error');
+        }
     }
 
     async discardSession() {
@@ -3929,13 +4146,13 @@ class App {
                     }
                     if (text) {
                         await navigator.clipboard.writeText(text);
-                        this._showToast('Đã sao chép nội dung cuộc họp ✓', 'success');
+                        this._showToast('Đã copy nội dung cuộc họp ✓', 'success');
                         const orig = btn.innerHTML;
                         btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
                         setTimeout(() => { if (btn) btn.innerHTML = orig; }, 1500);
                     }
                 } catch (err) {
-                    this._showToast(`Lỗi sao chép: ${err}`, 'error');
+                    this._showToast(`Lỗi copy: ${err}`, 'error');
                 }
             });
         });
@@ -4010,7 +4227,11 @@ class App {
             ? `<button type="button" class="session-btn-action resume" data-id="${this._escAttr(s.id)}" data-legacy="0" title="Tiếp tục ghi vào cuộc họp này">▶ Nối tiếp</button>`
             : '';
         const editBtn = !s.has_legacy_only
-            ? `<button type="button" class="session-btn-action edit-meta" data-id="${this._escAttr(s.id)}" title="Sửa thông tin / Đổi tên / Dự án / Phân loại / Thẻ">✏️ Sửa</button>`
+            ? `<button type="button" class="session-btn-action edit-meta" data-id="${this._escAttr(s.id)}" title="Sửa thông tin / Đổi tên / Dự án / Phân loại / Thẻ">${PENCIL_YELLOW_ICON}Sửa</button>`
+            : '';
+
+        const minutesBadge = s.has_meeting_minutes
+            ? `<span class="session-badge" style="background:#10b98126;color:#34d399;border:1px solid #10b9814d;" title="Đã có biên bản Meeting Minutes">📋 Minutes</span>`
             : '';
 
         return `<div class="session-item" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}">
@@ -4020,7 +4241,7 @@ class App {
                 <div class="session-actions-inline">
                     ${resumeBtn}
                     ${editBtn}
-                    <button type="button" class="session-btn-action copy-session" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}" title="Sao chép nội dung cuộc họp">
+                    <button type="button" class="session-btn-action copy-session" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}" title="Copy nội dung cuộc họp">
                         <svg class="icon-copy-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -4033,6 +4254,7 @@ class App {
                 ${customerBadge}
                 ${projectBadge}
                 ${categoryBadge}
+                ${minutesBadge}
                 ${engineBadge}
                 ${langPair}
                 ${tagsHtml}
@@ -5177,7 +5399,7 @@ class App {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             await navigator.clipboard.writeText(text);
-            this._showToast(`Đã xuất & sao chép ${ids.length} cuộc họp ✓`, 'success');
+            this._showToast(`Đã xuất & copy ${ids.length} cuộc họp ✓`, 'success');
         } catch (err) {
             this._showToast(`Xuất thất bại: ${err}`, 'error');
         }
@@ -5268,24 +5490,47 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     }
 
     async _callGeminiAi(apiKey, promptText) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: promptText }] }],
-                generationConfig: {
-                    temperature: 0.3,
-                    maxOutputTokens: 4096,
+        const candidateModels = [
+            'gemini-3.6-flash',
+            'gemini-2.5-flash',
+            'gemini-1.5-flash',
+        ];
+
+        let lastErr = null;
+        for (const model of candidateModels) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: promptText }] }],
+                        generationConfig: {
+                            temperature: 0.3,
+                            maxOutputTokens: 4096,
+                        }
+                    })
+                });
+                if (!res.ok) {
+                    const err = await res.text();
+                    lastErr = new Error(`Gemini API error (${res.status}): ${err}`);
+                    if (res.status === 404) {
+                        console.warn(`[App] Gemini model ${model} not found (404), trying next candidate...`);
+                        continue;
+                    }
+                    throw lastErr;
                 }
-            })
-        });
-        if (!res.ok) {
-            const err = await res.text();
-            throw new Error(`Gemini API error (${res.status}): ${err}`);
+                const data = await res.json();
+                return data.candidates?.[0]?.content?.parts?.[0]?.text || 'Không có kết quả trả về từ Gemini.';
+            } catch (err) {
+                lastErr = err;
+                if (err.message && err.message.includes('404')) {
+                    continue;
+                }
+                throw err;
+            }
         }
-        const data = await res.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || 'Không có kết quả trả về từ Gemini.';
+        throw lastErr || new Error('Không có model Gemini khả dụng.');
     }
 
     async _callOpenAi(apiKey, promptText) {
@@ -5358,8 +5603,647 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         return `<span class="session-language"><span class="session-language-flag">${flag}</span> ${this._esc(name)}</span>`;
     }
 
+    _initSessionViewerTabs() {
+        // Tab switching buttons
+        const tabMinutes = document.getElementById('tab-btn-minutes');
+        const tabNotes = document.getElementById('tab-btn-notes');
+        const tabLogs = document.getElementById('tab-btn-logs');
+
+        tabMinutes?.addEventListener('click', () => this._switchSessionTab('minutes'));
+        tabNotes?.addEventListener('click', () => this._switchSessionTab('notes'));
+        tabLogs?.addEventListener('click', () => this._switchSessionTab('logs'));
+
+        // Minutes Sub-tab buttons
+        document.getElementById('subtab-btn-minutes-ja')?.addEventListener('click', () => this._switchMinutesSubtab('ja'));
+        document.getElementById('subtab-btn-minutes-vi')?.addEventListener('click', () => this._switchMinutesSubtab('vi'));
+
+        // Tab Minutes actions
+        document.getElementById('btn-minutes-edit')?.addEventListener('click', () => this._enterMinutesEditMode());
+        document.getElementById('btn-minutes-save')?.addEventListener('click', () => this._saveMinutesEdit());
+        document.getElementById('btn-minutes-cancel')?.addEventListener('click', () => this._exitMinutesEditMode());
+        document.getElementById('btn-minutes-copy-rich')?.addEventListener('click', () => this._copyRichMeetingMinutes());
+        document.getElementById('btn-minutes-copy-md')?.addEventListener('click', async () => {
+            if (this._sessionMinutesEditor) {
+                const md = this._sessionMinutesEditor.getContent();
+                if (md) {
+                    await navigator.clipboard.writeText(md);
+                    this._showToast('Đã copy Markdown Meeting Minutes ✓', 'success');
+                }
+            }
+        });
+        document.getElementById('btn-minutes-regenerate')?.addEventListener('click', async () => {
+            const cur = this._currentViewedSession;
+            if (!cur || cur.isLegacy) return;
+            await this._generateMeetingMinutesForSession(cur.id, this._activeMinutesLang || 'ja');
+        });
+        document.getElementById('btn-minutes-generate-empty')?.addEventListener('click', async () => {
+            const cur = this._currentViewedSession;
+            if (!cur || cur.isLegacy) return;
+            await this._generateMeetingMinutesForSession(cur.id, this._activeMinutesLang || 'ja');
+        });
+
+        // Tab Notes actions
+        document.getElementById('btn-notes-edit')?.addEventListener('click', () => this._enterNotesEditMode());
+        document.getElementById('btn-notes-save')?.addEventListener('click', () => this._saveNotesEdit());
+        document.getElementById('btn-notes-cancel')?.addEventListener('click', () => this._exitNotesEditMode());
+        document.getElementById('btn-notes-copy-rich')?.addEventListener('click', () => this._copyRichNotes());
+        document.getElementById('btn-notes-copy-md')?.addEventListener('click', async () => {
+            if (this._sessionNotesEditor) {
+                const notes = this._sessionNotesEditor.getContent();
+                if (notes) {
+                    await navigator.clipboard.writeText(notes);
+                    this._showToast('Đã copy Markdown ghi chú ✓', 'success');
+                }
+            }
+        });
+
+        // Tab Logs actions
+        document.getElementById('btn-logs-copy')?.addEventListener('click', async () => {
+            if (this._sessionLogsEditor) {
+                const logs = this._sessionLogsEditor.getContent();
+                if (logs) {
+                    await navigator.clipboard.writeText(logs);
+                    this._showToast('Đã copy thoại cuộc họp ✓', 'success');
+                }
+            }
+        });
+    }
+
+    _switchSessionTab(tab) {
+        this._activeSessionTab = tab;
+        const tabs = ['minutes', 'notes', 'logs'];
+        tabs.forEach(t => {
+            const btn = document.getElementById(`tab-btn-${t}`);
+            const panel = document.getElementById(`session-tab-panel-${t}`);
+            if (btn) btn.classList.toggle('active', t === tab);
+            if (panel) {
+                panel.classList.toggle('active', t === tab);
+                panel.style.display = (t === tab) ? 'flex' : 'none';
+            }
+        });
+    }
+
+    _switchMinutesSubtab(lang) {
+        this._activeMinutesLang = lang || 'ja';
+        const subtabs = ['ja', 'vi'];
+        subtabs.forEach(l => {
+            const btn = document.getElementById(`subtab-btn-minutes-${l}`);
+            if (btn) btn.classList.toggle('active', l === this._activeMinutesLang);
+        });
+
+        this._exitMinutesEditMode();
+        this._renderCurrentMinutesSubtab();
+    }
+
+    _renderCurrentMinutesSubtab() {
+        const lang = this._activeMinutesLang || 'ja';
+        const content = (this._loadedMinutes && this._loadedMinutes[lang]) ? this._loadedMinutes[lang].trim() : '';
+
+        const emptyEl = document.getElementById('minutes-empty');
+        const loadingEl = document.getElementById('minutes-loading');
+        const editorContainer = document.getElementById('session-minutes-editor-container');
+        const emptyTitle = document.getElementById('minutes-empty-title');
+        const emptyBtn = document.getElementById('btn-minutes-generate-empty');
+
+        if (loadingEl) loadingEl.style.display = 'none';
+
+        if (content) {
+            if (emptyEl) emptyEl.style.display = 'none';
+            if (editorContainer) editorContainer.style.display = '';
+            if (this._sessionMinutesEditor) {
+                this._sessionMinutesEditor.setContent(content);
+                this._sessionMinutesEditor.setReadOnly(true);
+            }
+        } else {
+            if (emptyEl) emptyEl.style.display = 'flex';
+            if (editorContainer) editorContainer.style.display = 'none';
+            if (emptyTitle) {
+                emptyTitle.textContent = lang === 'ja'
+                    ? 'Chưa có Meeting Minutes tiếng Nhật cho cuộc họp này'
+                    : 'Chưa có Meeting Minutes tiếng Việt cho cuộc họp này';
+            }
+            if (emptyBtn) {
+                emptyBtn.textContent = lang === 'ja'
+                    ? '✨ Tạo Meeting Minutes (Tiếng Nhật 🇯🇵)'
+                    : '✨ Tạo Meeting Minutes (Tiếng Việt 🇻🇳)';
+            }
+            if (this._sessionMinutesEditor) {
+                this._sessionMinutesEditor.setContent('');
+                this._sessionMinutesEditor.setReadOnly(true);
+            }
+        }
+    }
+
+    _updateMinutesBadges() {
+        const hasJa = !!(this._loadedMinutes && this._loadedMinutes.ja && this._loadedMinutes.ja.trim());
+        const hasVi = !!(this._loadedMinutes && this._loadedMinutes.vi && this._loadedMinutes.vi.trim());
+
+        const badgeJa = document.getElementById('subtab-badge-minutes-ja');
+        if (badgeJa) badgeJa.style.display = hasJa ? 'inline-block' : 'none';
+
+        const badgeVi = document.getElementById('subtab-badge-minutes-vi');
+        if (badgeVi) badgeVi.style.display = hasVi ? 'inline-block' : 'none';
+
+        const badgeMain = document.getElementById('tab-badge-minutes');
+        if (badgeMain) badgeMain.style.display = (hasJa || hasVi) ? 'inline-block' : 'none';
+    }
+
+    _ensureSessionViewerEditorsMounted() {
+        const minCont = document.getElementById('session-minutes-editor-container');
+        if (!this._sessionMinutesEditor && minCont) {
+            this._sessionMinutesEditor = new NotesEditor();
+            this._sessionMinutesEditor.mount(minCont, {
+                initialContent: '',
+                readOnly: true,
+                placeholderText: 'Biên bản cuộc họp (Meeting Minutes)...',
+                onSave: () => {
+                    if (this._isMinutesEditing) this._saveMinutesEdit();
+                },
+                onCancel: () => {
+                    if (this._isMinutesEditing) this._exitMinutesEditMode();
+                },
+            });
+        }
+
+        const notesCont = document.getElementById('session-notes-editor-container');
+        if (!this._sessionNotesEditor && notesCont) {
+            this._sessionNotesEditor = new NotesEditor();
+            this._sessionNotesEditor.mount(notesCont, {
+                initialContent: '',
+                readOnly: true,
+                placeholderText: 'Ghi chú cuộc họp...',
+                onSave: () => {
+                    if (this._isNotesEditing) this._saveNotesEdit();
+                },
+                onCancel: () => {
+                    if (this._isNotesEditing) this._exitNotesEditMode();
+                },
+            });
+        }
+
+        const logsCont = document.getElementById('session-logs-editor-container');
+        if (!this._sessionLogsEditor && logsCont) {
+            this._sessionLogsEditor = new NotesEditor();
+            this._sessionLogsEditor.mount(logsCont, {
+                initialContent: '',
+                readOnly: true,
+                placeholderText: 'Nội dung thoại...',
+            });
+            this._sessionViewerEditor = this._sessionLogsEditor;
+        }
+    }
+
+    _formatTranscriptFromChunks(chunks) {
+        const srcLines = [];
+        const tgtLines = [];
+        for (const chunk of (chunks || [])) {
+            for (const seg of (chunk.segments || [])) {
+                const ts = seg.ts ? `[${seg.ts}] ` : '';
+                const spk = seg.speaker ? `(Speaker ${seg.speaker}) ` : '';
+                const src = (seg.src || '').trim();
+                const tgt = (seg.tgt || '').trim();
+                if (src) srcLines.push(`${ts}${spk}${src}`);
+                if (tgt) tgtLines.push(`${ts}${spk}${tgt}`);
+            }
+        }
+
+        const lines = [];
+        lines.push('## 🗣️ Bản gốc (Original)');
+        lines.push('');
+        if (srcLines.length > 0) {
+            lines.push(srcLines.join('\n'));
+        } else {
+            lines.push('*(Không có nội dung bản gốc)*');
+        }
+        lines.push('');
+        lines.push('---');
+        lines.push('');
+        lines.push('## 🌐 Bản dịch (Translation)');
+        lines.push('');
+        if (tgtLines.length > 0) {
+            lines.push(tgtLines.join('\n'));
+        } else {
+            lines.push('*(Không có nội dung bản dịch)*');
+        }
+
+        return lines.join('\n');
+    }
+
+    _stripNotesFromMarkdown(mdText) {
+        if (!mdText) return '';
+        return mdText
+            .replace(/^# [^\n]*\n+/i, '')
+            .replace(/\*\*Thông tin\*\*:[^\n]*\n+/i, '')
+            .replace(/## 📝 Ghi chú cuộc họp[^\n]*[\s\S]*?(?=(## |---|$))/gi, '')
+            .replace(/## 📋 Biên bản cuộc họp[^\n]*[\s\S]*?(?=(## |---|$))/gi, '')
+            .replace(/^[-\s]*\n/g, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    }
+
+    _markdownToRichHtml(md) {
+        if (!md) return '';
+        const lines = md.split('\n');
+        let html = '';
+        let inList = false;
+        let inTable = false;
+        let tableHeaderDone = false;
+
+        const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const formatInline = (text) => {
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;color:#0f172a;padding:2px 4px;border-radius:3px;font-size:12px;">$1</code>');
+        };
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+
+            // Table rows
+            if (line.startsWith('|') && line.endsWith('|')) {
+                const cells = line.slice(1, -1).split('|').map(c => c.trim());
+                if (cells.every(c => /^:?-+:?$/.test(c))) {
+                    tableHeaderDone = true;
+                    continue;
+                }
+                if (!inTable) {
+                    if (inList) { html += '</ul>\n'; inList = false; }
+                    inTable = true;
+                    tableHeaderDone = false;
+                    html += '<table style="border-collapse:collapse;width:100%;margin:12px 0;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:13px;">\n';
+                }
+                const tag = !tableHeaderDone ? 'th' : 'td';
+                const cellStyle = !tableHeaderDone
+                    ? 'border:1px solid #cbd5e1;padding:8px 12px;background:#f8fafc;font-weight:600;text-align:left;'
+                    : 'border:1px solid #cbd5e1;padding:8px 12px;text-align:left;';
+                html += '  <tr>' + cells.map(c => `<${tag} style="${cellStyle}">${formatInline(escapeHtml(c))}</${tag}>`).join('') + '</tr>\n';
+                continue;
+            } else if (inTable) {
+                html += '</table>\n';
+                inTable = false;
+            }
+
+            // Horizontal rule
+            if (line === '---' || line === '***') {
+                if (inList) { html += '</ul>\n'; inList = false; }
+                html += '<hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;" />\n';
+                continue;
+            }
+
+            // Headings
+            if (line.startsWith('# ')) {
+                if (inList) { html += '</ul>\n'; inList = false; }
+                html += `<h1 style="color:#0f172a;font-size:18px;font-weight:700;margin:16px 0 8px 0;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;">${formatInline(escapeHtml(line.slice(2)))}</h1>\n`;
+                continue;
+            }
+            if (line.startsWith('## ')) {
+                if (inList) { html += '</ul>\n'; inList = false; }
+                html += `<h2 style="color:#1e293b;font-size:15px;font-weight:700;margin:14px 0 6px 0;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;">${formatInline(escapeHtml(line.slice(3)))}</h2>\n`;
+                continue;
+            }
+            if (line.startsWith('### ')) {
+                if (inList) { html += '</ul>\n'; inList = false; }
+                html += `<h3 style="color:#334155;font-size:13px;font-weight:600;margin:12px 0 4px 0;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;">${formatInline(escapeHtml(line.slice(4)))}</h3>\n`;
+                continue;
+            }
+
+            // Bullet lists
+            if (line.startsWith('- ') || line.startsWith('* ')) {
+                if (!inList) {
+                    html += '<ul style="margin:6px 0;padding-left:20px;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.6;">\n';
+                    inList = true;
+                }
+                html += `  <li>${formatInline(escapeHtml(line.slice(2)))}</li>\n`;
+                continue;
+            } else if (inList) {
+                html += '</ul>\n';
+                inList = false;
+            }
+
+            if (!line) continue;
+
+            html += `<p style="margin:6px 0;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.6;color:#1e293b;">${formatInline(escapeHtml(line))}</p>\n`;
+        }
+
+        if (inList) html += '</ul>\n';
+        if (inTable) html += '</table>\n';
+
+        return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">${html}</div>`;
+    }
+
+    _buildMeetingMinutesPrompt(sessionData, targetLang = 'vi') {
+        const title = sessionData.title || sessionData.id;
+        const createdAt = sessionData.created_at || '';
+        const durationMin = Math.round((sessionData.duration_sec || 0) / 60);
+        const notes = sessionData.notes?.trim() || '(Không có ghi chú riêng)';
+
+        const logLines = [];
+        for (const chunk of (sessionData.chunks || [])) {
+            for (const seg of (chunk.segments || [])) {
+                const ts = seg.ts ? `[${seg.ts}] ` : '';
+                const spk = seg.speaker ? `(Speaker ${seg.speaker}) ` : '';
+                const src = (seg.src || '').trim();
+                const tgt = (seg.tgt || '').trim();
+                if (tgt) {
+                    logLines.push(`${ts}${spk}${tgt}${src ? ` (Gốc: ${src})` : ''}`);
+                } else if (src) {
+                    logLines.push(`${ts}${spk}${src}`);
+                }
+            }
+        }
+        const transcriptText = logLines.join('\n');
+
+        const s = settingsManager.get();
+        if (targetLang === 'ja') {
+            let jaTemplate = (s.template_minutes_ja && s.template_minutes_ja.trim()) ? s.template_minutes_ja : DEFAULT_TEMPLATE_MINUTES_JA;
+            jaTemplate = jaTemplate
+                .replace(/\{\{title\}\}/g, title)
+                .replace(/\{\{date\}\}/g, createdAt)
+                .replace(/\{\{duration\}\}/g, String(durationMin))
+                .replace(/\{\{participants\}\}/g, '(発言ログやメモから判明する参加者・発言者、または想定される担当者)');
+
+            return `あなたはプロフェッショナルな議事録作成アシスタントです。
+以下の会議情報、ユーザーの手書きメモ、および会議のリアルタイム発言ログをもとに、クライアントや関係者にそのまま共有・送信できる高品質で正式な「会議議事録（Meeting Minutes）」を日本語のMarkdown形式で作成してください。
+
+【会議基本情報】
+- 会議名: ${title}
+- 日時: ${createdAt}
+- 所要時間: 約 ${durationMin} 分
+
+【参加者の手書きメモ】
+${notes}
+
+【発言・翻訳ログ】
+${transcriptText}
+
+---
+
+【出力フォーマット（必ず以下のテンプレート構造・見出しに厳格に従って記述してください）】
+
+${jaTemplate}
+
+※客観的かつ簡潔・明瞭なビジネス日本語（「です・ます」調）で作成してください。`;
+        }
+
+        // Default: Vietnamese
+        let viTemplate = (s.template_minutes_vi && s.template_minutes_vi.trim()) ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI;
+        viTemplate = viTemplate
+            .replace(/\{\{title\}\}/g, title)
+            .replace(/\{\{date\}\}/g, createdAt)
+            .replace(/\{\{duration\}\}/g, String(durationMin))
+            .replace(/\{\{participants\}\}/g, '(Tổng hợp tên người nói hoặc các bên tham gia dựa theo hội thoại/ghi chú)');
+
+        return `Bạn là một trợ lý thư ký cuộc họp chuyên nghiệp và sắc bén.
+Dưới đây là thông tin cuộc họp, ghi chú viết tay của người tham gia và toàn bộ dữ liệu đối thoại/bản dịch ghi nhận được trong cuộc họp:
+
+【THÔNG TIN CUỘC HỌP】
+- Tiêu đề: ${title}
+- Thời gian bắt đầu: ${createdAt}
+- Thời lượng: khoảng ${durationMin} phút
+
+【GHI CHÚ VIẾT TAY (NOTES)】
+${notes}
+
+【LỊCH SỬ THOẠI & BẢN DỊCH】
+${transcriptText}
+
+---
+
+Hãy phân tích toàn diện và soạn thảo một BẢN BIÊN BẢN CUỘC HỌP (MEETING MINUTES) chuẩn chỉnh, trang trọng và súc tích bằng Tiếng Việt theo ĐÚNG CẤU TRÚC MẪU (TEMPLATE) DƯỚI ĐÂY:
+
+${viTemplate}
+
+Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy gọn.`;
+    }
+
+    async _generateMeetingMinutesForSession(sessionId, targetLang = null) {
+        const lang = targetLang || this._activeMinutesLang || 'ja';
+        const loadingEl = document.getElementById('minutes-loading');
+        const emptyEl = document.getElementById('minutes-empty');
+        const editorContainer = document.getElementById('session-minutes-editor-container');
+        const loadingText = document.getElementById('minutes-loading-text');
+
+        if (loadingEl) loadingEl.style.display = 'flex';
+        if (emptyEl) emptyEl.style.display = 'none';
+        if (editorContainer) editorContainer.style.display = 'none';
+        if (loadingText) loadingText.textContent = `Đang phân tích & soạn thảo Meeting Minutes (${lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt'})...`;
+
+        const settings = settingsManager.get();
+        const geminiKey = settings.gemini_api_key?.trim();
+        const openaiKey = settings.openai_api_key?.trim();
+
+        if (!geminiKey && !openaiKey) {
+            if (loadingEl) loadingEl.style.display = 'none';
+            this._renderCurrentMinutesSubtab();
+            this._showToast('Vui lòng cài đặt Gemini hoặc OpenAI API Key trong Cài đặt (⌘,) để tạo Meeting Minutes', 'error');
+            return;
+        }
+
+        try {
+            const res = await invoke('read_session', { id: sessionId });
+            const prompt = this._buildMeetingMinutesPrompt(res.json, lang);
+
+            let resultText = '';
+            if (geminiKey) {
+                resultText = await this._callGeminiAi(geminiKey, prompt);
+            } else {
+                resultText = await this._callOpenAi(openaiKey, prompt);
+            }
+
+            // Save to backend
+            await invoke('update_session_meeting_minutes', {
+                id: sessionId,
+                minutes: resultText,
+                lang,
+            });
+
+            this._loadedMinutes[lang] = resultText;
+            this._updateMinutesBadges();
+            this._switchMinutesSubtab(lang);
+
+            this._showToast(`Đã tạo Meeting Minutes (${lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt'}) thành công ✓`, 'success');
+        } catch (err) {
+            console.error('[App] _generateMeetingMinutesForSession error:', err);
+            if (loadingEl) loadingEl.style.display = 'none';
+            this._renderCurrentMinutesSubtab();
+            this._showToast(`Lỗi tạo Meeting Minutes: ${err.message || err}`, 'error');
+        }
+    }
+
+    _enterMinutesEditMode() {
+        const cur = this._currentViewedSession;
+        if (!cur || !this._sessionMinutesEditor) return;
+        this._isMinutesEditing = true;
+        this._sessionMinutesEditor.setReadOnly(false);
+        this._sessionMinutesEditor.focus();
+        const editBtn = document.getElementById('btn-minutes-edit');
+        if (editBtn) editBtn.style.display = 'none';
+        const saveBtn = document.getElementById('btn-minutes-save');
+        if (saveBtn) saveBtn.style.display = '';
+        const cancelBtn = document.getElementById('btn-minutes-cancel');
+        if (cancelBtn) cancelBtn.style.display = '';
+        const copyRich = document.getElementById('btn-minutes-copy-rich');
+        if (copyRich) copyRich.style.display = 'none';
+        const copyMd = document.getElementById('btn-minutes-copy-md');
+        if (copyMd) copyMd.style.display = 'none';
+        const regen = document.getElementById('btn-minutes-regenerate');
+        if (regen) regen.style.display = 'none';
+    }
+
+    _exitMinutesEditMode() {
+        this._isMinutesEditing = false;
+        if (this._sessionMinutesEditor) {
+            this._sessionMinutesEditor.setReadOnly(true);
+        }
+        const editBtn = document.getElementById('btn-minutes-edit');
+        if (editBtn) editBtn.style.display = '';
+        const saveBtn = document.getElementById('btn-minutes-save');
+        if (saveBtn) saveBtn.style.display = 'none';
+        const cancelBtn = document.getElementById('btn-minutes-cancel');
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        const copyRich = document.getElementById('btn-minutes-copy-rich');
+        if (copyRich) copyRich.style.display = '';
+        const copyMd = document.getElementById('btn-minutes-copy-md');
+        if (copyMd) copyMd.style.display = '';
+        const regen = document.getElementById('btn-minutes-regenerate');
+        if (regen) regen.style.display = '';
+    }
+
+    async _saveMinutesEdit() {
+        const cur = this._currentViewedSession;
+        if (!cur || !this._sessionMinutesEditor) return;
+        const lang = this._activeMinutesLang || 'ja';
+        const newMinutes = this._sessionMinutesEditor.getContent();
+        try {
+            await invoke('update_session_meeting_minutes', {
+                id: cur.id,
+                minutes: newMinutes,
+                lang,
+            });
+            this._loadedMinutes[lang] = newMinutes;
+            this._updateMinutesBadges();
+            this._exitMinutesEditMode();
+            this._showToast(`Đã lưu Meeting Minutes (${lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt'}) ✓`, 'success');
+        } catch (err) {
+            this._showToast(`Lỗi lưu Meeting Minutes: ${err}`, 'error');
+        }
+    }
+
+    _enterNotesEditMode() {
+        const cur = this._currentViewedSession;
+        if (!cur || !this._sessionNotesEditor) return;
+        this._isNotesEditing = true;
+        this._sessionNotesEditor.setReadOnly(false);
+        this._sessionNotesEditor.focus();
+        const editBtn = document.getElementById('btn-notes-edit');
+        if (editBtn) editBtn.style.display = 'none';
+        const saveBtn = document.getElementById('btn-notes-save');
+        if (saveBtn) saveBtn.style.display = '';
+        const cancelBtn = document.getElementById('btn-notes-cancel');
+        if (cancelBtn) cancelBtn.style.display = '';
+        const copyRich = document.getElementById('btn-notes-copy-rich');
+        if (copyRich) copyRich.style.display = 'none';
+        const copyMd = document.getElementById('btn-notes-copy-md');
+        if (copyMd) copyMd.style.display = 'none';
+    }
+
+    _exitNotesEditMode() {
+        this._isNotesEditing = false;
+        if (this._sessionNotesEditor) {
+            this._sessionNotesEditor.setReadOnly(true);
+        }
+        const editBtn = document.getElementById('btn-notes-edit');
+        if (editBtn) editBtn.style.display = '';
+        const saveBtn = document.getElementById('btn-notes-save');
+        if (saveBtn) saveBtn.style.display = 'none';
+        const cancelBtn = document.getElementById('btn-notes-cancel');
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        const copyRich = document.getElementById('btn-notes-copy-rich');
+        if (copyRich) copyRich.style.display = '';
+        const copyMd = document.getElementById('btn-notes-copy-md');
+        if (copyMd) copyMd.style.display = '';
+    }
+
+    async _saveNotesEdit() {
+        const cur = this._currentViewedSession;
+        if (!cur || !this._sessionNotesEditor) return;
+        const newNotes = this._sessionNotesEditor.getContent();
+        try {
+            await invoke('update_session_notes', {
+                id: cur.id,
+                notes: newNotes,
+            });
+            this._exitNotesEditMode();
+            this._showToast('Đã lưu ghi chú ✓', 'success');
+        } catch (err) {
+            this._showToast(`Lỗi lưu ghi chú: ${err}`, 'error');
+        }
+    }
+
+    async _copyRichMeetingMinutes() {
+        if (!this._sessionMinutesEditor) return;
+        const md = this._sessionMinutesEditor.getContent();
+        if (!md || !md.trim()) {
+            this._showToast('Chưa có nội dung Meeting Minutes để copy', 'info');
+            return;
+        }
+        try {
+            const html = this._markdownToRichHtml(md);
+            if (window.ClipboardItem && navigator.clipboard?.write) {
+                const textBlob = new Blob([md], { type: 'text/plain' });
+                const htmlBlob = new Blob([html], { type: 'text/html' });
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        'text/plain': textBlob,
+                        'text/html': htmlBlob,
+                    })
+                ]);
+            } else {
+                await navigator.clipboard.writeText(md);
+            }
+            this._showToast('Đã copy HTML Meeting Minutes ✓', 'success');
+        } catch (err) {
+            console.error('[App] _copyRichMeetingMinutes failed:', err);
+            await navigator.clipboard.writeText(md);
+            this._showToast('Đã copy Meeting Minutes (văn bản) ✓', 'success');
+        }
+    }
+
+    async _copyRichNotes() {
+        if (!this._sessionNotesEditor) return;
+        const md = this._sessionNotesEditor.getContent();
+        if (!md || !md.trim()) {
+            this._showToast('Chưa có nội dung ghi chú để copy', 'info');
+            return;
+        }
+        try {
+            const html = this._markdownToRichHtml(md);
+            if (window.ClipboardItem && navigator.clipboard?.write) {
+                const textBlob = new Blob([md], { type: 'text/plain' });
+                const htmlBlob = new Blob([html], { type: 'text/html' });
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        'text/plain': textBlob,
+                        'text/html': htmlBlob,
+                    })
+                ]);
+            } else {
+                await navigator.clipboard.writeText(md);
+            }
+            this._showToast('Đã copy HTML ghi chú ✓', 'success');
+        } catch (err) {
+            console.error('[App] _copyRichNotes failed:', err);
+            await navigator.clipboard.writeText(md);
+            this._showToast('Đã copy ghi chú (văn bản) ✓', 'success');
+        }
+    }
+
     async _openSession(id, isLegacy = false) {
         this._exitSessionEditMode();
+        this._exitMinutesEditMode();
+        this._exitNotesEditMode();
+
         if (this._sessionAudioElement) {
             this._sessionAudioElement.pause();
             this._sessionAudioElement = null;
@@ -5370,7 +6254,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const listPanel = document.getElementById('sessions-list-panel');
         const viewer = document.getElementById('session-viewer');
         const title = document.getElementById('session-viewer-title');
-        const editorContainer = document.getElementById('session-viewer-editor-container');
         const detailPlayer = document.querySelector('.session-player-detail');
 
         if (listPanel) listPanel.style.display = 'none';
@@ -5385,34 +6268,70 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
         this._currentViewedSession = { id, isLegacy };
 
-        if (!this._sessionViewerEditor && editorContainer) {
-            this._sessionViewerEditor = new NotesEditor();
-            this._sessionViewerEditor.mount(editorContainer, {
-                initialContent: 'Loading...',
-                readOnly: true,
-                placeholderText: 'Nội dung cuộc họp...',
-                onSave: () => {
-                    if (this._isSessionEditing) this._saveSessionEdit();
-                },
-                onCancel: () => {
-                    if (this._isSessionEditing) this._exitSessionEditMode();
-                },
-            });
-        }
+        this._ensureSessionViewerEditorsMounted();
+
+        const tabBtnMinutes = document.getElementById('tab-btn-minutes');
+        const tabBtnNotes = document.getElementById('tab-btn-notes');
 
         try {
             if (isLegacy) {
                 const text = await invoke('read_legacy_session', { id });
-                if (this._sessionViewerEditor) this._sessionViewerEditor.setContent(text);
+                const strippedText = this._stripNotesFromMarkdown(text);
+                if (this._sessionLogsEditor) this._sessionLogsEditor.setContent(strippedText);
                 if (title) title.textContent = id;
+                if (tabBtnMinutes) tabBtnMinutes.style.display = 'none';
+                if (tabBtnNotes) tabBtnNotes.style.display = 'none';
+                this._switchSessionTab('logs');
             } else {
+                if (tabBtnMinutes) tabBtnMinutes.style.display = '';
+                if (tabBtnNotes) tabBtnNotes.style.display = '';
+
                 const result = await invoke('read_session', { id });
-                if (this._sessionViewerEditor) this._sessionViewerEditor.setContent(result.md);
-                if (title) title.textContent = result.json.title || id;
+                const json = result.json;
+                if (title) title.textContent = json.title || id;
+
+                // 1. Minutes Tab (JA & VI Sub-tabs)
+                const mmJa = json.meeting_minutes_ja || (json.meeting_minutes_lang === 'ja' ? json.meeting_minutes : '') || '';
+                const mmVi = json.meeting_minutes_vi || (json.meeting_minutes_lang === 'vi' ? json.meeting_minutes : '') || '';
+                this._loadedMinutes = {
+                    ja: mmJa.trim(),
+                    vi: mmVi.trim(),
+                };
+
+                this._updateMinutesBadges();
+                const preferredSubtab = this._loadedMinutes.ja ? 'ja' : (this._loadedMinutes.vi ? 'vi' : 'ja');
+                this._switchMinutesSubtab(preferredSubtab);
+
+                // 2. Notes Tab
+                const notesText = json.notes || '';
+                if (this._sessionNotesEditor) {
+                    this._sessionNotesEditor.setContent(notesText);
+                    this._sessionNotesEditor.setReadOnly(true);
+                }
+
+                // 3. Logs Tab (tách riêng bản gốc và bản dịch, không gộp lẫn ghi chú)
+                let logsText = this._formatTranscriptFromChunks(json.chunks);
+                if ((!logsText || (logsText.includes('*(Không có nội dung bản gốc)*') && logsText.includes('*(Không có nội dung bản dịch)*'))) && result.md) {
+                    logsText = this._stripNotesFromMarkdown(result.md);
+                }
+                if (!logsText) {
+                    logsText = '*(Không có nội dung ghi âm / bản dịch)*';
+                }
+                if (this._sessionLogsEditor) {
+                    this._sessionLogsEditor.setContent(logsText);
+                    this._sessionLogsEditor.setReadOnly(true);
+                }
+
+                // Default Tab: if has any minutes -> 'minutes', otherwise -> 'logs'
+                if (this._loadedMinutes.ja || this._loadedMinutes.vi) {
+                    this._switchSessionTab('minutes');
+                } else {
+                    this._switchSessionTab('logs');
+                }
             }
-            if (this._sessionViewerEditor) this._sessionViewerEditor.setReadOnly(true);
         } catch (err) {
-            if (this._sessionViewerEditor) this._sessionViewerEditor.setContent(`Error loading session: ${err}`);
+            console.error('[App] _openSession error:', err);
+            this._showToast(`Lỗi đọc cuộc họp: ${err}`, 'error');
         }
     }
 
@@ -5969,7 +6888,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const now = new Date();
         const p = n => String(n).padStart(2, '0');
         const dateStr = `${now.getFullYear()}/${p(now.getMonth() + 1)}/${p(now.getDate())}`;
-        return `# MTG Title\n## Thông tin cuộc họp\n- Người tham gia: \n- Ngày tháng: ${dateStr}\n\n## Nội dung cuộc họp \n\n\n## TODO\n- [ ] \n`;
+        const timeStr = `${p(now.getHours())}:${p(now.getMinutes())}`;
+        const s = settingsManager.get();
+        const raw = (s.template_notes && s.template_notes.trim()) ? s.template_notes : DEFAULT_TEMPLATE_NOTES;
+        return raw
+            .replace(/\{\{date\}\}/g, dateStr)
+            .replace(/\{\{time\}\}/g, timeStr)
+            .replace(/\{\{title\}\}/g, sessionStore.sessionTitle || 'MTG Title');
     }
 
     _toggleNotesDrawer(forceOpen = null) {
@@ -6025,7 +6950,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const copyBtn = document.createElement('button');
             copyBtn.type = 'button';
             copyBtn.className = 'toast-copy-btn';
-            copyBtn.title = 'Sao chép thông báo lỗi';
+            copyBtn.title = 'Copy thông báo lỗi';
             const copySvg = `<svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
             const checkSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
             copyBtn.innerHTML = copySvg;

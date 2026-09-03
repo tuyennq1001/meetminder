@@ -4695,4 +4695,257 @@ body.expanded #library-panel { padding: 8px 6%; }
   padding: 0 2px;
 }
 
+/* ─── Session Viewer 3-Tab Bar (Minutes | Notes | Logs) ────────── */
+.session-nav-tabbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.session-nav-tab-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--md-sys-color-surface-container-highest);
+  border: 1px solid var(--border-subtle);
+}
+
+.session-nav-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.session-nav-tab:hover {
+  color: var(--md-sys-color-on-surface);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.session-nav-tab.active {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  font-weight: 600;
+  box-shadow: var(--elevation-1);
+}
+
+.session-tab-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: #10b981;
+  color: #ffffff;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.session-tab-panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  position: relative;
+  flex-direction: column;
+}
+
+.session-tab-subbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.session-tab-subbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.session-tab-subbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.subbar-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface-variant);
+  white-space: nowrap;
+}
+
+.subbar-info {
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.minutes-state-card {
+  text-align: center;
+  padding: 40px 20px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ─── Minutes Language Sub-Tabs ────────────────────────────── */
+.minutes-subtab-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--md-sys-color-surface-container-low);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.minutes-subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.minutes-subtab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--md-sys-color-on-surface);
+}
+
+.minutes-subtab.active {
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-primary);
+  border-color: rgba(59, 130, 246, 0.3);
+  font-weight: 600;
+  box-shadow: var(--elevation-1);
+}
+
+.subtab-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* ─── Yellow Pencil Icon ───────────────────────────────────── */
+.icon-pencil-yellow {
+  display: inline-block;
+  vertical-align: -2px;
+  fill: #f59e0b;
+  color: #f59e0b;
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+/* ─── Settings: Templates Editor ───────────────────────────── */
+.templates-subtab-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08));
+  padding-bottom: 8px;
+}
+
+.templates-subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.templates-subtab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--md-sys-color-on-surface);
+}
+
+.templates-subtab.active {
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-primary);
+  border-color: rgba(59, 130, 246, 0.3);
+  font-weight: 600;
+}
+
+.template-editor-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.template-editor-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.template-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.template-cm-container {
+  height: 380px;
+  width: 100%;
+  position: relative;
+  background: var(--md-sys-color-surface-container-low, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+
 

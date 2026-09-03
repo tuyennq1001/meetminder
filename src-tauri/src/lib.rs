@@ -123,6 +123,8 @@ pub fn run() {
             commands::session_store::update_session_tags,
             commands::session_store::update_session_metadata,
             commands::session_store::update_session_content,
+            commands::session_store::update_session_meeting_minutes,
+            commands::session_store::update_session_notes,
             commands::session_store::get_project_registry,
             commands::session_store::save_customer,
             commands::session_store::toggle_customer_status,

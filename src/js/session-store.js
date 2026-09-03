@@ -18,6 +18,8 @@ export class SessionStore {
         this.endedAt = null;
         this.title = '';
         this.notes = '';
+        this.meetingMinutes = '';
+        this.meetingMinutesLang = 'vi';
         this.tags = [];
         this.customerId = null;
         this.projectId = null;
@@ -47,6 +49,10 @@ export class SessionStore {
         this.endedAt = null;
         this.title = '';
         this.notes = '';
+        this.meetingMinutes = '';
+        this.meetingMinutesLang = 'ja';
+        this.meetingMinutesJa = '';
+        this.meetingMinutesVi = '';
         this.tags = Array.isArray(tags) ? tags : [];
         this.customerId = customerId || null;
         this.projectId = projectId || null;
@@ -71,6 +77,10 @@ export class SessionStore {
         s.endedAt = j.ended_at;
         s.title = j.title || '';
         s.notes = j.notes || '';
+        s.meetingMinutes = j.meeting_minutes || '';
+        s.meetingMinutesLang = j.meeting_minutes_lang || 'ja';
+        s.meetingMinutesJa = j.meeting_minutes_ja || (j.meeting_minutes_lang === 'ja' ? j.meeting_minutes : '') || '';
+        s.meetingMinutesVi = j.meeting_minutes_vi || (j.meeting_minutes_lang === 'vi' ? j.meeting_minutes : '') || '';
         s.tags = Array.isArray(j.tags) ? j.tags : [];
         s.customerId = j.customer_id || null;
         s.projectId = j.project_id || null;
@@ -91,6 +101,10 @@ export class SessionStore {
         this.endedAt = null;
         this.title = j.title || '';
         this.notes = j.notes || '';
+        this.meetingMinutes = j.meeting_minutes || '';
+        this.meetingMinutesLang = j.meeting_minutes_lang || 'ja';
+        this.meetingMinutesJa = j.meeting_minutes_ja || (j.meeting_minutes_lang === 'ja' ? j.meeting_minutes : '') || '';
+        this.meetingMinutesVi = j.meeting_minutes_vi || (j.meeting_minutes_lang === 'vi' ? j.meeting_minutes : '') || '';
         this.tags = Array.isArray(j.tags) ? j.tags : [];
         this.customerId = j.customer_id || null;
         this.projectId = j.project_id || null;
@@ -255,6 +269,41 @@ export class SessionStore {
         }
     }
 
+    async setMeetingMinutes(minutes, lang = 'ja') {
+        const chosenLang = lang || 'ja';
+        this.meetingMinutes = minutes || '';
+        this.meetingMinutesLang = chosenLang;
+        if (chosenLang === 'ja') this.meetingMinutesJa = minutes || '';
+        if (chosenLang === 'vi') this.meetingMinutesVi = minutes || '';
+        this._mutations++;
+        if (this.id) {
+            try {
+                await invoke('update_session_meeting_minutes', {
+                    id: this.id,
+                    minutes: this.meetingMinutes,
+                    lang: this.meetingMinutesLang,
+                });
+            } catch (err) {
+                console.error('[SessionStore] update_session_meeting_minutes failed:', err);
+            }
+        }
+    }
+
+    async setNotes(notes) {
+        this.notes = notes || '';
+        this._mutations++;
+        if (this.id) {
+            try {
+                await invoke('update_session_notes', {
+                    id: this.id,
+                    notes: this.notes,
+                });
+            } catch (err) {
+                console.error('[SessionStore] update_session_notes failed:', err);
+            }
+        }
+    }
+
     isEmpty() {
         const chunkSegs = this.chunks.reduce((n, c) => n + c.segments.length, 0);
         const liveSegs = this.currentChunk?.segments.length || 0;
@@ -361,6 +410,10 @@ export class SessionStore {
             ended_at: this.endedAt,
             title: this.title || this._autoTitle(),
             notes: this.notes || '',
+            meeting_minutes: this.meetingMinutes || null,
+            meeting_minutes_lang: this.meetingMinutesLang || null,
+            meeting_minutes_ja: this.meetingMinutesJa || null,
+            meeting_minutes_vi: this.meetingMinutesVi || null,
             tags: this.tags || [],
             customer_id: this.customerId || null,
             project_id: this.projectId || null,
@@ -406,17 +459,22 @@ export class SessionStore {
         lines.push('---');
         lines.push('');
 
-        // Section 1: Meeting Notes
-        lines.push('## 📝 1. Ghi chú cuộc họp (Meeting Notes)');
-        lines.push('');
-        if (this.notes && this.notes.trim()) {
-            lines.push(this.notes.trim());
-        } else {
-            lines.push('*(Không có ghi chú)*');
+        if (this.meetingMinutesJa && this.meetingMinutesJa.trim()) {
+            lines.push('## 📋 Biên bản cuộc họp (Tiếng Nhật)');
+            lines.push('');
+            lines.push(this.meetingMinutesJa.trim());
+            lines.push('');
+            lines.push('---');
+            lines.push('');
         }
-        lines.push('');
-        lines.push('---');
-        lines.push('');
+        if (this.meetingMinutesVi && this.meetingMinutesVi.trim()) {
+            lines.push('## 📋 Biên bản cuộc họp (Tiếng Việt)');
+            lines.push('');
+            lines.push(this.meetingMinutesVi.trim());
+            lines.push('');
+            lines.push('---');
+            lines.push('');
+        }
 
         // Extract segments from all chunks
         const all = this._allChunks();

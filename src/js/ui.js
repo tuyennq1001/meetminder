@@ -523,7 +523,7 @@ export class TranscriptUI {
         // Header for single mode with copy button
         const headerTitle = showOnlyOriginal ? '📝 Bản gốc' : '🌐 Bản dịch';
         const copyClass = showOnlyOriginal ? 'btn-copy-source' : 'btn-copy-translation';
-        const copyTitle = showOnlyOriginal ? 'Sao chép toàn bộ bản gốc' : 'Sao chép toàn bộ bản dịch';
+        const copyTitle = showOnlyOriginal ? 'Copy toàn bộ bản gốc' : 'Copy toàn bộ bản dịch';
         const headerHtml = `
             <div class="panel-column-header">
                 <span class="panel-header-title">${headerTitle}</span>
@@ -650,7 +650,7 @@ export class TranscriptUI {
             <div class="panel-source">
                 <div class="panel-column-header">
                     <span class="panel-header-title">📝 Bản gốc</span>
-                    <button type="button" class="panel-copy-btn btn-copy-source" title="Sao chép toàn bộ bản gốc">
+                    <button type="button" class="panel-copy-btn btn-copy-source" title="Copy toàn bộ bản gốc">
                         <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -668,7 +668,7 @@ export class TranscriptUI {
             <div class="panel-translation">
                 <div class="panel-column-header">
                     <span class="panel-header-title">🌐 Bản dịch</span>
-                    <button type="button" class="panel-copy-btn btn-copy-translation" title="Sao chép toàn bộ bản dịch">
+                    <button type="button" class="panel-copy-btn btn-copy-translation" title="Copy toàn bộ bản dịch">
                         <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>

@@ -123,6 +123,15 @@ pub struct Settings {
     /// Auto-pause session when silence/inactivity exceeds N minutes (0 = disabled).
     #[serde(default = "default_inactivity_timeout_min")]
     pub inactivity_timeout_min: u32,
+    /// Custom template for Notes (Markdown)
+    #[serde(default)]
+    pub template_notes: Option<String>,
+    /// Custom template for Meeting Minutes - Vietnamese (Markdown)
+    #[serde(default)]
+    pub template_minutes_vi: Option<String>,
+    /// Custom template for Meeting Minutes - Japanese (Markdown)
+    #[serde(default)]
+    pub template_minutes_ja: Option<String>,
 }
 
 impl Default for Settings {
@@ -170,6 +179,9 @@ impl Default for Settings {
             local_tts_models_dir: String::new(),
             openai_audio_output: false,
             inactivity_timeout_min: 10,
+            template_notes: None,
+            template_minutes_vi: None,
+            template_minutes_ja: None,
         }
     }
 }

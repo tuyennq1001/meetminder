@@ -25,6 +25,9 @@ const DEFAULT_SETTINGS = {
   translation_mode: 'gemini',
   inactivity_timeout_min: 10,
   custom_context: null,
+  template_notes: '',
+  template_minutes_vi: '',
+  template_minutes_ja: '',
 };
 
 class SettingsManager {

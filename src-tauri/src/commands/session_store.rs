@@ -20,6 +20,8 @@ pub struct Segment {
     pub ts: String, // "HH:MM:SS"
     pub src: String,
     pub tgt: String,
+    #[serde(default)]
+    pub speaker: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -105,6 +107,14 @@ pub struct SessionData {
     pub project_id: Option<String>,
     #[serde(default)]
     pub category: Option<String>,
+    #[serde(default)]
+    pub meeting_minutes: Option<String>,
+    #[serde(default)]
+    pub meeting_minutes_lang: Option<String>,
+    #[serde(default)]
+    pub meeting_minutes_ja: Option<String>,
+    #[serde(default)]
+    pub meeting_minutes_vi: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -120,6 +130,7 @@ pub struct SessionListItem {
     pub chunk_count: usize,
     pub segment_count: usize,
     pub has_legacy_only: bool,
+    pub has_meeting_minutes: bool,
     pub tags: Vec<String>,
     pub customer_id: Option<String>,
     pub customer_name: Option<String>,
@@ -575,6 +586,22 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
             (None, None)
         };
 
+        let has_meeting_minutes = data
+            .meeting_minutes_ja
+            .as_ref()
+            .map(|m| !m.trim().is_empty())
+            .unwrap_or(false)
+            || data
+                .meeting_minutes_vi
+                .as_ref()
+                .map(|m| !m.trim().is_empty())
+                .unwrap_or(false)
+            || data
+                .meeting_minutes
+                .as_ref()
+                .map(|m| !m.trim().is_empty())
+                .unwrap_or(false);
+
         items.push(SessionListItem {
             id: data.id,
             title: data.title,
@@ -587,6 +614,7 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
             chunk_count: data.chunks.len(),
             segment_count,
             has_legacy_only: false,
+            has_meeting_minutes,
             tags: data.tags,
             customer_id: effective_cust_id,
             customer_name,
@@ -625,6 +653,7 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
             chunk_count: 0,
             segment_count: 0,
             has_legacy_only: true,
+            has_meeting_minutes: false,
             tags: Vec::new(),
             customer_id: None,
             customer_name: None,
@@ -788,6 +817,205 @@ pub fn update_session_content(
         }
     }
     Ok(())
+}
+
+fn format_duration_str(sec: u64) -> String {
+    let h = sec / 3600;
+    let m = (sec % 3600) / 60;
+    let s = sec % 60;
+    if h > 0 {
+        format!("{}h {}m", h, m)
+    } else if m > 0 {
+        format!("{}m {}s", m, s)
+    } else {
+        format!("{}s", s)
+    }
+}
+
+pub fn rebuild_session_markdown(data: &SessionData) -> String {
+    let mut lines = Vec::new();
+    let title = if data.title.is_empty() { &data.id } else { &data.title };
+    let lang_pair = format!("{} → {}", data.source_lang, data.target_lang);
+    let mut meta_extras = Vec::new();
+    if let Some(ref cat) = data.category {
+        meta_extras.push(format!("📅 Phân loại: {}", cat));
+    }
+    if !data.tags.is_empty() {
+        meta_extras.push(data.tags.iter().map(|t| format!("#{}", t)).collect::<Vec<_>>().join(" "));
+    }
+    let extra_str = if meta_extras.is_empty() {
+        String::new()
+    } else {
+        format!(" · {}", meta_extras.join(" · "))
+    };
+
+    let dur_str = format_duration_str(data.duration_sec);
+    lines.push(format!("# {}", title));
+    lines.push(String::new());
+    lines.push(format!("**Thông tin**: Engine {} · {} · {} · {}{}", data.engine, lang_pair, data.created_at, dur_str, extra_str));
+    lines.push(String::new());
+    lines.push("---".to_string());
+    lines.push(String::new());
+
+    let has_ja = data.meeting_minutes_ja.as_ref().map(|m| !m.trim().is_empty()).unwrap_or(false);
+    let has_vi = data.meeting_minutes_vi.as_ref().map(|m| !m.trim().is_empty()).unwrap_or(false);
+
+    if has_ja {
+        if let Some(ref mm_ja) = data.meeting_minutes_ja {
+            lines.push("## 📋 Biên bản cuộc họp (Tiếng Nhật)".to_string());
+            lines.push(String::new());
+            lines.push(mm_ja.trim().to_string());
+            lines.push(String::new());
+            lines.push("---".to_string());
+            lines.push(String::new());
+        }
+    } else if let Some(ref mm) = data.meeting_minutes {
+        if !mm.trim().is_empty() && data.meeting_minutes_lang.as_deref() == Some("ja") {
+            lines.push("## 📋 Biên bản cuộc họp (Tiếng Nhật)".to_string());
+            lines.push(String::new());
+            lines.push(mm.trim().to_string());
+            lines.push(String::new());
+            lines.push("---".to_string());
+            lines.push(String::new());
+        }
+    }
+
+    if has_vi {
+        if let Some(ref mm_vi) = data.meeting_minutes_vi {
+            lines.push("## 📋 Biên bản cuộc họp (Tiếng Việt)".to_string());
+            lines.push(String::new());
+            lines.push(mm_vi.trim().to_string());
+            lines.push(String::new());
+            lines.push("---".to_string());
+            lines.push(String::new());
+        }
+    } else if let Some(ref mm) = data.meeting_minutes {
+        if !mm.trim().is_empty() && data.meeting_minutes_lang.as_deref() != Some("ja") {
+            lines.push("## 📋 Biên bản cuộc họp (Tiếng Việt)".to_string());
+            lines.push(String::new());
+            lines.push(mm.trim().to_string());
+            lines.push(String::new());
+            lines.push("---".to_string());
+            lines.push(String::new());
+        }
+    }
+
+    let mut src_lines = Vec::new();
+    let mut tgt_lines = Vec::new();
+
+    for chunk in &data.chunks {
+        for seg in &chunk.segments {
+            let ts_tag = if !seg.ts.is_empty() { format!("[{}] ", seg.ts) } else { String::new() };
+            let spk_tag = if let Some(ref spk) = seg.speaker {
+                if !spk.is_empty() { format!("(Speaker {}) ", spk) } else { String::new() }
+            } else {
+                String::new()
+            };
+            let src = seg.src.trim();
+            let tgt = seg.tgt.trim();
+            if !src.is_empty() {
+                src_lines.push(format!("{}{}{}", ts_tag, spk_tag, src));
+            }
+            if !tgt.is_empty() {
+                tgt_lines.push(format!("{}{}{}", ts_tag, spk_tag, tgt));
+            }
+        }
+    }
+
+    lines.push("## 🗣️ Bản gốc (Original)".to_string());
+    lines.push(String::new());
+    if !src_lines.is_empty() {
+        lines.push(src_lines.join("\n"));
+    } else {
+        lines.push("*(Không có nội dung bản gốc)*".to_string());
+    }
+    lines.push(String::new());
+    lines.push("---".to_string());
+    lines.push(String::new());
+
+    lines.push("## 🌐 Bản dịch (Translation)".to_string());
+    lines.push(String::new());
+    if !tgt_lines.is_empty() {
+        lines.push(tgt_lines.join("\n"));
+    } else {
+        lines.push("*(Không có nội dung bản dịch)*".to_string());
+    }
+
+    lines.join("\n")
+}
+
+#[tauri::command]
+pub fn update_session_meeting_minutes(
+    app: AppHandle,
+    id: String,
+    minutes: String,
+    lang: Option<String>,
+) -> Result<SessionReadResult, String> {
+    validate_id(&id)?;
+    let dir = sessions_dir(&app)?;
+    let (md_path, json_path) = session_paths(&dir, &id);
+
+    if !json_path.exists() {
+        return Err("Session json does not exist".into());
+    }
+
+    let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
+    let mut data: SessionData =
+        serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
+
+    let chosen_lang = lang.as_deref().unwrap_or("ja");
+    if chosen_lang == "ja" {
+        data.meeting_minutes_ja = Some(minutes.clone());
+    } else if chosen_lang == "vi" {
+        data.meeting_minutes_vi = Some(minutes.clone());
+    }
+    data.meeting_minutes = Some(minutes);
+    data.meeting_minutes_lang = Some(chosen_lang.to_string());
+
+    let json_bytes =
+        serde_json::to_vec_pretty(&data).map_err(|e| format!("Serialize failed: {}", e))?;
+    write_atomic(&json_path, &json_bytes)?;
+
+    let md_content = rebuild_session_markdown(&data);
+    write_atomic(&md_path, md_content.as_bytes())?;
+
+    Ok(SessionReadResult {
+        md: md_content,
+        json: data,
+    })
+}
+
+#[tauri::command]
+pub fn update_session_notes(
+    app: AppHandle,
+    id: String,
+    notes: String,
+) -> Result<SessionReadResult, String> {
+    validate_id(&id)?;
+    let dir = sessions_dir(&app)?;
+    let (md_path, json_path) = session_paths(&dir, &id);
+
+    if !json_path.exists() {
+        return Err("Session json does not exist".into());
+    }
+
+    let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
+    let mut data: SessionData =
+        serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
+
+    data.notes = Some(notes);
+
+    let json_bytes =
+        serde_json::to_vec_pretty(&data).map_err(|e| format!("Serialize failed: {}", e))?;
+    write_atomic(&json_path, &json_bytes)?;
+
+    let md_content = rebuild_session_markdown(&data);
+    write_atomic(&md_path, md_content.as_bytes())?;
+
+    Ok(SessionReadResult {
+        md: md_content,
+        json: data,
+    })
 }
 
 #[tauri::command]
