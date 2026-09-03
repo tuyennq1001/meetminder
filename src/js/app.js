@@ -933,15 +933,23 @@ class App {
         // separate finals; we FIFO-pair them into the session store so each
         // saved segment has both source and target text.
         this._sonioxOriginalQueue = [];
+        this._sonioxPendingId = 0;
         sonioxClient.onOriginal = (text, speaker, language) => {
-            this.transcriptUI.addOriginal(text, speaker, language);
-            this._sonioxOriginalQueue.push(text);
+            const pendingId = ++this._sonioxPendingId;
+            this.transcriptUI.addOriginal(text, speaker, language, pendingId);
+            this._sonioxOriginalQueue.push({ text, pendingId });
+            // Persist the source immediately. If the user changes language or
+            // turns translation off before the target arrives, the utterance
+            // must still remain in the session and must not block later pairs.
+            sessionStore.addSegment(text, '', pendingId, speaker);
         };
 
         sonioxClient.onTranslation = (text) => {
-            this.transcriptUI.addTranslation(text);
-            const src = this._sonioxOriginalQueue.shift() || '';
-            sessionStore.addSegment(src, text);
+            const pending = this._sonioxOriginalQueue.shift() || null;
+            this.transcriptUI.addTranslation(text, pending?.pendingId ?? null);
+            if (!sessionStore.completeFirstPendingTranslation(text, pending?.pendingId ?? null)) {
+                sessionStore.addSegment(pending?.text || '', text);
+            }
             this._speakIfEnabled(text);
         };
 
@@ -2301,6 +2309,12 @@ class App {
             // later, or time out during Stop, without losing this utterance.
             sessionStore.addSegment(source, '', pendingId, speaker);
         };
+        this.geminiClient.onTranslationFailed = (pendingId, message) => {
+            console.warn('[Gemini Realtime] Translation failed:', pendingId, message);
+            if (pendingId !== null) {
+                this.transcriptUI.markTranslationFailed(pendingId);
+            }
+        };
         this.geminiClient.onSegment = (sourceText, translatedText, pendingId = null, speaker = null) => {
             // New backend versions emit SourceTranscript first and attach the
             // same id to the later REST translation. Never pair by whichever
@@ -3599,6 +3613,7 @@ class App {
             client.onStatusChange = () => {};
             client.onSegment = () => {};
             client.onSourceFinal = () => {};
+            client.onTranslationFailed = () => {};
             client.onProvisional = () => {};
             client.onError = () => {};
             client.onClosed = () => {};
@@ -3634,6 +3649,13 @@ class App {
             }
         } else if (this.translationMode === 'soniox') {
             sonioxClient.disconnect();
+            // A source-only Soniox segment can be left pending when a socket is
+            // restarted. Mark it as intentionally untranslated so a new
+            // socket's translation cannot attach to an old UI segment.
+            for (const pending of this._sonioxOriginalQueue) {
+                this.transcriptUI.addTranslation('', pending.pendingId);
+            }
+            this._sonioxOriginalQueue.length = 0;
         }
         this.transcriptUI.clearProvisional();
     }
@@ -5794,13 +5816,15 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
         // 4. Danh sách tĩnh dự phòng nếu không kết nối được API discovery
         const fallback = [
-            'gemini-3.6-flash',
-            'gemini-3.7-flash',
-            'gemini-3.5-flash',
+            'gemini-3.1-flash-lite',
+            'gemini-3.1-flash-lite-preview',
+            'gemini-flash-lite-latest',
             'gemini-3.5-flash-lite',
             'gemini-3.8-flash',
+            'gemini-3.7-flash',
+            'gemini-3.6-flash',
+            'gemini-3.5-flash',
             'gemini-flash-latest',
-            'gemini-flash-lite-latest',
         ];
         return this._filterAvailableModels(fallback);
     }

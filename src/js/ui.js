@@ -143,6 +143,17 @@ export class TranscriptUI {
         if (text && text.trim()) this.onActivity?.();
     }
 
+    /** Mark a source segment whose translation exhausted its retries. */
+    markTranslationFailed(pendingId) {
+        const seg = this.segments.find(
+            s => s.status === 'original' && s.pendingId === pendingId,
+        );
+        if (!seg) return;
+        seg.translation = '';
+        seg.status = 'translation_failed';
+        this._render();
+    }
+
     /** Add a finalized source/translation pair emitted by realtime providers. */
     addSegment(original, translation, speaker = null, language = null) {
         this._removeListening();
@@ -546,6 +557,10 @@ export class TranscriptUI {
                     html += `<div class="seg-block">`;
                     html += `<div class="seg-translated${confidenceClass}">${this._esc(seg.translation)}</div>`;
                     html += `</div>`;
+                } else if (seg.status === 'translation_failed' && seg.original) {
+                    html += `<div class="seg-block">`;
+                    html += `<div class="seg-translation-failed" title="Không thể dịch câu này sau nhiều lần thử">⚠️ Không thể dịch câu này</div>`;
+                    html += `</div>`;
                 }
             }
         }
@@ -606,6 +621,10 @@ export class TranscriptUI {
                 srcHtml += `${langHtml}<div class="seg-text pending" data-seg-idx="${i}">${this._esc(seg.original)}</div>`;
                 timeHtml += `<div class="segment-time clickable-time" data-seg-idx="${i}" title="Nhấp để cuộn cả 2 khung tới đoạn này">${this._formatSegmentTime(seg.createdAt)}</div>`;
                 tgtHtml += `<div class="seg-text pending" data-seg-idx="${i}">...</div>`;
+            } else if (seg.status === 'translation_failed' && seg.original) {
+                srcHtml += `${langHtml}<div class="seg-text" data-seg-idx="${i}">${this._esc(seg.original)}</div>`;
+                timeHtml += `<div class="segment-time clickable-time" data-seg-idx="${i}" title="Nhấp để cuộn cả 2 khung tới đoạn này">${this._formatSegmentTime(seg.createdAt)}</div>`;
+                tgtHtml += `<div class="seg-text translation-failed" data-seg-idx="${i}" title="Không thể dịch câu này sau nhiều lần thử">⚠️ Không thể dịch</div>`;
             }
         }
 

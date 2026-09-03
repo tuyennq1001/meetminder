@@ -1138,6 +1138,14 @@ body:not(.activity-live) .header-divider {
   font-weight: 400;
 }
 
+.seg-translation-failed,
+.dual-view .panel-translation .seg-text.translation-failed {
+  display: block;
+  color: rgba(255, 190, 90, 0.85);
+  font-size: 0.9em;
+  font-style: italic;
+}
+
 /* Original text — smaller, dimmer, above translation */
 .seg-original {
   display: block;

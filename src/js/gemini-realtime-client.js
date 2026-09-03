@@ -12,6 +12,7 @@ export class GeminiRealtimeClient {
         this.onStatusChange = () => {};
         this.onSegment = () => {};
         this.onSourceFinal = () => {};
+        this.onTranslationFailed = () => {};
         this.onProvisional = () => {};
         this.onError = () => {};
         this.onClosed = () => {};
@@ -95,6 +96,9 @@ export class GeminiRealtimeClient {
                 break;
             case 'segment':
                 this.onSegment(evt.original, evt.translation, evt.id ?? null, evt.speaker ?? null);
+                break;
+            case 'translation_failed':
+                this.onTranslationFailed(evt.id ?? null, evt.message || 'Translation failed');
                 break;
             case 'source_transcript':
                 if (evt.is_final) {

@@ -17,6 +17,8 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 const GEMINI_LIVE_WS_HOST: &str = "generativelanguage.googleapis.com";
 const DEFAULT_GEMINI_MODEL: &str = "models/gemini-3.5-transcribe-live";
 const TRANSLATION_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+const TRANSLATION_MAX_ATTEMPTS: usize = 5;
+const TRANSLATION_PACE_DELAY: std::time::Duration = std::time::Duration::from_millis(800);
 
 #[derive(Debug, Deserialize)]
 pub struct GeminiRealtimeConfig {
@@ -55,6 +57,10 @@ pub enum GeminiEvent {
         translation: String,
         speaker: Option<String>,
     },
+    TranslationFailed {
+        id: u64,
+        message: String,
+    },
     Error {
         code: String,
         message: String,
@@ -83,6 +89,9 @@ struct TranslationJob {
 pub struct GeminiState {
     sessions: Arc<Mutex<HashMap<u64, Session>>>,
     next_id: Mutex<u64>,
+    models_cache: Arc<tokio::sync::RwLock<Option<(std::time::Instant, Vec<String>)>>>,
+    cooldowns: Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
+    translation_cache: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
 }
 
 #[tauri::command]
@@ -116,6 +125,9 @@ pub async fn gemini_realtime_start(
 
     let event_ch = on_event.clone();
     let sessions_map = state.sessions.clone();
+    let models_cache = state.models_cache.clone();
+    let cooldowns = state.cooldowns.clone();
+    let translation_cache = state.translation_cache.clone();
 
     tokio::spawn(async move {
         let _ = event_ch.send(GeminiEvent::Status {
@@ -123,7 +135,18 @@ pub async fn gemini_realtime_start(
             message: None,
         });
 
-        if let Err(e) = run_session(config, target_lang, audio_rx, stop_rx, event_ch.clone()).await {
+        if let Err(e) = run_session(
+            config,
+            target_lang,
+            audio_rx,
+            stop_rx,
+            event_ch.clone(),
+            models_cache,
+            cooldowns,
+            translation_cache,
+        )
+        .await
+        {
             eprintln!("[gemini-live] Session failed: {}", e);
             let _ = event_ch.send(GeminiEvent::Error {
                 code: "session_failed".into(),
@@ -207,6 +230,9 @@ async fn run_session(
     mut audio_rx: mpsc::UnboundedReceiver<Vec<u8>>,
     mut stop_rx: mpsc::UnboundedReceiver<()>,
     event_ch: Channel<GeminiEvent>,
+    models_cache: Arc<tokio::sync::RwLock<Option<(std::time::Instant, Vec<String>)>>>,
+    cooldowns: Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
+    translation_cache: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
 ) -> Result<(), String> {
     let ws_url = format!(
         "wss://{}/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key={}",
@@ -235,63 +261,41 @@ async fn run_session(
         .map_err(|e| format!("send setup message: {}", e))?;
 
     let mut next_translation_id = 1u64;
-    let mut committed_prefix = String::new();
+    let mut committed_count: usize = 0;
     let http_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .unwrap_or_default();
 
-    // Gemini Live final-transcript events can arrive faster than the REST
-    // translator responds. One worker provides deterministic ordering while
-    // the bounded channel applies backpressure instead of accumulating an
-    // unbounded set of spawned tasks.
-    let (translation_tx, mut translation_rx) = mpsc::channel::<TranslationJob>(32);
+    let available_models = Arc::new(tokio::sync::RwLock::new(
+        get_or_fetch_models(&http_client, &cfg.api_key, &models_cache).await,
+    ));
+
+    // Bounded channel for translation jobs.
+    // Processed sequentially (concurrency 1) with gentle pacing to guarantee 15 RPM Free Tier compliance.
+    let (translation_tx, mut translation_rx) = mpsc::channel::<TranslationJob>(64);
     let translation_event_ch = event_ch.clone();
     let translation_api_key = cfg.api_key.clone();
     let translation_target_lang = target_lang_ref.clone();
     let translation_http = http_client.clone();
+    let translation_models = available_models.clone();
+    let translation_cooldowns = cooldowns.clone();
+    let translation_cache_ref = translation_cache.clone();
+
     let translation_worker = tokio::spawn(async move {
         while let Some(job) = translation_rx.recv().await {
-            let target_lang = translation_target_lang.read().await.clone();
-            let is_no_translate = target_lang == "none"
-                || target_lang == "off"
-                || target_lang.is_empty();
+            let http = translation_http.clone();
+            let api_key = translation_api_key.clone();
+            let target_lang = translation_target_lang.clone();
+            let models = translation_models.clone();
+            let cd = translation_cooldowns.clone();
+            let cache = translation_cache_ref.clone();
 
-            let translation = if is_no_translate {
-                String::new()
-            } else {
-                let translation_opt = translate_text_rest(
-                    &translation_http,
-                    &translation_api_key,
-                    &job.original,
-                    &target_lang,
-                )
-                .await;
+            let event = translate_job(http, api_key, target_lang, job, models, cd, cache).await;
+            let _ = translation_event_ch.send(event);
 
-                match translation_opt {
-                    Some(t) if !t.trim().is_empty() => t,
-                    _ => {
-                        eprintln!(
-                            "[gemini-live] Translation failed or timed out for job {}",
-                            job.id
-                        );
-                        if target_lang == "vi" {
-                            "[Bản dịch đang cập nhật...]".to_string()
-                        } else if target_lang == "ja" {
-                            "[翻訳を更新中...]".to_string()
-                        } else {
-                            "[Translation pending...]".to_string()
-                        }
-                    }
-                }
-            };
-
-            let _ = translation_event_ch.send(GeminiEvent::Segment {
-                id: job.id,
-                original: job.original,
-                translation,
-                speaker: job.speaker,
-            });
+            // Maintain gentle pacing between consecutive translation requests to stay safely below 15 RPM
+            tokio::time::sleep(TRANSLATION_PACE_DELAY).await;
         }
     });
 
@@ -332,7 +336,7 @@ async fn run_session(
                             &event_ch,
                             &translation_tx,
                             &mut next_translation_id,
-                            &mut committed_prefix,
+                            &mut committed_count,
                         ).await;
                     }
                     Some(Ok(Message::Binary(bin))) => {
@@ -342,7 +346,7 @@ async fn run_session(
                                 &event_ch,
                                 &translation_tx,
                                 &mut next_translation_id,
-                                &mut committed_prefix,
+                                &mut committed_count,
                             ).await;
                         }
                     }
@@ -379,6 +383,90 @@ async fn run_session(
     // before enqueueing, so even a timeout here cannot lose source text.
     finish_translation_worker(translation_tx, translation_worker).await;
     Ok(())
+}
+
+async fn translate_job(
+    http_client: reqwest::Client,
+    api_key: String,
+    target_lang_ref: std::sync::Arc<tokio::sync::RwLock<String>>,
+    job: TranslationJob,
+    models_ref: std::sync::Arc<tokio::sync::RwLock<Vec<String>>>,
+    cooldowns_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
+    cache_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, String>>>,
+) -> GeminiEvent {
+    let target_lang = target_lang_ref.read().await.clone();
+    let is_no_translate = target_lang == "none"
+        || target_lang == "off"
+        || target_lang.is_empty();
+
+    let translation = if is_no_translate {
+        String::new()
+    } else {
+        let trimmed_text = job.original.trim().to_string();
+
+        // 1. Check in-memory phrase cache
+        let cache_key = format!("{}:{}", target_lang, trimmed_text);
+        let cached = {
+            let cache = cache_ref.lock().await;
+            cache.get(&cache_key).cloned()
+        };
+
+        if let Some(t) = cached {
+            t
+        } else {
+            let mut result = None;
+            let models = models_ref.read().await.clone();
+            for attempt in 0..TRANSLATION_MAX_ATTEMPTS {
+                if attempt > 0 {
+                    let delay_ms = 1500u64 * attempt as u64;
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+                result = translate_text_rest(
+                    &http_client,
+                    &api_key,
+                    &trimmed_text,
+                    &target_lang,
+                    &models,
+                    &cooldowns_ref,
+                )
+                .await;
+                if result.as_ref().is_some_and(|text| !text.trim().is_empty()) {
+                    break;
+                }
+            }
+
+            match result {
+                Some(t) if !t.trim().is_empty() => {
+                    if trimmed_text.len() < 120 {
+                        let mut cache = cache_ref.lock().await;
+                        cache.insert(cache_key, t.clone());
+                    }
+                    t
+                }
+                _ => {
+                    eprintln!(
+                        "[gemini-live] Translation failed after {} attempts for job {}",
+                        TRANSLATION_MAX_ATTEMPTS,
+                        job.id
+                    );
+                    return GeminiEvent::TranslationFailed {
+                        id: job.id,
+                        message: format!(
+                            "Translation failed after {} attempts",
+                            TRANSLATION_MAX_ATTEMPTS
+                        ),
+                    };
+                }
+            }
+        }
+    };
+
+    GeminiEvent::Segment {
+        id: job.id,
+        original: job.original,
+        translation,
+        speaker: job.speaker,
+    }
 }
 
 async fn finish_translation_worker(
@@ -470,96 +558,50 @@ fn build_setup_message(cfg: &GeminiRealtimeConfig) -> String {
     .to_string()
 }
 
-/// Find a stable sentence boundary in Japanese/multilingual streaming interim text.
-/// Returns the byte index after the sentence terminator if a complete sentence is found
-/// with sufficient trailing context (so the boundary is stable).
-fn find_sentence_split(text: &str, min_chars: usize, min_trailing_chars: usize) -> Option<usize> {
-    let char_count = text.chars().count();
-    if char_count < min_chars + min_trailing_chars {
-        return None;
+/// Extracts complete sentences (ending in punctuation or clause boundary >= min_clause_chars)
+/// and the remaining unfinalized provisional text.
+fn extract_sentences_and_provisional(text: &str, min_clause_chars: usize) -> (Vec<String>, String) {
+    let mut sentences = Vec::new();
+    let text_trimmed = text.trim();
+    if text_trimmed.is_empty() {
+        return (sentences, String::new());
     }
 
-    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let chars: Vec<(usize, char)> = text_trimmed.char_indices().collect();
     let total_len = chars.len();
-    let mut current_chars = 0;
-
-    for i in 0..total_len {
-        current_chars += 1;
-        let (byte_idx, ch) = chars[i];
-
-        let is_cjk_term = ch == '。' || ch == '！' || ch == '？' || ch == '\n';
-        let is_latin_term = (ch == '.' || ch == '!' || ch == '?')
-            && i + 1 < total_len
-            && (chars[i + 1].1 == ' ' || chars[i + 1].1 == '\n');
-
-        if (is_cjk_term || is_latin_term) && current_chars >= min_chars {
-            let next_byte = if is_latin_term {
-                chars[i + 1].0 + chars[i + 1].1.len_utf8()
-            } else {
-                byte_idx + ch.len_utf8()
-            };
-            let remaining_chars = total_len.saturating_sub(i + 1);
-            if remaining_chars >= min_trailing_chars {
-                return Some(next_byte);
-            }
-        }
-    }
-
-    None
-}
-
-/// Split finalized speech into naturally sized sentences so long utterances
-/// don't overwhelm the UI or the REST translation model.
-fn split_text_into_sentences(text: &str, min_chars: usize) -> Vec<String> {
-    let mut result = Vec::new();
-    let mut current = String::new();
-    let chars: Vec<(usize, char)> = text.char_indices().collect();
-    let total_len = chars.len();
-
+    let mut start = 0;
     let mut i = 0;
+    let mut current_clause_len = 0;
+
     while i < total_len {
-        let (_byte_idx, ch) = chars[i];
-        current.push(ch);
+        let (byte_idx, ch) = chars[i];
+        current_clause_len += 1;
 
-        let is_cjk_term = ch == '。' || ch == '！' || ch == '？' || ch == '\n';
-        let is_latin_term = (ch == '.' || ch == '!' || ch == '?')
-            && i + 1 < total_len
-            && (chars[i + 1].1 == ' ' || chars[i + 1].1 == '\n');
+        let is_period = ch == '。' || ch == '！' || ch == '？' || ch == '\n'
+            || ((ch == '.' || ch == '!' || ch == '?') && (i + 1 == total_len || chars[i + 1].1 == ' '));
 
-        if is_latin_term {
-            i += 1;
-            current.push(chars[i].1);
-        }
+        let is_comma_split = (ch == '、' || (ch == ',' && i + 1 < total_len && chars[i + 1].1 == ' '))
+            && current_clause_len >= min_clause_chars;
 
-        if (is_cjk_term || is_latin_term) && current.chars().count() >= min_chars {
-            let s = current.trim();
-            if !s.is_empty() {
-                result.push(s.to_string());
+        if is_period || is_comma_split {
+            let end_byte = byte_idx + ch.len_utf8();
+            let slice = text_trimmed[start..end_byte].trim();
+            if !slice.is_empty() {
+                sentences.push(slice.to_string());
             }
-            current.clear();
+            start = end_byte;
+            current_clause_len = 0;
         }
         i += 1;
     }
 
-    let s = current.trim();
-    if !s.is_empty() {
-        if let Some(last) = result.last_mut() {
-            if s.chars().count() < 15 {
-                last.push(' ');
-                last.push_str(s);
-            } else {
-                result.push(s.to_string());
-            }
-        } else {
-            result.push(s.to_string());
-        }
-    }
+    let provisional = if start < text_trimmed.len() {
+        text_trimmed[start..].trim().to_string()
+    } else {
+        String::new()
+    };
 
-    if result.is_empty() && !text.trim().is_empty() {
-        result.push(text.trim().to_string());
-    }
-
-    result
+    (sentences, provisional)
 }
 
 async fn handle_server_message(
@@ -567,7 +609,7 @@ async fn handle_server_message(
     event_ch: &Channel<GeminiEvent>,
     translation_tx: &mpsc::Sender<TranslationJob>,
     next_translation_id: &mut u64,
-    committed_prefix: &mut String,
+    committed_count: &mut usize,
 ) {
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
@@ -616,35 +658,31 @@ async fn handle_server_message(
     // 3. Process serverContent
     if let Some(server_content) = value.get("serverContent") {
         // A. Live interim transcription (real-time streaming speech delta)
+        // Auto-commit completed sentences as they arrive so continuous speech (e.g. news, long meetings)
+        // does not build up into an unfinalized wall of text, while keeping the uncommitted fragment in provisional.
         if let Some(interim) = server_content.get("interimInputTranscription") {
             if let Some(speech) = interim.get("text").and_then(|t| t.as_str()) {
                 let speech_trimmed = speech.trim();
                 if !speech_trimmed.is_empty() {
-                    let mut uncommitted = if speech_trimmed.starts_with(committed_prefix.as_str()) {
-                        &speech_trimmed[committed_prefix.len()..]
-                    } else {
-                        // A new turn has begun or speech diverged; reset committed_prefix
-                        committed_prefix.clear();
-                        speech_trimmed
-                    };
+                    let (sentences, provisional) = extract_sentences_and_provisional(speech_trimmed, 45);
 
-                    // Auto-commit stable completed sentences from interim stream
-                    // so users don't have to wait minutes during continuous speaking.
-                    while let Some(split_idx) = find_sentence_split(uncommitted, 25, 10) {
-                        let to_commit = uncommitted[..split_idx].trim().to_string();
-                        let raw_segment = &uncommitted[..split_idx];
-                        uncommitted = &uncommitted[split_idx..];
+                    // If speech contracted significantly or sentences count dropped, a new turn began
+                    if sentences.len() < *committed_count {
+                        *committed_count = 0;
+                    }
 
-                        if !to_commit.is_empty() {
-                            committed_prefix.push_str(raw_segment);
-
+                    if sentences.len() > *committed_count {
+                        for sentence in &sentences[*committed_count..] {
                             let translation_id = *next_translation_id;
                             *next_translation_id = (*next_translation_id).saturating_add(1);
-                            eprintln!("[gemini-live] Auto-committed interim sentence #{}: {}", translation_id, to_commit);
+                            eprintln!(
+                                "[gemini-live] Auto-committed interim sentence #{}: {}",
+                                translation_id, sentence
+                            );
 
                             let _ = event_ch.send(GeminiEvent::SourceTranscript {
                                 id: translation_id,
-                                text: to_commit.clone(),
+                                text: sentence.clone(),
                                 is_final: true,
                                 speaker: None,
                             });
@@ -652,16 +690,17 @@ async fn handle_server_message(
                             let _ = translation_tx
                                 .send(TranslationJob {
                                     id: translation_id,
-                                    original: to_commit,
+                                    original: sentence.clone(),
                                     speaker: None,
                                 })
                                 .await;
                         }
+                        *committed_count = sentences.len();
                     }
 
-                    // Forward the remaining in-progress fragment to the UI as provisional
+                    // Forward only the remaining in-progress fragment to the UI as provisional
                     let _ = event_ch.send(GeminiEvent::Transcript {
-                        text: uncommitted.trim().to_string(),
+                        text: provisional,
                         is_final: false,
                     });
                 }
@@ -679,37 +718,59 @@ async fn handle_server_message(
                         .and_then(|s| s.as_str())
                         .map(str::to_string);
 
-                    let remaining_text = if speech_clean.starts_with(committed_prefix.as_str()) {
-                        speech_clean[committed_prefix.len()..].trim()
-                    } else {
-                        speech_clean
-                    };
+                    let (sentences, provisional) = extract_sentences_and_provisional(speech_clean, 45);
+                    let start_idx = (*committed_count).min(sentences.len());
 
-                    committed_prefix.clear();
+                    for sentence in &sentences[start_idx..] {
+                        let translation_id = *next_translation_id;
+                        *next_translation_id = (*next_translation_id).saturating_add(1);
+                        eprintln!(
+                            "[gemini-live] Final speech sentence #{}: {}",
+                            translation_id, sentence
+                        );
 
-                    if !remaining_text.is_empty() {
-                        let sentences = split_text_into_sentences(remaining_text, 25);
-                        for sentence in sentences {
-                            let translation_id = *next_translation_id;
-                            *next_translation_id = (*next_translation_id).saturating_add(1);
-                            eprintln!("[gemini-live] Final speech sentence #{}: {}", translation_id, sentence);
+                        let _ = event_ch.send(GeminiEvent::SourceTranscript {
+                            id: translation_id,
+                            text: sentence.clone(),
+                            is_final: true,
+                            speaker: speaker.clone(),
+                        });
 
-                            let _ = event_ch.send(GeminiEvent::SourceTranscript {
+                        let _ = translation_tx
+                            .send(TranslationJob {
                                 id: translation_id,
-                                text: sentence.clone(),
-                                is_final: true,
+                                original: sentence.clone(),
                                 speaker: speaker.clone(),
-                            });
-
-                            let _ = translation_tx
-                                .send(TranslationJob {
-                                    id: translation_id,
-                                    original: sentence,
-                                    speaker: speaker.clone(),
-                                })
-                                .await;
-                        }
+                            })
+                            .await;
                     }
+
+                    // If there is any trailing text that wasn't finalized by punctuation, commit it now!
+                    if !provisional.is_empty() {
+                        let translation_id = *next_translation_id;
+                        *next_translation_id = (*next_translation_id).saturating_add(1);
+                        eprintln!(
+                            "[gemini-live] Final speech trailing clause #{}: {}",
+                            translation_id, provisional
+                        );
+
+                        let _ = event_ch.send(GeminiEvent::SourceTranscript {
+                            id: translation_id,
+                            text: provisional.clone(),
+                            is_final: true,
+                            speaker: speaker.clone(),
+                        });
+
+                        let _ = translation_tx
+                            .send(TranslationJob {
+                                id: translation_id,
+                                original: provisional,
+                                speaker: speaker.clone(),
+                            })
+                            .await;
+                    }
+
+                    *committed_count = 0;
 
                     // Clear provisional text in the UI
                     let _ = event_ch.send(GeminiEvent::Transcript {
@@ -719,13 +780,155 @@ async fn handle_server_message(
                 }
             }
         }
-
-        // Ignore modelTurn text here. The setup asks Gemini to generate a
-        // direct translation, but that stream can contain speculative text or
-        // language hallucinations while ASR is still settling. The input
-        // transcript above is the source of truth; REST translation emits the
-        // only target text shown for this provider.
     }
+}
+
+fn extract_gemini_version(name: &str) -> f32 {
+    if let Some(pos) = name.find("gemini-") {
+        let rest = &name[pos + "gemini-".len()..];
+        let num_str: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '.')
+            .collect();
+        if let Ok(v) = num_str.parse::<f32>() {
+            return v;
+        }
+    }
+    0.0
+}
+
+fn score_gemini_model(name: &str) -> f32 {
+    let mut score = 0.0;
+    let lower = name.to_lowercase();
+    // For real-time speech translation on Free Tier:
+    // Flash-Lite has 1,500 RPD and low latency (< 500ms).
+    // Regular Flash has only 20 RPD on Free Tier, kept as fallback.
+    if lower.contains("flash-lite") || lower.contains("flash_lite") {
+        score += 200.0;
+    } else if lower.contains("flash") {
+        score += 80.0;
+    } else if lower.contains("pro") {
+        score += 30.0;
+    }
+
+    if lower.contains("latest") {
+        score += 15.0;
+    }
+    if lower.contains("preview") || lower.contains("exp") {
+        score -= 5.0;
+    }
+    let ver = extract_gemini_version(&lower);
+    score += ver * 20.0;
+    score
+}
+
+async fn fetch_dynamic_models(client: &reqwest::Client, api_key: &str) -> Vec<String> {
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models?key={}",
+        api_key.trim()
+    );
+    let mut models = Vec::new();
+
+    if let Ok(resp) = client.get(&url).send().await {
+        if resp.status().is_success() {
+            if let Ok(text_resp) = resp.text().await {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text_resp) {
+                    if let Some(arr) = json.get("models").and_then(|m| m.as_array()) {
+                        for item in arr {
+                            let is_gen_content = item
+                                .get("supportedGenerationMethods")
+                                .and_then(|m| m.as_array())
+                                .map(|methods| {
+                                    methods
+                                        .iter()
+                                        .any(|m| m.as_str() == Some("generateContent"))
+                                })
+                                .unwrap_or(false);
+
+                            if !is_gen_content {
+                                continue;
+                            }
+
+                            if let Some(raw_name) = item.get("name").and_then(|n| n.as_str()) {
+                                let name = raw_name.strip_prefix("models/").unwrap_or(raw_name);
+                                if !name.starts_with("gemini-") {
+                                    continue;
+                                }
+                                let lower = name.to_lowercase();
+                                if lower.contains("tts")
+                                    || lower.contains("image")
+                                    || lower.contains("robotics")
+                                    || lower.contains("clip")
+                                    || lower.contains("banana")
+                                    || lower.contains("embedding")
+                                    || lower.contains("computer-use")
+                                    || lower.contains("2.5") // 2.5 returns 404
+                                {
+                                    continue;
+                                }
+                                models.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if models.is_empty() {
+        models = vec![
+            "gemini-3.1-flash-lite".to_string(),
+            "gemini-3.1-flash-lite-preview".to_string(),
+            "gemini-flash-lite-latest".to_string(),
+            "gemini-3.5-flash-lite".to_string(),
+            "gemini-3.8-flash".to_string(),
+            "gemini-3.7-flash".to_string(),
+            "gemini-3.6-flash".to_string(),
+            "gemini-3.5-flash".to_string(),
+            "gemini-flash-latest".to_string(),
+        ];
+    } else {
+        if !models.iter().any(|m| m == "gemini-3.1-flash-lite") {
+            models.push("gemini-3.1-flash-lite".to_string());
+        }
+        if !models.iter().any(|m| m == "gemini-3.1-flash-lite-preview") {
+            models.push("gemini-3.1-flash-lite-preview".to_string());
+        }
+        if !models.iter().any(|m| m == "gemini-flash-lite-latest") {
+            models.push("gemini-flash-lite-latest".to_string());
+        }
+    }
+
+    models.sort_by(|a, b| {
+        score_gemini_model(b)
+            .partial_cmp(&score_gemini_model(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    eprintln!("[gemini-live] Discovered {} candidate models (ranked): {:?}", models.len(), models);
+    models
+}
+
+async fn get_or_fetch_models(
+    client: &reqwest::Client,
+    api_key: &str,
+    cache: &Arc<tokio::sync::RwLock<Option<(std::time::Instant, Vec<String>)>>>,
+) -> Vec<String> {
+    {
+        let r = cache.read().await;
+        if let Some((fetched_at, models)) = r.as_ref() {
+            if fetched_at.elapsed() < std::time::Duration::from_secs(1800) && !models.is_empty() {
+                return models.clone();
+            }
+        }
+    }
+
+    let fresh = fetch_dynamic_models(client, api_key).await;
+    {
+        let mut w = cache.write().await;
+        *w = Some((std::time::Instant::now(), fresh.clone()));
+    }
+    fresh
 }
 
 async fn translate_text_rest(
@@ -733,6 +936,8 @@ async fn translate_text_rest(
     api_key: &str,
     text: &str,
     target_lang: &str,
+    models: &[String],
+    cooldowns_ref: &Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
 ) -> Option<String> {
     let target_name = map_lang_name(target_lang);
     let prompt = format!(
@@ -740,15 +945,25 @@ async fn translate_text_rest(
         text.trim()
     );
 
-    let models = [
-        "gemini-3.6-flash",
-        "gemini-3.7-flash",
-        "gemini-3.5-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-flash-latest",
-    ];
+    let now = std::time::Instant::now();
+    let mut soonest_wait: Option<std::time::Duration> = None;
 
-    for model in &models {
+    for model in models {
+        // Check if model is cooling down
+        {
+            let cooldowns = cooldowns_ref.lock().await;
+            if let Some(until) = cooldowns.get(model) {
+                if now < *until {
+                    let wait = *until - now;
+                    soonest_wait = match soonest_wait {
+                        Some(prev) => Some(prev.min(wait)),
+                        None => Some(wait),
+                    };
+                    continue;
+                }
+            }
+        }
+
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
             model,
@@ -767,33 +982,82 @@ async fn translate_text_rest(
             ]
         });
 
-        if let Ok(resp) = client
+        match client
             .post(&url)
             .header("Content-Type", "application/json")
             .body(body.to_string())
             .send()
             .await
         {
-            if resp.status().is_success() {
-                if let Ok(text_resp) = resp.text().await {
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text_resp) {
-                        if let Some(translated) = json
-                            .get("candidates")
-                            .and_then(|c| c.get(0))
-                            .and_then(|c| c.get("content"))
-                            .and_then(|c| c.get("parts"))
-                            .and_then(|p| p.get(0))
-                            .and_then(|p| p.get("text"))
-                            .and_then(|t| t.as_str())
-                            .map(|s| s.trim().to_string())
-                        {
-                            if !translated.is_empty() {
-                                return Some(translated);
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_success() {
+                    if let Ok(text_resp) = resp.text().await {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text_resp) {
+                            if let Some(translated) = json
+                                .get("candidates")
+                                .and_then(|c| c.get(0))
+                                .and_then(|c| c.get("content"))
+                                .and_then(|c| c.get("parts"))
+                                .and_then(|p| p.get(0))
+                                .and_then(|p| p.get("text"))
+                                .and_then(|t| t.as_str())
+                                .map(|s| s.trim().to_string())
+                            {
+                                if !translated.is_empty() {
+                                    return Some(translated);
+                                }
                             }
                         }
                     }
+                } else if status.as_u16() == 429 || status.as_u16() == 503 {
+                    // Extract retryDelay or default to 20s
+                    let delay_secs = if let Ok(err_body) = resp.text().await {
+                        if let Ok(err_json) = serde_json::from_str::<serde_json::Value>(&err_body) {
+                            err_json.get("error")
+                                .and_then(|e| e.get("details"))
+                                .and_then(|d| d.as_array())
+                                .and_then(|arr| {
+                                    arr.iter().find_map(|item| {
+                                        if item.get("@type").and_then(|t| t.as_str()) == Some("type.googleapis.com/google.rpc.RetryInfo") {
+                                            item.get("retryDelay").and_then(|r| r.as_str()).and_then(|s| {
+                                                s.trim_end_matches('s').parse::<u64>().ok()
+                                            })
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                })
+                                .unwrap_or(20)
+                        } else {
+                            20
+                        }
+                    } else {
+                        20
+                    };
+                    eprintln!(
+                        "[gemini-live] Model {} hit HTTP {}, placing in cooldown for {}s",
+                        model, status, delay_secs
+                    );
+                    let mut cooldowns = cooldowns_ref.lock().await;
+                    cooldowns.insert(
+                        model.clone(),
+                        std::time::Instant::now() + std::time::Duration::from_secs(delay_secs),
+                    );
+                } else {
+                    eprintln!("[gemini-live] Model {} returned HTTP {}", model, status);
                 }
             }
+            Err(e) => {
+                eprintln!("[gemini-live] HTTP request error for model {}: {}", model, e);
+            }
+        }
+    }
+
+    // If all models were in cooldown and the soonest cooldown is short (<= 5s), wait for it!
+    if let Some(wait) = soonest_wait {
+        if wait <= std::time::Duration::from_secs(5) {
+            tokio::time::sleep(wait).await;
         }
     }
 

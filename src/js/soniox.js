@@ -38,6 +38,8 @@ export class SonioxClient {
         this._intentionalDisconnect = false;
         this._sessionTimer = null;
         this._keepaliveTimer = null;
+        this._reconnectTimer = null;
+        this._connectionGeneration = 0;
         this._recentTranslations = []; // Rolling buffer of recent translations
 
         // Callbacks
@@ -54,6 +56,16 @@ export class SonioxClient {
      */
     connect(config) {
         const { apiKey } = config;
+        // Invalidate every callback/timer belonging to the previous socket
+        // before starting a new one. A language/mode switch can otherwise
+        // let the old socket change isConnected after the new socket is live.
+        this._cancelReconnect();
+        const generation = ++this._connectionGeneration;
+        const oldWs = this.ws;
+        this.ws = null;
+        this.isConnected = false;
+        this._closeSocket(oldWs);
+
         this.apiKey = apiKey;
         this._config = config;
         this._intentionalDisconnect = false;
@@ -66,10 +78,10 @@ export class SonioxClient {
             return;
         }
 
-        this._doConnect(config);
+        this._doConnect(config, null, generation);
     }
 
-    _doConnect(config, carryoverContext = null) {
+    _doConnect(config, carryoverContext = null, generation = this._connectionGeneration) {
         const { apiKey, sourceLanguage, targetLanguage, customContext,
                 translationType, languageA, languageB, languageHintsStrict,
                 endpointDelay } = config;
@@ -89,6 +101,10 @@ export class SonioxClient {
         }
 
         newWs.onopen = () => {
+            if (generation !== this._connectionGeneration || newWs._isOld) {
+                this._closeSocket(newWs);
+                return;
+            }
             console.log('[Soniox] WebSocket OPEN');
 
             // Build config message
@@ -143,11 +159,11 @@ export class SonioxClient {
             const oldWs = this.ws;
             if (oldWs && oldWs !== newWs) {
                 console.log('[Soniox] Seamless switch: closing old WebSocket');
+                oldWs._isOld = true;
                 try {
                     if (oldWs.readyState === WebSocket.OPEN) {
                         oldWs.send(new ArrayBuffer(0)); // graceful close signal
                     }
-                    oldWs._isOld = true; // mark so onclose doesn't trigger reconnect
                     oldWs.close(1000, 'Session reset');
                 } catch (e) {
                     // ignore
@@ -168,7 +184,7 @@ export class SonioxClient {
 
         newWs.onmessage = (event) => {
             // Ignore messages from old WebSocket
-            if (newWs._isOld) return;
+            if (newWs._isOld || generation !== this._connectionGeneration || this.ws !== newWs) return;
 
             try {
                 const data = JSON.parse(event.data);
@@ -185,14 +201,14 @@ export class SonioxClient {
         };
 
         newWs.onerror = (event) => {
-            if (newWs._isOld) return;
+            if (newWs._isOld || generation !== this._connectionGeneration || this.ws !== newWs) return;
             console.error('[Soniox] WebSocket ERROR:', event);
             this.onError?.('WebSocket error occurred');
         };
 
         newWs.onclose = (event) => {
             // Ignore close events from old WebSocket during seamless switch
-            if (newWs._isOld) {
+            if (newWs._isOld || generation !== this._connectionGeneration || this.ws !== newWs) {
                 console.log('[Soniox] Old WebSocket closed (expected)');
                 return;
             }
@@ -243,23 +259,39 @@ export class SonioxClient {
      * Gracefully disconnect
      */
     disconnect() {
+        ++this._connectionGeneration;
+        this._cancelReconnect();
         this._intentionalDisconnect = true;
         this._stopSessionTimer();
         this._stopKeepalive();
 
-        if (this.ws) {
-            try {
-                if (this.ws.readyState === WebSocket.OPEN) {
-                    this.ws.send(new ArrayBuffer(0));
-                }
-                this.ws.close(1000, 'User disconnected');
-            } catch (err) {
-                console.error('Error during disconnect:', err);
-            }
-            this.ws = null;
-        }
+        const oldWs = this.ws;
+        this.ws = null;
+        this._closeSocket(oldWs, 'User disconnected');
         this.isConnected = false;
         this._setStatus('disconnected');
+    }
+
+    _cancelReconnect() {
+        if (this._reconnectTimer) {
+            clearTimeout(this._reconnectTimer);
+            this._reconnectTimer = null;
+        }
+    }
+
+    _closeSocket(ws, reason = 'User disconnected') {
+        if (!ws) return;
+        ws._isOld = true;
+        try {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(new ArrayBuffer(0));
+            }
+            if (ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+                ws.close(1000, reason);
+            }
+        } catch (err) {
+            console.error('Error closing Soniox WebSocket:', err);
+        }
     }
 
     /**
@@ -507,10 +539,13 @@ export class SonioxClient {
         this._setStatus('connecting');
         this.onError?.(`${reason}. Reconnecting (${this._reconnectAttempts}/${MAX_RECONNECT})...`);
 
-        setTimeout(() => {
-            if (!this._intentionalDisconnect && this._config) {
+        const generation = this._connectionGeneration;
+        this._cancelReconnect();
+        this._reconnectTimer = setTimeout(() => {
+            this._reconnectTimer = null;
+            if (!this._intentionalDisconnect && this._config && generation === this._connectionGeneration) {
                 const carryover = this._getCarryoverContext();
-                this._doConnect(this._config, carryover);
+                this._doConnect(this._config, carryover, generation);
             }
         }, delay);
     }
