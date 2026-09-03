@@ -253,27 +253,35 @@ async fn run_session(
     let translation_worker = tokio::spawn(async move {
         while let Some(job) = translation_rx.recv().await {
             let target_lang = translation_target_lang.read().await.clone();
-            let translation_opt = translate_text_rest(
-                &translation_http,
-                &translation_api_key,
-                &job.original,
-                &target_lang,
-            )
-            .await;
+            let is_no_translate = target_lang == "none"
+                || target_lang == "off"
+                || target_lang.is_empty();
 
-            let translation = match translation_opt {
-                Some(t) if !t.trim().is_empty() => t,
-                _ => {
-                    eprintln!(
-                        "[gemini-live] Translation failed or timed out for job {}",
-                        job.id
-                    );
-                    if target_lang == "vi" {
-                        "[Bản dịch đang cập nhật...]".to_string()
-                    } else if target_lang == "ja" {
-                        "[翻訳を更新中...]".to_string()
-                    } else {
-                        "[Translation pending...]".to_string()
+            let translation = if is_no_translate {
+                String::new()
+            } else {
+                let translation_opt = translate_text_rest(
+                    &translation_http,
+                    &translation_api_key,
+                    &job.original,
+                    &target_lang,
+                )
+                .await;
+
+                match translation_opt {
+                    Some(t) if !t.trim().is_empty() => t,
+                    _ => {
+                        eprintln!(
+                            "[gemini-live] Translation failed or timed out for job {}",
+                            job.id
+                        );
+                        if target_lang == "vi" {
+                            "[Bản dịch đang cập nhật...]".to_string()
+                        } else if target_lang == "ja" {
+                            "[翻訳を更新中...]".to_string()
+                        } else {
+                            "[Translation pending...]".to_string()
+                        }
                     }
                 }
             };
@@ -398,6 +406,9 @@ fn map_lang_name(code: &str) -> String {
         "fr" => "French (Français)".to_string(),
         "de" => "German (Deutsch)".to_string(),
         "es" => "Spanish (Español)".to_string(),
+        "th" => "Thai".to_string(),
+        "id" => "Indonesian".to_string(),
+        "ru" => "Russian".to_string(),
         "auto" | "" => "any spoken language".to_string(),
         other => format!("language '{}'", other),
     }
@@ -417,7 +428,27 @@ fn build_setup_message(cfg: &GeminiRealtimeConfig) -> String {
         format!("models/{}", raw_model)
     };
 
-    let target_name = map_lang_name(&cfg.target_language);
+    let is_no_translate = cfg.target_language == "none"
+        || cfg.target_language == "off"
+        || cfg.target_language.is_empty();
+
+    let src = cfg.source_language.trim().to_lowercase();
+    let sys_instruction = if is_no_translate {
+        if !src.is_empty() && src != "auto" {
+            let src_name = map_lang_name(&src);
+            format!("You are an automated live speech transcription engine. The speaker is speaking {}. Accurately transcribe all spoken audio verbatim in {} without translation.", src_name, src_name)
+        } else {
+            "You are an automated live speech transcription engine. Accurately transcribe all spoken audio verbatim in its spoken language without translation.".to_string()
+        }
+    } else {
+        let target_name = map_lang_name(&cfg.target_language);
+        if !src.is_empty() && src != "auto" {
+            let src_name = map_lang_name(&src);
+            format!("You are an automated live speech transcription engine. The speaker is speaking {}. Accurately transcribe all audio and translate directly to {}.", src_name, target_name)
+        } else {
+            format!("You are an automated live speech transcription engine. Accurately transcribe all audio and translate directly to {}.", target_name)
+        }
+    };
 
     serde_json::json!({
         "setup": {
@@ -430,7 +461,7 @@ fn build_setup_message(cfg: &GeminiRealtimeConfig) -> String {
             "systemInstruction": {
                 "parts": [
                     {
-                        "text": format!("You are an automated live speech transcription engine. Accurately transcribe all audio and translate directly to {}.", target_name)
+                        "text": sys_instruction
                     }
                 ]
             }

@@ -815,14 +815,6 @@ class App {
             this._autoSaveSettingsFromForm();
         });
 
-        // Language Selects
-        document.getElementById('select-source-lang')?.addEventListener('change', () => {
-            this._autoSaveSettingsFromForm();
-        });
-        document.getElementById('select-target-lang')?.addEventListener('change', () => {
-            this._autoSaveSettingsFromForm();
-        });
-
         // Inactivity timeout change
         document.getElementById('select-inactivity-timeout')?.addEventListener('change', (e) => {
             const val = parseInt(e.target.value, 10);
@@ -848,16 +840,6 @@ class App {
                 this._selectEngineClass(btn.dataset.engineClass);
             });
         });
-
-        // Translation type toggle (one-way / two-way)
-        document.getElementById('select-translation-type')?.addEventListener('change', (e) => {
-            this._updateTranslationTypeUI(e.target.value);
-            this._autoSaveSettingsFromForm();
-        });
-
-        document.getElementById('select-lang-a')?.addEventListener('change', () => this._autoSaveSettingsFromForm());
-        document.getElementById('select-lang-b')?.addEventListener('change', () => this._autoSaveSettingsFromForm());
-        document.getElementById('check-strict-lang')?.addEventListener('change', () => this._autoSaveSettingsFromForm());
 
         // Audio Source radio change
         document.querySelectorAll('input[name="audio-source"]').forEach(r => {
@@ -1350,9 +1332,12 @@ class App {
         }
         const qwenKeyInput = document.getElementById('input-qwen-key');
         if (qwenKeyInput) qwenKeyInput.value = s.qwen_api_key || '';
-        document.getElementById('select-source-lang').value = s.source_language || 'ja';
-        document.getElementById('select-target-lang').value = s.target_language || 'vi';
-        document.getElementById('select-translation-mode').value = s.translation_mode || 'gemini';
+        const selectSrc = document.getElementById('select-source-lang');
+        if (selectSrc) selectSrc.value = s.source_language || 'ja';
+        const selectTgt = document.getElementById('select-target-lang');
+        if (selectTgt) selectTgt.value = s.target_language || 'vi';
+        const selectTransMode = document.getElementById('select-translation-mode');
+        if (selectTransMode) selectTransMode.value = s.translation_mode || 'gemini';
         const inactSelect = document.getElementById('select-inactivity-timeout');
         if (inactSelect) inactSelect.value = String(s.inactivity_timeout_min ?? 10);
         this._updateModeUI(s.translation_mode || 'gemini');
@@ -1360,14 +1345,18 @@ class App {
 
         // Translation type (one-way / two-way)
         const translationType = s.translation_type || 'one_way';
-        document.getElementById('select-translation-type').value = translationType;
+        const selectTransType = document.getElementById('select-translation-type');
+        if (selectTransType) selectTransType.value = translationType;
 
         // Two-way language selects
-        document.getElementById('select-lang-a').value = s.language_a || 'ja';
-        document.getElementById('select-lang-b').value = s.language_b || 'vi';
+        const selectLangA = document.getElementById('select-lang-a');
+        if (selectLangA) selectLangA.value = s.language_a || 'ja';
+        const selectLangB = document.getElementById('select-lang-b');
+        if (selectLangB) selectLangB.value = s.language_b || 'vi';
 
         // Strict language detection
-        document.getElementById('check-strict-lang').checked = s.language_hints_strict || false;
+        const checkStrict = document.getElementById('check-strict-lang');
+        if (checkStrict) checkStrict.checked = s.language_hints_strict || false;
 
         // Endpoint delay
         const endpointDelay = s.endpoint_delay || 3000;
@@ -1453,15 +1442,15 @@ class App {
                 return sel || 'models/gemini-2.0-flash-exp';
             })(),
             qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
-            source_language: document.getElementById('select-source-lang')?.value || 'ja',
-            target_language: document.getElementById('select-target-lang')?.value || 'vi',
+            source_language: document.getElementById('quick-select-source-lang')?.value || settingsManager.get().source_language || 'ja',
+            target_language: document.getElementById('quick-select-target-lang')?.value || settingsManager.get().target_language || 'vi',
             translation_mode: document.getElementById('select-translation-mode')?.value || 'gemini',
             inactivity_timeout_min: parseInt(document.getElementById('select-inactivity-timeout')?.value || '10', 10),
-            translation_type: document.getElementById('select-translation-type')?.value || 'one_way',
-            language_a: document.getElementById('select-lang-a')?.value || 'ja',
-            language_b: document.getElementById('select-lang-b')?.value || 'vi',
+            translation_type: 'one_way',
+            language_a: 'ja',
+            language_b: 'vi',
             language_hints_strict: document.getElementById('check-strict-lang')?.checked || false,
-            endpoint_delay: parseInt(document.getElementById('range-endpoint-delay')?.value || 3000),
+            endpoint_delay: parseInt(document.getElementById('range-endpoint-delay')?.value || settingsManager.get().endpoint_delay || 3000),
             audio_source: document.querySelector('input[name="audio-source"]:checked')?.value || 'system',
             overlay_opacity: parseInt(document.getElementById('range-opacity')?.value || 85) / 100,
             font_size: parseInt(document.getElementById('range-font-size')?.value || 16),
@@ -1529,7 +1518,9 @@ class App {
         // Live status row: language pair display
         const langEl = document.getElementById('live-lang');
         if (langEl) {
-            langEl.textContent = `${settings.source_language || 'ja'} → ${settings.target_language || 'vi'}`;
+            const srcName = this._getQuickLangName(settings.source_language || 'vi');
+            const tgtName = this._getQuickLangName(settings.target_language || 'none');
+            langEl.textContent = `${srcName} → ${tgtName}`;
         }
 
         // Update transcript UI
@@ -1542,6 +1533,7 @@ class App {
                 fontColor: settings.font_color || '#ffffff',
                 fontFamily: settings.font_family || 'system',
                 viewMode: viewMode,
+                targetLanguage: settings.target_language || 'vi',
             });
         }
         this._setViewMode(viewMode);
@@ -1549,8 +1541,14 @@ class App {
         // Update quick language and timing in toolbar
         const quickSrc = document.getElementById('quick-select-source-lang');
         const quickTgt = document.getElementById('quick-select-target-lang');
-        if (quickSrc) quickSrc.value = settings.source_language || 'ja';
-        if (quickTgt) quickTgt.value = settings.target_language || 'vi';
+        if (quickSrc) {
+            const validSrcs = ['vi', 'ja', 'en'];
+            quickSrc.value = validSrcs.includes(settings.source_language) ? settings.source_language : 'vi';
+        }
+        if (quickTgt) {
+            const validTgts = ['vi', 'ja', 'en', 'none'];
+            quickTgt.value = validTgts.includes(settings.target_language) ? settings.target_language : 'none';
+        }
 
         const timing = settings.translation_timing || 'on_pause';
         const timingSel = document.getElementById('select-translation-timing');
@@ -3000,6 +2998,40 @@ class App {
         };
         chkAutoMinutes?.addEventListener('change', onAutoMinutesChange);
 
+        const s = settingsManager.get();
+        const srcLang = sessionStore.sourceLang || s.source_language || 'ja';
+        const tgtLang = sessionStore.targetLang || s.target_language || 'vi';
+        const isNoTranslation = !tgtLang || tgtLang === 'none' || tgtLang === srcLang;
+
+        let autoMinutesLang = 'ja';
+        let autoMinutesLangText = 'Tiếng Nhật 🇯🇵';
+        let autoMinutesHintText = 'Mặc định tạo tiếng Nhật để tiết kiệm token. Có thể tạo thêm tiếng Việt trong tab Biên bản bất kỳ lúc nào.';
+
+        if (isNoTranslation) {
+            if (srcLang === 'vi') {
+                autoMinutesLang = 'vi';
+                autoMinutesLangText = 'Tiếng Việt 🇻🇳';
+                autoMinutesHintText = 'Cuộc họp không dịch sẽ được tự động tạo Meeting Minutes bằng Tiếng Việt.';
+            } else if (srcLang === 'ja') {
+                autoMinutesLang = 'ja';
+                autoMinutesLangText = 'Tiếng Nhật 🇯🇵';
+                autoMinutesHintText = 'Cuộc họp không dịch sẽ được tự động tạo Meeting Minutes bằng Tiếng Nhật.';
+            } else {
+                autoMinutesLang = 'vi';
+                autoMinutesLangText = 'Tiếng Việt 🇻🇳';
+                autoMinutesHintText = 'Biên bản cuộc họp sẽ được tự động tạo bằng Tiếng Việt.';
+            }
+        }
+
+        const chkAutoMinutesLabel = document.getElementById('chk-stop-auto-minutes-label');
+        const chkAutoMinutesHint = document.getElementById('chk-stop-auto-minutes-hint');
+        if (chkAutoMinutesLabel) {
+            chkAutoMinutesLabel.textContent = `✨ Tự động tạo Meeting Minutes (${autoMinutesLangText}) sau khi lưu`;
+        }
+        if (chkAutoMinutesHint) {
+            chkAutoMinutesHint.textContent = autoMinutesHintText;
+        }
+
         if (!modal) {
             const entered = prompt('Nhập tên cuộc họp để kết thúc & lưu:', defaultTitle);
             return entered !== null ? {
@@ -3009,7 +3041,7 @@ class App {
                 projectId: sessionStore.projectId,
                 category: sessionStore.category,
                 autoGenerateMinutes: chkAutoMinutes ? chkAutoMinutes.checked : false,
-                minutesLang: 'ja',
+                minutesLang: autoMinutesLang,
                 discard: false
             } : null;
         }
@@ -3047,7 +3079,7 @@ class App {
                     projectId: chosenProjectId,
                     category: chosenCategory,
                     autoGenerateMinutes,
-                    minutesLang: 'ja',
+                    minutesLang: autoMinutesLang,
                     discard: false,
                 });
             };
@@ -3407,8 +3439,8 @@ class App {
         const duration = this._formatDuration(durationMs);
 
         // Use session metadata captured at start()
-        const sourceLang = this.sessionSourceLang || document.getElementById('select-source-lang')?.value || 'auto';
-        const targetLang = this.sessionTargetLang || document.getElementById('select-target-lang')?.value || 'vi';
+        const sourceLang = this.sessionSourceLang || document.getElementById('quick-select-source-lang')?.value || 'auto';
+        const targetLang = this.sessionTargetLang || document.getElementById('quick-select-target-lang')?.value || 'vi';
         const mode = this.sessionMode || 'one_way';
 
         const content = this.transcriptUI.getFullSessionText({
@@ -3534,10 +3566,14 @@ class App {
     async _handleQuickSourceLangChange(srcLang) {
         const s = settingsManager.get();
         s.source_language = srcLang;
-        const selectSource = document.getElementById('select-source-lang');
-        if (selectSource) selectSource.value = srcLang;
         await settingsManager.save(s);
-        this._showToast(`Ngôn ngữ gốc: ${srcLang.toUpperCase()}`, 'info');
+        const srcName = this._getQuickLangName(srcLang);
+        this._showToast(`Ngôn ngữ gốc: ${srcName}`, 'info');
+        const langEl = document.getElementById('live-lang');
+        if (langEl) {
+            const tgtName = this._getQuickLangName(s.target_language || 'none');
+            langEl.textContent = `${srcName} → ${tgtName}`;
+        }
         if (this.isRunning && this.translationMode === 'gemini') {
             this._startGeminiMode(s);
         }
@@ -3546,19 +3582,38 @@ class App {
     async _handleQuickTargetLangChange(tgtLang) {
         const s = settingsManager.get();
         s.target_language = tgtLang;
-        const selectTarget = document.getElementById('select-target-lang');
-        if (selectTarget) selectTarget.value = tgtLang;
         await settingsManager.save(s);
+        if (this.transcriptUI) {
+            this.transcriptUI.configure({ targetLanguage: tgtLang });
+        }
         if (this.geminiClient && this.geminiClient.isConnected) {
             await this.geminiClient.setTargetLanguage(tgtLang);
         }
-        this._showToast(`Ngôn ngữ dịch: ${tgtLang.toUpperCase()}`, 'info');
+        const tgtName = this._getQuickLangName(tgtLang);
+        if (tgtLang === 'none') {
+            const selectViewMode = document.getElementById('select-view-mode');
+            if (selectViewMode) selectViewMode.value = 'original';
+            this._setViewMode('original');
+            this._showToast('Đã tắt dịch (Chỉ chép lời)', 'info');
+        } else {
+            this._showToast(`Ngôn ngữ dịch: ${tgtName}`, 'info');
+        }
+        const langEl = document.getElementById('live-lang');
+        if (langEl) {
+            const srcName = this._getQuickLangName(s.source_language || 'vi');
+            langEl.textContent = `${srcName} → ${tgtName}`;
+        }
     }
 
     async _handleQuickLangSwap() {
         const s = settingsManager.get();
-        const curSrc = s.source_language || 'ja';
-        const curTgt = s.target_language || 'vi';
+        const curSrc = s.source_language || 'vi';
+        const curTgt = s.target_language || 'ja';
+
+        if (curTgt === 'none') {
+            this._showToast('Không thể đổi chiều khi đang tắt dịch', 'warning');
+            return;
+        }
 
         const newSrc = curTgt;
         const newTgt = curSrc === 'auto' ? 'en' : curSrc;
@@ -3568,19 +3623,25 @@ class App {
 
         const quickSrc = document.getElementById('quick-select-source-lang');
         const quickTgt = document.getElementById('quick-select-target-lang');
-        const selectSrc = document.getElementById('select-source-lang');
-        const selectTgt = document.getElementById('select-target-lang');
 
         if (quickSrc) quickSrc.value = newSrc;
         if (quickTgt) quickTgt.value = newTgt;
-        if (selectSrc) selectSrc.value = newSrc;
-        if (selectTgt) selectTgt.value = newTgt;
 
         await settingsManager.save(s);
+        if (this.transcriptUI) {
+            this.transcriptUI.configure({ targetLanguage: newTgt });
+        }
         if (this.geminiClient && this.geminiClient.isConnected) {
             await this.geminiClient.setTargetLanguage(newTgt);
         }
-        this._showToast(`Đã đổi chiều: ${newSrc.toUpperCase()} → ${newTgt.toUpperCase()}`, 'success');
+        const newSrcName = this._getQuickLangName(newSrc);
+        const newTgtName = this._getQuickLangName(newTgt);
+        this._showToast(`Đã đổi chiều: ${newSrcName} → ${newTgtName}`, 'success');
+
+        const langEl = document.getElementById('live-lang');
+        if (langEl) {
+            langEl.textContent = `${newSrcName} → ${newTgtName}`;
+        }
 
         if (this.isRunning && this.translationMode === 'gemini') {
             this._startGeminiMode(s);
@@ -4242,8 +4303,11 @@ class App {
         const engineBadge = s.has_legacy_only
             ? `<span class="session-badge badge-legacy">legacy</span>`
             : `<span class="session-badge badge-engine">${this._esc(engine)}</span>`;
-        const langPair = s.source_lang && s.target_lang
-            ? `<span class="session-badge session-language-pair">${this._formatLanguage(s.source_lang)} <span class="session-language-arrow">→</span> ${this._formatLanguage(s.target_lang)}</span>`
+        const isSingleLanguage = !s.target_lang || s.target_lang === 'none' || s.target_lang === 'off' || s.target_lang === s.source_lang;
+        const langPair = s.source_lang
+            ? (isSingleLanguage
+                ? `<span class="session-badge session-language-pair">${this._formatLanguage(s.source_lang)}</span>`
+                : `<span class="session-badge session-language-pair">${this._formatLanguage(s.source_lang)} <span class="session-language-arrow">→</span> ${this._formatLanguage(s.target_lang)}</span>`)
             : '';
         const segCount = s.segment_count > 0 ? `<span class="session-meta-dim">${s.segment_count} câu</span>` : '';
         const isChecked = this._selectedSessionIds.has(s.id);
@@ -5642,6 +5706,19 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
     }
 
+    _getQuickLangName(code) {
+        const map = {
+            vi: 'Tiếng Việt',
+            ja: '日本語',
+            en: 'English',
+            none: 'Không dịch',
+            off: 'Không dịch',
+            auto: 'Tự động',
+        };
+        const normalized = String(code || '').toLowerCase().split(/[-_]/)[0];
+        return map[normalized] || LANGUAGE_DISPLAY[normalized]?.[1] || code;
+    }
+
     _formatLanguage(code) {
         const normalized = String(code || '').toLowerCase().split(/[-_]/)[0];
         const [flag, name] = LANGUAGE_DISPLAY[normalized] || ['🌐', String(code || '').toUpperCase()];
@@ -5853,22 +5930,20 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
 
         const lines = [];
-        lines.push('## 🗣️ Bản gốc (Original)');
-        lines.push('');
-        if (srcLines.length > 0) {
-            lines.push(srcLines.join('\n'));
-        } else {
-            lines.push('*(Không có nội dung bản gốc)*');
-        }
-        lines.push('');
-        lines.push('---');
-        lines.push('');
-        lines.push('## 🌐 Bản dịch (Translation)');
-        lines.push('');
         if (tgtLines.length > 0) {
+            lines.push('## 🗣️ Bản gốc (Original)');
+            lines.push('');
+            lines.push(srcLines.length > 0 ? srcLines.join('\n') : '*(Không có nội dung bản gốc)*');
+            lines.push('');
+            lines.push('---');
+            lines.push('');
+            lines.push('## 🌐 Bản dịch (Translation)');
+            lines.push('');
             lines.push(tgtLines.join('\n'));
         } else {
-            lines.push('*(Không có nội dung bản dịch)*');
+            lines.push('## 🗣️ Lịch sử thoại cuộc họp');
+            lines.push('');
+            lines.push(srcLines.length > 0 ? srcLines.join('\n') : '*(Không có nội dung ghi âm)*');
         }
 
         return lines.join('\n');
@@ -6344,8 +6419,33 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 };
 
                 this._updateMinutesBadges();
-                const preferredSubtab = this._loadedMinutes.ja ? 'ja' : (this._loadedMinutes.vi ? 'vi' : 'ja');
-                this._switchMinutesSubtab(preferredSubtab);
+
+                // If single-language session (no translation requested or same language)
+                const isNoTranslation = !json.target_lang || json.target_lang === 'none' || json.target_lang === json.source_lang;
+                const subtabJa = document.getElementById('subtab-btn-minutes-ja');
+                const subtabVi = document.getElementById('subtab-btn-minutes-vi');
+
+                if (isNoTranslation) {
+                    const sessionLang = json.source_lang || 'vi';
+                    if (sessionLang === 'vi') {
+                        if (subtabJa) subtabJa.style.display = 'none';
+                        if (subtabVi) subtabVi.style.display = '';
+                        this._switchMinutesSubtab('vi');
+                    } else if (sessionLang === 'ja') {
+                        if (subtabJa) subtabJa.style.display = '';
+                        if (subtabVi) subtabVi.style.display = 'none';
+                        this._switchMinutesSubtab('ja');
+                    } else {
+                        if (subtabJa) subtabJa.style.display = 'none';
+                        if (subtabVi) subtabVi.style.display = '';
+                        this._switchMinutesSubtab('vi');
+                    }
+                } else {
+                    if (subtabJa) subtabJa.style.display = '';
+                    if (subtabVi) subtabVi.style.display = '';
+                    const preferredSubtab = this._loadedMinutes.ja ? 'ja' : (this._loadedMinutes.vi ? 'vi' : 'ja');
+                    this._switchMinutesSubtab(preferredSubtab);
+                }
 
                 // 2. Notes Tab
                 const notesText = json.notes || '';

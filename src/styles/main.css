@@ -3340,7 +3340,6 @@ input[type="range"]::-webkit-slider-thumb:hover {
   border-radius: var(--radius-pill);
 }
 .quick-lang-select {
-  max-width: 95px;
   font-size: 11px;
   font-weight: 500;
   padding: 2px 4px;
@@ -3348,6 +3347,14 @@ input[type="range"]::-webkit-slider-thumb:hover {
   background: transparent;
   border: none;
   color: var(--md-sys-color-on-surface);
+}
+#quick-select-source-lang {
+  min-width: 95px;
+  max-width: 115px;
+}
+#quick-select-target-lang {
+  min-width: 115px;
+  max-width: 145px !important;
 }
 .quick-lang-select:focus {
   outline: none;

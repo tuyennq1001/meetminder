@@ -59,7 +59,8 @@ export class TranscriptUI {
     /**
      * Update display settings
      */
-    configure({ maxLines, showOriginal, fontSize, fontColor, fontFamily, viewMode }) {
+    configure({ maxLines, showOriginal, fontSize, fontColor, fontFamily, viewMode, targetLanguage }) {
+        if (targetLanguage !== undefined) this.targetLanguage = targetLanguage;
         if (maxLines !== undefined) this.maxChars = maxLines * 160;
         if (fontSize !== undefined) {
             this.fontSize = fontSize;
@@ -84,7 +85,7 @@ export class TranscriptUI {
             this.viewMode = viewMode;
             const overlay = document.getElementById('overlay-view');
             if (overlay) {
-                const wantsDual = viewMode === 'dual' && this._provider !== 'qwen';
+                const wantsDual = viewMode === 'dual' && this._provider !== 'qwen' && this.targetLanguage !== 'none';
                 overlay.classList.toggle('dual-view', wantsDual);
             }
             this._render();
@@ -504,7 +505,7 @@ export class TranscriptUI {
         // Qwen Live Flash is translation-only (no source transcript channel),
         // so force single-panel even when the user picked dual view — otherwise
         // the source panel sits empty / shows dim provisional noise.
-        if ((this.viewMode === 'dual' || this.viewMode === 'both') && this.provider !== 'qwen') {
+        if ((this.viewMode === 'dual' || this.viewMode === 'both') && this.provider !== 'qwen' && this.targetLanguage !== 'none') {
             this._renderDual();
         } else {
             this._renderSingle();
@@ -515,7 +516,7 @@ export class TranscriptUI {
         let html = '';
         let lastRenderedLang = null;
 
-        const showOnlyOriginal = this.viewMode === 'original';
+        const showOnlyOriginal = this.viewMode === 'original' || this.targetLanguage === 'none';
 
         // Header for single mode with copy button
         const headerTitle = showOnlyOriginal ? '📝 Bản gốc' : '🌐 Bản dịch';
