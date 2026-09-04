@@ -2601,6 +2601,26 @@ input[type="range"]::-webkit-slider-thumb:hover {
   gap: 4px;
   flex-shrink: 0;
 }
+.retranscript-spinner-inline {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+  margin-right: 5px;
+}
+#session-retranscript-status.is-running {
+  color: #c084fc !important;
+  font-weight: 500;
+  animation: statusPulse 2s ease-in-out infinite;
+}
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
 
 #setup-status-text {
   color: var(--text-muted);

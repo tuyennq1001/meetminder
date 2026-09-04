@@ -2272,6 +2272,17 @@ class App {
             // before adding the durable pending-source segment, otherwise the
             // same utterance is rendered twice (italic provisional + final).
             this.transcriptUI.clearProvisional();
+            // Suppress rapid consecutive duplicate of identical text (< 2500ms)
+            const segs = this.transcriptUI.segments;
+            const lastSeg = segs.length > 0 ? segs[segs.length - 1] : null;
+            if (lastSeg && lastSeg.original === source && (!lastSeg.createdAt || Date.now() - lastSeg.createdAt < 2500)) {
+                console.log('[Gemini Realtime] Suppressed consecutive duplicate source segment:', source);
+                if (pendingId !== null && lastSeg.pendingId === null) {
+                    lastSeg.pendingId = pendingId;
+                    sessionStore.bindPendingSegmentId(source, pendingId);
+                }
+                return;
+            }
             const existing = this.transcriptUI.segments.find(
                 segment => segment.status === 'original'
                     && segment.original === source
@@ -6536,8 +6547,28 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     }
 
     _updateRetranscriptStatus(json) {
+        const btn = document.getElementById('btn-session-retranscript');
         const status = document.getElementById('session-retranscript-status');
         if (!status) return;
+
+        // Nếu cuộc họp này ĐANG trong tiến trình Re-transcript
+        if (this._activeRetranscribe && this._activeRetranscribe.id === json?.id) {
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="retranscript-spinner-inline"></span> Đang transcript...';
+            }
+            status.textContent = `⏳ Đang Re-transcript: ${this._activeRetranscribe.text || 'Đang xử lý...'} (${this._activeRetranscribe.percent || 15}%)`;
+            status.style.display = '';
+            status.classList.add('is-running');
+            return;
+        }
+
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '🔄 Re-transcript';
+        }
+        status.classList.remove('is-running');
+
         if (!json?.retranscribed_at) {
             status.textContent = '';
             status.style.display = 'none';
@@ -6683,6 +6714,27 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const floatingExpand = document.getElementById('btn-retranscript-expand');
         const floatingCancel = document.getElementById('btn-retranscript-floating-cancel');
 
+        if (this._activeRetranscribe) {
+            this._activeRetranscribe.stage = stage;
+            this._activeRetranscribe.text = text;
+            this._activeRetranscribe.percent = percent;
+        }
+
+        // Đồng bộ trực tiếp vào Log Details nếu người dùng đang mở xem phiên này
+        if (this._currentViewedSession?.id === this._activeRetranscribe?.id) {
+            const retranscriptBtn = document.getElementById('btn-session-retranscript');
+            const sessionStatus = document.getElementById('session-retranscript-status');
+            if (retranscriptBtn) {
+                retranscriptBtn.disabled = true;
+                retranscriptBtn.innerHTML = '<span class="retranscript-spinner-inline"></span> Đang transcript...';
+            }
+            if (sessionStatus) {
+                sessionStatus.textContent = `⏳ Đang Re-transcript: ${text} (${percent}%)`;
+                sessionStatus.style.display = '';
+                sessionStatus.classList.add('is-running');
+            }
+        }
+
         if (this._activeRetranscribe?.isMinimized) {
             if (floatingBar) floatingBar.style.display = 'flex';
             if (modal) modal.style.display = 'none';
@@ -6710,7 +6762,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (floatingFill) floatingFill.style.width = `${percent}%`;
         if (floatingPct) floatingPct.textContent = `${percent}%`;
 
-        const order = ['upload', 'transcribe', 'save'];
+        const order = ['upload', 'transcribe', 'save', 'minutes'];
         document.querySelectorAll('[data-retranscript-step]').forEach(step => {
             const index = order.indexOf(step.dataset.retranscriptStep);
             const activeIndex = order.indexOf(stage);
@@ -6741,7 +6793,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
         if (floatingSpinner) floatingSpinner.style.display = 'none';
         if (floatingCheck) floatingCheck.style.display = 'flex';
-        if (floatingTitle) floatingTitle.textContent = 'Hoàn tất Re-transcript ✓';
+        if (floatingTitle) floatingTitle.textContent = 'Hoàn tất Re-transcript & Minutes ✓';
         if (floatingStatus) floatingStatus.textContent = 'Nhấn để xem chi tiết log ➔';
         if (floatingFill) floatingFill.style.width = '100%';
         if (floatingPct) floatingPct.textContent = '100%';
@@ -6790,7 +6842,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             console.warn('[App] cancel_retranscribe_session warning:', e);
         }
         if (isTimeout) {
-            this._showToast('Quá thời gian xử lý (3 phút). Đã tự động hủy re-transcript để tránh nghẽn hệ thống.', 'error');
+            this._showToast('Quá thời gian xử lý. Đã tự động hủy re-transcript để tránh nghẽn hệ thống.', 'error');
         } else {
             this._showToast('Đã hủy re-transcript', 'info');
         }
@@ -6809,8 +6861,45 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 b.innerHTML = this._activeRetranscribe.originalTexts[i];
             });
         }
+        const activeId = this._activeRetranscribe?.id;
         this._activeRetranscribe = null;
         this._hideRetranscriptProgress();
+
+        if (this._currentViewedSession?.id === activeId) {
+            const btn = document.getElementById('btn-session-retranscript');
+            const status = document.getElementById('session-retranscript-status');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '🔄 Re-transcript';
+            }
+            if (status) {
+                status.classList.remove('is-running');
+            }
+            if (this._currentSessionJson) {
+                this._updateRetranscriptStatus(this._currentSessionJson);
+            }
+        }
+    }
+
+    _getMinutesLangsForSession(sessionData) {
+        const src = (sessionData?.source_lang || 'vi').toLowerCase();
+        const tgt = (sessionData?.target_lang || '').toLowerCase();
+        const hasTranslation = !!tgt && tgt !== 'none' && tgt !== 'off' && tgt !== src;
+
+        if (hasTranslation) {
+            // Có bản dịch: tạo lại cho cả ngôn ngữ gốc và ngôn ngữ dịch
+            const langs = [];
+            const mapCode = (c) => (c === 'ja' ? 'ja' : (c === 'vi' ? 'vi' : null));
+            const sMapped = mapCode(src);
+            const tMapped = mapCode(tgt);
+            if (sMapped) langs.push(sMapped);
+            if (tMapped && !langs.includes(tMapped)) langs.push(tMapped);
+            if (langs.length === 0) langs.push('vi');
+            return langs;
+        } else {
+            // Không có bản dịch: tạo cho ngôn ngữ gốc
+            return src === 'ja' ? ['ja'] : ['vi'];
+        }
     }
 
     async _retranscribeSession(id, isLegacy = false) {
@@ -6840,10 +6929,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const originalTexts = buttonsToDisable.map(b => b.innerHTML);
         buttonsToDisable.forEach(b => {
             b.disabled = true;
-            b.textContent = '⌛ Đang transcript...';
+            b.innerHTML = '<span class="retranscript-spinner-inline"></span> Đang transcript...';
         });
 
-        const TIMEOUT_MS = 180_000; // 3 phút timeout
+        const sess = (this._cachedSessions || []).find(s => s.id === id);
+        const durationSec = sess?.duration_sec || (this._currentSessionJson?.id === id ? this._currentSessionJson.duration_sec : 0) || 0;
+        // Tối thiểu 10 phút (600_000ms), tự động mở rộng theo thời lượng file ghi âm (tối đa tới 25 phút cho audio 2h)
+        const TIMEOUT_MS = Math.max(600_000, durationSec * 350);
         const timeoutId = setTimeout(() => {
             this._cancelActiveRetranscript(true);
         }, TIMEOUT_MS);
@@ -6855,6 +6947,9 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             originalTexts,
             isMinimized: true,
             progressInterval: null,
+            stage: 'upload',
+            text: 'Đang tải file ghi âm lên Gemini...',
+            percent: 15,
         };
 
         this._setRetranscriptProgress('upload', 'Đang tải file ghi âm lên Gemini...', 15);
@@ -6865,20 +6960,23 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 clearInterval(progressInterval);
                 return;
             }
-            if (currentPct < 86) {
-                currentPct += (currentPct < 50 ? 5 : (currentPct < 75 ? 3 : 1));
+            if (currentPct < 88) {
+                currentPct += (currentPct < 45 ? 3 : (currentPct < 70 ? 2 : 1));
                 let text = 'Đang tải file ghi âm lên Gemini...';
                 let stage = 'upload';
-                if (currentPct >= 30 && currentPct < 70) {
+                if (currentPct >= 25 && currentPct < 65) {
                     stage = 'transcribe';
                     text = 'Gemini đang transcript và dịch file ghi âm...';
-                } else if (currentPct >= 70) {
+                } else if (currentPct >= 65 && currentPct < 80) {
                     stage = 'transcribe';
                     text = 'Gemini đang phân tích và chuẩn hóa văn bản...';
+                } else if (currentPct >= 80) {
+                    stage = 'transcribe';
+                    text = 'File ghi âm dài, Gemini đang hoàn thiện các đoạn thoại...';
                 }
                 this._setRetranscriptProgress(stage, text, currentPct);
             }
-        }, 900);
+        }, 1500);
         this._activeRetranscribe.progressInterval = progressInterval;
 
         try {
@@ -6886,12 +6984,34 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             clearInterval(progressInterval);
             if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
 
-            this._setRetranscriptProgress('save', 'Đang lưu Logs mới...', 92);
+            this._setRetranscriptProgress('save', 'Đang lưu Logs mới...', 89);
             if (this._currentViewedSession?.id === id) {
                 this._renderSessionLogs(result.json);
                 this._currentSessionJson = result.json;
                 this._updateRetranscriptStatus(result.json);
             }
+
+            // Tự động tạo lại Meeting Minutes ở các ngôn ngữ được chọn
+            const minutesLangs = this._getMinutesLangsForSession(result.json);
+            const totalLangs = minutesLangs.length;
+            for (let i = 0; i < totalLangs; i++) {
+                if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
+                const mLang = minutesLangs[i];
+                const langName = mLang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt';
+                const stepPct = totalLangs === 1 ? 94 : (i === 0 ? 92 : 96);
+                const stepLabel = totalLangs > 1
+                    ? `Đang tạo lại Meeting Minutes (${langName})... (${i + 1}/${totalLangs})`
+                    : `Đang tạo lại Meeting Minutes (${langName})...`;
+
+                this._setRetranscriptProgress('minutes', stepLabel, stepPct);
+                try {
+                    await this._generateMinutesCore(id, mLang);
+                } catch (minErr) {
+                    console.warn(`[App] Lỗi tạo Meeting Minutes (${mLang}) khi re-transcript:`, minErr);
+                }
+            }
+
+            this._setRetranscriptProgress('minutes', 'Hoàn tất Re-transcript & Meeting Minutes ✓', 100);
 
             if (this._activeRetranscribe?.buttonsToDisable) {
                 this._activeRetranscribe.buttonsToDisable.forEach((b, i) => {
@@ -6906,8 +7026,22 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             this._lastCompletedRetranscribeId = id;
             this._activeRetranscribe = null;
 
+            if (this._currentViewedSession?.id === id) {
+                const refreshed = await invoke('read_session', { id });
+                this._currentSessionJson = refreshed.json;
+                const mmJa = refreshed.json.meeting_minutes_ja || (refreshed.json.meeting_minutes_lang === 'ja' ? refreshed.json.meeting_minutes : '') || '';
+                const mmVi = refreshed.json.meeting_minutes_vi || (refreshed.json.meeting_minutes_lang === 'vi' ? refreshed.json.meeting_minutes : '') || '';
+                this._loadedMinutes = {
+                    ja: mmJa.trim(),
+                    vi: mmVi.trim(),
+                };
+                this._updateRetranscriptStatus(refreshed.json);
+                this._updateMinutesBadges();
+                this._renderCurrentMinutesSubtab();
+            }
+
             this._showRetranscriptCompleted(id);
-            this._showToast('Đã tạo lại Logs từ file ghi âm ✓', 'success');
+            this._showToast('Đã tạo lại Logs & Meeting Minutes từ file ghi âm ✓', 'success');
             await this._showSessions();
         } catch (err) {
             clearInterval(progressInterval);
@@ -7110,6 +7244,59 @@ ${viTemplate}
 Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy gọn.`;
     }
 
+    async _generateMinutesCore(sessionId, lang = 'ja', onStatusUpdate = null) {
+        const settings = settingsManager.get();
+        const geminiKey = settings.gemini_api_key?.trim();
+        const openaiKey = settings.openai_api_key?.trim();
+
+        if (!geminiKey && !openaiKey) {
+            throw new Error('Vui lòng cài đặt Gemini hoặc OpenAI API Key trong Cài đặt (⌘,) để tạo Meeting Minutes');
+        }
+
+        const res = await invoke('read_session', { id: sessionId });
+        if (!res?.json) {
+            throw new Error(`Không tìm thấy dữ liệu phiên ${sessionId}`);
+        }
+
+        const prompt = this._buildMeetingMinutesPrompt(res.json, lang);
+        let resultText = '';
+
+        if (geminiKey) {
+            try {
+                resultText = await this._callGeminiAi(geminiKey, prompt, onStatusUpdate);
+            } catch (geminiErr) {
+                if (openaiKey) {
+                    console.warn('[App] Gemini không khả dụng, tự động chuyển sang OpenAI...', geminiErr);
+                    if (onStatusUpdate) onStatusUpdate('Gemini quá tải, đang chuyển sang OpenAI gpt-4o-mini...');
+                    resultText = await this._callOpenAi(openaiKey, prompt);
+                } else {
+                    throw geminiErr;
+                }
+            }
+        } else {
+            resultText = await this._callOpenAi(openaiKey, prompt);
+        }
+
+        if (resultText && resultText.trim()) {
+            await invoke('update_session_meeting_minutes', {
+                id: sessionId,
+                minutes: resultText,
+                lang,
+            });
+
+            if (this._currentViewedSession?.id === sessionId) {
+                if (!this._loadedMinutes) this._loadedMinutes = {};
+                this._loadedMinutes[lang] = resultText;
+                this._updateMinutesBadges();
+                if (this._activeMinutesLang === lang) {
+                    this._renderCurrentMinutesSubtab();
+                }
+            }
+        }
+
+        return resultText;
+    }
+
     async _generateMeetingMinutesForSession(sessionId, targetLang = null) {
         const lang = targetLang || this._activeMinutesLang || 'ja';
         const loadingEl = document.getElementById('minutes-loading');
@@ -7134,41 +7321,13 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         }
 
         try {
-            const res = await invoke('read_session', { id: sessionId });
-            const prompt = this._buildMeetingMinutesPrompt(res.json, lang);
-
-            let resultText = '';
             const onStatusUpdate = (msg) => {
                 if (loadingText) loadingText.textContent = msg;
             };
 
-            if (geminiKey) {
-                try {
-                    resultText = await this._callGeminiAi(geminiKey, prompt, onStatusUpdate);
-                } catch (geminiErr) {
-                    if (openaiKey) {
-                        console.warn('[App] Gemini không khả dụng, tự động chuyển sang OpenAI...', geminiErr);
-                        onStatusUpdate('Gemini quá tải, đang chuyển sang OpenAI gpt-4o-mini...');
-                        resultText = await this._callOpenAi(openaiKey, prompt);
-                    } else {
-                        throw geminiErr;
-                    }
-                }
-            } else {
-                resultText = await this._callOpenAi(openaiKey, prompt);
-            }
+            await this._generateMinutesCore(sessionId, lang, onStatusUpdate);
 
-            // Save to backend
-            await invoke('update_session_meeting_minutes', {
-                id: sessionId,
-                minutes: resultText,
-                lang,
-            });
-
-            this._loadedMinutes[lang] = resultText;
-            this._updateMinutesBadges();
             this._switchMinutesSubtab(lang);
-
             this._showToast(`Đã tạo Meeting Minutes (${lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt'}) thành công ✓`, 'success');
         } catch (err) {
             console.error('[App] _generateMeetingMinutesForSession error:', err);
@@ -7425,6 +7584,14 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 this._currentSessionJson = json;
                 this._updateRetranscriptStatus(json);
                 if (title) title.textContent = json.title || id;
+
+                if (this._activeRetranscribe?.id === id) {
+                    const btn = document.getElementById('btn-session-retranscript');
+                    if (btn && !this._activeRetranscribe.buttonsToDisable.includes(btn)) {
+                        this._activeRetranscribe.buttonsToDisable.push(btn);
+                        this._activeRetranscribe.originalTexts.push('🔄 Re-transcript');
+                    }
+                }
 
                 // 1. Minutes Tab (JA & VI Sub-tabs)
                 const mmJa = json.meeting_minutes_ja || (json.meeting_minutes_lang === 'ja' ? json.meeting_minutes : '') || '';

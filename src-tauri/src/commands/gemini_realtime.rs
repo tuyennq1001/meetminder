@@ -267,7 +267,8 @@ async fn run_session(
         .map_err(|e| format!("send setup message: {}", e))?;
 
     let mut next_translation_id = 1u64;
-    let mut committed_count: usize = 0;
+    let mut committed_sentences: Vec<String> = Vec::new();
+    let mut last_committed: Option<(String, std::time::Instant)> = None;
     let http_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
@@ -342,7 +343,8 @@ async fn run_session(
                             &event_ch,
                             &translation_tx,
                             &mut next_translation_id,
-                            &mut committed_count,
+                            &mut committed_sentences,
+                            &mut last_committed,
                         ).await;
                     }
                     Some(Ok(Message::Binary(bin))) => {
@@ -352,7 +354,8 @@ async fn run_session(
                                 &event_ch,
                                 &translation_tx,
                                 &mut next_translation_id,
-                                &mut committed_count,
+                                &mut committed_sentences,
+                                &mut last_committed,
                             ).await;
                         }
                     }
@@ -487,6 +490,30 @@ async fn finish_translation_worker(
     }
 }
 
+fn map_bcp47(code: &str) -> Option<String> {
+    match code.to_lowercase().as_str() {
+        "vi" => Some("vi-VN".to_string()),
+        "ja" => Some("ja-JP".to_string()),
+        "en" => Some("en-US".to_string()),
+        "ko" => Some("ko-KR".to_string()),
+        "zh" => Some("zh-CN".to_string()),
+        "fr" => Some("fr-FR".to_string()),
+        "de" => Some("de-DE".to_string()),
+        "es" => Some("es-ES".to_string()),
+        "th" => Some("th-TH".to_string()),
+        "id" => Some("id-ID".to_string()),
+        "ru" => Some("ru-RU".to_string()),
+        "auto" | "" => None,
+        other => {
+            if other.contains('-') {
+                Some(other.to_string())
+            } else {
+                Some(format!("{}-{}", other, other.to_uppercase()))
+            }
+        }
+    }
+}
+
 fn map_lang_name(code: &str) -> String {
     match code.to_lowercase().as_str() {
         "vi" => "Vietnamese (Tiếng Việt)".to_string(),
@@ -541,6 +568,11 @@ fn build_setup_message(cfg: &GeminiRealtimeConfig) -> String {
         }
     };
 
+    let mut input_audio_transcription = serde_json::json!({});
+    if let Some(bcp47) = map_bcp47(&src) {
+        input_audio_transcription["languageCodes"] = serde_json::json!([bcp47]);
+    }
+
     serde_json::json!({
         "setup": {
             "model": model,
@@ -548,7 +580,7 @@ fn build_setup_message(cfg: &GeminiRealtimeConfig) -> String {
                 "responseModalities": ["TEXT"],
                 "temperature": 0.2
             },
-            "inputAudioTranscription": {},
+            "inputAudioTranscription": input_audio_transcription,
             "systemInstruction": {
                 "parts": [
                     {
@@ -583,9 +615,14 @@ fn extract_sentences_and_provisional(text: &str, min_clause_chars: usize) -> (Ve
         let is_period = ch == '。'
             || ch == '！'
             || ch == '？'
+            || ch == '!'
+            || ch == '?'
             || ch == '\n'
-            || ((ch == '.' || ch == '!' || ch == '?')
-                && (i + 1 == total_len || chars[i + 1].1 == ' '));
+            || (ch == '.'
+                && !(i > 0
+                    && chars[i - 1].1.is_ascii_digit()
+                    && i + 1 < total_len
+                    && chars[i + 1].1.is_ascii_digit()));
 
         let is_comma_split = (ch == '、'
             || (ch == ',' && i + 1 < total_len && chars[i + 1].1 == ' '))
@@ -617,7 +654,8 @@ async fn handle_server_message(
     event_ch: &Channel<GeminiEvent>,
     translation_tx: &mpsc::Sender<TranslationJob>,
     next_translation_id: &mut u64,
-    committed_count: &mut usize,
+    committed_sentences: &mut Vec<String>,
+    last_committed: &mut Option<(String, std::time::Instant)>,
 ) {
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
@@ -666,6 +704,27 @@ async fn handle_server_message(
         );
     }
 
+    let is_duplicate = |candidate: &str,
+                        committed_sentences: &[String],
+                        last_committed: &Option<(String, std::time::Instant)>|
+     -> bool {
+        let cand = candidate.trim();
+        if cand.is_empty() {
+            return true;
+        }
+        if committed_sentences.iter().any(|c| c.trim() == cand) {
+            return true;
+        }
+        if let Some((prev_text, prev_time)) = last_committed {
+            if prev_text.trim() == cand
+                && prev_time.elapsed() < std::time::Duration::from_millis(2000)
+            {
+                return true;
+            }
+        }
+        false
+    };
+
     // 3. Process serverContent
     if let Some(server_content) = value.get("serverContent") {
         // A. Live interim transcription (real-time streaming speech delta)
@@ -678,36 +737,35 @@ async fn handle_server_message(
                     let (sentences, provisional) =
                         extract_sentences_and_provisional(speech_trimmed, 45);
 
-                    // If speech contracted significantly or sentences count dropped, a new turn began
-                    if sentences.len() < *committed_count {
-                        *committed_count = 0;
-                    }
-
-                    if sentences.len() > *committed_count {
-                        for sentence in &sentences[*committed_count..] {
-                            let translation_id = *next_translation_id;
-                            *next_translation_id = (*next_translation_id).saturating_add(1);
-                            eprintln!(
-                                "[gemini-live] Auto-committed interim sentence #{}: {}",
-                                translation_id, sentence
-                            );
-
-                            let _ = event_ch.send(GeminiEvent::SourceTranscript {
-                                id: translation_id,
-                                text: sentence.clone(),
-                                is_final: true,
-                                speaker: None,
-                            });
-
-                            let _ = translation_tx
-                                .send(TranslationJob {
-                                    id: translation_id,
-                                    original: sentence.clone(),
-                                    speaker: None,
-                                })
-                                .await;
+                    for sentence in &sentences {
+                        if is_duplicate(sentence, committed_sentences, last_committed) {
+                            continue;
                         }
-                        *committed_count = sentences.len();
+
+                        let translation_id = *next_translation_id;
+                        *next_translation_id = (*next_translation_id).saturating_add(1);
+                        eprintln!(
+                            "[gemini-live] Auto-committed interim sentence #{}: {}",
+                            translation_id, sentence
+                        );
+
+                        let _ = event_ch.send(GeminiEvent::SourceTranscript {
+                            id: translation_id,
+                            text: sentence.clone(),
+                            is_final: true,
+                            speaker: None,
+                        });
+
+                        let _ = translation_tx
+                            .send(TranslationJob {
+                                id: translation_id,
+                                original: sentence.clone(),
+                                speaker: None,
+                            })
+                            .await;
+
+                        committed_sentences.push(sentence.clone());
+                        *last_committed = Some((sentence.clone(), std::time::Instant::now()));
                     }
 
                     // Forward only the remaining in-progress fragment to the UI as provisional
@@ -732,9 +790,12 @@ async fn handle_server_message(
 
                     let (sentences, provisional) =
                         extract_sentences_and_provisional(speech_clean, 45);
-                    let start_idx = (*committed_count).min(sentences.len());
 
-                    for sentence in &sentences[start_idx..] {
+                    for sentence in &sentences {
+                        if is_duplicate(sentence, committed_sentences, last_committed) {
+                            continue;
+                        }
+
                         let translation_id = *next_translation_id;
                         *next_translation_id = (*next_translation_id).saturating_add(1);
                         eprintln!(
@@ -756,10 +817,15 @@ async fn handle_server_message(
                                 speaker: speaker.clone(),
                             })
                             .await;
+
+                        committed_sentences.push(sentence.clone());
+                        *last_committed = Some((sentence.clone(), std::time::Instant::now()));
                     }
 
                     // If there is any trailing text that wasn't finalized by punctuation, commit it now!
-                    if !provisional.is_empty() {
+                    if !provisional.is_empty()
+                        && !is_duplicate(&provisional, committed_sentences, last_committed)
+                    {
                         let translation_id = *next_translation_id;
                         *next_translation_id = (*next_translation_id).saturating_add(1);
                         eprintln!(
@@ -777,13 +843,16 @@ async fn handle_server_message(
                         let _ = translation_tx
                             .send(TranslationJob {
                                 id: translation_id,
-                                original: provisional,
+                                original: provisional.clone(),
                                 speaker: speaker.clone(),
                             })
                             .await;
+
+                        *last_committed = Some((provisional, std::time::Instant::now()));
                     }
 
-                    *committed_count = 0;
+                    // Turn complete: clear turn-scoped committed sentences
+                    committed_sentences.clear();
 
                     // Clear provisional text in the UI
                     let _ = event_ch.send(GeminiEvent::Transcript {
@@ -1088,4 +1157,56 @@ async fn translate_text_rest(
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_map_bcp47() {
+        assert_eq!(map_bcp47("vi"), Some("vi-VN".to_string()));
+        assert_eq!(map_bcp47("ja"), Some("ja-JP".to_string()));
+        assert_eq!(map_bcp47("en"), Some("en-US".to_string()));
+        assert_eq!(map_bcp47("auto"), None);
+        assert_eq!(map_bcp47(""), None);
+    }
+
+    #[test]
+    fn test_build_setup_message_language_codes() {
+        let cfg = GeminiRealtimeConfig {
+            api_key: "test_key".into(),
+            source_language: "vi".into(),
+            target_language: "none".into(),
+            model: None,
+            diarization: false,
+        };
+        let msg = build_setup_message(&cfg);
+        let parsed: serde_json::Value = serde_json::from_str(&msg).unwrap();
+        let lang_codes = parsed["setup"]["inputAudioTranscription"]["languageCodes"]
+            .as_array()
+            .unwrap();
+        assert_eq!(lang_codes.len(), 1);
+        assert_eq!(lang_codes[0].as_str(), Some("vi-VN"));
+    }
+
+    #[test]
+    fn test_extract_sentences_with_no_space_period() {
+        let text = "Anh cơ bản là có hai ai mà là rồi thì nó dễ.Tôi thì học xong.";
+        let (sentences, provisional) = extract_sentences_and_provisional(text, 45);
+        assert_eq!(sentences.len(), 2);
+        assert_eq!(sentences[0], "Anh cơ bản là có hai ai mà là rồi thì nó dễ.");
+        assert_eq!(sentences[1], "Tôi thì học xong.");
+        assert!(provisional.is_empty());
+    }
+
+    #[test]
+    fn test_extract_sentences_preserves_decimal_numbers() {
+        let text = "Phiên bản 2.5 đã ra mắt.Tuyệt vời!";
+        let (sentences, provisional) = extract_sentences_and_provisional(text, 45);
+        assert_eq!(sentences.len(), 2);
+        assert_eq!(sentences[0], "Phiên bản 2.5 đã ra mắt.");
+        assert_eq!(sentences[1], "Tuyệt vời!");
+        assert!(provisional.is_empty());
+    }
 }

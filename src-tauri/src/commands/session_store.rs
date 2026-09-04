@@ -1388,7 +1388,7 @@ pub async fn retranscribe_session_with_gemini(
     }
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
+        .timeout(std::time::Duration::from_secs(600))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
     let upload_start = client
@@ -1451,8 +1451,8 @@ pub async fn retranscribe_session_with_gemini(
         .to_string();
 
     // Audio files may need a short processing period before they can be sent to
-    // a model. Poll at most one minute so a stuck remote job never hangs the UI.
-    for _ in 0..60 {
+    // a model. Poll at most two minutes so a stuck remote job never hangs the UI.
+    for _ in 0..120 {
         if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
             let _ = client
                 .delete(format!(
@@ -1524,8 +1524,9 @@ pub async fn retranscribe_session_with_gemini(
     let mut last_error = None;
     for model in [
         "gemini-3.5-flash",
-        "gemini-3.1-flash-lite",
+        "gemini-2.5-flash",
         "gemini-flash-latest",
+        "gemini-3.1-flash-lite",
     ] {
         if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
             let _ = client
