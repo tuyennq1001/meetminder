@@ -134,10 +134,19 @@ class App {
         this._captureHealthTimer = null;
         this._isStopConfirmationOpen = false;
         this._projectRegistry = null;
-        this._activeCustomerFilter = null;
-        this._activeProjectFilter = null;
-        this._activeCategoryFilter = null;
-        this._activeTagFilter = null;
+        this._activeCustomerFilter = [];
+        this._activeProjectFilter = [];
+        this._activeCategoryFilter = [];
+        this._activeTagFilter = [];
+        this._sessionNameQuery = '';
+        this._sessionSort = { field: 'created_at', dir: 'desc' };
+        this._sessionPage = 1;
+        try {
+            const savedPageSize = Number(localStorage.getItem('meet_minder_logs_page_size'));
+            this._sessionPageSize = [10, 20, 50].includes(savedPageSize) ? savedPageSize : 10;
+        } catch (_) {
+            this._sessionPageSize = 10;
+        }
         this._custSort = { field: 'name', dir: 'asc' };
         this._projSort = { field: 'name', dir: 'asc' };
         this._catSort = { field: 'name', dir: 'asc' };
@@ -311,39 +320,44 @@ class App {
             }
         });
 
-        // Session search box (debounced)
+        // Log name filter (debounced)
         const searchInput = document.getElementById('input-session-search');
         if (searchInput) {
             let t;
             searchInput.addEventListener('input', (e) => {
                 clearTimeout(t);
-                const q = e.target.value;
-                t = setTimeout(() => this._showSessions(q), 200);
+                this._sessionNameQuery = e.target.value;
+                this._sessionPage = 1;
+                t = setTimeout(() => this._renderFilteredSessions(), 200);
             });
         }
 
         // Customer filter dropdown
         document.getElementById('select-session-customer-filter')?.addEventListener('change', (e) => {
-            this._activeCustomerFilter = e.target.value || null;
+            this._activeCustomerFilter = this._selectedValues(e.target);
+            this._sessionPage = 1;
             this._renderProjectFilterBar();
             this._renderFilteredSessions();
         });
 
         // Project filter dropdown
         document.getElementById('select-session-project-filter')?.addEventListener('change', (e) => {
-            this._activeProjectFilter = e.target.value || null;
+            this._activeProjectFilter = this._selectedValues(e.target);
+            this._sessionPage = 1;
             this._renderFilteredSessions();
         });
 
         // Category filter dropdown
         document.getElementById('select-session-category-filter')?.addEventListener('change', (e) => {
-            this._activeCategoryFilter = e.target.value || null;
+            this._activeCategoryFilter = this._selectedValues(e.target);
+            this._sessionPage = 1;
             this._renderFilteredSessions();
         });
 
         // Tag filter dropdown
         document.getElementById('select-session-tag-filter')?.addEventListener('change', (e) => {
-            this._activeTagFilter = e.target.value || null;
+            this._activeTagFilter = this._selectedValues(e.target);
+            this._sessionPage = 1;
             this._renderFilteredSessions();
         });
         // Settings Sidebar 2-Column Navigation
@@ -403,63 +417,6 @@ class App {
         // Quick create Tag button
         document.getElementById('btn-create-tag')?.addEventListener('click', async () => {
             await this._handleCreateTag();
-        });
-
-        // Select all sessions checkbox
-        document.getElementById('chk-select-all-sessions')?.addEventListener('change', (e) => {
-            const checked = e.target.checked;
-            document.querySelectorAll('.session-item-chk').forEach(chk => {
-                chk.checked = checked;
-                const id = chk.dataset.id;
-                if (checked) this._selectedSessionIds.add(id);
-                else this._selectedSessionIds.delete(id);
-            });
-            this._updateBatchSelectionUI();
-        });
-
-        // Batch delete sessions
-        document.getElementById('btn-batch-delete-sessions')?.addEventListener('click', async () => {
-            await this._deleteSelectedSessions();
-        });
-
-        // Batch export markdown
-        document.getElementById('btn-batch-export-md')?.addEventListener('click', async () => {
-            await this._batchExportMarkdown();
-        });
-
-        // Batch AI Digest
-        document.getElementById('btn-batch-ai-digest')?.addEventListener('click', async () => {
-            await this._batchAiDigest();
-        });
-
-        // AI Digest Modal events
-        document.getElementById('btn-close-ai-digest')?.addEventListener('click', () => {
-            const modal = document.getElementById('modal-ai-digest');
-            if (modal) modal.style.display = 'none';
-        });
-        document.getElementById('btn-close-ai-digest-bottom')?.addEventListener('click', () => {
-            const modal = document.getElementById('modal-ai-digest');
-            if (modal) modal.style.display = 'none';
-        });
-        document.getElementById('btn-copy-ai-digest')?.addEventListener('click', async () => {
-            if (this._currentAiDigestText) {
-                await navigator.clipboard.writeText(this._currentAiDigestText);
-                this._showToast('Đã copy nội dung tổng hợp ✓', 'success');
-            }
-        });
-        document.getElementById('btn-export-ai-digest')?.addEventListener('click', () => {
-            if (this._currentAiDigestText) {
-                const blob = new Blob([this._currentAiDigestText], { type: 'text/markdown;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `meeting-chain-digest-${new Date().toISOString().slice(0, 10)}.md`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                this._showToast('Đã lưu file Markdown ✓', 'success');
-            }
         });
 
         // Resume session from viewer
@@ -3817,18 +3774,25 @@ class App {
 
     _updateBatchSelectionUI() {
         const count = this._selectedSessionIds.size;
-        const countEl = document.getElementById('sessions-selected-count');
-        const batchBtn = document.getElementById('btn-batch-delete-sessions');
-        const batchExportBtn = document.getElementById('btn-batch-export-md');
-        const batchAiBtn = document.getElementById('btn-batch-ai-digest');
-        const selectAllChk = document.getElementById('chk-select-all-sessions');
-        const totalItems = document.querySelectorAll('.session-item-chk').length;
+        const listEl = document.getElementById('sessions-list');
+        if (!listEl) return;
+        listEl.classList.toggle('has-selection', count > 0);
+        const countEl = listEl.querySelector('[data-selected-count]');
+        const batchBtn = listEl.querySelector('[data-batch-delete]');
+        const selectAllChk = listEl.querySelector('#chk-select-all-sessions');
+        const filteredIds = new Set((this._filteredSessions || []).map(s => s.id));
+        const selectedInFiltered = [...this._selectedSessionIds].filter(id => filteredIds.has(id)).length;
 
-        if (countEl) countEl.textContent = `${count} đã chọn`;
+        if (countEl) countEl.textContent = `${count} log đã chọn`;
         if (batchBtn) batchBtn.disabled = count === 0;
-        if (batchExportBtn) batchExportBtn.disabled = count === 0;
-        if (batchAiBtn) batchAiBtn.disabled = count === 0;
-        if (selectAllChk) selectAllChk.checked = totalItems > 0 && count === totalItems;
+        if (selectAllChk) {
+            selectAllChk.checked = filteredIds.size > 0 && selectedInFiltered === filteredIds.size;
+            selectAllChk.indeterminate = selectedInFiltered > 0 && selectedInFiltered < filteredIds.size;
+        }
+    }
+
+    _selectedValues(select) {
+        return Array.from(select?.selectedOptions || []).map(option => option.value).filter(Boolean);
     }
 
     async _deleteSelectedSessions() {
@@ -3841,12 +3805,17 @@ class App {
             return;
         }
 
-        if (!confirm(`Xóa vĩnh viễn ${count} cuộc họp đã chọn?`)) return;
+        const agreed = await this._promptConfirmDelete({
+            title: 'Xác nhận xoá log',
+            message: `Bạn có chắc chắn muốn xoá vĩnh viễn ${count} log đã chọn? Hành động này không thể hoàn tác.`,
+            confirmText: 'Xoá'
+        });
+        if (!agreed) return;
 
         try {
             await invoke('delete_sessions', { ids });
             this._selectedSessionIds.clear();
-            this._showToast(`Đã xóa ${count} cuộc họp`, 'success');
+            this._showToast(`Đã xóa ${count} log`, 'success');
             await this._showSessions();
         } catch (err) {
             this._showToast(`Xóa thất bại: ${err}`, 'error');
@@ -4140,49 +4109,38 @@ class App {
         const select = document.getElementById('select-session-customer-filter');
         if (!select) return;
         const customers = this._projectRegistry?.customers || [];
-        let html = '<option value="">🏢 Tất cả KH</option>';
+        let html = '<option value="" disabled>🏢 Khách hàng</option>';
         for (const c of customers) {
             const statusIcon = c.status === 'active' ? '🟢' : '⚪';
-            const selected = this._activeCustomerFilter === c.id ? 'selected' : '';
+            const selected = this._activeCustomerFilter.includes(c.id) ? 'selected' : '';
             html += `<option value="${this._escAttr(c.id)}" ${selected}>${statusIcon} ${this._esc(c.name)}</option>`;
         }
         select.innerHTML = html;
-        select.value = this._activeCustomerFilter || '';
     }
 
     _renderProjectFilterBar() {
         const select = document.getElementById('select-session-project-filter');
         if (!select) return;
-        let projects = this._projectRegistry?.projects || [];
-        if (this._activeCustomerFilter) {
-            projects = projects.filter(p => p.customer_id === this._activeCustomerFilter);
-        }
-        let html = '<option value="">📁 Tất cả dự án</option>';
+        const projects = this._projectRegistry?.projects || [];
+        let html = '<option value="" disabled>📁 Dự án</option>';
         for (const p of projects) {
             const statusIcon = p.status === 'active' ? '🟢' : '⚪';
-            const selected = this._activeProjectFilter === p.id ? 'selected' : '';
+            const selected = this._activeProjectFilter.includes(p.id) ? 'selected' : '';
             html += `<option value="${this._escAttr(p.id)}" ${selected}>${statusIcon} ${this._esc(p.name)}</option>`;
         }
         select.innerHTML = html;
-        if (projects.some(p => p.id === this._activeProjectFilter)) {
-            select.value = this._activeProjectFilter;
-        } else {
-            this._activeProjectFilter = null;
-            select.value = '';
-        }
     }
 
     _renderCategoryFilterSelect() {
         const select = document.getElementById('select-session-category-filter');
         if (!select) return;
         const categories = this._projectRegistry?.categories || [];
-        let html = '<option value="">📅 Tất cả phân loại</option>';
+        let html = '<option value="" disabled>📅 Category</option>';
         for (const c of categories) {
-            const selected = this._activeCategoryFilter === c.name ? 'selected' : '';
+            const selected = this._activeCategoryFilter.includes(c.name) ? 'selected' : '';
             html += `<option value="${this._escAttr(c.name)}" ${selected}>📅 ${this._esc(c.name)}</option>`;
         }
         select.innerHTML = html;
-        select.value = this._activeCategoryFilter || '';
     }
 
     _renderTagFilterSelect() {
@@ -4191,14 +4149,13 @@ class App {
         const sessionTags = (this._cachedSessions || []).flatMap(s => s.tags || []);
         const regTags = this._projectRegistry?.tags || [];
         const allTags = Array.from(new Set([...regTags, ...sessionTags])).filter(Boolean);
-        let html = '<option value="">#️⃣ Tất cả thẻ</option>';
+        let html = '<option value="" disabled>#️⃣ Tag</option>';
         for (const tag of allTags) {
             const count = (this._cachedSessions || []).filter(s => (s.tags || []).includes(tag)).length;
-            const selected = this._activeTagFilter === tag ? 'selected' : '';
+            const selected = this._activeTagFilter.includes(tag) ? 'selected' : '';
             html += `<option value="${this._escAttr(tag)}" ${selected}>#${this._esc(tag)} (${count})</option>`;
         }
         select.innerHTML = html;
-        select.value = this._activeTagFilter || '';
     }
 
     async _showSessions(query) {
@@ -4220,9 +4177,7 @@ class App {
 
         try {
             await this._loadProjectRegistry();
-            const cmd = query && query.trim() ? 'search_sessions' : 'list_sessions';
-            const args = query && query.trim() ? { query: query.trim() } : {};
-            const sessions = await invoke(cmd, args);
+            const sessions = await invoke('list_sessions');
             this._cachedSessions = sessions || [];
 
             this._renderCustomerFilterBar();
@@ -4246,6 +4201,358 @@ class App {
     }
 
     _renderFilteredSessions() {
+        const listEl = document.getElementById('sessions-list');
+        if (!listEl) return;
+
+        const nameQuery = this._sessionNameQuery.trim().toLocaleLowerCase();
+        let filtered = (this._cachedSessions || []).filter(session => {
+            const titleMatches = !nameQuery || (session.title || '').toLocaleLowerCase().includes(nameQuery);
+            const customerMatches = !this._activeCustomerFilter.length || this._activeCustomerFilter.includes(session.customer_id);
+            const projectMatches = !this._activeProjectFilter.length || this._activeProjectFilter.includes(session.project_id);
+            const categoryMatches = !this._activeCategoryFilter.length || this._activeCategoryFilter.includes(session.category);
+            const tagMatches = !this._activeTagFilter.length || (session.tags || []).some(tag => this._activeTagFilter.includes(tag));
+            return titleMatches && customerMatches && projectMatches && categoryMatches && tagMatches;
+        });
+        this._filteredSessions = filtered;
+
+        const valueForSort = (session, field) => {
+            if (field === 'created_at') return session.created_at || '';
+            if (field === 'tags') return (session.tags || []).join(', ');
+            return session[field] || '';
+        };
+        filtered = [...filtered].sort((a, b) => {
+            const av = String(valueForSort(a, this._sessionSort.field)).toLocaleLowerCase();
+            const bv = String(valueForSort(b, this._sessionSort.field)).toLocaleLowerCase();
+            return av.localeCompare(bv, undefined, { numeric: true }) * (this._sessionSort.dir === 'asc' ? 1 : -1);
+        });
+
+        const totalPages = Math.max(1, Math.ceil(filtered.length / this._sessionPageSize));
+        this._sessionPage = Math.min(Math.max(1, this._sessionPage), totalPages);
+        const pageStart = (this._sessionPage - 1) * this._sessionPageSize;
+        const pageItems = filtered.slice(pageStart, pageStart + this._sessionPageSize);
+        const selectedCount = this._selectedSessionIds.size;
+        const selectedInFiltered = filtered.filter(session => this._selectedSessionIds.has(session.id)).length;
+        const allFilteredSelected = filtered.length > 0 && selectedInFiltered === filtered.length;
+        const sortIcon = (field) => this._sessionSort.field === field
+            ? (this._sessionSort.dir === 'asc' ? '↑' : '↓')
+            : '↕';
+
+        const rows = pageItems.length
+            ? pageItems.map((session, index) => this._renderSessionTableRow(session, pageStart + index + 1)).join('')
+            : '<tr><td class="logs-table-empty" colspan="8">Không tìm thấy log nào phù hợp bộ lọc.</td></tr>';
+
+        const existingTable = listEl.querySelector('.logs-table');
+        if (existingTable) {
+            // Update table body rows without destroying filter inputs (preserves input focus!)
+            const tbody = existingTable.querySelector('tbody');
+            if (tbody) tbody.innerHTML = rows;
+
+            // Update select-all checkbox state
+            const selectAllCheckbox = listEl.querySelector('#chk-select-all-sessions');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = allFilteredSelected;
+                selectAllCheckbox.indeterminate = selectedInFiltered > 0 && !allFilteredSelected;
+            }
+
+            // Update batch delete button next to log name filter
+            const batchDeleteBtn = listEl.querySelector('[data-batch-delete]');
+            if (batchDeleteBtn) {
+                batchDeleteBtn.classList.toggle('is-visible', selectedCount > 0);
+                batchDeleteBtn.disabled = selectedCount === 0;
+                batchDeleteBtn.textContent = `🗑 Xoá (${selectedCount})`;
+            }
+
+            // Update sort indicators in table header
+            existingTable.querySelectorAll('.logs-column-header th.sortable').forEach(th => {
+                const field = th.dataset.sort;
+                const span = th.querySelector('span');
+                if (span) span.textContent = sortIcon(field);
+            });
+
+            // Update pagination text and button disabled states
+            const totalCountEl = listEl.querySelector('.session-pagination-count');
+            if (totalCountEl) totalCountEl.textContent = `${filtered.length} log`;
+            const pageTextEl = listEl.querySelector('.session-pagination-page-text');
+            if (pageTextEl) pageTextEl.textContent = `${this._sessionPage} / ${totalPages}`;
+            const prevBtn = listEl.querySelector('[data-page-prev]');
+            if (prevBtn) prevBtn.disabled = this._sessionPage <= 1;
+            const nextBtn = listEl.querySelector('[data-page-next]');
+            if (nextBtn) nextBtn.disabled = this._sessionPage >= totalPages;
+
+            // Rebind row action events on the updated rows
+            this._bindSessionRowEvents(existingTable);
+            return;
+        }
+
+        // Full initial render: build registry & session metadata option lists
+        const customerMap = new Map();
+        (this._projectRegistry?.customers || []).forEach(c => {
+            if (c.id) customerMap.set(c.id, { id: c.id, name: c.name || c.id, status: c.status });
+        });
+        (this._cachedSessions || []).forEach(s => {
+            if (s.customer_id && !customerMap.has(s.customer_id)) {
+                customerMap.set(s.customer_id, { id: s.customer_id, name: s.customer_name || s.customer_id });
+            }
+        });
+        const customers = Array.from(customerMap.values());
+
+        const projectMap = new Map();
+        (this._projectRegistry?.projects || []).forEach(p => {
+            if (p.id) projectMap.set(p.id, { id: p.id, name: p.name || p.id, customer_id: p.customer_id });
+        });
+        (this._cachedSessions || []).forEach(s => {
+            if (s.project_id && !projectMap.has(s.project_id)) {
+                projectMap.set(s.project_id, { id: s.project_id, name: s.project_name || s.project_id, customer_id: s.customer_id });
+            }
+        });
+        const projects = Array.from(projectMap.values());
+
+        const categorySet = new Set();
+        (this._projectRegistry?.categories || []).forEach(c => { if (c.name) categorySet.add(c.name); });
+        (this._cachedSessions || []).forEach(s => { if (s.category) categorySet.add(s.category); });
+        const categories = Array.from(categorySet).sort();
+
+        const tagSet = new Set();
+        (this._projectRegistry?.tags || []).forEach(t => { if (t) tagSet.add(t); });
+        (this._cachedSessions || []).forEach(s => { (s.tags || []).forEach(t => { if (t) tagSet.add(t); }); });
+        const tags = Array.from(tagSet).sort();
+
+        const renderSelectOptions = (items, selectedVal, allLabel, formatFn) => {
+            let html = `<option value="">Tất cả ${allLabel}</option>`;
+            for (const item of items) {
+                const val = typeof item === 'string' ? item : item.id;
+                const label = formatFn ? formatFn(item) : (typeof item === 'string' ? item : item.name);
+                const isSelected = selectedVal === val ? 'selected' : '';
+                html += `<option value="${this._escAttr(val)}" ${isSelected}>${this._esc(label)}</option>`;
+            }
+            return html;
+        };
+
+        const activeCustomer = this._activeCustomerFilter[0] || '';
+        const activeProject = this._activeProjectFilter[0] || '';
+        const activeCategory = this._activeCategoryFilter[0] || '';
+        const activeTag = this._activeTagFilter[0] || '';
+
+        const header = `<tr class="logs-column-header">
+                <th class="logs-check-column"><input id="chk-select-all-sessions" type="checkbox" title="Chọn tất cả log đang lọc"></th>
+                <th class="sortable" data-sort="created_at"># <span>${sortIcon('created_at')}</span></th>
+                <th class="sortable" data-sort="title">Tên log <span>${sortIcon('title')}</span></th>
+                <th class="sortable" data-sort="customer_name">Khách hàng <span>${sortIcon('customer_name')}</span></th>
+                <th class="sortable" data-sort="project_name">Dự án <span>${sortIcon('project_name')}</span></th>
+                <th class="sortable" data-sort="category">Category <span>${sortIcon('category')}</span></th>
+                <th class="sortable" data-sort="tags">Tag <span>${sortIcon('tags')}</span></th>
+                <th class="logs-col-actions-header">Actions</th>
+            </tr>
+            <tr class="logs-filter-row">
+                <td colspan="2" class="logs-filter-actions-cell">
+                    <button type="button" class="btn-danger-small logs-delete-selected ${selectedCount ? 'is-visible' : ''}" data-batch-delete ${selectedCount ? '' : 'disabled'} title="Xóa các log đã chọn">🗑 Xoá (${selectedCount})</button>
+                </td>
+                <td><input type="search" class="logs-filter-input" data-filter-name value="${this._escAttr(this._sessionNameQuery)}" placeholder="Lọc tên log"></td>
+                <td><select class="logs-filter-select" data-filter-select="customer">${renderSelectOptions(customers, activeCustomer, 'khách hàng', c => (c.status === 'active' ? '🟢 ' : (c.status === 'archived' ? '⚪ ' : '')) + c.name)}</select></td>
+                <td><select class="logs-filter-select" data-filter-select="project">${renderSelectOptions(projects, activeProject, 'dự án')}</select></td>
+                <td><select class="logs-filter-select" data-filter-select="category">${renderSelectOptions(categories, activeCategory, 'category')}</select></td>
+                <td><select class="logs-filter-select" data-filter-select="tag">${renderSelectOptions(tags, activeTag, 'tag', t => {
+                    const count = (this._cachedSessions || []).filter(s => (s.tags || []).includes(t)).length;
+                    return `#${t} (${count})`;
+                })}</select></td>
+                <td><button type="button" class="logs-reset-filters" data-clear-filters title="Xoá toàn bộ điều kiện lọc">↺ Reset</button></td>
+            </tr>`;
+
+        listEl.innerHTML = `<div class="logs-table-container"><table class="logs-table"><colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-customer"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup><thead>${header}</thead><tbody>${rows}</tbody></table></div>
+            <div class="session-pagination">
+                <span class="session-pagination-count">${filtered.length} log</span>
+                <label>Hiển thị <select data-page-size><option value="10" ${this._sessionPageSize === 10 ? 'selected' : ''}>10</option><option value="20" ${this._sessionPageSize === 20 ? 'selected' : ''}>20</option><option value="50" ${this._sessionPageSize === 50 ? 'selected' : ''}>50</option></select> / trang</label>
+                <div class="session-pagination-actions"><button type="button" data-page-prev ${this._sessionPage === 1 ? 'disabled' : ''}>‹</button><span class="session-pagination-page-text">${this._sessionPage} / ${totalPages}</span><button type="button" data-page-next ${this._sessionPage === totalPages ? 'disabled' : ''}>›</button></div>
+            </div>`;
+
+        this._bindLogsTableEvents(listEl, filtered, totalPages, { customers, projects, categories, tags, renderSelectOptions });
+        const selectAllCheckbox = listEl.querySelector('#chk-select-all-sessions');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.checked = allFilteredSelected;
+            selectAllCheckbox.indeterminate = selectedInFiltered > 0 && !allFilteredSelected;
+        }
+    }
+
+    _renderSessionTableRow(session, number) {
+        const tags = (session.tags || []).map(tag => `<span class="session-tag-badge">#${this._esc(tag)}</span>`).join('') || '<span class="logs-empty-value">—</span>';
+        const customer = session.customer_name ? `<span class="session-customer-badge">${this._esc(session.customer_name)}</span>` : '<span class="logs-empty-value">—</span>';
+        const project = session.project_name ? `<span class="session-project-badge">${this._esc(session.project_name)}</span>` : '<span class="logs-empty-value">—</span>';
+        const category = session.category ? `<span class="session-category-badge">${this._esc(session.category)}</span>` : '<span class="logs-empty-value">—</span>';
+        const resumeButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-resume-session="${this._escAttr(session.id)}" title="Nối tiếp ghi vào log này">▶</button>`;
+        const editButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-edit-session="${this._escAttr(session.id)}" title="Sửa thông tin">${PENCIL_YELLOW_ICON}</button>`;
+        return `<tr data-session-id="${this._escAttr(session.id)}" data-legacy="${session.has_legacy_only ? '1' : '0'}">
+            <td class="logs-check-column"><input type="checkbox" data-session-check="${this._escAttr(session.id)}" ${this._selectedSessionIds.has(session.id) ? 'checked' : ''}></td>
+            <td class="logs-index">${number}</td>
+            <td class="logs-title-cell"><button type="button" class="logs-title-link" data-open-session="${this._escAttr(session.id)}">${this._esc(session.title || 'Cuộc họp chưa đặt tên')}</button></td>
+            <td>${customer}</td><td>${project}</td><td>${category}</td><td><div class="logs-tags">${tags}</div></td>
+            <td><div class="logs-actions">${resumeButton}${editButton}<button type="button" class="session-btn-action" data-copy-session="${this._escAttr(session.id)}" title="Copy nội dung">⧉</button><button type="button" class="session-delete-btn" data-delete-session="${this._escAttr(session.id)}" title="Xoá log">×</button></div></td>
+        </tr>`;
+    }
+
+    _bindLogsTableEvents(listEl, filtered, totalPages, optionsContext) {
+        const toggleAll = (checked) => {
+            (this._filteredSessions || []).forEach(session => checked ? this._selectedSessionIds.add(session.id) : this._selectedSessionIds.delete(session.id));
+            this._renderFilteredSessions();
+        };
+
+        const updateProjectSelect = (custId) => {
+            if (!optionsContext) return;
+            const projectSelect = listEl.querySelector('[data-filter-select="project"]');
+            if (!projectSelect) return;
+            const availableProjects = custId
+                ? optionsContext.projects.filter(p => !p.customer_id || p.customer_id === custId)
+                : optionsContext.projects;
+            projectSelect.innerHTML = optionsContext.renderSelectOptions(availableProjects, this._activeProjectFilter[0] || '', 'dự án');
+        };
+
+        const applyFilter = (kind, select) => {
+            const val = select.value;
+            const normalizedValues = val ? [val] : [];
+            if (kind === 'customer') {
+                this._activeCustomerFilter = normalizedValues;
+                const custId = normalizedValues[0];
+                if (custId && this._activeProjectFilter.length && optionsContext) {
+                    const curr = optionsContext.projects.find(p => p.id === this._activeProjectFilter[0]);
+                    if (curr && curr.customer_id && curr.customer_id !== custId) {
+                        this._activeProjectFilter = [];
+                    }
+                }
+                updateProjectSelect(custId);
+            }
+            if (kind === 'project') this._activeProjectFilter = normalizedValues;
+            if (kind === 'category') this._activeCategoryFilter = normalizedValues;
+            if (kind === 'tag') this._activeTagFilter = normalizedValues;
+            this._sessionPage = 1;
+            this._renderFilteredSessions();
+        };
+
+        listEl.querySelectorAll('[data-select-all-sessions], #chk-select-all-sessions').forEach(check => {
+            check.addEventListener('change', () => toggleAll(check.checked));
+        });
+
+        const nameFilter = listEl.querySelector('[data-filter-name]');
+        if (nameFilter) {
+            let inputTimer;
+            nameFilter.addEventListener('input', () => {
+                clearTimeout(inputTimer);
+                inputTimer = setTimeout(() => {
+                    this._sessionNameQuery = nameFilter.value;
+                    this._sessionPage = 1;
+                    this._renderFilteredSessions();
+                }, 150);
+            });
+            nameFilter.addEventListener('search', () => {
+                clearTimeout(inputTimer);
+                this._sessionNameQuery = nameFilter.value;
+                this._sessionPage = 1;
+                this._renderFilteredSessions();
+            });
+            nameFilter.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    clearTimeout(inputTimer);
+                    this._sessionNameQuery = nameFilter.value;
+                    this._sessionPage = 1;
+                    this._renderFilteredSessions();
+                }
+            });
+        }
+
+        listEl.querySelectorAll('[data-filter-select]').forEach(select => {
+            select.addEventListener('change', () => applyFilter(select.dataset.filterSelect, select));
+        });
+
+        listEl.querySelector('[data-clear-filters]')?.addEventListener('click', () => {
+            this._sessionNameQuery = '';
+            this._activeCustomerFilter = [];
+            this._activeProjectFilter = [];
+            this._activeCategoryFilter = [];
+            this._activeTagFilter = [];
+            this._sessionPage = 1;
+            const nameInput = listEl.querySelector('[data-filter-name]');
+            if (nameInput) nameInput.value = '';
+            listEl.querySelectorAll('[data-filter-select]').forEach(s => { s.value = ''; });
+            updateProjectSelect(null);
+            this._renderFilteredSessions();
+        });
+
+        listEl.querySelector('[data-batch-delete]')?.addEventListener('click', () => this._deleteSelectedSessions());
+
+        listEl.querySelectorAll('[data-sort]').forEach(header => header.addEventListener('click', () => {
+            const field = header.dataset.sort;
+            this._sessionSort = this._sessionSort.field === field
+                ? { field, dir: this._sessionSort.dir === 'asc' ? 'desc' : 'asc' }
+                : { field, dir: 'asc' };
+            this._sessionPage = 1;
+            this._renderFilteredSessions();
+        }));
+
+        listEl.querySelector('[data-page-size]')?.addEventListener('change', (event) => {
+            this._sessionPageSize = Number(event.target.value);
+            this._sessionPage = 1;
+            try { localStorage.setItem('meet_minder_logs_page_size', String(this._sessionPageSize)); } catch (_) {}
+            this._renderFilteredSessions();
+        });
+
+        listEl.querySelector('[data-page-prev]')?.addEventListener('click', () => { this._sessionPage--; this._renderFilteredSessions(); });
+        listEl.querySelector('[data-page-next]')?.addEventListener('click', () => { this._sessionPage++; this._renderFilteredSessions(); });
+
+        this._bindSessionRowEvents(listEl);
+    }
+
+    _bindSessionRowEvents(tableContainer) {
+        tableContainer.querySelectorAll('[data-session-check]').forEach(check => {
+            check.addEventListener('change', () => {
+                check.checked ? this._selectedSessionIds.add(check.dataset.sessionCheck) : this._selectedSessionIds.delete(check.dataset.sessionCheck);
+                this._renderFilteredSessions();
+            });
+        });
+        tableContainer.querySelectorAll('[data-open-session]').forEach(button => button.addEventListener('click', () => this._openSession(button.dataset.openSession, button.closest('tr').dataset.legacy === '1')));
+        tableContainer.querySelectorAll('[data-resume-session]').forEach(button => button.addEventListener('click', () => this._resumeSession(button.dataset.resumeSession, false)));
+        tableContainer.querySelectorAll('[data-edit-session]').forEach(button => button.addEventListener('click', () => {
+            const session = this._cachedSessions.find(item => item.id === button.dataset.editSession);
+            if (session) this._editSessionMetadata(session);
+        }));
+        tableContainer.querySelectorAll('[data-copy-session]').forEach(button => button.addEventListener('click', () => this._copySession(button.dataset.copySession, button.closest('tr').dataset.legacy === '1')));
+        tableContainer.querySelectorAll('[data-delete-session]').forEach(button => button.addEventListener('click', () => this._deleteSessionFromTable(button.dataset.deleteSession)));
+    }
+
+    async _copySession(id, isLegacy) {
+        try {
+            const text = isLegacy ? await invoke('read_legacy_session', { id }) : (await invoke('read_session', { id })).md;
+            if (text) {
+                await navigator.clipboard.writeText(text);
+                this._showToast('Đã copy nội dung log ✓', 'success');
+            }
+        } catch (err) {
+            this._showToast(`Lỗi copy: ${err}`, 'error');
+        }
+    }
+
+    async _deleteSessionFromTable(id) {
+        if (id === sessionStore.id) {
+            this._showToast('Không thể xoá cuộc họp đang chạy — hãy Dừng trước', 'error');
+            return;
+        }
+        const sess = (this._cachedSessions || []).find(s => s.id === id);
+        const title = sess?.title || id;
+        const agreed = await this._promptConfirmDelete({
+            title: 'Xác nhận xoá log',
+            message: `Bạn có chắc chắn muốn xoá vĩnh viễn log "${title}"? Hành động này không thể hoàn tác.`,
+            confirmText: 'Xoá'
+        });
+        if (!agreed) return;
+
+        try {
+            await invoke('delete_session', { id });
+            this._selectedSessionIds.delete(id);
+            this._showToast('Đã xóa log', 'success');
+            await this._showSessions();
+        } catch (err) {
+            this._showToast(`Xóa thất bại: ${err}`, 'error');
+        }
+    }
+
+    _renderLegacySessionCards() {
         const listEl = document.getElementById('sessions-list');
         if (!listEl) return;
 
@@ -4678,12 +4985,23 @@ class App {
             if (msgEl) msgEl.textContent = message;
             if (agreeBtn) agreeBtn.textContent = confirmText;
 
+            const onKeyDown = (e) => {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onCancel();
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onAgree();
+                }
+            };
+
             const cleanup = () => {
                 modal.style.display = 'none';
                 agreeBtn?.removeEventListener('click', onAgree);
                 cancelBtn?.removeEventListener('click', onCancel);
                 closeBtn?.removeEventListener('click', onCancel);
                 modal.removeEventListener('click', onBackdrop);
+                window.removeEventListener('keydown', onKeyDown);
             };
 
             const onAgree = () => {
@@ -4707,6 +5025,7 @@ class App {
             cancelBtn?.addEventListener('click', onCancel);
             closeBtn?.addEventListener('click', onCancel);
             modal.addEventListener('click', onBackdrop);
+            window.addEventListener('keydown', onKeyDown);
 
             modal.style.display = 'flex';
         });

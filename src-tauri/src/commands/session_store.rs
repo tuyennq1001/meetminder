@@ -1019,51 +1019,6 @@ pub fn update_session_notes(
 }
 
 #[tauri::command]
-pub fn export_batch_sessions_md(app: AppHandle, ids: Vec<String>) -> Result<String, String> {
-    if ids.is_empty() {
-        return Err("No sessions selected".into());
-    }
-    let dir = sessions_dir(&app)?;
-    let mut sections: Vec<(String, String)> = Vec::new(); // (created_at, md_content)
-
-    for id in &ids {
-        if id.contains('/') || id.contains('\\') || id.contains("..") {
-            continue;
-        }
-        let (md_path, json_path) = session_paths(&dir, id);
-        if md_path.exists() {
-            let md = fs::read_to_string(&md_path).unwrap_or_default();
-            let created_at = if let Ok(json_str) = fs::read_to_string(&json_path) {
-                serde_json::from_str::<SessionData>(&json_str)
-                    .map(|d| d.created_at)
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
-            sections.push((created_at, md));
-        } else {
-            // Check legacy md file
-            let legacy_path = dir.join(format!("{}.md", id));
-            if legacy_path.exists() {
-                let md = fs::read_to_string(&legacy_path).unwrap_or_default();
-                sections.push((id.clone(), md));
-            }
-        }
-    }
-
-    // Sort chronologically (oldest first for a continuous story)
-    sections.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let combined = sections
-        .into_iter()
-        .map(|(_, md)| md)
-        .collect::<Vec<String>>()
-        .join("\n\n---\n\n");
-
-    Ok(combined)
-}
-
-#[tauri::command]
 pub fn export_session_srt(app: AppHandle, id: String) -> Result<String, String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;

@@ -229,46 +229,6 @@
     <div id="library-panel" class="activity-panel" data-activity="library">
       <!-- Session list -->
       <div id="sessions-list-panel" class="sessions-body">
-        <div class="sessions-search-row">
-          <input id="input-session-search" type="text" placeholder="🔍 Tìm kiếm log (tiêu đề, KH, dự án, phân loại, tag, nội dung)..." class="sessions-search-input" />
-        </div>
-
-        <!-- Filter Toolbar: Customer, Project, Category, Tag Pulldowns -->
-        <div class="sessions-filter-toolbar">
-          <select id="select-session-customer-filter" class="sessions-project-select">
-            <option value="">🏢 Tất cả KH</option>
-          </select>
-          <select id="select-session-project-filter" class="sessions-project-select">
-            <option value="">📁 Tất cả dự án</option>
-          </select>
-          <select id="select-session-category-filter" class="sessions-project-select">
-            <option value="">📅 Tất cả phân loại</option>
-          </select>
-          <select id="select-session-tag-filter" class="sessions-project-select">
-            <option value="">#️⃣ Tất cả thẻ</option>
-          </select>
-        </div>
-
-        <!-- Batch Actions Bar -->
-        <div class="sessions-batch-bar" id="sessions-batch-bar">
-          <label class="batch-select-all-label">
-            <input type="checkbox" id="chk-select-all-sessions" />
-            <span>Chọn tất cả</span>
-          </label>
-          <span id="sessions-selected-count" class="sessions-selected-count">0 đã chọn</span>
-          <div class="batch-actions-group">
-            <button type="button" id="btn-batch-export-md" class="btn-secondary-small" disabled title="Gộp các cuộc họp đã chọn thành 1 file Markdown">
-              📄 Gộp .md
-            </button>
-            <button type="button" id="btn-batch-ai-digest" class="btn-primary-small" disabled title="Tóm tắt & Móc nối chuỗi cuộc họp đã chọn bằng AI">
-              ✨ Tóm tắt chuỗi
-            </button>
-            <button type="button" id="btn-batch-delete-sessions" class="btn-danger-small" disabled title="Xoá các cuộc họp đã chọn">
-              🗑 Xoá
-            </button>
-          </div>
-        </div>
-
         <div id="sessions-list"></div>
       </div>
 
@@ -1097,28 +1057,6 @@
       <div class="modal-footer">
         <button type="button" id="btn-cancel-edit-tags" class="secondary-btn">Hủy</button>
         <button type="button" id="btn-confirm-edit-tags" class="primary-action-btn">Lưu thay đổi</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════════ AI CHAIN DIGEST MODAL ═══════════════════ -->
-  <div id="modal-ai-digest" class="modal-overlay" style="display:none">
-    <div class="modal-card modal-card-large" style="max-width: 680px; max-height: 85vh; display: flex; flex-direction: column;">
-      <div class="modal-header">
-        <h3 id="ai-digest-title">✨ Tổng hợp chuỗi cuộc họp (AI Digest)</h3>
-        <button type="button" id="btn-close-ai-digest" class="icon-btn close-btn">×</button>
-      </div>
-      <div class="modal-body" style="flex: 1; overflow-y: auto; min-height: 200px; padding: 16px;">
-        <div id="ai-digest-loading" class="ai-digest-loading" style="display:none; text-align: center; padding: 40px 20px;">
-          <div class="spinner-ring" style="margin: 0 auto 16px auto;"></div>
-          <p id="ai-digest-loading-text" style="color: var(--md-sys-color-on-surface-variant); font-size: 13px;">Đang phân tích & móc nối thông tin các cuộc họp...</p>
-        </div>
-        <div id="ai-digest-content" class="ai-digest-content session-content-scroll" style="display:none; white-space: pre-wrap; font-size: 13px; line-height: 1.6; user-select: text;"></div>
-      </div>
-      <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
-        <button type="button" id="btn-copy-ai-digest" class="secondary-btn">📋 Copy</button>
-        <button type="button" id="btn-export-ai-digest" class="secondary-btn">💾 Lưu file .md</button>
-        <button type="button" id="btn-close-ai-digest-bottom" class="primary-action-btn">Đóng</button>
       </div>
     </div>
   </div>

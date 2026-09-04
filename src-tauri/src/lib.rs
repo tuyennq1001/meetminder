@@ -138,7 +138,6 @@ pub fn run() {
             commands::session_store::delete_tag,
             commands::session_store::export_session_srt,
             commands::session_store::export_session_txt,
-            commands::session_store::export_batch_sessions_md,
             commands::session_store::search_sessions,
             commands::session_store::get_session_record_path,
             commands::session_store::read_session_audio,
