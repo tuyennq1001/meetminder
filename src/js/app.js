@@ -493,11 +493,6 @@ class App {
             }
         });
 
-        // Fetch previous notes button in notes drawer
-        document.getElementById('btn-note-fetch-prev')?.addEventListener('click', async () => {
-            await this._fetchPreviousNotes();
-        });
-
         // TTS play session
         document.getElementById('btn-session-tts-play')?.addEventListener('click', () => {
             const cur = this._currentViewedSession;
@@ -3193,9 +3188,13 @@ class App {
         }
         this._updateStatus('idle');
 
-        // Clear live notes and close note drawer
-        if (this._liveNotesEditor) this._liveNotesEditor.setContent('');
-        this._toggleNotesDrawer(false);
+        // Reset live notes to template and clear metadata selectors (keep drawer open by default)
+        if (this._liveNotesEditor) {
+            const template = this._getNoteTemplate();
+            this._liveNotesEditor.setContent(template);
+            sessionStore.notes = template;
+        }
+        this._resetNoteMetadataSelectors();
 
         const settings = settingsManager.get();
         sessionStore.init({
@@ -3267,8 +3266,12 @@ class App {
             this.transcriptUI.clear();
             this.transcriptUI.showPlaceholder();
         }
-        if (this._liveNotesEditor) this._liveNotesEditor.setContent('');
-        this._toggleNotesDrawer(false);
+        if (this._liveNotesEditor) {
+            const template = this._getNoteTemplate();
+            this._liveNotesEditor.setContent(template);
+            sessionStore.notes = template;
+        }
+        this._resetNoteMetadataSelectors();
 
         const settings = settingsManager.get();
         sessionStore.init({
@@ -4122,6 +4125,7 @@ class App {
             console.error('Failed to load project registry:', err);
             this._projectRegistry = { projects: [], categories: [], tags: [] };
         }
+        this._populateNoteMetadataSelectors?.();
         return this._projectRegistry;
     }
 
@@ -5941,48 +5945,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         return data.choices?.[0]?.message?.content || 'Không có kết quả trả về từ OpenAI.';
     }
 
-    async _fetchPreviousNotes() {
-        try {
-            const sessions = await invoke('list_sessions');
-            if (!sessions || sessions.length === 0) {
-                this._showToast('Chưa có cuộc họp trước đó nào để nạp ghi chú', 'info');
-                return;
-            }
-            const others = sessions.filter(s => s.id !== sessionStore.id && !s.has_legacy_only);
-            if (others.length === 0) {
-                this._showToast('Chưa có cuộc họp trước đó nào', 'info');
-                return;
-            }
-
-            let target = null;
-            if (sessionStore.tags && sessionStore.tags.length > 0) {
-                target = others.find(s => s.tags && s.tags.some(t => sessionStore.tags.includes(t)));
-            }
-            if (!target) {
-                target = others[0];
-            }
-
-            const res = await invoke('read_session', { id: target.id });
-            const prevNotes = res.json?.notes?.trim();
-            if (!prevNotes) {
-                this._showToast(`Cuộc họp "${target.title}" không có ghi chú`, 'info');
-                return;
-            }
-
-            const currentVal = this._liveNotesEditor ? this._liveNotesEditor.getContent().trim() : '';
-            const header = `\n\n--- 📌 Ghi chú từ [${target.title || target.id}] ---\n`;
-            const newVal = currentVal ? `${currentVal}${header}${prevNotes}` : `${header}${prevNotes}`;
-            if (this._liveNotesEditor) {
-                this._liveNotesEditor.setContent(newVal);
-                sessionStore.notes = newVal;
-                this._toggleNotesDrawer(true);
-                this._showToast(`Đã nạp ghi chú từ "${target.title}" ✓`, 'success');
-            }
-        } catch (err) {
-            this._showToast(`Lỗi nạp ghi chú: ${err}`, 'error');
-        }
-    }
-
     _getQuickLangName(code) {
         const map = {
             vi: 'Tiếng Việt',
@@ -7325,6 +7287,149 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         }
 
         this._initNotesResize();
+        this._initNoteMetadataSelectors();
+        this._toggleNotesDrawer(true, false);
+    }
+
+    async _initNoteMetadataSelectors() {
+        const selectCust = document.getElementById('select-note-customer');
+        const selectProj = document.getElementById('select-note-project');
+        const selectCat = document.getElementById('select-note-category');
+        const inputTags = document.getElementById('input-note-tags');
+
+        if (!this._projectRegistry) {
+            await this._loadProjectRegistry();
+        } else {
+            this._populateNoteMetadataSelectors();
+        }
+
+        selectCust?.addEventListener('change', () => {
+            const custId = selectCust.value || null;
+            sessionStore.customerId = custId;
+            sessionStore._mutations++;
+            this._updateNoteProjectsDropdown(custId);
+            const curProjId = selectProj?.value || null;
+            const regProjs = (this._projectRegistry?.projects || []).filter(p => p.status === 'active');
+            if (curProjId) {
+                const projObj = regProjs.find(p => p.id === curProjId);
+                if (custId && projObj && projObj.customer_id && projObj.customer_id !== custId) {
+                    selectProj.value = '';
+                    sessionStore.projectId = null;
+                }
+            }
+        });
+
+        selectProj?.addEventListener('change', () => {
+            const projId = selectProj.value || null;
+            sessionStore.projectId = projId;
+            sessionStore._mutations++;
+            if (projId && selectCust) {
+                const regProjs = (this._projectRegistry?.projects || []).filter(p => p.status === 'active');
+                const foundProj = regProjs.find(p => p.id === projId);
+                if (foundProj && foundProj.customer_id) {
+                    selectCust.value = foundProj.customer_id;
+                    sessionStore.customerId = foundProj.customer_id;
+                    this._updateNoteProjectsDropdown(foundProj.customer_id, projId);
+                }
+            }
+        });
+
+        selectCat?.addEventListener('change', () => {
+            sessionStore.category = selectCat.value || null;
+            sessionStore._mutations++;
+        });
+
+        inputTags?.addEventListener('input', () => {
+            const raw = inputTags.value || '';
+            sessionStore.tags = raw
+                .split(',')
+                .map(t => t.trim().replace(/^#/, '').toLowerCase())
+                .filter(Boolean);
+            sessionStore._mutations++;
+        });
+    }
+
+    _populateNoteMetadataSelectors() {
+        const selectCust = document.getElementById('select-note-customer');
+        const selectProj = document.getElementById('select-note-project');
+        const selectCat = document.getElementById('select-note-category');
+        const datalistTags = document.getElementById('datalist-note-tags');
+        const inputTags = document.getElementById('input-note-tags');
+
+        const reg = this._projectRegistry || { customers: [], projects: [], categories: [], tags: [] };
+        const activeCustomers = (reg.customers || []).filter(c => c.status === 'active');
+
+        if (selectCust) {
+            const curVal = selectCust.value || sessionStore.customerId || '';
+            let html = '<option value="">🏢 Khách hàng...</option>';
+            for (const c of activeCustomers) {
+                html += `<option value="${this._escAttr(c.id)}">🏢 ${this._esc(c.name)}</option>`;
+            }
+            selectCust.innerHTML = html;
+            selectCust.value = curVal;
+        }
+
+        this._updateNoteProjectsDropdown(selectCust?.value || sessionStore.customerId, sessionStore.projectId);
+
+        if (selectCat) {
+            const curCat = selectCat.value || sessionStore.category || '';
+            let catHtml = '<option value="">📅 Phân loại...</option>';
+            for (const c of (reg.categories || [])) {
+                catHtml += `<option value="${this._escAttr(c.name)}">📅 ${this._esc(c.name)}</option>`;
+            }
+            selectCat.innerHTML = catHtml;
+            selectCat.value = curCat;
+        }
+
+        if (datalistTags) {
+            let tagHtml = '';
+            for (const t of (reg.tags || [])) {
+                tagHtml += `<option value="#${this._escAttr(t.name)}">`;
+            }
+            datalistTags.innerHTML = tagHtml;
+        }
+
+        if (inputTags && !inputTags.value && sessionStore.tags && sessionStore.tags.length > 0) {
+            inputTags.value = sessionStore.tags.map(t => `#${t}`).join(', ');
+        }
+    }
+
+    _updateNoteProjectsDropdown(selectedCustomerId = null, targetProjectId = null) {
+        const selectProj = document.getElementById('select-note-project');
+        if (!selectProj) return;
+        const reg = this._projectRegistry || { projects: [] };
+        const activeProjects = (reg.projects || []).filter(p => p.status === 'active');
+        const filteredProjs = selectedCustomerId
+            ? activeProjects.filter(p => p.customer_id === selectedCustomerId)
+            : activeProjects;
+
+        let projHtml = '<option value="">📁 Dự án...</option>';
+        for (const p of filteredProjs) {
+            projHtml += `<option value="${this._escAttr(p.id)}">📁 ${this._esc(p.name)}</option>`;
+        }
+        selectProj.innerHTML = projHtml;
+
+        const desired = targetProjectId || sessionStore.projectId || selectProj.value;
+        if (desired && filteredProjs.some(p => p.id === desired)) {
+            selectProj.value = desired;
+        } else {
+            selectProj.value = '';
+        }
+    }
+
+    _resetNoteMetadataSelectors() {
+        const selectCust = document.getElementById('select-note-customer');
+        const selectProj = document.getElementById('select-note-project');
+        const selectCat = document.getElementById('select-note-category');
+        const inputTags = document.getElementById('input-note-tags');
+
+        if (selectCust) selectCust.value = '';
+        if (selectProj) {
+            this._updateNoteProjectsDropdown(null);
+            selectProj.value = '';
+        }
+        if (selectCat) selectCat.value = '';
+        if (inputTags) inputTags.value = '';
     }
 
     _initNotesResize() {
@@ -7413,7 +7518,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             .replace(/\{\{title\}\}/g, sessionStore.sessionTitle || 'MTG Title');
     }
 
-    _toggleNotesDrawer(forceOpen = null) {
+    _toggleNotesDrawer(forceOpen = null, shouldFocus = true) {
         const drawer = document.getElementById('live-notes-drawer');
         const btnToggleNotes = document.getElementById('btn-toggle-notes');
         if (!drawer) return;
@@ -7441,7 +7546,9 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                     this._liveNotesEditor.setContent(template);
                     sessionStore.notes = template;
                 }
-                this._liveNotesEditor.focus();
+                if (shouldFocus) {
+                    this._liveNotesEditor.focus();
+                }
             }
         } else {
             drawer.style.display = 'none';

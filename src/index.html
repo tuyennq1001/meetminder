@@ -84,7 +84,7 @@
           </div>
 
           <!-- Take Note button -->
-          <button id="btn-toggle-notes" class="btn-notes-action" title="Ghi chú cuộc họp (⌘N)">
+          <button id="btn-toggle-notes" class="btn-notes-action active" title="Ghi chú cuộc họp (⌘N)">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
@@ -172,13 +172,13 @@
       </div>
 
       <!-- Collapsible Horizontal Take Note Drawer -->
-      <div id="live-notes-drawer" class="live-notes-drawer" style="display:none">
+      <div id="live-notes-drawer" class="live-notes-drawer">
         <!-- Resize Handle for Take Note Drawer -->
         <div id="live-notes-resizer" class="notes-resize-handle" title="Kéo để thay đổi độ cao ghi chú (Nhấp đúp để đặt lại)">
           <div class="notes-resize-bar"></div>
         </div>
 
-        <!-- Notes toolbar with Markdown format buttons, Preview button, and Copy button -->
+        <!-- Notes toolbar with Markdown format buttons, Metadata selectors, and Copy button -->
         <div class="notes-toolbar">
           <div class="notes-tools-left">
             <span class="notes-header-title">📝 Take Note</span>
@@ -190,7 +190,22 @@
             <button type="button" class="note-fmt-btn" data-fmt="list" title="Gạch đầu dòng - ">• List</button>
             <button type="button" class="note-fmt-btn" data-fmt="todo" title="Checklist - [ ] ">☑ To-Do</button>
             <button type="button" class="note-fmt-btn" data-fmt="code" title="Mã code `code`"><code>&lt;/&gt;</code></button>
-            <button type="button" id="btn-note-fetch-prev" class="note-fmt-btn" title="Gợi ý nạp Notes từ buổi họp cùng tag gần nhất">📋 Từ trước</button>
+          </div>
+          <div class="notes-tools-meta">
+            <div class="notes-sep"></div>
+            <select id="select-note-customer" class="note-meta-select" title="Gán Khách hàng cho cuộc họp">
+              <option value="">🏢 Khách hàng...</option>
+            </select>
+            <select id="select-note-project" class="note-meta-select" title="Gán Dự án cho cuộc họp">
+              <option value="">📁 Dự án...</option>
+            </select>
+            <select id="select-note-category" class="note-meta-select" title="Phân loại cuộc họp">
+              <option value="">📅 Phân loại...</option>
+            </select>
+            <div class="note-tags-wrap">
+              <input type="text" id="input-note-tags" class="note-meta-input" placeholder="#tag1, #tag2..." title="Thẻ tag cuộc họp (cách nhau bởi dấu phẩy)" list="datalist-note-tags" />
+              <datalist id="datalist-note-tags"></datalist>
+            </div>
           </div>
           <div class="notes-tools-right">
             <button type="button" id="btn-note-copy" class="note-copy-btn" title="Copy nội dung ghi chú">
