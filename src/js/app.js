@@ -138,6 +138,10 @@ class App {
         this._activeProjectFilter = [];
         this._activeCategoryFilter = [];
         this._activeTagFilter = [];
+        this._activeMinutesGeneration = null;
+        this._lastCompletedMinutes = null;
+        this._minutesDismissTimeout = null;
+        this._suppressNextShowSessions = false;
         this._sessionNameQuery = '';
         this._sessionSort = { field: 'created_at', dir: 'desc' };
         this._sessionPage = 1;
@@ -406,29 +410,35 @@ class App {
             await this._handleCreateTag();
         });
 
-        // Edit metadata from viewer
-        document.getElementById('btn-session-edit-tags')?.addEventListener('click', async () => {
+        // Edit metadata from viewer (Single unified edit button, or click title, or click badge/add-button)
+        const handleOpenViewerMetadataEdit = async () => {
             const cur = this._currentViewedSession;
             if (!cur || cur.isLegacy) {
                 this._showToast('Không thể sửa thông tin cuộc họp định dạng cũ', 'info');
                 return;
             }
-            const res = await invoke('read_session', { id: cur.id });
-            await this._editSessionMetadata({
-                id: cur.id,
-                title: res.json?.title || cur.title,
-                project_id: res.json?.project_id || null,
-                category: res.json?.category || null,
-                tags: res.json?.tags || [],
-            });
-            if (this._currentViewedSession && this._currentViewedSession.id === cur.id) {
-                try {
-                    const refreshed = await invoke('read_session', { id: cur.id });
-                    this._currentSessionJson = refreshed.json;
-                    this._renderSessionLogs(refreshed.json);
-                    const titleEl = document.getElementById('session-viewer-title');
-                    if (titleEl) titleEl.textContent = refreshed.json?.title || cur.id;
-                } catch {}
+            try {
+                const res = await invoke('read_session', { id: cur.id });
+                await this._editSessionMetadata({
+                    id: cur.id,
+                    title: res.json?.title || cur.title,
+                    customer_id: res.json?.customer_id || null,
+                    project_id: res.json?.project_id || null,
+                    category: res.json?.category || null,
+                    tags: res.json?.tags || [],
+                });
+            } catch (err) {
+                console.error('[App] Failed to read session for edit:', err);
+                this._showToast(`Lỗi đọc thông tin: ${err}`, 'error');
+            }
+        };
+
+        document.getElementById('btn-session-edit-metadata')?.addEventListener('click', handleOpenViewerMetadataEdit);
+        document.getElementById('btn-session-add-metadata')?.addEventListener('click', handleOpenViewerMetadataEdit);
+        document.getElementById('session-viewer-title')?.addEventListener('click', handleOpenViewerMetadataEdit);
+        document.getElementById('session-viewer-badges')?.addEventListener('click', (e) => {
+            if (e.target.closest('.session-customer-badge, .session-project-badge, .session-category-badge, .session-tag-badge')) {
+                handleOpenViewerMetadataEdit();
             }
         });
 
@@ -467,39 +477,7 @@ class App {
             }
         });
 
-        // Edit session inline (title + content)
-        document.getElementById('btn-session-edit-title')?.addEventListener('click', () => {
-            this._enterSessionEditMode();
-        });
-
-        // Save session inline edit
-        document.getElementById('btn-session-save-edit')?.addEventListener('click', () => {
-            this._saveSessionEdit();
-        });
-
-        // Cancel session inline edit
-        document.getElementById('btn-session-cancel-edit')?.addEventListener('click', () => {
-            this._exitSessionEditMode();
-        });
-
         this._initSessionViewerTabs();
-
-        // Keybindings inside inline session inputs
-        const inputSessionTitle = document.getElementById('input-session-viewer-title');
-
-        inputSessionTitle?.addEventListener('keydown', (e) => {
-            if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
-                e.preventDefault();
-                e.stopPropagation();
-                this._saveSessionEdit();
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
-                this._sessionViewerEditor?.focus();
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                this._exitSessionEditMode();
-            }
-        });
 
         // Export session
         document.getElementById('btn-session-retranscript')?.addEventListener('click', () => this._retranscribeCurrentSession());
@@ -533,6 +511,45 @@ class App {
             } else {
                 this._hideRetranscriptProgress();
             }
+        });
+
+        // Meeting minutes floating bar controls
+        const handleOpenMinutesFromFloating = async (e) => {
+            if (e?.target?.closest('#btn-minutes-floating-close')) {
+                return;
+            }
+            const active = this._activeMinutesGeneration || this._lastCompletedMinutes;
+            if (!active?.id) return;
+
+            const targetId = active.id;
+            const targetLang = active.lang || this._activeMinutesLang || 'ja';
+
+            if (!this._activeMinutesGeneration) {
+                this._hideMinutesProgress();
+            }
+
+            if (getActivity() !== 'library') {
+                this._suppressNextShowSessions = true;
+                setActivity('library');
+            }
+
+            await this._openSession(targetId);
+            this._switchSessionTab('minutes');
+            if (targetLang) {
+                this._switchMinutesSubtab(targetLang);
+            }
+
+            const editorEl = document.getElementById('session-minutes-editor-container');
+            if (editorEl && editorEl.style.display !== 'none') {
+                editorEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        };
+
+        document.getElementById('minutes-floating-bar')?.addEventListener('click', handleOpenMinutesFromFloating);
+
+        document.getElementById('btn-minutes-floating-close')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._hideMinutesProgress();
         });
 
         // macOS Traffic Light Window Controls
@@ -1605,6 +1622,10 @@ class App {
     }
 
     _onActivityChanged({ activity, previous }) {
+        if (this._suppressNextShowSessions) {
+            this._suppressNextShowSessions = false;
+            return;
+        }
         if (activity === 'library') this._showSessions();
     }
 
@@ -4958,6 +4979,17 @@ class App {
                         sessionStore.category = newCategory;
                         sessionStore.tags = cleanTags;
                     }
+                    if (this._currentViewedSession && this._currentViewedSession.id === id) {
+                        try {
+                            const refreshed = await invoke('read_session', { id });
+                            this._currentSessionJson = refreshed.json;
+                            const titleEl = document.getElementById('session-viewer-title');
+                            if (titleEl) titleEl.textContent = refreshed.json?.title || id;
+                            await this._renderSessionViewerMetadata(refreshed.json);
+                        } catch (refErr) {
+                            console.warn('[App] Failed to refresh viewer after metadata edit:', refErr);
+                        }
+                    }
                     this._showToast('Đã lưu thông tin cuộc họp ✓', 'success');
                     await this._showSessions();
                 } catch (err) {
@@ -6426,6 +6458,18 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const emptyTitle = document.getElementById('minutes-empty-title');
         const emptyBtn = document.getElementById('btn-minutes-generate-empty');
 
+        if (this._activeMinutesGeneration && this._activeMinutesGeneration.id === this._currentViewedSession?.id && this._activeMinutesGeneration.lang === lang) {
+            if (loadingEl) loadingEl.style.display = 'flex';
+            if (emptyEl) emptyEl.style.display = 'none';
+            if (editorContainer) editorContainer.style.display = 'none';
+            const regenBtn = document.getElementById('btn-minutes-regenerate');
+            if (regenBtn) {
+                regenBtn.disabled = true;
+                regenBtn.innerHTML = '<span class="spinner-ring button-spinner-inline"></span> Đang tạo...';
+            }
+            return;
+        }
+
         if (loadingEl) loadingEl.style.display = 'none';
 
         if (content) {
@@ -6742,6 +6786,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (modal) modal.style.display = 'flex';
             if (floatingBar) floatingBar.style.display = 'none';
         }
+        this._updateFloatingBarsPosition();
 
         if (floatingBar) floatingBar.classList.remove('is-completed');
         if (floatingSpinner) floatingSpinner.style.display = '';
@@ -6790,6 +6835,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
         floatingBar.classList.add('is-completed');
         floatingBar.style.display = 'flex';
+        this._updateFloatingBarsPosition();
 
         if (floatingSpinner) floatingSpinner.style.display = 'none';
         if (floatingCheck) floatingCheck.style.display = 'flex';
@@ -6812,6 +6858,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             floatingBar.style.display = 'none';
             floatingBar.classList.remove('is-completed');
         }
+        this._updateFloatingBarsPosition();
     }
 
     _minimizeRetranscript() {
@@ -6821,6 +6868,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const floatingBar = document.getElementById('retranscript-floating-bar');
         if (modal) modal.style.display = 'none';
         if (floatingBar) floatingBar.style.display = 'flex';
+        this._updateFloatingBarsPosition();
     }
 
     _expandRetranscript() {
@@ -6830,6 +6878,93 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const floatingBar = document.getElementById('retranscript-floating-bar');
         if (floatingBar) floatingBar.style.display = 'none';
         if (modal) modal.style.display = 'flex';
+        this._updateFloatingBarsPosition();
+    }
+
+    _updateFloatingBarsPosition() {
+        const retranscriptBar = document.getElementById('retranscript-floating-bar');
+        const minutesBar = document.getElementById('minutes-floating-bar');
+        const retranscriptVisible = retranscriptBar && retranscriptBar.style.display !== 'none';
+        if (minutesBar) {
+            minutesBar.style.bottom = retranscriptVisible ? '96px' : '20px';
+        }
+    }
+
+    _setMinutesProgress(text, percent, lang = 'ja') {
+        const floatingBar = document.getElementById('minutes-floating-bar');
+        const floatingSpinner = document.getElementById('minutes-floating-spinner');
+        const floatingCheck = document.getElementById('minutes-floating-check');
+        const floatingTitle = document.getElementById('minutes-floating-title');
+        const floatingStatus = document.getElementById('minutes-floating-status');
+        const floatingFill = document.getElementById('minutes-floating-progress-fill');
+        const floatingPct = document.getElementById('minutes-floating-pct');
+
+        if (!floatingBar) return;
+
+        floatingBar.classList.remove('is-completed');
+        floatingBar.style.display = 'flex';
+        this._updateFloatingBarsPosition();
+
+        if (floatingSpinner) floatingSpinner.style.display = '';
+        if (floatingCheck) floatingCheck.style.display = 'none';
+
+        const langName = lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt';
+        if (floatingTitle) floatingTitle.textContent = `Tạo Meeting Minutes (${langName})`;
+        if (floatingStatus) floatingStatus.textContent = text;
+        if (floatingFill) floatingFill.style.width = `${percent}%`;
+        if (floatingPct) floatingPct.textContent = `${percent}%`;
+    }
+
+    _showMinutesCompleted(sessionId, lang = 'ja') {
+        const floatingBar = document.getElementById('minutes-floating-bar');
+        const floatingSpinner = document.getElementById('minutes-floating-spinner');
+        const floatingCheck = document.getElementById('minutes-floating-check');
+        const floatingTitle = document.getElementById('minutes-floating-title');
+        const floatingStatus = document.getElementById('minutes-floating-status');
+        const floatingFill = document.getElementById('minutes-floating-progress-fill');
+        const floatingPct = document.getElementById('minutes-floating-pct');
+
+        if (!floatingBar) return;
+
+        this._lastCompletedMinutes = { id: sessionId, lang };
+        if (this._activeMinutesGeneration) {
+            if (this._activeMinutesGeneration.timer) {
+                clearInterval(this._activeMinutesGeneration.timer);
+            }
+            this._activeMinutesGeneration = null;
+        }
+
+        floatingBar.classList.add('is-completed');
+        floatingBar.style.display = 'flex';
+        this._updateFloatingBarsPosition();
+
+        if (floatingSpinner) floatingSpinner.style.display = 'none';
+        if (floatingCheck) floatingCheck.style.display = 'flex';
+
+        const langName = lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt';
+        if (floatingTitle) floatingTitle.textContent = `Hoàn tất Meeting Minutes (${langName}) ✓`;
+        if (floatingStatus) floatingStatus.textContent = 'Nhấp để xem chi tiết biên bản ➔';
+        if (floatingFill) floatingFill.style.width = '100%';
+        if (floatingPct) floatingPct.textContent = '100%';
+
+        clearTimeout(this._minutesDismissTimeout);
+        this._minutesDismissTimeout = setTimeout(() => {
+            this._hideMinutesProgress();
+        }, 7000);
+    }
+
+    _hideMinutesProgress() {
+        const floatingBar = document.getElementById('minutes-floating-bar');
+        if (floatingBar) {
+            floatingBar.style.display = 'none';
+            floatingBar.classList.remove('is-completed');
+        }
+        if (this._activeMinutesGeneration?.timer) {
+            clearInterval(this._activeMinutesGeneration.timer);
+            this._activeMinutesGeneration = null;
+        }
+        clearTimeout(this._minutesDismissTimeout);
+        this._updateFloatingBarsPosition();
     }
 
     async _cancelActiveRetranscript(isTimeout = false) {
@@ -7303,11 +7438,23 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const emptyEl = document.getElementById('minutes-empty');
         const editorContainer = document.getElementById('session-minutes-editor-container');
         const loadingText = document.getElementById('minutes-loading-text');
+        const regenBtn = document.getElementById('btn-minutes-regenerate');
+        const emptyBtn = document.getElementById('btn-minutes-generate-empty');
 
-        if (loadingEl) loadingEl.style.display = 'flex';
-        if (emptyEl) emptyEl.style.display = 'none';
-        if (editorContainer) editorContainer.style.display = 'none';
-        if (loadingText) loadingText.textContent = `Đang phân tích & soạn thảo Meeting Minutes (${lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt'})...`;
+        if (this._currentViewedSession?.id === sessionId) {
+            if (loadingEl) loadingEl.style.display = 'flex';
+            if (emptyEl) emptyEl.style.display = 'none';
+            if (editorContainer) editorContainer.style.display = 'none';
+            if (loadingText) loadingText.textContent = `Đang phân tích & soạn thảo Meeting Minutes (${lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt'})...`;
+            if (regenBtn) {
+                regenBtn.disabled = true;
+                regenBtn.innerHTML = '<span class="retranscript-spinner-inline"></span> Đang tạo...';
+            }
+            if (emptyBtn) {
+                emptyBtn.disabled = true;
+                emptyBtn.innerHTML = '<span class="retranscript-spinner-inline"></span> Đang tạo...';
+            }
+        }
 
         const settings = settingsManager.get();
         const geminiKey = settings.gemini_api_key?.trim();
@@ -7315,21 +7462,54 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
         if (!geminiKey && !openaiKey) {
             if (loadingEl) loadingEl.style.display = 'none';
+            if (regenBtn) {
+                regenBtn.disabled = false;
+                regenBtn.innerHTML = '🔄 Tạo lại (AI)';
+            }
+            if (emptyBtn) {
+                emptyBtn.disabled = false;
+                emptyBtn.innerHTML = '✨ Tạo Meeting Minutes ngay';
+            }
             this._renderCurrentMinutesSubtab();
             this._showToast('Vui lòng cài đặt Gemini hoặc OpenAI API Key trong Cài đặt (⌘,) để tạo Meeting Minutes', 'error');
             return;
         }
 
+        // Initialize floating bar
+        let currentPct = 15;
+        this._activeMinutesGeneration = {
+            id: sessionId,
+            lang,
+            timer: null,
+        };
+        this._setMinutesProgress('Đang phân tích dữ liệu cuộc họp...', currentPct, lang);
+
+        const progressTimer = setInterval(() => {
+            if (currentPct < 90) {
+                currentPct += (currentPct < 60 ? 5 : 2);
+                this._setMinutesProgress('Đang tổng hợp & soạn thảo biên bản...', currentPct, lang);
+            }
+        }, 900);
+        this._activeMinutesGeneration.timer = progressTimer;
+
         try {
             const onStatusUpdate = (msg) => {
                 if (loadingText) loadingText.textContent = msg;
+                this._setMinutesProgress(msg, Math.max(currentPct, 50), lang);
             };
 
             await this._generateMinutesCore(sessionId, lang, onStatusUpdate);
 
-            this._switchMinutesSubtab(lang);
+            clearInterval(progressTimer);
+            this._showMinutesCompleted(sessionId, lang);
+
+            if (this._currentViewedSession?.id === sessionId) {
+                this._switchMinutesSubtab(lang);
+            }
             this._showToast(`Đã tạo Meeting Minutes (${lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt'}) thành công ✓`, 'success');
         } catch (err) {
+            clearInterval(progressTimer);
+            this._hideMinutesProgress();
             console.error('[App] _generateMeetingMinutesForSession error:', err);
             if (loadingEl) loadingEl.style.display = 'none';
             this._renderCurrentMinutesSubtab();
@@ -7338,6 +7518,15 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 this._showToast('Máy chủ AI đang quá tải tạm thời. Vui lòng bấm tạo lại sau giây lát.', 'error');
             } else {
                 this._showToast(`Lỗi tạo Meeting Minutes: ${errMsg}`, 'error');
+            }
+        } finally {
+            if (regenBtn) {
+                regenBtn.disabled = false;
+                regenBtn.innerHTML = '🔄 Tạo lại (AI)';
+            }
+            if (emptyBtn) {
+                emptyBtn.disabled = false;
+                emptyBtn.innerHTML = '✨ Tạo Meeting Minutes ngay';
             }
         }
     }
@@ -7567,6 +7756,10 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 if (title) title.textContent = id;
                 if (tabBtnMinutes) tabBtnMinutes.style.display = 'none';
                 if (tabBtnNotes) tabBtnNotes.style.display = 'none';
+                const metaBar = document.getElementById('session-viewer-meta-bar');
+                if (metaBar) metaBar.style.display = 'none';
+                const editBtn = document.getElementById('btn-session-edit-metadata');
+                if (editBtn) editBtn.style.display = 'none';
                 document.getElementById('btn-session-retranscript').style.display = 'none';
                 const status = document.getElementById('session-retranscript-status');
                 if (status) {
@@ -7577,6 +7770,10 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             } else {
                 if (tabBtnMinutes) tabBtnMinutes.style.display = '';
                 if (tabBtnNotes) tabBtnNotes.style.display = '';
+                const metaBar = document.getElementById('session-viewer-meta-bar');
+                if (metaBar) metaBar.style.display = '';
+                const editBtn = document.getElementById('btn-session-edit-metadata');
+                if (editBtn) editBtn.style.display = '';
                 document.getElementById('btn-session-retranscript').style.display = '';
 
                 const result = await invoke('read_session', { id });
@@ -7584,6 +7781,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 this._currentSessionJson = json;
                 this._updateRetranscriptStatus(json);
                 if (title) title.textContent = json.title || id;
+                await this._renderSessionViewerMetadata(json);
 
                 if (this._activeRetranscribe?.id === id) {
                     const btn = document.getElementById('btn-session-retranscript');
@@ -7653,86 +7851,61 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         }
     }
 
-    _enterSessionEditMode() {
-        const cur = this._currentViewedSession;
-        if (!cur) return;
-
-        const titleEl = document.getElementById('session-viewer-title');
-        const inputTitle = document.getElementById('input-session-viewer-title');
-        const normalActions = document.getElementById('session-viewer-normal-actions');
-        const editActions = document.getElementById('session-viewer-edit-actions');
-
-        if (!titleEl || !inputTitle) return;
-
-        this._isSessionEditing = true;
-
-        const currentTitle = titleEl.textContent || '';
-        inputTitle.value = currentTitle;
-
-        titleEl.style.display = 'none';
-        inputTitle.style.display = '';
-
-        if (normalActions) normalActions.style.display = 'none';
-        if (editActions) editActions.style.display = '';
-
-        if (this._sessionViewerEditor) {
-            this._sessionViewerEditor.setReadOnly(false);
-            this._sessionViewerEditor.focus();
-        }
-
-        inputTitle.focus();
-        inputTitle.select();
-    }
-
     _exitSessionEditMode() {
         this._isSessionEditing = false;
-        const titleEl = document.getElementById('session-viewer-title');
-        const inputTitle = document.getElementById('input-session-viewer-title');
-        const normalActions = document.getElementById('session-viewer-normal-actions');
-        const editActions = document.getElementById('session-viewer-edit-actions');
-
-        if (titleEl) titleEl.style.display = '';
-        if (inputTitle) inputTitle.style.display = 'none';
-        if (normalActions) normalActions.style.display = '';
-        if (editActions) editActions.style.display = 'none';
-
-        if (this._sessionViewerEditor) {
-            this._sessionViewerEditor.setReadOnly(true);
-        }
     }
 
-    async _saveSessionEdit() {
-        const cur = this._currentViewedSession;
-        if (!cur) return;
+    async _renderSessionViewerMetadata(json) {
+        const badgesContainer = document.getElementById('session-viewer-badges');
+        const addBtn = document.getElementById('btn-session-add-metadata');
+        if (!badgesContainer) return;
 
-        const inputTitle = document.getElementById('input-session-viewer-title');
-        const titleEl = document.getElementById('session-viewer-title');
+        if (!json) {
+            badgesContainer.innerHTML = '';
+            if (addBtn) addBtn.style.display = 'none';
+            return;
+        }
 
-        const newTitle = inputTitle?.value.trim() || 'Cuộc họp chưa đặt tên';
-        try {
-            await invoke('update_session_title', { id: cur.id, title: newTitle });
+        const reg = await this._loadProjectRegistry();
+        const allCustomers = reg.customers || [];
+        const allProjects = reg.projects || [];
 
-            if (titleEl) titleEl.textContent = newTitle;
+        const customer = allCustomers.find(c => c.id === json.customer_id);
+        const customerName = customer?.name || json.customer_name || '';
 
-            if (sessionStore.id === cur.id) {
-                sessionStore.title = newTitle;
-            }
+        const project = allProjects.find(p => p.id === json.project_id);
+        const projectName = project?.name || json.project_name || '';
+        const projectColor = project?.color || json.project_color || '';
 
-            if (this._cachedSessions) {
-                const s = this._cachedSessions.find(item => item.id === cur.id);
-                if (s) s.title = newTitle;
-            }
+        const category = json.category || '';
+        const tags = Array.isArray(json.tags) ? json.tags : [];
 
-            this._exitSessionEditMode();
-            this._showToast('Đã lưu thay đổi ✓', 'success');
+        let badgesHtml = '';
 
-            // Refresh sessions list in background without closing detail viewer
-            try {
-                const sessions = await invoke('list_sessions');
-                this._cachedSessions = sessions || [];
-            } catch {}
-        } catch (err) {
-            this._showToast(`Lỗi lưu thay đổi: ${err}`, 'error');
+        if (customerName) {
+            badgesHtml += `<span class="session-customer-badge" title="Khách hàng: ${this._escAttr(customerName)} (Nhấp để sửa)">🏢 ${this._esc(customerName)}</span>`;
+        }
+
+        if (projectName) {
+            const colorStyle = projectColor
+                ? `background:${this._escAttr(projectColor)}1f; border-color:${this._escAttr(projectColor)}55; color:${this._escAttr(projectColor)};`
+                : '';
+            badgesHtml += `<span class="session-project-badge" title="Dự án: ${this._escAttr(projectName)} (Nhấp để sửa)" style="${colorStyle}">📁 ${this._esc(projectName)}</span>`;
+        }
+
+        if (category) {
+            badgesHtml += `<span class="session-category-badge" title="Phân loại: ${this._escAttr(category)} (Nhấp để sửa)">📅 ${this._esc(category)}</span>`;
+        }
+
+        if (tags.length > 0) {
+            badgesHtml += tags.map(tag => `<span class="session-tag-badge" title="Thẻ: #${this._escAttr(tag)} (Nhấp để sửa)">#${this._esc(tag)}</span>`).join('');
+        }
+
+        badgesContainer.innerHTML = badgesHtml;
+
+        const hasAnyMeta = Boolean(customerName || projectName || category || tags.length > 0);
+        if (addBtn) {
+            addBtn.style.display = hasAnyMeta ? 'none' : 'inline-flex';
         }
     }
 
