@@ -8,6 +8,7 @@
 // listed (with `has_legacy_only: true`) but not editable.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -115,6 +116,8 @@ pub struct SessionData {
     pub meeting_minutes_ja: Option<String>,
     #[serde(default)]
     pub meeting_minutes_vi: Option<String>,
+    #[serde(default)]
+    pub retranscribed_at: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -176,26 +179,53 @@ pub fn load_project_registry(app: &AppHandle) -> Result<ProjectRegistry, String>
             customers: Vec::new(),
             projects: Vec::new(),
             categories: vec![
-                Category { id: "cat_weekly".into(), name: "Weekly".into(), color: "#10b981".into() },
-                Category { id: "cat_daily".into(), name: "Daily".into(), color: "#431A46".into() },
-                Category { id: "cat_sales".into(), name: "Sales".into(), color: "#f59e0b".into() },
-                Category { id: "cat_1on1".into(), name: "1-on-1".into(), color: "#ec4899".into() },
-                Category { id: "cat_planning".into(), name: "Planning".into(), color: "#8b5cf6".into() },
-                Category { id: "cat_retro".into(), name: "Retro".into(), color: "#14b8a6".into() },
+                Category {
+                    id: "cat_weekly".into(),
+                    name: "Weekly".into(),
+                    color: "#10b981".into(),
+                },
+                Category {
+                    id: "cat_daily".into(),
+                    name: "Daily".into(),
+                    color: "#431A46".into(),
+                },
+                Category {
+                    id: "cat_sales".into(),
+                    name: "Sales".into(),
+                    color: "#f59e0b".into(),
+                },
+                Category {
+                    id: "cat_1on1".into(),
+                    name: "1-on-1".into(),
+                    color: "#ec4899".into(),
+                },
+                Category {
+                    id: "cat_planning".into(),
+                    name: "Planning".into(),
+                    color: "#8b5cf6".into(),
+                },
+                Category {
+                    id: "cat_retro".into(),
+                    name: "Retro".into(),
+                    color: "#14b8a6".into(),
+                },
             ],
             tags: Vec::new(),
         };
         let _ = save_project_registry(app, &default_reg);
         return Ok(default_reg);
     }
-    let content = fs::read_to_string(&path).map_err(|e| format!("Read projects.json failed: {}", e))?;
-    let reg: ProjectRegistry = serde_json::from_str(&content).map_err(|e| format!("Parse projects.json failed: {}", e))?;
+    let content =
+        fs::read_to_string(&path).map_err(|e| format!("Read projects.json failed: {}", e))?;
+    let reg: ProjectRegistry =
+        serde_json::from_str(&content).map_err(|e| format!("Parse projects.json failed: {}", e))?;
     Ok(reg)
 }
 
 pub fn save_project_registry(app: &AppHandle, reg: &ProjectRegistry) -> Result<(), String> {
     let path = registry_path(app)?;
-    let bytes = serde_json::to_vec_pretty(reg).map_err(|e| format!("Serialize projects.json failed: {}", e))?;
+    let bytes = serde_json::to_vec_pretty(reg)
+        .map_err(|e| format!("Serialize projects.json failed: {}", e))?;
     write_atomic(&path, &bytes)?;
     Ok(())
 }
@@ -537,11 +567,12 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
         .into_iter()
         .map(|c| (c.id, (c.name, c.color, c.status)))
         .collect();
-    let project_map: std::collections::HashMap<String, (String, String, String, Option<String>)> = registry
-        .projects
-        .into_iter()
-        .map(|p| (p.id, (p.name, p.color, p.status, p.customer_id)))
-        .collect();
+    let project_map: std::collections::HashMap<String, (String, String, String, Option<String>)> =
+        registry
+            .projects
+            .into_iter()
+            .map(|p| (p.id, (p.name, p.color, p.status, p.customer_id)))
+            .collect();
 
     let entries = fs::read_dir(&dir).map_err(|e| format!("Read dir failed: {}", e))?;
     let entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
@@ -565,15 +596,21 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
         let segment_count: usize = data.chunks.iter().map(|c| c.segments.len()).sum();
         seen_new_ids.insert(id.to_string());
 
-        let (project_name, project_color, project_status, proj_cust_id) = if let Some(ref pid) = data.project_id {
-            if let Some((pname, pcol, pstat, cid)) = project_map.get(pid) {
-                (Some(pname.clone()), Some(pcol.clone()), Some(pstat.clone()), cid.clone())
+        let (project_name, project_color, project_status, proj_cust_id) =
+            if let Some(ref pid) = data.project_id {
+                if let Some((pname, pcol, pstat, cid)) = project_map.get(pid) {
+                    (
+                        Some(pname.clone()),
+                        Some(pcol.clone()),
+                        Some(pstat.clone()),
+                        cid.clone(),
+                    )
+                } else {
+                    (None, None, None, None)
+                }
             } else {
                 (None, None, None, None)
-            }
-        } else {
-            (None, None, None, None)
-        };
+            };
 
         let effective_cust_id = data.customer_id.clone().or(proj_cust_id);
         let (customer_name, customer_color) = if let Some(ref cid) = effective_cust_id {
@@ -744,13 +781,25 @@ pub fn update_session_metadata(
         data.title = sanitize_title(&t);
     }
     if let Some(cid) = customer_id {
-        data.customer_id = if cid.trim().is_empty() { None } else { Some(cid.trim().to_string()) };
+        data.customer_id = if cid.trim().is_empty() {
+            None
+        } else {
+            Some(cid.trim().to_string())
+        };
     }
     if let Some(pid) = project_id {
-        data.project_id = if pid.trim().is_empty() { None } else { Some(pid.trim().to_string()) };
+        data.project_id = if pid.trim().is_empty() {
+            None
+        } else {
+            Some(pid.trim().to_string())
+        };
     }
     if let Some(cat) = category {
-        data.category = if cat.trim().is_empty() { None } else { Some(cat.trim().to_string()) };
+        data.category = if cat.trim().is_empty() {
+            None
+        } else {
+            Some(cat.trim().to_string())
+        };
     }
     if let Some(t_list) = tags {
         let clean_tags: Vec<String> = t_list
@@ -778,11 +827,7 @@ pub fn update_session_metadata(
 }
 
 #[tauri::command]
-pub fn update_session_tags(
-    app: AppHandle,
-    id: String,
-    tags: Vec<String>,
-) -> Result<(), String> {
+pub fn update_session_tags(app: AppHandle, id: String, tags: Vec<String>) -> Result<(), String> {
     update_session_metadata(app, id, None, None, None, None, Some(tags))
 }
 
@@ -798,7 +843,8 @@ pub fn update_session_content(
     let (md_path, json_path) = session_paths(&dir, &id);
 
     if json_path.exists() {
-        let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
+        let json_str =
+            fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
         let mut data: SessionData =
             serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
         if let Some(ref t) = title {
@@ -834,14 +880,24 @@ fn format_duration_str(sec: u64) -> String {
 
 pub fn rebuild_session_markdown(data: &SessionData) -> String {
     let mut lines = Vec::new();
-    let title = if data.title.is_empty() { &data.id } else { &data.title };
+    let title = if data.title.is_empty() {
+        &data.id
+    } else {
+        &data.title
+    };
     let lang_pair = format!("{} → {}", data.source_lang, data.target_lang);
     let mut meta_extras = Vec::new();
     if let Some(ref cat) = data.category {
         meta_extras.push(format!("📅 Phân loại: {}", cat));
     }
     if !data.tags.is_empty() {
-        meta_extras.push(data.tags.iter().map(|t| format!("#{}", t)).collect::<Vec<_>>().join(" "));
+        meta_extras.push(
+            data.tags
+                .iter()
+                .map(|t| format!("#{}", t))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
     }
     let extra_str = if meta_extras.is_empty() {
         String::new()
@@ -852,13 +908,24 @@ pub fn rebuild_session_markdown(data: &SessionData) -> String {
     let dur_str = format_duration_str(data.duration_sec);
     lines.push(format!("# {}", title));
     lines.push(String::new());
-    lines.push(format!("**Thông tin**: Engine {} · {} · {} · {}{}", data.engine, lang_pair, data.created_at, dur_str, extra_str));
+    lines.push(format!(
+        "**Thông tin**: Engine {} · {} · {} · {}{}",
+        data.engine, lang_pair, data.created_at, dur_str, extra_str
+    ));
     lines.push(String::new());
     lines.push("---".to_string());
     lines.push(String::new());
 
-    let has_ja = data.meeting_minutes_ja.as_ref().map(|m| !m.trim().is_empty()).unwrap_or(false);
-    let has_vi = data.meeting_minutes_vi.as_ref().map(|m| !m.trim().is_empty()).unwrap_or(false);
+    let has_ja = data
+        .meeting_minutes_ja
+        .as_ref()
+        .map(|m| !m.trim().is_empty())
+        .unwrap_or(false);
+    let has_vi = data
+        .meeting_minutes_vi
+        .as_ref()
+        .map(|m| !m.trim().is_empty())
+        .unwrap_or(false);
 
     if has_ja {
         if let Some(ref mm_ja) = data.meeting_minutes_ja {
@@ -905,9 +972,17 @@ pub fn rebuild_session_markdown(data: &SessionData) -> String {
 
     for chunk in &data.chunks {
         for seg in &chunk.segments {
-            let ts_tag = if !seg.ts.is_empty() { format!("[{}] ", seg.ts) } else { String::new() };
+            let ts_tag = if !seg.ts.is_empty() {
+                format!("[{}] ", seg.ts)
+            } else {
+                String::new()
+            };
             let spk_tag = if let Some(ref spk) = seg.speaker {
-                if !spk.is_empty() { format!("(Speaker {}) ", spk) } else { String::new() }
+                if !spk.is_empty() {
+                    format!("(Speaker {}) ", spk)
+                } else {
+                    String::new()
+                }
             } else {
                 String::new()
             };
@@ -959,7 +1034,8 @@ pub fn update_session_meeting_minutes(
         return Err("Session json does not exist".into());
     }
 
-    let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
+    let json_str =
+        fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
     let mut data: SessionData =
         serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
 
@@ -999,7 +1075,8 @@ pub fn update_session_notes(
         return Err("Session json does not exist".into());
     }
 
-    let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
+    let json_str =
+        fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
     let mut data: SessionData =
         serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
 
@@ -1087,10 +1164,22 @@ pub fn search_sessions(app: AppHandle, query: String) -> Result<Vec<SessionListI
             continue;
         }
         if item.title.to_lowercase().contains(&q)
-            || item.customer_name.as_ref().map_or(false, |c| c.to_lowercase().contains(&q))
-            || item.project_name.as_ref().map_or(false, |p| p.to_lowercase().contains(&q))
-            || item.category.as_ref().map_or(false, |c| c.to_lowercase().contains(&q))
-            || item.tags.iter().any(|t| t.contains(tag_match) || format!("#{}", t).contains(&q))
+            || item
+                .customer_name
+                .as_ref()
+                .map_or(false, |c| c.to_lowercase().contains(&q))
+            || item
+                .project_name
+                .as_ref()
+                .map_or(false, |p| p.to_lowercase().contains(&q))
+            || item
+                .category
+                .as_ref()
+                .map_or(false, |c| c.to_lowercase().contains(&q))
+            || item
+                .tags
+                .iter()
+                .any(|t| t.contains(tag_match) || format!("#{}", t).contains(&q))
         {
             hits.push(item);
             continue;
@@ -1142,12 +1231,397 @@ pub fn read_session_audio(app: AppHandle, id: String) -> Result<Option<String>, 
     }
 }
 
+#[derive(Deserialize)]
+struct GeminiTranscriptSegment {
+    #[serde(default)]
+    start_sec: Option<f64>,
+    #[serde(default)]
+    text: String,
+    #[serde(default)]
+    translation: String,
+    #[serde(default)]
+    src: String,
+    #[serde(default)]
+    tgt: String,
+}
+
+#[derive(Deserialize)]
+struct GeminiTranscriptPayload {
+    segments: Vec<GeminiTranscriptSegment>,
+}
+
+fn gemini_error(status: reqwest::StatusCode, body: String) -> String {
+    let detail = serde_json::from_str::<Value>(&body)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("error")?
+                .get("message")?
+                .as_str()
+                .map(str::to_string)
+        })
+        .unwrap_or(body);
+    format!(
+        "Gemini API error ({}): {}",
+        status,
+        detail.chars().take(500).collect::<String>()
+    )
+}
+
+fn transcript_timestamp(seconds: f64) -> String {
+    let total = seconds.max(0.0).round() as u64;
+    format!(
+        "{:02}:{:02}:{:02}",
+        total / 3600,
+        (total % 3600) / 60,
+        total % 60
+    )
+}
+
+fn parse_gemini_transcript(text: &str) -> Result<Vec<Segment>, String> {
+    let trimmed = text
+        .trim()
+        .strip_prefix("```json")
+        .or_else(|| text.trim().strip_prefix("```"))
+        .unwrap_or(text.trim())
+        .trim()
+        .strip_suffix("```")
+        .unwrap_or(text.trim())
+        .trim();
+    let payload: GeminiTranscriptPayload = serde_json::from_str(trimmed)
+        .map_err(|e| format!("Gemini returned an invalid transcript: {}", e))?;
+    let segments: Vec<Segment> = payload
+        .segments
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, item)| {
+            let src = if item.text.trim().is_empty() {
+                item.src.trim().to_string()
+            } else {
+                item.text.trim().to_string()
+            };
+            let tgt = if item.translation.trim().is_empty() {
+                item.tgt.trim().to_string()
+            } else {
+                item.translation.trim().to_string()
+            };
+            if src.is_empty() {
+                return None;
+            }
+            Some(Segment {
+                ts: transcript_timestamp(item.start_sec.unwrap_or(index as f64 * 5.0)),
+                src,
+                tgt,
+                speaker: None,
+            })
+        })
+        .collect();
+    if segments.is_empty() {
+        return Err("Gemini did not return any transcript segments".into());
+    }
+    Ok(segments)
+}
+
+static RETRANSCRIBE_CANCEL_MAP: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<std::sync::atomic::AtomicBool>>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+struct RetranscribeGuard(String);
+impl Drop for RetranscribeGuard {
+    fn drop(&mut self) {
+        if let Ok(mut map) = RETRANSCRIBE_CANCEL_MAP.lock() {
+            map.remove(&self.0);
+        }
+    }
+}
+
+/// Signal cancellation for an ongoing re-transcription process.
+#[tauri::command]
+pub fn cancel_retranscribe_session(id: String) -> Result<bool, String> {
+    validate_id(&id)?;
+    let map = RETRANSCRIBE_CANCEL_MAP.lock().map_err(|e| e.to_string())?;
+    if let Some(flag) = map.get(&id) {
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+/// Rebuild a saved meeting's transcript from its local WAV recording. The audio
+/// is uploaded directly to Gemini Files API; the API key is used only for this
+/// request and is never written to the session files.
+#[tauri::command]
+pub async fn retranscribe_session_with_gemini(
+    app: AppHandle,
+    id: String,
+    api_key: String,
+) -> Result<SessionReadResult, String> {
+    validate_id(&id)?;
+    if api_key.trim().is_empty() {
+        return Err("Gemini API key is empty".into());
+    }
+    let dir = sessions_dir(&app)?;
+    let (md_path, json_path) = session_paths(&dir, &id);
+    let wav_path = dir.join(format!("session-{}.wav", id));
+    if !wav_path.exists() {
+        return Err("This meeting does not have an audio recording".into());
+    }
+    let wav = fs::read(&wav_path).map_err(|e| format!("Read audio recording failed: {}", e))?;
+    if wav.len() <= 44 {
+        return Err("The audio recording is empty".into());
+    }
+    let json_str =
+        fs::read_to_string(&json_path).map_err(|e| format!("Read session failed: {}", e))?;
+    let mut data: SessionData =
+        serde_json::from_str(&json_str).map_err(|e| format!("Parse session failed: {}", e))?;
+
+    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let mut map = RETRANSCRIBE_CANCEL_MAP.lock().map_err(|e| e.to_string())?;
+        map.insert(id.clone(), cancel_flag.clone());
+    }
+    let _guard = RetranscribeGuard(id.clone());
+
+    if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Quá trình Re-transcript đã bị hủy".into());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    let upload_start = client
+        .post(format!(
+            "https://generativelanguage.googleapis.com/upload/v1beta/files?key={}",
+            api_key.trim()
+        ))
+        .header("X-Goog-Upload-Protocol", "resumable")
+        .header("X-Goog-Upload-Command", "start")
+        .header("X-Goog-Upload-Header-Content-Length", wav.len().to_string())
+        .header("X-Goog-Upload-Header-Content-Type", "audio/wav")
+        .header("Content-Type", "application/json")
+        .body(r#"{"file":{"display_name":"Meet Minder recording"}}"#)
+        .send()
+        .await
+        .map_err(|e| format!("Start Gemini audio upload failed: {}", e))?;
+    if !upload_start.status().is_success() {
+        let status = upload_start.status();
+        return Err(gemini_error(
+            status,
+            upload_start.text().await.unwrap_or_default(),
+        ));
+    }
+    let upload_url = upload_start
+        .headers()
+        .get("x-goog-upload-url")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+        .ok_or("Gemini did not provide an upload URL")?;
+
+    if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Quá trình Re-transcript đã bị hủy".into());
+    }
+
+    let upload_finish = client
+        .post(&upload_url)
+        .header("X-Goog-Upload-Offset", "0")
+        .header("X-Goog-Upload-Command", "upload, finalize")
+        .header("Content-Type", "audio/wav")
+        .body(wav)
+        .send()
+        .await
+        .map_err(|e| format!("Upload audio to Gemini failed: {}", e))?;
+    if !upload_finish.status().is_success() {
+        let status = upload_finish.status();
+        return Err(gemini_error(
+            status,
+            upload_finish.text().await.unwrap_or_default(),
+        ));
+    }
+    let mut file: Value = upload_finish
+        .json()
+        .await
+        .map_err(|e| format!("Read Gemini upload response failed: {}", e))?;
+    let file_name = file
+        .get("file")
+        .and_then(|f| f.get("name"))
+        .and_then(Value::as_str)
+        .ok_or("Gemini upload response has no file name")?
+        .to_string();
+
+    // Audio files may need a short processing period before they can be sent to
+    // a model. Poll at most one minute so a stuck remote job never hangs the UI.
+    for _ in 0..60 {
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = client
+                .delete(format!(
+                    "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
+                    file_name,
+                    api_key.trim()
+                ))
+                .send()
+                .await;
+            return Err("Quá trình Re-transcript đã bị hủy".into());
+        }
+        let state = file
+            .get("file")
+            .and_then(|f| f.get("state"))
+            .and_then(Value::as_str)
+            .unwrap_or("ACTIVE");
+        if state == "ACTIVE" {
+            break;
+        }
+        if state == "FAILED" {
+            return Err("Gemini could not process this audio recording".into());
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        let poll = client
+            .get(format!(
+                "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
+                file_name,
+                api_key.trim()
+            ))
+            .send()
+            .await
+            .map_err(|e| format!("Check Gemini audio upload failed: {}", e))?;
+        if !poll.status().is_success() {
+            let status = poll.status();
+            return Err(gemini_error(status, poll.text().await.unwrap_or_default()));
+        }
+        file = poll
+            .json()
+            .await
+            .map_err(|e| format!("Read Gemini file status failed: {}", e))?;
+        if file.get("state").is_some() {
+            file = serde_json::json!({ "file": file });
+        }
+    }
+    let file_uri = file
+        .get("file")
+        .and_then(|f| f.get("uri"))
+        .and_then(Value::as_str)
+        .ok_or("Gemini upload response has no file URI")?
+        .to_string();
+    let has_translation = !data.target_lang.trim().is_empty()
+        && data.target_lang != "none"
+        && data.target_lang != "off"
+        && data.target_lang != data.source_lang;
+    let translation_instruction = if has_translation {
+        format!(
+            " Also translate every segment into {} and set its translation field.",
+            data.target_lang
+        )
+    } else {
+        " Do not translate; set every translation field to an empty string.".to_string()
+    };
+    let prompt = format!(
+        "Transcribe this meeting recording accurately. The spoken/source language is {}. Split the transcript into short chronological segments, keeping all meaningful speech. Return JSON only, with this exact schema: {{\"segments\":[{{\"start_sec\":0,\"text\":\"original speech\",\"translation\":\"\"}}]}}. start_sec must be the approximate offset in seconds.{}",
+        data.source_lang, translation_instruction
+    );
+
+    let mut generated = None;
+    let mut last_error = None;
+    for model in [
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-flash-latest",
+    ] {
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = client
+                .delete(format!(
+                    "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
+                    file_name,
+                    api_key.trim()
+                ))
+                .send()
+                .await;
+            return Err("Quá trình Re-transcript đã bị hủy".into());
+        }
+        let response = client.post(format!("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", model, api_key.trim()))
+            .json(&serde_json::json!({
+                "contents": [{ "parts": [
+                    { "text": prompt },
+                    { "fileData": { "mimeType": "audio/wav", "fileUri": file_uri } }
+                ] }],
+                "generationConfig": { "temperature": 0.1, "maxOutputTokens": 32768, "responseMimeType": "application/json" }
+            }))
+            .send().await;
+        match response {
+            Ok(response) if response.status().is_success() => {
+                let body: Value = response
+                    .json()
+                    .await
+                    .map_err(|e| format!("Read Gemini transcript failed: {}", e))?;
+                let text = body
+                    .get("candidates")
+                    .and_then(Value::as_array)
+                    .and_then(|candidates| candidates.first())
+                    .and_then(|candidate| candidate.get("content"))
+                    .and_then(|content| content.get("parts"))
+                    .and_then(Value::as_array)
+                    .map(|parts| {
+                        parts
+                            .iter()
+                            .filter_map(|part| part.get("text").and_then(Value::as_str))
+                            .collect::<String>()
+                    });
+                if let Some(text) = text.filter(|value| !value.trim().is_empty()) {
+                    generated = Some(text);
+                    break;
+                }
+                last_error = Some("Gemini returned an empty transcript".to_string());
+            }
+            Ok(response) => {
+                let status = response.status();
+                last_error = Some(gemini_error(
+                    status,
+                    response.text().await.unwrap_or_default(),
+                ));
+            }
+            Err(error) => last_error = Some(format!("Call Gemini transcription failed: {}", error)),
+        }
+    }
+    // Best-effort cleanup of the temporary file stored by Gemini.
+    let _ = client
+        .delete(format!(
+            "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
+            file_name,
+            api_key.trim()
+        ))
+        .send()
+        .await;
+
+    if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Quá trình Re-transcript đã bị hủy".into());
+    }
+
+    let segments = parse_gemini_transcript(
+        &generated
+            .ok_or_else(|| last_error.unwrap_or_else(|| "Gemini transcription failed".into()))?,
+    )?;
+    data.chunks = vec![Chunk {
+        started_at: data.created_at.clone(),
+        ended_at: data.ended_at.clone(),
+        segments,
+    }];
+    data.engine = "gemini".to_string();
+    data.retranscribed_at = Some(chrono::Local::now().to_rfc3339());
+    let md = rebuild_session_markdown(&data);
+    let json_bytes = serde_json::to_vec_pretty(&data)
+        .map_err(|e| format!("Serialize transcript failed: {}", e))?;
+    write_atomic(&json_path, &json_bytes)?;
+    write_atomic(&md_path, md.as_bytes())?;
+    Ok(SessionReadResult { md, json: data })
+}
+
 #[tauri::command]
 pub fn get_storage_info(app: AppHandle) -> Result<StorageInfo, String> {
     let current = sessions_dir(&app)?;
     let default_p = default_sessions_dir(&app)?;
     let reg = load_project_registry(&app).unwrap_or_default();
-    let is_custom = reg.custom_transcripts_dir.is_some() && reg.custom_transcripts_dir.as_deref() != Some("");
+    let is_custom =
+        reg.custom_transcripts_dir.is_some() && reg.custom_transcripts_dir.as_deref() != Some("");
 
     let mut session_count = 0;
     let mut total_size_bytes = 0;
@@ -1179,7 +1653,9 @@ pub fn get_storage_info(app: AppHandle) -> Result<StorageInfo, String> {
 pub fn select_custom_transcripts_dir(app: AppHandle) -> Result<Option<StorageInfo>, String> {
     use tauri_plugin_dialog::DialogExt;
     let current = sessions_dir(&app)?;
-    let folder = app.dialog().file()
+    let folder = app
+        .dialog()
+        .file()
         .set_title("Chọn thư mục lưu trữ dữ liệu cuộc họp")
         .set_directory(&current)
         .blocking_pick_folder();
@@ -1195,13 +1671,17 @@ pub fn select_custom_transcripts_dir(app: AppHandle) -> Result<Option<StorageInf
 }
 
 #[tauri::command]
-pub fn set_custom_transcripts_dir(app: AppHandle, path: Option<String>) -> Result<StorageInfo, String> {
+pub fn set_custom_transcripts_dir(
+    app: AppHandle,
+    path: Option<String>,
+) -> Result<StorageInfo, String> {
     let mut reg = load_project_registry(&app).unwrap_or_default();
     if let Some(ref p) = path {
         let p_trimmed = p.trim();
         if !p_trimmed.is_empty() {
             let pb = PathBuf::from(p_trimmed);
-            fs::create_dir_all(&pb).map_err(|e| format!("Không thể tạo hoặc truy cập thư mục: {}", e))?;
+            fs::create_dir_all(&pb)
+                .map_err(|e| format!("Không thể tạo hoặc truy cập thư mục: {}", e))?;
             reg.custom_transcripts_dir = Some(p_trimmed.to_string());
         } else {
             reg.custom_transcripts_dir = None;
@@ -1211,4 +1691,198 @@ pub fn set_custom_transcripts_dir(app: AppHandle, path: Option<String>) -> Resul
     }
     save_project_registry(&app, &reg)?;
     get_storage_info(app)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_id_valid() {
+        assert!(validate_id("session-260904-1610").is_ok());
+        assert!(validate_id("session_123_abc").is_ok());
+        assert!(validate_id("abcXYZ-123").is_ok());
+    }
+
+    #[test]
+    fn test_validate_id_invalid() {
+        assert!(validate_id("").is_err());
+        assert!(validate_id("../path-traversal").is_err());
+        assert!(validate_id("session/123").is_err());
+        assert!(validate_id("session\\123").is_err());
+        assert!(validate_id("session with spaces").is_err());
+        let long_id = "a".repeat(65);
+        assert!(validate_id(&long_id).is_err());
+    }
+
+    #[test]
+    fn test_sanitize_title() {
+        assert_eq!(sanitize_title("Cuộc họp dự án"), "Cuộc họp dự án");
+        assert_eq!(sanitize_title("Line 1\nLine 2"), "Line 1\nLine 2");
+        assert_eq!(sanitize_title("Bad\x00Title\x07"), "BadTitle");
+    }
+
+    #[test]
+    fn test_format_duration_str() {
+        assert_eq!(format_duration_str(0), "0s");
+        assert_eq!(format_duration_str(45), "45s");
+        assert_eq!(format_duration_str(60), "1m 0s");
+        assert_eq!(format_duration_str(125), "2m 5s");
+        assert_eq!(format_duration_str(3600), "1h 0m");
+        assert_eq!(format_duration_str(3665), "1h 1m");
+    }
+
+    #[test]
+    fn test_add_seconds_hms() {
+        assert_eq!(add_seconds_hms("00:00:00", 10), "00:00:10");
+        assert_eq!(add_seconds_hms("00:01:50", 15), "00:02:05");
+        assert_eq!(add_seconds_hms("00:59:30", 60), "01:00:30");
+        assert_eq!(add_seconds_hms("invalid", 10), "invalid");
+    }
+
+    #[test]
+    fn test_transcript_timestamp() {
+        assert_eq!(transcript_timestamp(0.0), "00:00:00");
+        assert_eq!(transcript_timestamp(65.4), "00:01:05");
+        assert_eq!(transcript_timestamp(3661.0), "01:01:01");
+        assert_eq!(transcript_timestamp(-10.0), "00:00:00");
+    }
+
+    #[test]
+    fn test_parse_gemini_transcript_raw_json() {
+        let json_data = r#"{
+            "segments": [
+                {
+                    "start_sec": 1.5,
+                    "text": "Hello world",
+                    "translation": "Xin chào thế giới"
+                },
+                {
+                    "start_sec": 5.0,
+                    "src": "How are you?",
+                    "tgt": "Bạn khỏe không?"
+                }
+            ]
+        }"#;
+        let result = parse_gemini_transcript(json_data);
+        assert!(result.is_ok());
+        let segments = result.unwrap();
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].ts, "00:00:02");
+        assert_eq!(segments[0].src, "Hello world");
+        assert_eq!(segments[0].tgt, "Xin chào thế giới");
+        assert_eq!(segments[1].ts, "00:00:05");
+        assert_eq!(segments[1].src, "How are you?");
+        assert_eq!(segments[1].tgt, "Bạn khỏe không?");
+    }
+
+    #[test]
+    fn test_parse_gemini_transcript_markdown_fenced() {
+        let json_data = "```json\n{\"segments\": [{\"start_sec\": 0.0, \"text\": \"Test\", \"translation\": \"Kiểm tra\"}]}\n```";
+        let result = parse_gemini_transcript(json_data);
+        assert!(result.is_ok());
+        let segments = result.unwrap();
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].src, "Test");
+        assert_eq!(segments[0].tgt, "Kiểm tra");
+    }
+
+    #[test]
+    fn test_parse_gemini_transcript_empty_fails() {
+        let json_data = r#"{"segments": []}"#;
+        let result = parse_gemini_transcript(json_data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_gemini_error_extraction() {
+        let err = gemini_error(
+            reqwest::StatusCode::BAD_REQUEST,
+            r#"{"error": {"message": "API key not valid"}}"#.to_string(),
+        );
+        assert!(err.contains("Gemini API error (400 Bad Request): API key not valid"));
+
+        let plain_err = gemini_error(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server failure".to_string(),
+        );
+        assert!(plain_err
+            .contains("Gemini API error (500 Internal Server Error): Internal server failure"));
+    }
+
+    #[test]
+    fn test_rebuild_session_markdown() {
+        let data = SessionData {
+            id: "session-260904-1200".to_string(),
+            created_at: "2026-09-04T12:00:00Z".to_string(),
+            ended_at: Some("2026-09-04T12:05:00Z".to_string()),
+            title: "Họp kế hoạch tuần".to_string(),
+            engine: "gemini".to_string(),
+            source_lang: "ja".to_string(),
+            target_lang: "vi".to_string(),
+            duration_sec: 300,
+            chunks: vec![Chunk {
+                started_at: "2026-09-04T12:00:00Z".to_string(),
+                ended_at: Some("2026-09-04T12:05:00Z".to_string()),
+                segments: vec![Segment {
+                    ts: "00:00:05".to_string(),
+                    src: "はじめましょう".to_string(),
+                    tgt: "Hãy bắt đầu thôi".to_string(),
+                    speaker: Some("1".to_string()),
+                }],
+            }],
+            notes: Some("Ghi chú nội bộ".to_string()),
+            tags: vec!["sprint".to_string(), "planning".to_string()],
+            customer_id: None,
+            project_id: None,
+            category: Some("Weekly".to_string()),
+            meeting_minutes: None,
+            meeting_minutes_lang: Some("vi".to_string()),
+            meeting_minutes_ja: None,
+            meeting_minutes_vi: Some("1. Báo cáo tiến độ\n2. Phân công task".to_string()),
+            retranscribed_at: None,
+        };
+
+        let md = rebuild_session_markdown(&data);
+        assert!(md.contains("# Họp kế hoạch tuần"));
+        assert!(md.contains("ja → vi"));
+        assert!(md.contains("📅 Phân loại: Weekly"));
+        assert!(md.contains("#sprint #planning"));
+        assert!(md.contains("(Speaker 1) はじめましょう"));
+        assert!(md.contains("(Speaker 1) Hãy bắt đầu thôi"));
+        assert!(md.contains("## 📋 Biên bản cuộc họp (Tiếng Việt)"));
+        assert!(md.contains("1. Báo cáo tiến độ"));
+    }
+
+    #[test]
+    fn test_session_data_retranscribed_at_serde() {
+        let json_without = r#"{"id":"s1","created_at":"2026-09-04T10:00:00Z","title":"Test","engine":"gemini","source_lang":"ja","target_lang":"vi","duration_sec":60,"chunks":[]}"#;
+        let data: SessionData = serde_json::from_str(json_without).unwrap();
+        assert_eq!(data.retranscribed_at, None);
+
+        let json_with = r#"{"id":"s1","created_at":"2026-09-04T10:00:00Z","title":"Test","engine":"gemini","source_lang":"ja","target_lang":"vi","duration_sec":60,"chunks":[],"retranscribed_at":"2026-09-04T12:00:00Z"}"#;
+        let data2: SessionData = serde_json::from_str(json_with).unwrap();
+        assert_eq!(data2.retranscribed_at, Some("2026-09-04T12:00:00Z".to_string()));
+    }
+
+    #[test]
+    fn test_cancel_retranscribe_session() {
+        let id = "test-session-cancel-123";
+        assert_eq!(cancel_retranscribe_session(id.to_string()).unwrap(), false);
+
+        let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        {
+            let mut map = RETRANSCRIBE_CANCEL_MAP.lock().unwrap();
+            map.insert(id.to_string(), flag.clone());
+        }
+
+        assert_eq!(cancel_retranscribe_session(id.to_string()).unwrap(), true);
+        assert_eq!(flag.load(std::sync::atomic::Ordering::SeqCst), true);
+
+        // Cleanup guard
+        {
+            let _guard = RetranscribeGuard(id.to_string());
+        }
+        assert_eq!(cancel_retranscribe_session(id.to_string()).unwrap(), false);
+    }
 }

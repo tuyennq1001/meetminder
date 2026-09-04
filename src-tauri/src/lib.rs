@@ -5,10 +5,10 @@ pub mod settings;
 use audio::microphone::MicCapture;
 use audio::SystemAudioCapture;
 use commands::audio::AudioState;
+use commands::gemini_realtime::GeminiState;
 use commands::local_pipeline::LocalPipelineState;
 use commands::local_tts::LocalTtsState;
 use commands::openai_realtime::OpenAiState;
-use commands::gemini_realtime::GeminiState;
 use commands::qwen_realtime::QwenState;
 use settings::{Settings, SettingsState};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -141,6 +141,8 @@ pub fn run() {
             commands::session_store::search_sessions,
             commands::session_store::get_session_record_path,
             commands::session_store::read_session_audio,
+            commands::session_store::retranscribe_session_with_gemini,
+            commands::session_store::cancel_retranscribe_session,
             commands::session_store::get_storage_info,
             commands::session_store::select_custom_transcripts_dir,
             commands::session_store::set_custom_transcripts_dir,

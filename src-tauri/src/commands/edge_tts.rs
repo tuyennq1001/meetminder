@@ -151,16 +151,12 @@ pub async fn edge_tts_speak(text: String, voice: String, rate: i32) -> Result<St
     // Guard the read loop with a per-message timeout so a stalled socket (no turn.end,
     // no close) can never block the TTS queue forever.
     loop {
-        let msg_result = match tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            read.next(),
-        )
-        .await
-        {
-            Ok(Some(m)) => m,
-            Ok(None) => break,
-            Err(_) => return Err("Edge TTS timed out waiting for audio".into()),
-        };
+        let msg_result =
+            match tokio::time::timeout(std::time::Duration::from_secs(10), read.next()).await {
+                Ok(Some(m)) => m,
+                Ok(None) => break,
+                Err(_) => return Err("Edge TTS timed out waiting for audio".into()),
+            };
         match msg_result {
             Ok(Message::Binary(data)) => {
                 // Binary messages: 2 bytes header length (big endian) + header + audio

@@ -32,10 +32,10 @@ use tauri::ipc::Channel;
 pub struct VoiceEntry {
     pub id: &'static str,
     pub display: &'static str,
-    pub lang: &'static str,      // "vi" | "en"
-    pub package: &'static str,   // tarball stem on the release (`<package>.tar.bz2`)
-    pub base_url: &'static str,  // release base the tarball is hosted on
-    pub sha256: &'static str,    // integrity check of the downloaded .tar.bz2
+    pub lang: &'static str,     // "vi" | "en"
+    pub package: &'static str,  // tarball stem on the release (`<package>.tar.bz2`)
+    pub base_url: &'static str, // release base the tarball is hosted on
+    pub sha256: &'static str,   // integrity check of the downloaded .tar.bz2
     pub approx_size_bytes: u64,
     pub sample_rate: u32,
 }

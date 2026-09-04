@@ -307,19 +307,6 @@ class App {
             this._showSessions();
         });
 
-        // Copy session content
-        const btnSessionCopy = document.getElementById('btn-session-copy');
-        btnSessionCopy?.addEventListener('click', async () => {
-            const content = this._sessionViewerEditor ? this._sessionViewerEditor.getContent() : '';
-            if (content) {
-                await navigator.clipboard.writeText(content);
-                this._showToast('Đã copy nội dung cuộc họp ✓', 'success');
-                const orig = btnSessionCopy.innerHTML;
-                btnSessionCopy.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
-                setTimeout(() => { if (btnSessionCopy) btnSessionCopy.innerHTML = orig; }, 1500);
-            }
-        });
-
         // Log name filter (debounced)
         const searchInput = document.getElementById('input-session-search');
         if (searchInput) {
@@ -419,12 +406,6 @@ class App {
             await this._handleCreateTag();
         });
 
-        // Resume session from viewer
-        document.getElementById('btn-session-resume')?.addEventListener('click', async () => {
-            const cur = this._currentViewedSession;
-            if (cur) await this._resumeSession(cur.id, cur.isLegacy);
-        });
-
         // Edit metadata from viewer
         document.getElementById('btn-session-edit-tags')?.addEventListener('click', async () => {
             const cur = this._currentViewedSession;
@@ -443,7 +424,8 @@ class App {
             if (this._currentViewedSession && this._currentViewedSession.id === cur.id) {
                 try {
                     const refreshed = await invoke('read_session', { id: cur.id });
-                    if (this._sessionViewerEditor) this._sessionViewerEditor.setContent(refreshed.md);
+                    this._currentSessionJson = refreshed.json;
+                    this._renderSessionLogs(refreshed.json);
                     const titleEl = document.getElementById('session-viewer-title');
                     if (titleEl) titleEl.textContent = refreshed.json?.title || cur.id;
                 } catch {}
@@ -466,10 +448,17 @@ class App {
                 this._showToast('Không thể xoá cuộc họp đang chạy — hãy Dừng trước', 'error');
                 return;
             }
-            if (!confirm('Xóa vĩnh viễn cuộc họp này?')) return;
+            const title = this._currentSessionJson?.title || document.getElementById('session-viewer-title')?.textContent || cur.id;
+            const agreed = await this._promptConfirmDelete({
+                title: 'Xác nhận xoá log',
+                message: `Bạn có chắc chắn muốn xoá vĩnh viễn log "${title}"? Hành động này không thể hoàn tác.`,
+                confirmText: 'Xoá'
+            });
+            if (!agreed) return;
             try {
                 await invoke('delete_session', { id: cur.id });
-                this._showToast('Đã xóa cuộc họp', 'success');
+                this._selectedSessionIds?.delete(cur.id);
+                this._showToast('Đã xóa log', 'success');
                 document.getElementById('sessions-list-panel').style.display = '';
                 document.getElementById('session-viewer').style.display = 'none';
                 await this._showSessions();
@@ -513,8 +502,38 @@ class App {
         });
 
         // Export session
+        document.getElementById('btn-session-retranscript')?.addEventListener('click', () => this._retranscribeCurrentSession());
         document.getElementById('btn-session-export-srt')?.addEventListener('click', () => this._exportCurrentSession('srt'));
         document.getElementById('btn-session-export-txt')?.addEventListener('click', () => this._exportCurrentSession('txt'));
+
+        // Re-transcript modal & background controls
+        document.getElementById('btn-retranscript-minimize')?.addEventListener('click', () => this._minimizeRetranscript());
+        document.getElementById('btn-retranscript-run-bg')?.addEventListener('click', () => this._minimizeRetranscript());
+        document.getElementById('btn-retranscript-cancel')?.addEventListener('click', () => this._cancelActiveRetranscript());
+        document.getElementById('btn-retranscript-abort')?.addEventListener('click', () => this._cancelActiveRetranscript());
+        document.getElementById('btn-retranscript-expand')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._expandRetranscript();
+        });
+        document.getElementById('btn-retranscript-floating-click')?.addEventListener('click', async () => {
+            if (this._activeRetranscribe) {
+                this._expandRetranscript();
+            } else if (this._lastCompletedRetranscribeId) {
+                const targetId = this._lastCompletedRetranscribeId;
+                this._hideRetranscriptProgress();
+                setActivity('library');
+                await this._openSession(targetId);
+                this._switchSessionTab('logs');
+            }
+        });
+        document.getElementById('btn-retranscript-floating-cancel')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (this._activeRetranscribe) {
+                this._cancelActiveRetranscript();
+            } else {
+                this._hideRetranscriptProgress();
+            }
+        });
 
         // macOS Traffic Light Window Controls
         document.getElementById('btn-win-close')?.addEventListener('click', async () => {
@@ -4378,14 +4397,14 @@ class App {
         const customer = session.customer_name ? `<span class="session-customer-badge">${this._esc(session.customer_name)}</span>` : '<span class="logs-empty-value">—</span>';
         const project = session.project_name ? `<span class="session-project-badge">${this._esc(session.project_name)}</span>` : '<span class="logs-empty-value">—</span>';
         const category = session.category ? `<span class="session-category-badge">${this._esc(session.category)}</span>` : '<span class="logs-empty-value">—</span>';
-        const resumeButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-resume-session="${this._escAttr(session.id)}" title="Nối tiếp ghi vào log này">▶</button>`;
+        const retranscriptButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-retranscript-session="${this._escAttr(session.id)}" title="Dùng file ghi âm để Gemini tạo lại Logs">🔄</button>`;
         const editButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-edit-session="${this._escAttr(session.id)}" title="Sửa thông tin">${PENCIL_YELLOW_ICON}</button>`;
         return `<tr data-session-id="${this._escAttr(session.id)}" data-legacy="${session.has_legacy_only ? '1' : '0'}">
             <td class="logs-check-column"><input type="checkbox" data-session-check="${this._escAttr(session.id)}" ${this._selectedSessionIds.has(session.id) ? 'checked' : ''}></td>
             <td class="logs-index">${number}</td>
             <td class="logs-title-cell"><button type="button" class="logs-title-link" data-open-session="${this._escAttr(session.id)}">${this._esc(session.title || 'Cuộc họp chưa đặt tên')}</button></td>
             <td>${customer}</td><td>${project}</td><td>${category}</td><td><div class="logs-tags">${tags}</div></td>
-            <td><div class="logs-actions">${resumeButton}${editButton}<button type="button" class="session-btn-action" data-copy-session="${this._escAttr(session.id)}" title="Copy nội dung">⧉</button><button type="button" class="session-delete-btn" data-delete-session="${this._escAttr(session.id)}" title="Xoá log">×</button></div></td>
+            <td><div class="logs-actions">${retranscriptButton}${editButton}<button type="button" class="session-btn-action" data-copy-session="${this._escAttr(session.id)}" title="Copy nội dung">⧉</button><button type="button" class="session-delete-btn" data-delete-session="${this._escAttr(session.id)}" title="Xoá log">×</button></div></td>
         </tr>`;
     }
 
@@ -4507,7 +4526,7 @@ class App {
             });
         });
         tableContainer.querySelectorAll('[data-open-session]').forEach(button => button.addEventListener('click', () => this._openSession(button.dataset.openSession, button.closest('tr').dataset.legacy === '1')));
-        tableContainer.querySelectorAll('[data-resume-session]').forEach(button => button.addEventListener('click', () => this._resumeSession(button.dataset.resumeSession, false)));
+        tableContainer.querySelectorAll('[data-retranscript-session]').forEach(button => button.addEventListener('click', () => this._retranscribeSession(button.dataset.retranscriptSession)));
         tableContainer.querySelectorAll('[data-edit-session]').forEach(button => button.addEventListener('click', () => {
             const session = this._cachedSessions.find(item => item.id === button.dataset.editSession);
             if (session) this._editSessionMetadata(session);
@@ -4590,17 +4609,14 @@ class App {
             });
         });
 
-        // Resume session
-        listEl.querySelectorAll('.session-btn-action.resume').forEach(btn => {
+        // Edit session metadata & rename combined
+        listEl.querySelectorAll('.session-btn-action.retranscript').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const id = btn.dataset.id;
-                const legacy = btn.dataset.legacy === '1';
-                this._resumeSession(id, legacy);
+                this._retranscribeSession(btn.dataset.id);
             });
         });
 
-        // Edit session metadata & rename combined
         listEl.querySelectorAll('.session-btn-action.edit-meta').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -4711,12 +4727,19 @@ class App {
                     this._showToast('Không thể xoá cuộc họp đang chạy — hãy Dừng trước', 'error');
                     return;
                 }
-                if (!confirm('Xóa vĩnh viễn cuộc họp này?')) return;
+                const sess = (this._cachedSessions || []).find(s => s.id === id);
+                const title = sess?.title || id;
+                const agreed = await this._promptConfirmDelete({
+                    title: 'Xác nhận xoá log',
+                    message: `Bạn có chắc chắn muốn xoá vĩnh viễn log "${title}"? Hành động này không thể hoàn tác.`,
+                    confirmText: 'Xoá'
+                });
+                if (!agreed) return;
                 try {
                     await invoke('delete_session', { id });
                     this._selectedSessionIds.delete(id);
                     await this._showSessions();
-                    this._showToast('Đã xóa cuộc họp', 'success');
+                    this._showToast('Đã xóa log', 'success');
                 } catch (err) {
                     this._showToast(`Delete failed: ${err}`, 'error');
                 }
@@ -4771,8 +4794,8 @@ class App {
             ? s.tags.map(t => `<span class="session-tag-badge" data-tag="${this._escAttr(t)}" title="Lọc theo #${this._escAttr(t)}">#${this._esc(t)}</span>`).join('')
             : '';
 
-        const resumeBtn = !s.has_legacy_only
-            ? `<button type="button" class="session-btn-action resume" data-id="${this._escAttr(s.id)}" data-legacy="0" title="Tiếp tục ghi vào cuộc họp này">▶ Nối tiếp</button>`
+        const retranscriptBtn = !s.has_legacy_only
+            ? `<button type="button" class="session-btn-action retranscript" data-id="${this._escAttr(s.id)}" title="Dùng file ghi âm để Gemini tạo lại Logs">🔄 Re-transcript</button>`
             : '';
         const editBtn = !s.has_legacy_only
             ? `<button type="button" class="session-btn-action edit-meta" data-id="${this._escAttr(s.id)}" title="Sửa thông tin / Đổi tên / Dự án / Phân loại / Thẻ">${PENCIL_YELLOW_ICON}Sửa</button>`
@@ -4787,7 +4810,7 @@ class App {
                 <input type="checkbox" class="session-item-chk" data-id="${this._escAttr(s.id)}" ${isChecked ? 'checked' : ''} />
                 <span class="session-item-title">${title}</span>
                 <div class="session-actions-inline">
-                    ${resumeBtn}
+                    ${retranscriptBtn}
                     ${editBtn}
                     <button type="button" class="session-btn-action copy-session" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}" title="Copy nội dung cuộc họp">
                         <svg class="icon-copy-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -6468,16 +6491,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             });
         }
 
-        const logsCont = document.getElementById('session-logs-editor-container');
-        if (!this._sessionLogsEditor && logsCont) {
-            this._sessionLogsEditor = new NotesEditor();
-            this._sessionLogsEditor.mount(logsCont, {
-                initialContent: '',
-                readOnly: true,
-                placeholderText: 'Nội dung thoại...',
-            });
-            this._sessionViewerEditor = this._sessionLogsEditor;
-        }
+        // Logs are rendered as the same single/dual transcript layout as Live,
+        // rather than as a Markdown editor.
     }
 
     _formatTranscriptFromChunks(chunks) {
@@ -6512,6 +6527,399 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
 
         return lines.join('\n');
+    }
+
+    _sessionHasTranslation(json) {
+        return !!json?.target_lang && json.target_lang !== 'none' && json.target_lang !== 'off'
+            && json.target_lang !== json.source_lang
+            && (json.chunks || []).some(chunk => (chunk.segments || []).some(segment => (segment.tgt || '').trim()));
+    }
+
+    _updateRetranscriptStatus(json) {
+        const status = document.getElementById('session-retranscript-status');
+        if (!status) return;
+        if (!json?.retranscribed_at) {
+            status.textContent = '';
+            status.style.display = 'none';
+            return;
+        }
+        const date = new Date(json.retranscribed_at);
+        let formatted = '';
+        if (Number.isNaN(date.getTime())) {
+            formatted = json.retranscribed_at;
+        } else {
+            const p = n => String(n).padStart(2, '0');
+            formatted = `${p(date.getDate())}/${p(date.getMonth() + 1)}/${date.getFullYear()} ${p(date.getHours())}:${p(date.getMinutes())}`;
+        }
+        status.textContent = `Đã Re-transcript vào ${formatted}`;
+        status.style.display = '';
+    }
+
+    _renderSessionLogs(json) {
+        const container = document.getElementById('session-logs-editor-container');
+        if (!container) return;
+
+        const hasTranslation = this._sessionHasTranslation(json);
+        const segments = (json?.chunks || []).flatMap(chunk => chunk.segments || [])
+            .filter(segment => (segment.src || '').trim() || (hasTranslation && (segment.tgt || '').trim()));
+        const sourceName = this._getQuickLangName(json?.source_lang || 'auto');
+        const targetName = this._getQuickLangName(json?.target_lang || '');
+        const esc = (value) => this._esc(value || '');
+        const copyButton = (kind, title, extraClass = '') => `<button type="button" class="panel-copy-btn ${extraClass}" data-copy-session-log="${kind}" title="${title}"><svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>`;
+        const singleRow = (segment, text) => `<div class="session-log-line"><span class="session-log-time">${esc(segment.ts || '')}</span><span>${esc(text)}</span></div>`;
+        const dualRow = (index, text) => `<div class="session-log-line session-log-dual-line" data-segment-index="${index}">${esc(text)}</div>`;
+        const timelineRow = (index, segment) => `<button type="button" class="session-log-timeline-row" data-segment-index="${index}" title="Nhấp để cuộn tới câu tương ứng">${esc(segment.ts || '--:--')}</button>`;
+
+        if (!segments.length) {
+            container.innerHTML = '<div class="session-logs-empty">Chưa có nội dung transcript.</div>';
+            return;
+        }
+
+        if (!hasTranslation) {
+            container.innerHTML = `<div class="session-logs-live session-logs-single"><section class="session-log-column"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', 'Copy toàn bộ bản gốc', 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map(segment => singleRow(segment, segment.src)).join('')}</div></section></div>`;
+            this._bindSessionLogCopy(container, segments, false);
+            return;
+        }
+
+        container.innerHTML = `<div class="session-logs-live session-logs-dual">
+            <section class="session-log-column" data-log-panel="source"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', 'Copy toàn bộ bản gốc', 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.src)).join('')}</div></section>
+            <div class="session-log-timeline-wrap">
+              <div class="session-log-timeline" data-log-panel="timeline"><header class="panel-column-header panel-time-header"><span class="panel-header-title">Thời gian</span></header>${segments.map((segment, index) => timelineRow(index, segment)).join('')}</div>
+              <button type="button" class="session-log-scroll-bottom" aria-label="Cuộn xuống đoạn mới nhất" title="Cuộn xuống đoạn mới nhất">↓</button>
+            </div>
+            <section class="session-log-column" data-log-panel="translation"><header class="panel-column-header"><span class="panel-header-title">🌐 ${esc(targetName)}</span>${copyButton('translation', 'Copy toàn bộ bản dịch', 'btn-copy-translation')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.tgt || '—')).join('')}</div></section>
+        </div>`;
+
+        const sourceScroll = container.querySelector('[data-log-panel="source"] .session-log-scroll');
+        const targetScroll = container.querySelector('[data-log-panel="translation"] .session-log-scroll');
+        const timeline = container.querySelector('[data-log-panel="timeline"]');
+        const scrollBottom = container.querySelector('.session-log-scroll-bottom');
+        const scrollToSegment = (index) => {
+            const selector = `[data-segment-index="${index}"]`;
+            const sourceLine = sourceScroll?.querySelector(selector);
+            const targetLine = targetScroll?.querySelector(selector);
+            const timeLine = timeline?.querySelector(selector);
+            [sourceLine, targetLine, timeLine].forEach(line => line?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+            container.querySelectorAll('.session-log-line-active, .session-log-timeline-active').forEach(line => {
+                line.classList.remove('session-log-line-active', 'session-log-timeline-active');
+            });
+            sourceLine?.classList.add('session-log-line-active');
+            targetLine?.classList.add('session-log-line-active');
+            timeLine?.classList.add('session-log-timeline-active');
+            setTimeout(() => {
+                sourceLine?.classList.remove('session-log-line-active');
+                targetLine?.classList.remove('session-log-line-active');
+                timeLine?.classList.remove('session-log-timeline-active');
+            }, 2500);
+        };
+        timeline?.addEventListener('click', (event) => {
+            const item = event.target.closest('[data-segment-index]');
+            if (item) scrollToSegment(item.dataset.segmentIndex);
+        });
+        const updateScrollButton = () => {
+            if (!timeline || !scrollBottom) return;
+            const isAwayFromBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight > 120;
+            scrollBottom.classList.toggle('is-visible', isAwayFromBottom);
+        };
+        timeline?.addEventListener('scroll', updateScrollButton, { passive: true });
+        scrollBottom?.addEventListener('click', () => {
+            [sourceScroll, timeline, targetScroll].forEach(panel => panel?.scrollTo({ top: panel.scrollHeight, behavior: 'smooth' }));
+        });
+        this._bindSessionLogCopy(container, segments, true);
+        updateScrollButton();
+    }
+
+    _bindSessionLogCopy(container, segments, hasTranslation) {
+        container.querySelectorAll('[data-copy-session-log]').forEach(button => button.addEventListener('click', async () => {
+            const isTranslation = button.dataset.copySessionLog === 'translation';
+            const text = segments.map(segment => (isTranslation ? segment.tgt : segment.src) || '').filter(Boolean).join('\n');
+            if (!text) {
+                this._showToast(isTranslation ? 'Chưa có bản dịch để copy' : 'Chưa có bản gốc để copy', 'info');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(text);
+                this._showToast(isTranslation ? 'Đã copy bản dịch ✓' : 'Đã copy bản gốc ✓', 'success');
+                const orig = button.innerHTML;
+                button.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                setTimeout(() => { if (button) button.innerHTML = orig; }, 1500);
+            } catch (err) {
+                this._showToast(`Không thể copy: ${err}`, 'error');
+            }
+        }));
+    }
+
+    async _retranscribeCurrentSession() {
+        const cur = this._currentViewedSession;
+        if (cur) await this._retranscribeSession(cur.id, cur.isLegacy);
+    }
+
+    _getSessionLogsPlainText(json) {
+        const lines = [];
+        for (const chunk of (json?.chunks || [])) {
+            for (const segment of (chunk.segments || [])) {
+                const time = segment.ts ? `[${segment.ts}] ` : '';
+                if ((segment.src || '').trim()) lines.push(`${time}${segment.src.trim()}`);
+                if (this._sessionHasTranslation(json) && (segment.tgt || '').trim()) lines.push(`${time}${segment.tgt.trim()}`);
+            }
+        }
+        return lines.join('\n');
+    }
+
+    _setRetranscriptProgress(stage, text, percent) {
+        const modal = document.getElementById('retranscript-progress-modal');
+        const floatingBar = document.getElementById('retranscript-floating-bar');
+        const progressText = document.getElementById('retranscript-progress-text');
+        const status = document.getElementById('retranscript-progress-status');
+        const fill = document.getElementById('retranscript-progress-fill');
+        const pct = document.getElementById('retranscript-progress-pct');
+
+        const floatingSpinner = document.getElementById('retranscript-floating-spinner');
+        const floatingCheck = document.getElementById('retranscript-floating-check');
+        const floatingTitle = document.getElementById('retranscript-floating-title');
+        const floatingStatus = document.getElementById('retranscript-floating-status');
+        const floatingFill = document.getElementById('retranscript-floating-progress-fill');
+        const floatingPct = document.getElementById('retranscript-floating-pct');
+        const floatingExpand = document.getElementById('btn-retranscript-expand');
+        const floatingCancel = document.getElementById('btn-retranscript-floating-cancel');
+
+        if (this._activeRetranscribe?.isMinimized) {
+            if (floatingBar) floatingBar.style.display = 'flex';
+            if (modal) modal.style.display = 'none';
+        } else {
+            if (modal) modal.style.display = 'flex';
+            if (floatingBar) floatingBar.style.display = 'none';
+        }
+
+        if (floatingBar) floatingBar.classList.remove('is-completed');
+        if (floatingSpinner) floatingSpinner.style.display = '';
+        if (floatingCheck) floatingCheck.style.display = 'none';
+        if (floatingTitle) floatingTitle.textContent = 'Re-transcript cuộc họp';
+        if (floatingExpand) floatingExpand.style.display = '';
+        if (floatingCancel) {
+            floatingCancel.title = 'Hủy bỏ';
+            floatingCancel.textContent = '✕';
+        }
+
+        if (progressText) progressText.textContent = text;
+        if (status) status.textContent = text;
+        if (fill) fill.style.width = `${percent}%`;
+        if (pct) pct.textContent = `${percent}%`;
+
+        if (floatingStatus) floatingStatus.textContent = text;
+        if (floatingFill) floatingFill.style.width = `${percent}%`;
+        if (floatingPct) floatingPct.textContent = `${percent}%`;
+
+        const order = ['upload', 'transcribe', 'save'];
+        document.querySelectorAll('[data-retranscript-step]').forEach(step => {
+            const index = order.indexOf(step.dataset.retranscriptStep);
+            const activeIndex = order.indexOf(stage);
+            step.classList.toggle('active', index === activeIndex);
+            step.classList.toggle('done', index < activeIndex);
+            const icon = step.querySelector('.step-icon');
+            if (icon) icon.textContent = index < activeIndex ? '✓' : (index === activeIndex ? '⏳' : '○');
+        });
+    }
+
+    _showRetranscriptCompleted(id) {
+        const modal = document.getElementById('retranscript-progress-modal');
+        const floatingBar = document.getElementById('retranscript-floating-bar');
+        const floatingSpinner = document.getElementById('retranscript-floating-spinner');
+        const floatingCheck = document.getElementById('retranscript-floating-check');
+        const floatingTitle = document.getElementById('retranscript-floating-title');
+        const floatingStatus = document.getElementById('retranscript-floating-status');
+        const floatingFill = document.getElementById('retranscript-floating-progress-fill');
+        const floatingPct = document.getElementById('retranscript-floating-pct');
+        const floatingExpand = document.getElementById('btn-retranscript-expand');
+        const floatingCancel = document.getElementById('btn-retranscript-floating-cancel');
+
+        if (modal) modal.style.display = 'none';
+        if (!floatingBar) return;
+
+        floatingBar.classList.add('is-completed');
+        floatingBar.style.display = 'flex';
+
+        if (floatingSpinner) floatingSpinner.style.display = 'none';
+        if (floatingCheck) floatingCheck.style.display = 'flex';
+        if (floatingTitle) floatingTitle.textContent = 'Hoàn tất Re-transcript ✓';
+        if (floatingStatus) floatingStatus.textContent = 'Nhấn để xem chi tiết log ➔';
+        if (floatingFill) floatingFill.style.width = '100%';
+        if (floatingPct) floatingPct.textContent = '100%';
+        if (floatingExpand) floatingExpand.style.display = 'none';
+        if (floatingCancel) {
+            floatingCancel.title = 'Đóng thông báo';
+            floatingCancel.textContent = '✕';
+        }
+    }
+
+    _hideRetranscriptProgress() {
+        const modal = document.getElementById('retranscript-progress-modal');
+        const floatingBar = document.getElementById('retranscript-floating-bar');
+        if (modal) modal.style.display = 'none';
+        if (floatingBar) {
+            floatingBar.style.display = 'none';
+            floatingBar.classList.remove('is-completed');
+        }
+    }
+
+    _minimizeRetranscript() {
+        if (!this._activeRetranscribe) return;
+        this._activeRetranscribe.isMinimized = true;
+        const modal = document.getElementById('retranscript-progress-modal');
+        const floatingBar = document.getElementById('retranscript-floating-bar');
+        if (modal) modal.style.display = 'none';
+        if (floatingBar) floatingBar.style.display = 'flex';
+    }
+
+    _expandRetranscript() {
+        if (!this._activeRetranscribe) return;
+        this._activeRetranscribe.isMinimized = false;
+        const modal = document.getElementById('retranscript-progress-modal');
+        const floatingBar = document.getElementById('retranscript-floating-bar');
+        if (floatingBar) floatingBar.style.display = 'none';
+        if (modal) modal.style.display = 'flex';
+    }
+
+    async _cancelActiveRetranscript(isTimeout = false) {
+        if (!this._activeRetranscribe) return;
+        const { id } = this._activeRetranscribe;
+        this._cleanupActiveRetranscribe();
+        try {
+            await invoke('cancel_retranscribe_session', { id });
+        } catch (e) {
+            console.warn('[App] cancel_retranscribe_session warning:', e);
+        }
+        if (isTimeout) {
+            this._showToast('Quá thời gian xử lý (3 phút). Đã tự động hủy re-transcript để tránh nghẽn hệ thống.', 'error');
+        } else {
+            this._showToast('Đã hủy re-transcript', 'info');
+        }
+    }
+
+    _cleanupActiveRetranscribe() {
+        if (this._activeRetranscribe?.progressInterval) {
+            clearInterval(this._activeRetranscribe.progressInterval);
+        }
+        if (this._activeRetranscribe?.timeoutId) {
+            clearTimeout(this._activeRetranscribe.timeoutId);
+        }
+        if (this._activeRetranscribe?.buttonsToDisable) {
+            this._activeRetranscribe.buttonsToDisable.forEach((b, i) => {
+                b.disabled = false;
+                b.innerHTML = this._activeRetranscribe.originalTexts[i];
+            });
+        }
+        this._activeRetranscribe = null;
+        this._hideRetranscriptProgress();
+    }
+
+    async _retranscribeSession(id, isLegacy = false) {
+        if (isLegacy) {
+            this._showToast('Log định dạng cũ không có file ghi âm để re-transcript', 'info');
+            return;
+        }
+        if (id === sessionStore.id && (this.isRunning || this.isPaused)) {
+            this._showToast('Hãy kết thúc cuộc họp đang ghi trước khi re-transcript', 'info');
+            return;
+        }
+        if (this._activeRetranscribe) {
+            this._showToast('Đang có tiến trình re-transcript khác đang chạy', 'info');
+            return;
+        }
+        const settings = settingsManager.get();
+        const apiKey = settings.gemini_api_key?.trim();
+        if (!apiKey) {
+            this._showToast('Cần Gemini API Key trong Cài đặt để re-transcript', 'error');
+            return;
+        }
+
+        const buttonsToDisable = [
+            document.querySelector(`[data-retranscript-session="${CSS.escape(id)}"]`),
+            this._currentViewedSession?.id === id ? document.getElementById('btn-session-retranscript') : null,
+        ].filter(Boolean);
+        const originalTexts = buttonsToDisable.map(b => b.innerHTML);
+        buttonsToDisable.forEach(b => {
+            b.disabled = true;
+            b.textContent = '⌛ Đang transcript...';
+        });
+
+        const TIMEOUT_MS = 180_000; // 3 phút timeout
+        const timeoutId = setTimeout(() => {
+            this._cancelActiveRetranscript(true);
+        }, TIMEOUT_MS);
+
+        this._activeRetranscribe = {
+            id,
+            timeoutId,
+            buttonsToDisable,
+            originalTexts,
+            isMinimized: true,
+            progressInterval: null,
+        };
+
+        this._setRetranscriptProgress('upload', 'Đang tải file ghi âm lên Gemini...', 15);
+
+        let currentPct = 15;
+        const progressInterval = setInterval(() => {
+            if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) {
+                clearInterval(progressInterval);
+                return;
+            }
+            if (currentPct < 86) {
+                currentPct += (currentPct < 50 ? 5 : (currentPct < 75 ? 3 : 1));
+                let text = 'Đang tải file ghi âm lên Gemini...';
+                let stage = 'upload';
+                if (currentPct >= 30 && currentPct < 70) {
+                    stage = 'transcribe';
+                    text = 'Gemini đang transcript và dịch file ghi âm...';
+                } else if (currentPct >= 70) {
+                    stage = 'transcribe';
+                    text = 'Gemini đang phân tích và chuẩn hóa văn bản...';
+                }
+                this._setRetranscriptProgress(stage, text, currentPct);
+            }
+        }, 900);
+        this._activeRetranscribe.progressInterval = progressInterval;
+
+        try {
+            const result = await invoke('retranscribe_session_with_gemini', { id, apiKey });
+            clearInterval(progressInterval);
+            if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
+
+            this._setRetranscriptProgress('save', 'Đang lưu Logs mới...', 92);
+            if (this._currentViewedSession?.id === id) {
+                this._renderSessionLogs(result.json);
+                this._currentSessionJson = result.json;
+                this._updateRetranscriptStatus(result.json);
+            }
+
+            if (this._activeRetranscribe?.buttonsToDisable) {
+                this._activeRetranscribe.buttonsToDisable.forEach((b, i) => {
+                    b.disabled = false;
+                    b.innerHTML = this._activeRetranscribe.originalTexts[i];
+                });
+            }
+            if (this._activeRetranscribe?.timeoutId) {
+                clearTimeout(this._activeRetranscribe.timeoutId);
+            }
+
+            this._lastCompletedRetranscribeId = id;
+            this._activeRetranscribe = null;
+
+            this._showRetranscriptCompleted(id);
+            this._showToast('Đã tạo lại Logs từ file ghi âm ✓', 'success');
+            await this._showSessions();
+        } catch (err) {
+            clearInterval(progressInterval);
+            if (this._activeRetranscribe?.id === id) {
+                const isCancelled = String(err).includes('hủy') || String(err).includes('cancel');
+                this._cleanupActiveRetranscribe();
+                if (!isCancelled) {
+                    console.error('[App] Re-transcript failed:', err);
+                    this._showToast(`Re-transcript thất bại: ${err}`, 'error');
+                }
+            }
+        }
     }
 
     _stripNotesFromMarkdown(mdText) {
@@ -6981,17 +7389,41 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (isLegacy) {
                 const text = await invoke('read_legacy_session', { id });
                 const strippedText = this._stripNotesFromMarkdown(text);
-                if (this._sessionLogsEditor) this._sessionLogsEditor.setContent(strippedText);
+                const logsContainer = document.getElementById('session-logs-editor-container');
+                if (logsContainer) {
+                    logsContainer.innerHTML = `<div class="session-logs-live session-logs-single"><section class="session-log-column" style="height:100%"><header class="panel-column-header"><span class="panel-header-title">📜 Bản ghi thô</span><button type="button" class="panel-copy-btn btn-copy-source" data-copy-legacy-log title="Copy toàn bộ bản ghi"><svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></header><pre class="session-logs-legacy">${this._esc(strippedText)}</pre></section></div>`;
+                    logsContainer.querySelector('[data-copy-legacy-log]')?.addEventListener('click', async (e) => {
+                        const btn = e.currentTarget;
+                        try {
+                            await navigator.clipboard.writeText(strippedText);
+                            this._showToast('Đã copy bản ghi ✓', 'success');
+                            const orig = btn.innerHTML;
+                            btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                            setTimeout(() => { if (btn) btn.innerHTML = orig; }, 1500);
+                        } catch (err) {
+                            this._showToast(`Không thể copy: ${err}`, 'error');
+                        }
+                    });
+                }
                 if (title) title.textContent = id;
                 if (tabBtnMinutes) tabBtnMinutes.style.display = 'none';
                 if (tabBtnNotes) tabBtnNotes.style.display = 'none';
+                document.getElementById('btn-session-retranscript').style.display = 'none';
+                const status = document.getElementById('session-retranscript-status');
+                if (status) {
+                    status.textContent = '';
+                    status.style.display = 'none';
+                }
                 this._switchSessionTab('logs');
             } else {
                 if (tabBtnMinutes) tabBtnMinutes.style.display = '';
                 if (tabBtnNotes) tabBtnNotes.style.display = '';
+                document.getElementById('btn-session-retranscript').style.display = '';
 
                 const result = await invoke('read_session', { id });
                 const json = result.json;
+                this._currentSessionJson = json;
+                this._updateRetranscriptStatus(json);
                 if (title) title.textContent = json.title || id;
 
                 // 1. Minutes Tab (JA & VI Sub-tabs)
@@ -7038,18 +7470,8 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                     this._sessionNotesEditor.setReadOnly(true);
                 }
 
-                // 3. Logs Tab (tách riêng bản gốc và bản dịch, không gộp lẫn ghi chú)
-                let logsText = this._formatTranscriptFromChunks(json.chunks);
-                if ((!logsText || (logsText.includes('*(Không có nội dung bản gốc)*') && logsText.includes('*(Không có nội dung bản dịch)*'))) && result.md) {
-                    logsText = this._stripNotesFromMarkdown(result.md);
-                }
-                if (!logsText) {
-                    logsText = '*(Không có nội dung ghi âm / bản dịch)*';
-                }
-                if (this._sessionLogsEditor) {
-                    this._sessionLogsEditor.setContent(logsText);
-                    this._sessionLogsEditor.setReadOnly(true);
-                }
+                // 3. Logs Tab — same single/dual layout as the Live transcript.
+                this._renderSessionLogs(json);
 
                 // Default Tab: if has any minutes -> 'minutes', otherwise -> 'logs'
                 if (this._loadedMinutes.ja || this._loadedMinutes.vi) {
@@ -7120,25 +7542,8 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const titleEl = document.getElementById('session-viewer-title');
 
         const newTitle = inputTitle?.value.trim() || 'Cuộc họp chưa đặt tên';
-        let newContent = this._sessionViewerEditor ? this._sessionViewerEditor.getContent() : '';
-
-        // If markdown starts with # <heading>, sync heading with newTitle
-        if (newTitle && newContent.startsWith('# ')) {
-            const firstEol = newContent.indexOf('\n');
-            if (firstEol !== -1) {
-                newContent = `# ${newTitle}\n${newContent.slice(firstEol + 1)}`;
-            } else {
-                newContent = `# ${newTitle}`;
-            }
-            if (this._sessionViewerEditor) this._sessionViewerEditor.setContent(newContent);
-        }
-
         try {
-            await invoke('update_session_content', {
-                id: cur.id,
-                title: newTitle,
-                mdContent: newContent,
-            });
+            await invoke('update_session_title', { id: cur.id, title: newTitle });
 
             if (titleEl) titleEl.textContent = newTitle;
 

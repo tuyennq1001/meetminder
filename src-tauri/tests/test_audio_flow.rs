@@ -50,5 +50,8 @@ fn test_system_audio_capture() {
         }
     }
     sys.stop();
-    assert!(got_data, "system audio stream opened but produced no samples");
+    assert!(
+        got_data,
+        "system audio stream opened but produced no samples"
+    );
 }

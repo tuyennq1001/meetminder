@@ -68,59 +68,6 @@ export class SessionStore {
         this._lastPersistAt = Date.now();
     }
 
-    static async resume(id) {
-        const result = await invoke('read_session', { id });
-        const s = new SessionStore();
-        const j = result.json;
-        s.id = j.id;
-        s.createdAt = j.created_at;
-        s.endedAt = j.ended_at;
-        s.title = j.title || '';
-        s.notes = j.notes || '';
-        s.meetingMinutes = j.meeting_minutes || '';
-        s.meetingMinutesLang = j.meeting_minutes_lang || 'ja';
-        s.meetingMinutesJa = j.meeting_minutes_ja || (j.meeting_minutes_lang === 'ja' ? j.meeting_minutes : '') || '';
-        s.meetingMinutesVi = j.meeting_minutes_vi || (j.meeting_minutes_lang === 'vi' ? j.meeting_minutes : '') || '';
-        s.tags = Array.isArray(j.tags) ? j.tags : [];
-        s.customerId = j.customer_id || null;
-        s.projectId = j.project_id || null;
-        s.category = j.category || null;
-        s.engine = j.engine || null;
-        s.sourceLang = j.source_lang || '';
-        s.targetLang = j.target_lang || '';
-        s.chunks = j.chunks || [];
-        s.currentChunk = null;
-        return s;
-    }
-
-    async resumeSession(id) {
-        const result = await invoke('read_session', { id });
-        const j = result.json;
-        this.id = j.id;
-        this.createdAt = j.created_at;
-        this.endedAt = null;
-        this.title = j.title || '';
-        this.notes = j.notes || '';
-        this.meetingMinutes = j.meeting_minutes || '';
-        this.meetingMinutesLang = j.meeting_minutes_lang || 'ja';
-        this.meetingMinutesJa = j.meeting_minutes_ja || (j.meeting_minutes_lang === 'ja' ? j.meeting_minutes : '') || '';
-        this.meetingMinutesVi = j.meeting_minutes_vi || (j.meeting_minutes_lang === 'vi' ? j.meeting_minutes : '') || '';
-        this.tags = Array.isArray(j.tags) ? j.tags : [];
-        this.customerId = j.customer_id || null;
-        this.projectId = j.project_id || null;
-        this.category = j.category || null;
-        this.engine = j.engine || null;
-        this.sourceLang = j.source_lang || '';
-        this.targetLang = j.target_lang || '';
-        this.chunks = j.chunks || [];
-        this.currentChunk = null;
-        this._mutations = 0;
-        this._persistedMutations = 0;
-        this._persistChain = Promise.resolve();
-        this._lastPersistAt = Date.now();
-        return this;
-    }
-
     beginChunk({ engine, sourceLang, targetLang } = {}) {
         if (engine) this.engine = engine;
         if (sourceLang) this.sourceLang = sourceLang;

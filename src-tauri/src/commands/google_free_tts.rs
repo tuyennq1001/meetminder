@@ -28,13 +28,15 @@ pub async fn google_free_tts_speak(
     if text.trim().is_empty() {
         return Err("Empty text".into());
     }
-    let user_key = user_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
+    let user_key = user_key
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty());
     let key = user_key
         .as_deref()
         .or(API_KEY.filter(|k| !k.is_empty()))
         .ok_or(
-            "Google Free TTS not configured — enter a Google API key in Settings (no build-time key).",
-        )?;
+        "Google Free TTS not configured — enter a Google API key in Settings (no build-time key).",
+    )?;
 
     // .query() percent-encodes every value — never format! untrusted text into the URL.
     let build_req = || {

@@ -2,9 +2,9 @@ use crate::audio::microphone::MicCapture;
 use crate::audio::SystemAudioCapture;
 use serde::Serialize;
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{ipc::Channel, State};
 
 /// State for tracking active audio captures
@@ -111,7 +111,8 @@ pub async fn start_capture(
                     }
 
                     let available = std::cmp::max(sys_buf.len(), mic_buf.len());
-                    if available >= 800 { // at least 50ms (800 samples at 16kHz)
+                    if available >= 800 {
+                        // at least 50ms (800 samples at 16kHz)
                         let chunk_len = available.min(1600); // up to 100ms
                         let mut mixed_bytes = Vec::with_capacity(chunk_len * 2);
                         for _ in 0..chunk_len {
@@ -153,49 +154,61 @@ pub async fn start_capture(
 
         // Optional WAV file recording with 64KB buffer
         let mut total_pcm_bytes: u32 = 0;
-        let mut wav_writer: Option<BufWriter<std::fs::File>> = if let Some(ref path_str) = record_path_clone {
-            let path = std::path::Path::new(path_str);
-            if path.exists() {
-                // Resume existing session audio file
-                match std::fs::OpenOptions::new().read(true).write(true).open(path) {
-                    Ok(mut f) => {
-                        let mut len_bytes = [0u8; 4];
-                        if f.seek(std::io::SeekFrom::Start(40)).is_ok() && f.read_exact(&mut len_bytes).is_ok() {
-                            total_pcm_bytes = u32::from_le_bytes(len_bytes);
+        let mut wav_writer: Option<BufWriter<std::fs::File>> =
+            if let Some(ref path_str) = record_path_clone {
+                let path = std::path::Path::new(path_str);
+                if path.exists() {
+                    // Resume existing session audio file
+                    match std::fs::OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .open(path)
+                    {
+                        Ok(mut f) => {
+                            let mut len_bytes = [0u8; 4];
+                            if f.seek(std::io::SeekFrom::Start(40)).is_ok()
+                                && f.read_exact(&mut len_bytes).is_ok()
+                            {
+                                total_pcm_bytes = u32::from_le_bytes(len_bytes);
+                            }
+                            let _ = f.seek(std::io::SeekFrom::End(0));
+                            Some(BufWriter::with_capacity(64 * 1024, f))
                         }
-                        let _ = f.seek(std::io::SeekFrom::End(0));
-                        Some(BufWriter::with_capacity(64 * 1024, f))
+                        Err(_) => None,
                     }
-                    Err(_) => None,
+                } else {
+                    // New session audio file
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    match std::fs::OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .truncate(true)
+                        .open(path)
+                    {
+                        Ok(mut f) => {
+                            let mut header = [0u8; 44];
+                            header[0..4].copy_from_slice(b"RIFF");
+                            header[8..12].copy_from_slice(b"WAVE");
+                            header[12..16].copy_from_slice(b"fmt ");
+                            header[16..20].copy_from_slice(&16u32.to_le_bytes());
+                            header[20..22].copy_from_slice(&1u16.to_le_bytes()); // PCM
+                            header[22..24].copy_from_slice(&1u16.to_le_bytes()); // 1 channel (mono)
+                            header[24..28].copy_from_slice(&16000u32.to_le_bytes()); // 16kHz
+                            header[28..32].copy_from_slice(&32000u32.to_le_bytes()); // Byte rate
+                            header[32..34].copy_from_slice(&2u16.to_le_bytes()); // Block align
+                            header[34..36].copy_from_slice(&16u16.to_le_bytes()); // 16 bits
+                            header[36..40].copy_from_slice(b"data");
+                            let _ = f.write_all(&header);
+                            Some(BufWriter::with_capacity(64 * 1024, f))
+                        }
+                        Err(_) => None,
+                    }
                 }
             } else {
-                // New session audio file
-                if let Some(parent) = path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                match std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(path) {
-                    Ok(mut f) => {
-                        let mut header = [0u8; 44];
-                        header[0..4].copy_from_slice(b"RIFF");
-                        header[8..12].copy_from_slice(b"WAVE");
-                        header[12..16].copy_from_slice(b"fmt ");
-                        header[16..20].copy_from_slice(&16u32.to_le_bytes());
-                        header[20..22].copy_from_slice(&1u16.to_le_bytes());  // PCM
-                        header[22..24].copy_from_slice(&1u16.to_le_bytes());  // 1 channel (mono)
-                        header[24..28].copy_from_slice(&16000u32.to_le_bytes()); // 16kHz
-                        header[28..32].copy_from_slice(&32000u32.to_le_bytes()); // Byte rate
-                        header[32..34].copy_from_slice(&2u16.to_le_bytes());  // Block align
-                        header[34..36].copy_from_slice(&16u16.to_le_bytes()); // 16 bits
-                        header[36..40].copy_from_slice(b"data");
-                        let _ = f.write_all(&header);
-                        Some(BufWriter::with_capacity(64 * 1024, f))
-                    }
-                    Err(_) => None,
-                }
-            }
-        } else {
-            None
-        };
+                None
+            };
 
         loop {
             if stop_flag_clone.load(std::sync::atomic::Ordering::SeqCst) {
@@ -488,7 +501,9 @@ mod macos_microphone_permission {
             Err(_) => return false,
         };
         let guard = condvar
-            .wait_timeout_while(guard, std::time::Duration::from_secs(10), |value| value.is_none())
+            .wait_timeout_while(guard, std::time::Duration::from_secs(10), |value| {
+                value.is_none()
+            })
             .ok();
         guard.and_then(|(value, _)| *value).unwrap_or(false)
     }

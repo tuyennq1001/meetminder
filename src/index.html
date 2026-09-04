@@ -250,9 +250,6 @@
               </svg>
             </button>
             <button id="btn-session-edit-tags" class="icon-btn small" title="Sửa Thẻ / Tags">🏷️</button>
-            <button id="btn-session-resume" class="btn-primary small session-resume-btn" title="Nối tiếp ghi vào cuộc họp này">
-              ▶ Tiếp tục ghi
-            </button>
             <button id="btn-session-delete-single" class="icon-btn small delete-btn-single" title="Xóa cuộc họp này">
               🗑
             </button>
@@ -353,12 +350,12 @@
         <div id="session-tab-panel-logs" class="session-tab-panel" style="display:none">
           <div class="session-tab-subbar">
             <div class="session-tab-subbar-left">
-              <span class="subbar-info">📜 Toàn bộ bản ghi hội thoại & dịch chi tiết</span>
+              <button type="button" id="btn-session-retranscript" class="btn-primary small" title="Dùng file ghi âm để Gemini tạo lại toàn bộ Logs">🔄 Re-transcript</button>
+              <span id="session-retranscript-status" class="subbar-info" style="display:none"></span>
             </div>
             <div class="session-tab-subbar-right">
               <button type="button" id="btn-session-export-srt" class="btn-secondary small" title="Xuất file .srt">.srt</button>
               <button type="button" id="btn-session-export-txt" class="btn-secondary small" title="Xuất file .txt">.txt</button>
-              <button type="button" id="btn-session-copy" class="btn-secondary small" title="Copy nội dung cuộc họp">📋 Copy</button>
               <button type="button" id="btn-session-edit-title-legacy" class="icon-btn small" title="Sửa file thô" style="display:none"><svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="13" height="13"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg></button>
             </div>
           </div>
@@ -941,6 +938,63 @@
       <div class="modal-footer">
         <button id="btn-cancel-setup" class="secondary-btn">Cancel</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ RE-TRANSCRIPT PROGRESS ═══════════════════ -->
+  <div id="retranscript-progress-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="retranscript-progress-title">
+    <div class="modal-card retranscript-progress-card">
+      <div class="modal-header modal-header-retranscript">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="spinner-ring retranscript-spinner"></div>
+          <h3 id="retranscript-progress-title">Đang re-transcript</h3>
+        </div>
+        <div class="retranscript-header-actions">
+          <button type="button" id="btn-retranscript-minimize" class="icon-btn small" title="Thu nhỏ / Chạy nền">🗕</button>
+          <button type="button" id="btn-retranscript-cancel" class="icon-btn small close-btn" title="Hủy bỏ">✕</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <p id="retranscript-progress-text" class="modal-desc">Đang chuẩn bị file ghi âm...</p>
+        <div class="progress-container">
+          <div class="progress-bar"><div id="retranscript-progress-fill" class="progress-fill"></div></div>
+          <span id="retranscript-progress-pct" class="progress-pct">0%</span>
+        </div>
+        <div class="setup-steps">
+          <div class="setup-step" data-retranscript-step="upload"><span class="step-icon">⏳</span><span class="step-text">Đang tải file ghi âm lên Gemini</span></div>
+          <div class="setup-step" data-retranscript-step="transcribe"><span class="step-icon">○</span><span class="step-text">Gemini đang transcript và dịch</span></div>
+          <div class="setup-step" data-retranscript-step="save"><span class="step-icon">○</span><span class="step-text">Đang lưu Logs mới</span></div>
+        </div>
+        <div class="setup-status"><span id="retranscript-progress-status">Quá trình có thể mất vài phút với file ghi âm dài (tự động ngắt sau 3 phút).</span></div>
+        <div class="modal-actions retranscript-modal-actions">
+          <button type="button" id="btn-retranscript-run-bg" class="btn-secondary small" title="Tiếp tục xử lý ngầm, cho phép bạn làm việc khác">⬇ Chạy ngầm</button>
+          <button type="button" id="btn-retranscript-abort" class="btn-danger small" title="Hủy bỏ tiến trình Re-transcript này">✕ Hủy bỏ</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating indicator when re-transcript runs in background -->
+  <div id="retranscript-floating-bar" class="retranscript-floating-bar" style="display:none" role="status">
+    <div class="retranscript-floating-content" id="btn-retranscript-floating-click" title="Nhấp để xem chi tiết">
+      <div class="retranscript-floating-icon-wrap">
+        <div id="retranscript-floating-spinner" class="spinner-ring retranscript-spinner-mini"></div>
+        <div id="retranscript-floating-check" class="retranscript-floating-check" style="display:none">✓</div>
+      </div>
+      <div class="retranscript-floating-info">
+        <div class="retranscript-floating-header">
+          <span id="retranscript-floating-title" class="retranscript-floating-title">Re-transcript cuộc họp</span>
+          <span id="retranscript-floating-pct" class="retranscript-floating-pct">0%</span>
+        </div>
+        <div class="retranscript-floating-bar-track">
+          <div id="retranscript-floating-progress-fill" class="retranscript-floating-progress-fill" style="width: 0%;"></div>
+        </div>
+        <div id="retranscript-floating-status" class="retranscript-floating-status">Đang xử lý...</div>
+      </div>
+    </div>
+    <div class="retranscript-floating-actions">
+      <button type="button" id="btn-retranscript-expand" class="icon-btn small" title="Mở rộng chi tiết">⤢</button>
+      <button type="button" id="btn-retranscript-floating-cancel" class="icon-btn small" title="Hủy bỏ">✕</button>
     </div>
   </div>
 

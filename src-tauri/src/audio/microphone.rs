@@ -145,12 +145,7 @@ impl MicCapture {
                             target_rate,
                         );
                         if !pcm.is_empty() {
-                            update_pcm_stats(
-                                &pcm,
-                                &received_samples,
-                                &nonzero_samples,
-                                &rms_milli,
-                            );
+                            update_pcm_stats(&pcm, &received_samples, &nonzero_samples, &rms_milli);
                             let _ = sender.send(pcm);
                         }
                     },

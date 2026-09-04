@@ -213,11 +213,17 @@ pub async fn gemini_realtime_stop(
     if let Some(mut session) = session {
         let _ = session.stop_tx.send(());
         if let Some(done_rx) = session.done_rx.take() {
-            if tokio::time::timeout(TRANSLATION_DRAIN_TIMEOUT + std::time::Duration::from_secs(2), done_rx)
-                .await
-                .is_err()
+            if tokio::time::timeout(
+                TRANSLATION_DRAIN_TIMEOUT + std::time::Duration::from_secs(2),
+                done_rx,
+            )
+            .await
+            .is_err()
             {
-                eprintln!("[gemini-live] Timed out waiting for session {} to drain", session_id);
+                eprintln!(
+                    "[gemini-live] Timed out waiting for session {} to drain",
+                    session_id
+                );
             }
         }
     }
@@ -395,9 +401,7 @@ async fn translate_job(
     cache_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, String>>>,
 ) -> GeminiEvent {
     let target_lang = target_lang_ref.read().await.clone();
-    let is_no_translate = target_lang == "none"
-        || target_lang == "off"
-        || target_lang.is_empty();
+    let is_no_translate = target_lang == "none" || target_lang == "off" || target_lang.is_empty();
 
     let translation = if is_no_translate {
         String::new()
@@ -446,8 +450,7 @@ async fn translate_job(
                 _ => {
                     eprintln!(
                         "[gemini-live] Translation failed after {} attempts for job {}",
-                        TRANSLATION_MAX_ATTEMPTS,
-                        job.id
+                        TRANSLATION_MAX_ATTEMPTS, job.id
                     );
                     return GeminiEvent::TranslationFailed {
                         id: job.id,
@@ -577,10 +580,15 @@ fn extract_sentences_and_provisional(text: &str, min_clause_chars: usize) -> (Ve
         let (byte_idx, ch) = chars[i];
         current_clause_len += 1;
 
-        let is_period = ch == '。' || ch == '！' || ch == '？' || ch == '\n'
-            || ((ch == '.' || ch == '!' || ch == '?') && (i + 1 == total_len || chars[i + 1].1 == ' '));
+        let is_period = ch == '。'
+            || ch == '！'
+            || ch == '？'
+            || ch == '\n'
+            || ((ch == '.' || ch == '!' || ch == '?')
+                && (i + 1 == total_len || chars[i + 1].1 == ' '));
 
-        let is_comma_split = (ch == '、' || (ch == ',' && i + 1 < total_len && chars[i + 1].1 == ' '))
+        let is_comma_split = (ch == '、'
+            || (ch == ',' && i + 1 < total_len && chars[i + 1].1 == ' '))
             && current_clause_len >= min_clause_chars;
 
         if is_period || is_comma_split {
@@ -638,7 +646,10 @@ async fn handle_server_message(
             .and_then(|m| m.as_str())
             .unwrap_or("Unknown Gemini error")
             .to_string();
-        eprintln!("[gemini-live] Server error response: {} - {}", code, message);
+        eprintln!(
+            "[gemini-live] Server error response: {} - {}",
+            code, message
+        );
         let _ = event_ch.send(GeminiEvent::Error { code, message });
         return;
     }
@@ -664,7 +675,8 @@ async fn handle_server_message(
             if let Some(speech) = interim.get("text").and_then(|t| t.as_str()) {
                 let speech_trimmed = speech.trim();
                 if !speech_trimmed.is_empty() {
-                    let (sentences, provisional) = extract_sentences_and_provisional(speech_trimmed, 45);
+                    let (sentences, provisional) =
+                        extract_sentences_and_provisional(speech_trimmed, 45);
 
                     // If speech contracted significantly or sentences count dropped, a new turn began
                     if sentences.len() < *committed_count {
@@ -718,7 +730,8 @@ async fn handle_server_message(
                         .and_then(|s| s.as_str())
                         .map(str::to_string);
 
-                    let (sentences, provisional) = extract_sentences_and_provisional(speech_clean, 45);
+                    let (sentences, provisional) =
+                        extract_sentences_and_provisional(speech_clean, 45);
                     let start_idx = (*committed_count).min(sentences.len());
 
                     for sentence in &sentences[start_idx..] {
@@ -862,7 +875,8 @@ async fn fetch_dynamic_models(client: &reqwest::Client, api_key: &str) -> Vec<St
                                     || lower.contains("banana")
                                     || lower.contains("embedding")
                                     || lower.contains("computer-use")
-                                    || lower.contains("2.5") // 2.5 returns 404
+                                    || lower.contains("2.5")
+                                // 2.5 returns 404
                                 {
                                     continue;
                                 }
@@ -905,7 +919,11 @@ async fn fetch_dynamic_models(client: &reqwest::Client, api_key: &str) -> Vec<St
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    eprintln!("[gemini-live] Discovered {} candidate models (ranked): {:?}", models.len(), models);
+    eprintln!(
+        "[gemini-live] Discovered {} candidate models (ranked): {:?}",
+        models.len(),
+        models
+    );
     models
 }
 
@@ -1014,15 +1032,20 @@ async fn translate_text_rest(
                     // Extract retryDelay or default to 20s
                     let delay_secs = if let Ok(err_body) = resp.text().await {
                         if let Ok(err_json) = serde_json::from_str::<serde_json::Value>(&err_body) {
-                            err_json.get("error")
+                            err_json
+                                .get("error")
                                 .and_then(|e| e.get("details"))
                                 .and_then(|d| d.as_array())
                                 .and_then(|arr| {
                                     arr.iter().find_map(|item| {
-                                        if item.get("@type").and_then(|t| t.as_str()) == Some("type.googleapis.com/google.rpc.RetryInfo") {
-                                            item.get("retryDelay").and_then(|r| r.as_str()).and_then(|s| {
-                                                s.trim_end_matches('s').parse::<u64>().ok()
-                                            })
+                                        if item.get("@type").and_then(|t| t.as_str())
+                                            == Some("type.googleapis.com/google.rpc.RetryInfo")
+                                        {
+                                            item.get("retryDelay")
+                                                .and_then(|r| r.as_str())
+                                                .and_then(|s| {
+                                                    s.trim_end_matches('s').parse::<u64>().ok()
+                                                })
                                         } else {
                                             None
                                         }
@@ -1049,7 +1072,10 @@ async fn translate_text_rest(
                 }
             }
             Err(e) => {
-                eprintln!("[gemini-live] HTTP request error for model {}: {}", model, e);
+                eprintln!(
+                    "[gemini-live] HTTP request error for model {}: {}",
+                    model, e
+                );
             }
         }
     }

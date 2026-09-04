@@ -43,7 +43,10 @@ pub async fn microsoft_list_voices() -> Result<String, String> {
             .map_err(|e| format!("Microsoft voices/list failed: {e}"))?,
     };
     if !resp.status().is_success() {
-        return Err(format!("Microsoft voices/list HTTP {}", resp.status().as_u16()));
+        return Err(format!(
+            "Microsoft voices/list HTTP {}",
+            resp.status().as_u16()
+        ));
     }
 
     let body = resp

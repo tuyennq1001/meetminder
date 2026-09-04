@@ -256,3 +256,97 @@ impl Settings {
 
 /// Thread-safe settings state managed by Tauri
 pub struct SettingsState(pub Mutex<Settings>);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_settings() {
+        let s = Settings::default();
+        assert_eq!(s.gemini_model, "models/gemini-3.5-transcribe-live");
+        assert_eq!(s.source_language, "ja");
+        assert_eq!(s.target_language, "vi");
+        assert_eq!(s.audio_source, "system");
+        assert_eq!(s.font_size, 16);
+        assert_eq!(s.note_font_size, 14);
+        assert_eq!(s.font_color, "#ffffff");
+        assert_eq!(s.font_family, "system");
+        assert!((s.overlay_opacity - 0.85).abs() < f64::EPSILON);
+        assert_eq!(s.tts_provider, "edge");
+        assert_eq!(s.inactivity_timeout_min, 10);
+        assert!(s.show_original);
+        assert!(s.tts_auto_read);
+        assert!(!s.tts_enabled);
+    }
+
+    #[test]
+    fn test_deserialize_empty_json() {
+        let json_str = "{}";
+        let s: Result<Settings, _> = serde_json::from_str(json_str);
+        assert!(s.is_ok());
+        let s = s.unwrap();
+        assert_eq!(s.gemini_model, "models/gemini-3.5-transcribe-live");
+        assert_eq!(s.font_size, 16);
+        assert_eq!(s.inactivity_timeout_min, 10);
+        assert_eq!(s.font_color, "#ffffff");
+    }
+
+    #[test]
+    fn test_deserialize_partial_json_preserves_defaults() {
+        let json_str = r#"{
+            "gemini_api_key": "test-key",
+            "source_language": "en",
+            "target_language": "ja"
+        }"#;
+        let s: Settings = serde_json::from_str(json_str).expect("should parse partial settings");
+        assert_eq!(s.gemini_api_key, "test-key");
+        assert_eq!(s.source_language, "en");
+        assert_eq!(s.target_language, "ja");
+        assert_eq!(s.gemini_model, "models/gemini-3.5-transcribe-live");
+        assert!((s.overlay_opacity - 0.85).abs() < f64::EPSILON);
+        assert_eq!(s.font_size, 16);
+        assert!((s.tts_speed - 1.2).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_serialize_deserialize_roundtrip() {
+        let mut s = Settings::default();
+        s.gemini_api_key = "AIzaSy123456".to_string();
+        s.font_size = 20;
+        s.note_font_size = 18;
+        s.font_color = "#33ccff".to_string();
+        s.template_notes = Some("# Notes template".to_string());
+
+        let json = serde_json::to_string(&s).expect("should serialize");
+        let restored: Settings = serde_json::from_str(&json).expect("should deserialize");
+
+        assert_eq!(restored.gemini_api_key, "AIzaSy123456");
+        assert_eq!(restored.font_size, 20);
+        assert_eq!(restored.note_font_size, 18);
+        assert_eq!(restored.font_color, "#33ccff");
+        assert_eq!(
+            restored.template_notes,
+            Some("# Notes template".to_string())
+        );
+    }
+
+    #[test]
+    fn test_custom_context_deserialization() {
+        let json_str = r#"{
+            "custom_context": {
+                "domain": "medical",
+                "translation_terms": [
+                    { "source": "CT", "target": "chụp cắt lớp" }
+                ]
+            }
+        }"#;
+        let s: Settings = serde_json::from_str(json_str).expect("should parse custom context");
+        assert!(s.custom_context.is_some());
+        let ctx = s.custom_context.unwrap();
+        assert_eq!(ctx.domain.as_deref(), Some("medical"));
+        assert_eq!(ctx.translation_terms.len(), 1);
+        assert_eq!(ctx.translation_terms[0].source, "CT");
+        assert_eq!(ctx.translation_terms[0].target, "chụp cắt lớp");
+    }
+}

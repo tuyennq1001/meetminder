@@ -81,7 +81,10 @@ pub async fn tiktok_tts_speak(
                 continue;
             }
         };
-        let status_code = json.get("status_code").and_then(|v| v.as_i64()).unwrap_or(-1);
+        let status_code = json
+            .get("status_code")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1);
         if status_code != 0 {
             // Auth/quota/bad-param — terminal, do NOT walk more hosts (same result).
             let msg = json
@@ -90,7 +93,10 @@ pub async fn tiktok_tts_speak(
                 .unwrap_or("unknown error");
             return Err(format!("TikTok: {msg}"));
         }
-        if let Some(v_str) = json.get("data").and_then(|d| d.get("v_str")).and_then(|v| v.as_str())
+        if let Some(v_str) = json
+            .get("data")
+            .and_then(|d| d.get("v_str"))
+            .and_then(|v| v.as_str())
         {
             if !v_str.is_empty() {
                 return Ok(v_str.to_string()); // already base64 MP3
