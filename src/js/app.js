@@ -849,24 +849,46 @@ class App {
             r.addEventListener('change', () => this._autoSaveSettingsFromForm());
         });
 
-        // Slider live updates & auto-save
-        document.getElementById('range-opacity')?.addEventListener('input', (e) => {
-            const valEl = document.getElementById('opacity-value');
-            if (valEl) valEl.textContent = `${e.target.value}%`;
-            this._autoSaveSettingsFromForm();
+        // Stepper buttons (+/-) setup
+        document.querySelectorAll('.btn-stepper').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetId = btn.dataset.target;
+                const input = document.getElementById(targetId);
+                if (!input) return;
+                const min = parseInt(input.min, 10) || 0;
+                const max = parseInt(input.max, 10) || 999;
+                const step = parseInt(input.step, 10) || 1;
+                let val = parseInt(input.value, 10);
+                if (isNaN(val)) val = min;
+                if (btn.classList.contains('btn-stepper-inc')) {
+                    val = Math.min(max, val + step);
+                } else if (btn.classList.contains('btn-stepper-dec')) {
+                    val = Math.max(min, val - step);
+                }
+                input.value = val;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                this._autoSaveSettingsFromForm();
+            });
         });
 
-        document.getElementById('range-font-size')?.addEventListener('input', (e) => {
-            const valEl = document.getElementById('font-size-value');
-            if (valEl) valEl.textContent = `${e.target.value}px`;
-            this._autoSaveSettingsFromForm();
-        });
-
-        document.getElementById('range-note-font-size')?.addEventListener('input', (e) => {
-            const valEl = document.getElementById('note-font-size-value');
-            if (valEl) valEl.textContent = `${e.target.value}px`;
-            this._autoSaveSettingsFromForm();
-        });
+        // Stepper input fields live updates & clamping
+        const setupStepperInput = (id, min, max, defaultVal) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('input', () => {
+                this._debouncedAutoSave();
+            });
+            el.addEventListener('change', () => {
+                let v = parseInt(el.value, 10);
+                if (isNaN(v)) v = defaultVal;
+                v = Math.max(min, Math.min(max, v));
+                el.value = v;
+                this._autoSaveSettingsFromForm();
+            });
+        };
+        setupStepperInput('input-note-font-size', 12, 36, 14);
+        setupStepperInput('input-font-size', 12, 36, 16);
+        setupStepperInput('input-max-lines', 2, 15, 5);
 
         document.getElementById('input-font-color')?.addEventListener('input', (e) => {
             const valEl = document.getElementById('font-color-value');
@@ -875,12 +897,6 @@ class App {
         });
 
         document.getElementById('select-font-family')?.addEventListener('change', () => {
-            this._autoSaveSettingsFromForm();
-        });
-
-        document.getElementById('range-max-lines')?.addEventListener('input', (e) => {
-            const valEl = document.getElementById('max-lines-value');
-            if (valEl) valEl.textContent = e.target.value;
             this._autoSaveSettingsFromForm();
         });
 
@@ -1382,26 +1398,19 @@ class App {
         if (radio) radio.checked = true;
 
         // Display
-        const opacityPercent = Math.round((s.overlay_opacity || 0.85) * 100);
-        document.getElementById('range-opacity').value = opacityPercent;
-        document.getElementById('opacity-value').textContent = `${opacityPercent}%`;
+        const noteFontInput = document.getElementById('input-note-font-size');
+        if (noteFontInput) noteFontInput.value = s.note_font_size || 14;
 
-        document.getElementById('range-font-size').value = s.font_size || 16;
-        document.getElementById('font-size-value').textContent = `${s.font_size || 16}px`;
-
-        const noteFontSize = s.note_font_size || 14;
-        const noteFontRange = document.getElementById('range-note-font-size');
-        const noteFontVal = document.getElementById('note-font-size-value');
-        if (noteFontRange) noteFontRange.value = noteFontSize;
-        if (noteFontVal) noteFontVal.textContent = `${noteFontSize}px`;
+        const fontSizeInput = document.getElementById('input-font-size');
+        if (fontSizeInput) fontSizeInput.value = s.font_size || 16;
 
         const fontColor = s.font_color || '#ffffff';
         document.getElementById('input-font-color').value = fontColor;
         document.getElementById('font-color-value').textContent = fontColor.toUpperCase();
         document.getElementById('select-font-family').value = s.font_family || 'system';
 
-        document.getElementById('range-max-lines').value = s.max_lines || 5;
-        document.getElementById('max-lines-value').textContent = s.max_lines || 5;
+        const maxLinesInput = document.getElementById('input-max-lines');
+        if (maxLinesInput) maxLinesInput.value = s.max_lines || 5;
 
         document.getElementById('check-show-original').checked = s.show_original !== false;
 
@@ -1463,12 +1472,12 @@ class App {
             language_hints_strict: document.getElementById('check-strict-lang')?.checked || false,
             endpoint_delay: parseInt(document.getElementById('range-endpoint-delay')?.value || settingsManager.get().endpoint_delay || 3000),
             audio_source: document.querySelector('input[name="audio-source"]:checked')?.value || 'system',
-            overlay_opacity: parseInt(document.getElementById('range-opacity')?.value || 85) / 100,
-            font_size: parseInt(document.getElementById('range-font-size')?.value || 16),
-            note_font_size: parseInt(document.getElementById('range-note-font-size')?.value || 14),
+            overlay_opacity: settingsManager.get().overlay_opacity ?? 0.85,
+            font_size: parseInt(document.getElementById('input-font-size')?.value || 16),
+            note_font_size: parseInt(document.getElementById('input-note-font-size')?.value || 14),
             font_color: document.getElementById('input-font-color')?.value || '#ffffff',
             font_family: document.getElementById('select-font-family')?.value || 'system',
-            max_lines: parseInt(document.getElementById('range-max-lines')?.value || 5),
+            max_lines: parseInt(document.getElementById('input-max-lines')?.value || 5),
             show_original: document.getElementById('check-show-original')?.checked !== false,
             custom_context: null,
         };
@@ -3795,11 +3804,9 @@ class App {
         const display = document.getElementById('font-size-display');
         if (display) display.textContent = newSize;
 
-        // Sync with settings slider
-        const slider = document.getElementById('range-font-size');
-        if (slider) slider.value = newSize;
-        const sliderVal = document.getElementById('font-size-value');
-        if (sliderVal) sliderVal.textContent = `${newSize}px`;
+        // Sync with settings input
+        const fontSizeInput = document.getElementById('input-font-size') || document.getElementById('range-font-size');
+        if (fontSizeInput) fontSizeInput.value = newSize;
     }
 
     // ─── Toast ─────────────────────────────────────────────
@@ -6941,11 +6948,11 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         // GitHub links
         document.getElementById('link-github')?.addEventListener('click', (e) => {
             e.preventDefault();
-            window.__TAURI__?.opener?.openUrl('https://github.com/phuc-nt/my-translator');
+            window.__TAURI__?.opener?.openUrl('https://github.com/tuyennq1001/meetminder');
         });
         document.getElementById('link-issues')?.addEventListener('click', (e) => {
             e.preventDefault();
-            window.__TAURI__?.opener?.openUrl('https://github.com/phuc-nt/my-translator/issues');
+            window.__TAURI__?.opener?.openUrl('https://github.com/tuyennq1001/meetminder/issues');
         });
 
         // Check for Updates button

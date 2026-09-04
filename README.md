@@ -40,7 +40,7 @@
 
 ## ⬇️ Tải về bản cài đặt (Downloads)
 
-Tải phiên bản mới nhất từ trang [GitHub Releases](https://github.com/phuc-nt/my-translator/releases/latest).
+Tải phiên bản mới nhất từ trang [GitHub Releases](https://github.com/tuyennq1001/meetminder/releases/latest).
 
 | Hệ điều hành | Kiến trúc / Thiết bị | File cài đặt | Hướng dẫn |
 | :--- | :--- | :--- | :--- |
@@ -247,8 +247,8 @@ Sau mỗi cuộc họp, toàn bộ dữ liệu được tổng hợp vào màn h
 
 1. **Clone mã nguồn dự án**:
    ```bash
-   git clone https://github.com/phuc-nt/my-translator.git
-   cd my-translator
+   git clone https://github.com/tuyennq1001/meetminder.git
+   cd meetminder
    ```
 
 2. **Cài đặt các gói phụ thuộc (Dependencies)**:

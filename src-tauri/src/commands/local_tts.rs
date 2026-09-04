@@ -46,7 +46,7 @@ pub const RELEASE_BASE: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/d
 /// Base URL for this project's custom Vietnamese voices (self-contained tarballs
 /// with bundled espeak-ng-data). Contributed by @quanhieu (nghimestudio/nghitts).
 pub const CUSTOM_VI_BASE: &str =
-    "https://github.com/phuc-nt/my-translator/releases/download/tts-models-vi";
+    "https://github.com/tuyennq1001/meetminder/releases/download/tts-models-vi";
 
 /// Static catalog — Vietnamese + English, license-verified free Piper voices.
 /// SHA-256 values pinned from the published release assets (integrity gate).

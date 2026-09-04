@@ -17,7 +17,7 @@ Hướng dẫn từng bước cài đặt và sử dụng **Meet Minder** trên 
 
 ## Bước 1 — Tải về
 
-Tải file `.dmg` mới nhất tại: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/latest)
+Tải file `.dmg` mới nhất tại: [**Releases — macOS**](https://github.com/tuyennq1001/meetminder/releases/latest)
 
 Chọn đúng file:
 - `MeetMinder_x.x.x_aarch64.dmg` — Apple Silicon (M1/M2/M3/M4)

@@ -42,6 +42,7 @@ pub struct Settings {
     /// Audio source: "system" | "microphone" | "both"
     pub audio_source: String,
     /// Overlay opacity: 0.0 - 1.0
+    #[serde(default = "default_overlay_opacity")]
     pub overlay_opacity: f64,
     /// Font size in px
     pub font_size: u32,
@@ -180,6 +181,10 @@ impl Default for Settings {
             template_minutes_ja: None,
         }
     }
+}
+
+fn default_overlay_opacity() -> f64 {
+    0.85
 }
 
 fn default_inactivity_timeout_min() -> u32 {

@@ -737,10 +737,12 @@
           <div class="settings-group-card">
             <div class="settings-group-header">📝 Ghi chú cuộc họp (Take Note & Logs)</div>
             <div class="settings-grid-row">
-              <span class="field-label">Font Size Note</span>
-              <div class="slider-control-wrap">
-                <input type="range" id="range-note-font-size" min="12" max="36" value="14" />
-                <span id="note-font-size-value" class="range-value">14px</span>
+              <span class="field-label">Font Size</span>
+              <div class="stepper-control-wrap">
+                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-note-font-size" aria-label="Giảm font size">−</button>
+                <input type="number" id="input-note-font-size" min="12" max="36" value="14" class="input-stepper" />
+                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-note-font-size" aria-label="Tăng font size">+</button>
+                <span class="stepper-unit">px</span>
               </div>
             </div>
           </div>
@@ -749,10 +751,12 @@
           <div class="settings-group-card">
             <div class="settings-group-header">💬 Bản dịch & Phụ đề trực tiếp (Live Transcript)</div>
             <div class="settings-grid-row">
-              <span class="field-label">Font Size Dịch</span>
-              <div class="slider-control-wrap">
-                <input type="range" id="range-font-size" min="12" max="36" value="16" />
-                <span id="font-size-value" class="range-value">16px</span>
+              <span class="field-label">Font Size</span>
+              <div class="stepper-control-wrap">
+                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-font-size" aria-label="Giảm font size">−</button>
+                <input type="number" id="input-font-size" min="12" max="36" value="16" class="input-stepper" />
+                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-font-size" aria-label="Tăng font size">+</button>
+                <span class="stepper-unit">px</span>
               </div>
             </div>
             <div class="settings-grid-row">
@@ -774,9 +778,11 @@
             </div>
             <div class="settings-grid-row">
               <span class="field-label">Max Lines</span>
-              <div class="slider-control-wrap">
-                <input type="range" id="range-max-lines" min="2" max="15" value="5" />
-                <span id="max-lines-value" class="range-value">5</span>
+              <div class="stepper-control-wrap">
+                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-max-lines" aria-label="Giảm max lines">−</button>
+                <input type="number" id="input-max-lines" min="2" max="15" value="5" class="input-stepper" />
+                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-max-lines" aria-label="Tăng max lines">+</button>
+                <span class="stepper-unit">dòng</span>
               </div>
             </div>
             <div class="settings-grid-row" style="border-bottom: none;">
@@ -785,18 +791,6 @@
                 <input type="checkbox" id="check-show-original" checked />
                 <span class="checkbox-label">Hiển thị song song câu gốc</span>
               </label>
-            </div>
-          </div>
-
-          <!-- Window & Overlay Settings -->
-          <div class="settings-group-card">
-            <div class="settings-group-header">🪟 Cửa sổ ứng dụng</div>
-            <div class="settings-grid-row" style="border-bottom: none;">
-              <span class="field-label">Opacity (Độ trong)</span>
-              <div class="slider-control-wrap">
-                <input type="range" id="range-opacity" min="20" max="100" value="85" />
-                <span id="opacity-value" class="range-value">85%</span>
-              </div>
             </div>
           </div>
         </div>

@@ -15,7 +15,7 @@ Step-by-step guide to install and use **Meet Minder** on Windows 10/11.
 
 ## Step 1 — Download
 
-Download the latest `.exe` installer from: [**Releases — Windows**](https://github.com/phuc-nt/my-translator/releases/latest)
+Download the latest `.exe` installer from: [**Releases — Windows**](https://github.com/tuyennq1001/meetminder/releases/latest)
 
 Choose the right version:
 - **x64** — Most Windows PCs (Intel/AMD)  

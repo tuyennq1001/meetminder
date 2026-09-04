@@ -15,7 +15,7 @@ Hướng dẫn từng bước cài đặt và sử dụng **Meet Minder** trên 
 
 ## Bước 1 — Tải xuống
 
-Tải file `.exe` mới nhất tại: [**Releases — Windows**](https://github.com/phuc-nt/my-translator/releases/latest)
+Tải file `.exe` mới nhất tại: [**Releases — Windows**](https://github.com/tuyennq1001/meetminder/releases/latest)
 
 Chọn phiên bản phù hợp:
 - **x64** — Đa số PC Windows (Intel/AMD)

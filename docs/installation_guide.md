@@ -16,7 +16,7 @@ Step-by-step guide to install and use **Meet Minder** on macOS.
 
 ## Step 1 — Download
 
-Download the latest `.dmg` from: [**Releases — macOS**](https://github.com/phuc-nt/my-translator/releases/latest)
+Download the latest `.dmg` from: [**Releases — macOS**](https://github.com/tuyennq1001/meetminder/releases/latest)
 
 Choose the right file:
 - `MeetMinder_x.x.x_aarch64.dmg` — Apple Silicon (M1/M2/M3/M4)
