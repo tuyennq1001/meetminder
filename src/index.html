@@ -683,6 +683,72 @@
             <h3 class="settings-panel-title">🎨 Hiển thị & Giao diện</h3>
           </div>
 
+          <!-- System Menu & Navigation Display Settings -->
+          <div class="settings-group-card">
+            <div class="settings-group-header">🎛️ Menu hệ thống & Thanh điều hướng</div>
+            <div class="settings-grid-row">
+              <span class="field-label">Font Style</span>
+              <select id="select-menu-font-family" class="source-select">
+                <option value="system">System (SF Pro / Mặc định)</option>
+                <option value="inter">Inter</option>
+                <option value="roboto">Roboto / Google Sans</option>
+                <option value="segoe">Segoe UI</option>
+                <option value="arial">Arial</option>
+                <option value="monospace">Monospace</option>
+              </select>
+            </div>
+            <div class="settings-grid-row">
+              <span class="field-label">Font Size</span>
+              <div class="stepper-control-wrap">
+                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-menu-font-size" aria-label="Giảm font size">−</button>
+                <input type="number" id="input-menu-font-size" min="10" max="18" value="12" class="input-stepper" />
+                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-menu-font-size" aria-label="Tăng font size">+</button>
+                <span class="stepper-unit">px</span>
+              </div>
+            </div>
+            <div class="settings-grid-row" style="border-bottom: none;">
+              <span class="field-label">Font Weight</span>
+              <select id="select-menu-font-weight" class="source-select">
+                <option value="normal">Bình thường (Regular 400)</option>
+                <option value="medium" selected>Vừa phải (Medium 500)</option>
+                <option value="semibold">Đậm rõ nét (Semi-Bold 600)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Meeting Logs Content & Table Display Settings -->
+          <div class="settings-group-card">
+            <div class="settings-group-header">📋 Danh sách & Bảng nội dung cuộc họp (Logs)</div>
+            <div class="settings-grid-row">
+              <span class="field-label">Font Style</span>
+              <select id="select-table-font-family" class="source-select">
+                <option value="system">System (SF Pro / Mặc định)</option>
+                <option value="inter">Inter</option>
+                <option value="roboto">Roboto / Google Sans</option>
+                <option value="segoe">Segoe UI</option>
+                <option value="arial">Arial</option>
+                <option value="monospace">Monospace</option>
+              </select>
+            </div>
+            <div class="settings-grid-row">
+              <span class="field-label">Font Size</span>
+              <div class="stepper-control-wrap">
+                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-table-font-size" aria-label="Giảm font size">−</button>
+                <input type="number" id="input-table-font-size" min="11" max="22" value="13" class="input-stepper" />
+                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-table-font-size" aria-label="Tăng font size">+</button>
+                <span class="stepper-unit">px</span>
+              </div>
+            </div>
+            <div class="settings-grid-row" style="border-bottom: none;">
+              <span class="field-label">Font Weight</span>
+              <select id="select-table-font-weight" class="source-select">
+                <option value="normal">Bình thường (Regular 400)</option>
+                <option value="medium" selected>Vừa phải (Medium 500)</option>
+                <option value="semibold">Đậm rõ nét (Semi-Bold 600)</option>
+              </select>
+            </div>
+          </div>
+
           <!-- Note Editor Display Settings -->
           <div class="settings-group-card">
             <div class="settings-group-header">📝 Ghi chú cuộc họp (Take Note & Logs)</div>
@@ -694,6 +760,17 @@
                 <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-note-font-size" aria-label="Tăng font size">+</button>
                 <span class="stepper-unit">px</span>
               </div>
+            </div>
+            <div class="settings-grid-row" style="border-bottom: none;">
+              <span class="field-label">Font Style</span>
+              <select id="select-note-font-family" class="source-select">
+                <option value="system">System (SF Pro / Mặc định)</option>
+                <option value="inter">Inter</option>
+                <option value="roboto">Roboto</option>
+                <option value="arial">Arial</option>
+                <option value="georgia">Georgia</option>
+                <option value="monospace">Monospace</option>
+              </select>
             </div>
           </div>
 

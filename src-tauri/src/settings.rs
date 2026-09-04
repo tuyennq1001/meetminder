@@ -49,6 +49,27 @@ pub struct Settings {
     /// Note editor font size in px
     #[serde(default = "default_note_font_size")]
     pub note_font_size: u32,
+    /// Note editor font family identifier
+    #[serde(default = "default_note_font_family")]
+    pub note_font_family: String,
+    /// System menu font family identifier
+    #[serde(default = "default_menu_font_family")]
+    pub menu_font_family: String,
+    /// System menu font size in px
+    #[serde(default = "default_menu_font_size")]
+    pub menu_font_size: u32,
+    /// System menu font weight ("normal" | "medium" | "semibold")
+    #[serde(default = "default_menu_font_weight")]
+    pub menu_font_weight: String,
+    /// Data table and logs content font family identifier
+    #[serde(default = "default_table_font_family")]
+    pub table_font_family: String,
+    /// Data table and logs content font size in px
+    #[serde(default = "default_table_font_size")]
+    pub table_font_size: u32,
+    /// Data table and logs content font weight ("normal" | "medium" | "semibold")
+    #[serde(default = "default_table_font_weight")]
+    pub table_font_weight: String,
     /// Transcript font color as a CSS color string
     #[serde(default = "default_font_color")]
     pub font_color: String,
@@ -146,6 +167,13 @@ impl Default for Settings {
             overlay_opacity: 0.85,
             font_size: 16,
             note_font_size: default_note_font_size(),
+            note_font_family: default_note_font_family(),
+            menu_font_family: default_menu_font_family(),
+            menu_font_size: default_menu_font_size(),
+            menu_font_weight: default_menu_font_weight(),
+            table_font_family: default_table_font_family(),
+            table_font_size: default_table_font_size(),
+            table_font_weight: default_table_font_weight(),
             font_color: default_font_color(),
             font_family: default_font_family(),
             max_lines: 5,
@@ -193,6 +221,34 @@ fn default_inactivity_timeout_min() -> u32 {
 
 fn default_note_font_size() -> u32 {
     14
+}
+
+fn default_note_font_family() -> String {
+    "system".to_string()
+}
+
+fn default_menu_font_family() -> String {
+    "system".to_string()
+}
+
+fn default_menu_font_size() -> u32 {
+    12
+}
+
+fn default_menu_font_weight() -> String {
+    "medium".to_string()
+}
+
+fn default_table_font_family() -> String {
+    "system".to_string()
+}
+
+fn default_table_font_size() -> u32 {
+    13
+}
+
+fn default_table_font_weight() -> String {
+    "medium".to_string()
 }
 
 /// Serde default for `local_tts_speed` (field-level default would give 0.0).
@@ -270,6 +326,13 @@ mod tests {
         assert_eq!(s.audio_source, "system");
         assert_eq!(s.font_size, 16);
         assert_eq!(s.note_font_size, 14);
+        assert_eq!(s.note_font_family, "system");
+        assert_eq!(s.menu_font_family, "system");
+        assert_eq!(s.menu_font_size, 12);
+        assert_eq!(s.menu_font_weight, "medium");
+        assert_eq!(s.table_font_family, "system");
+        assert_eq!(s.table_font_size, 13);
+        assert_eq!(s.table_font_weight, "medium");
         assert_eq!(s.font_color, "#ffffff");
         assert_eq!(s.font_family, "system");
         assert!((s.overlay_opacity - 0.85).abs() < f64::EPSILON);
@@ -288,6 +351,12 @@ mod tests {
         let s = s.unwrap();
         assert_eq!(s.gemini_model, "models/gemini-3.5-transcribe-live");
         assert_eq!(s.font_size, 16);
+        assert_eq!(s.menu_font_family, "system");
+        assert_eq!(s.menu_font_size, 12);
+        assert_eq!(s.menu_font_weight, "medium");
+        assert_eq!(s.table_font_family, "system");
+        assert_eq!(s.table_font_size, 13);
+        assert_eq!(s.table_font_weight, "medium");
         assert_eq!(s.inactivity_timeout_min, 10);
         assert_eq!(s.font_color, "#ffffff");
     }
@@ -315,6 +384,13 @@ mod tests {
         s.gemini_api_key = "AIzaSy123456".to_string();
         s.font_size = 20;
         s.note_font_size = 18;
+        s.note_font_family = "inter".to_string();
+        s.menu_font_family = "roboto".to_string();
+        s.menu_font_size = 13;
+        s.menu_font_weight = "semibold".to_string();
+        s.table_font_family = "inter".to_string();
+        s.table_font_size = 14;
+        s.table_font_weight = "semibold".to_string();
         s.font_color = "#33ccff".to_string();
         s.template_notes = Some("# Notes template".to_string());
 
@@ -324,6 +400,13 @@ mod tests {
         assert_eq!(restored.gemini_api_key, "AIzaSy123456");
         assert_eq!(restored.font_size, 20);
         assert_eq!(restored.note_font_size, 18);
+        assert_eq!(restored.note_font_family, "inter");
+        assert_eq!(restored.menu_font_family, "roboto");
+        assert_eq!(restored.menu_font_size, 13);
+        assert_eq!(restored.menu_font_weight, "semibold");
+        assert_eq!(restored.table_font_family, "inter");
+        assert_eq!(restored.table_font_size, 14);
+        assert_eq!(restored.table_font_weight, "semibold");
         assert_eq!(restored.font_color, "#33ccff");
         assert_eq!(
             restored.template_notes,

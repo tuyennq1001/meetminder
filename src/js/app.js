@@ -879,9 +879,31 @@ class App {
                 this._autoSaveSettingsFromForm();
             });
         };
+        setupStepperInput('input-menu-font-size', 10, 18, 12);
+        setupStepperInput('input-table-font-size', 11, 22, 13);
         setupStepperInput('input-note-font-size', 12, 36, 14);
         setupStepperInput('input-font-size', 12, 36, 16);
         setupStepperInput('input-max-lines', 2, 15, 5);
+
+        document.getElementById('select-menu-font-family')?.addEventListener('change', () => {
+            this._autoSaveSettingsFromForm();
+        });
+
+        document.getElementById('select-menu-font-weight')?.addEventListener('change', () => {
+            this._autoSaveSettingsFromForm();
+        });
+
+        document.getElementById('select-table-font-family')?.addEventListener('change', () => {
+            this._autoSaveSettingsFromForm();
+        });
+
+        document.getElementById('select-table-font-weight')?.addEventListener('change', () => {
+            this._autoSaveSettingsFromForm();
+        });
+
+        document.getElementById('select-note-font-family')?.addEventListener('change', () => {
+            this._autoSaveSettingsFromForm();
+        });
 
         document.getElementById('input-font-color')?.addEventListener('input', (e) => {
             const valEl = document.getElementById('font-color-value');
@@ -1391,8 +1413,29 @@ class App {
         if (radio) radio.checked = true;
 
         // Display
+        const menuFontFam = document.getElementById('select-menu-font-family');
+        if (menuFontFam) menuFontFam.value = s.menu_font_family || 'system';
+
+        const menuFontSize = document.getElementById('input-menu-font-size');
+        if (menuFontSize) menuFontSize.value = s.menu_font_size || 12;
+
+        const menuFontWeight = document.getElementById('select-menu-font-weight');
+        if (menuFontWeight) menuFontWeight.value = s.menu_font_weight || 'medium';
+
+        const tableFontFam = document.getElementById('select-table-font-family');
+        if (tableFontFam) tableFontFam.value = s.table_font_family || 'system';
+
+        const tableFontSize = document.getElementById('input-table-font-size');
+        if (tableFontSize) tableFontSize.value = s.table_font_size || 13;
+
+        const tableFontWeight = document.getElementById('select-table-font-weight');
+        if (tableFontWeight) tableFontWeight.value = s.table_font_weight || 'medium';
+
         const noteFontInput = document.getElementById('input-note-font-size');
         if (noteFontInput) noteFontInput.value = s.note_font_size || 14;
+
+        const noteFontFam = document.getElementById('select-note-font-family');
+        if (noteFontFam) noteFontFam.value = s.note_font_family || 'system';
 
         const fontSizeInput = document.getElementById('input-font-size');
         if (fontSizeInput) fontSizeInput.value = s.font_size || 16;
@@ -1468,6 +1511,13 @@ class App {
             overlay_opacity: settingsManager.get().overlay_opacity ?? 0.85,
             font_size: parseInt(document.getElementById('input-font-size')?.value || 16),
             note_font_size: parseInt(document.getElementById('input-note-font-size')?.value || 14),
+            note_font_family: document.getElementById('select-note-font-family')?.value || 'system',
+            menu_font_family: document.getElementById('select-menu-font-family')?.value || 'system',
+            menu_font_size: parseInt(document.getElementById('input-menu-font-size')?.value || 12),
+            menu_font_weight: document.getElementById('select-menu-font-weight')?.value || 'medium',
+            table_font_family: document.getElementById('select-table-font-family')?.value || 'system',
+            table_font_size: parseInt(document.getElementById('input-table-font-size')?.value || 13),
+            table_font_weight: document.getElementById('select-table-font-weight')?.value || 'medium',
             font_color: document.getElementById('input-font-color')?.value || '#ffffff',
             font_family: document.getElementById('select-font-family')?.value || 'system',
             max_lines: parseInt(document.getElementById('input-max-lines')?.value || 5),
@@ -1520,6 +1570,54 @@ class App {
     // ─── Apply Settings ────────────────────────────────────
 
     _applySettings(settings) {
+        // Update menu & UI font settings
+        const menuFamilies = {
+            system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            inter: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+            roboto: "'Roboto', 'Google Sans', -apple-system, sans-serif",
+            segoe: "'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif",
+            arial: "Arial, -apple-system, sans-serif",
+            monospace: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        };
+        const noteFamilies = {
+            system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            inter: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+            roboto: "'Roboto', -apple-system, sans-serif",
+            arial: "Arial, -apple-system, sans-serif",
+            georgia: "Georgia, serif",
+            monospace: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        };
+        const weightMap = {
+            normal: '400',
+            medium: '500',
+            semibold: '600',
+        };
+
+        const titleWeightMap = {
+            normal: '600',
+            medium: '650',
+            semibold: '750',
+        };
+
+        const menuFontFam = menuFamilies[settings.menu_font_family] || menuFamilies.system;
+        const menuFontSize = settings.menu_font_size || 12;
+        const menuFontWeight = weightMap[settings.menu_font_weight] || '500';
+        const noteFontFam = noteFamilies[settings.note_font_family] || noteFamilies.system;
+
+        const tableFontFam = menuFamilies[settings.table_font_family] || menuFamilies.system;
+        const tableFontSize = settings.table_font_size || 13;
+        const tableFontWeight = weightMap[settings.table_font_weight] || '500';
+        const tableTitleWeight = titleWeightMap[settings.table_font_weight] || '650';
+
+        document.documentElement.style.setProperty('--menu-font-family', menuFontFam);
+        document.documentElement.style.setProperty('--menu-font-size', `${menuFontSize}px`);
+        document.documentElement.style.setProperty('--menu-font-weight', menuFontWeight);
+        document.documentElement.style.setProperty('--note-font-family', noteFontFam);
+        document.documentElement.style.setProperty('--table-font-family', tableFontFam);
+        document.documentElement.style.setProperty('--table-font-size', `${tableFontSize}px`);
+        document.documentElement.style.setProperty('--table-font-weight', tableFontWeight);
+        document.documentElement.style.setProperty('--table-title-weight', tableTitleWeight);
+
         // Update note editor font size
         const noteFontSize = settings.note_font_size || 14;
         document.documentElement.style.setProperty('--note-font-size', `${noteFontSize}px`);

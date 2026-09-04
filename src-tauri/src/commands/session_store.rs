@@ -1095,15 +1095,7 @@ pub fn update_session_notes(
     })
 }
 
-#[tauri::command]
-pub fn export_session_srt(app: AppHandle, id: String) -> Result<String, String> {
-    validate_id(&id)?;
-    let dir = sessions_dir(&app)?;
-    let (_, json_path) = session_paths(&dir, &id);
-    let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read failed: {}", e))?;
-    let data: SessionData =
-        serde_json::from_str(&json_str).map_err(|e| format!("Parse failed: {}", e))?;
-
+pub fn build_session_srt(data: &SessionData) -> String {
     let mut out = String::new();
     let mut idx: u32 = 1;
     let mut flat: Vec<&Segment> = data.chunks.iter().flat_map(|c| c.segments.iter()).collect();
@@ -1122,7 +1114,48 @@ pub fn export_session_srt(app: AppHandle, id: String) -> Result<String, String> 
         ));
         idx += 1;
     }
-    Ok(out)
+    out
+}
+
+pub fn build_session_txt(data: &SessionData) -> String {
+    let lines: Vec<String> = data
+        .chunks
+        .iter()
+        .flat_map(|c| c.segments.iter())
+        .map(|s| s.tgt.clone())
+        .collect();
+    lines.join("\n")
+}
+
+pub fn session_item_matches_metadata(item: &SessionListItem, q: &str, tag_match: &str) -> bool {
+    item.title.to_lowercase().contains(q)
+        || item
+            .customer_name
+            .as_ref()
+            .map_or(false, |c| c.to_lowercase().contains(q))
+        || item
+            .project_name
+            .as_ref()
+            .map_or(false, |p| p.to_lowercase().contains(q))
+        || item
+            .category
+            .as_ref()
+            .map_or(false, |c| c.to_lowercase().contains(q))
+        || item.tags.iter().any(|t| {
+            t.to_lowercase().contains(tag_match) || format!("#{}", t.to_lowercase()).contains(q)
+        })
+}
+
+#[tauri::command]
+pub fn export_session_srt(app: AppHandle, id: String) -> Result<String, String> {
+    validate_id(&id)?;
+    let dir = sessions_dir(&app)?;
+    let (_, json_path) = session_paths(&dir, &id);
+    let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read failed: {}", e))?;
+    let data: SessionData =
+        serde_json::from_str(&json_str).map_err(|e| format!("Parse failed: {}", e))?;
+
+    Ok(build_session_srt(&data))
 }
 
 #[tauri::command]
@@ -1133,13 +1166,8 @@ pub fn export_session_txt(app: AppHandle, id: String) -> Result<String, String> 
     let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read failed: {}", e))?;
     let data: SessionData =
         serde_json::from_str(&json_str).map_err(|e| format!("Parse failed: {}", e))?;
-    let lines: Vec<String> = data
-        .chunks
-        .iter()
-        .flat_map(|c| c.segments.iter())
-        .map(|s| s.tgt.clone())
-        .collect();
-    Ok(lines.join("\n"))
+
+    Ok(build_session_txt(&data))
 }
 
 #[tauri::command]
@@ -1163,24 +1191,7 @@ pub fn search_sessions(app: AppHandle, query: String) -> Result<Vec<SessionListI
             }
             continue;
         }
-        if item.title.to_lowercase().contains(&q)
-            || item
-                .customer_name
-                .as_ref()
-                .map_or(false, |c| c.to_lowercase().contains(&q))
-            || item
-                .project_name
-                .as_ref()
-                .map_or(false, |p| p.to_lowercase().contains(&q))
-            || item
-                .category
-                .as_ref()
-                .map_or(false, |c| c.to_lowercase().contains(&q))
-            || item
-                .tags
-                .iter()
-                .any(|t| t.contains(tag_match) || format!("#{}", t).contains(&q))
-        {
+        if session_item_matches_metadata(&item, &q, tag_match) {
             hits.push(item);
             continue;
         }
@@ -1323,7 +1334,9 @@ fn parse_gemini_transcript(text: &str) -> Result<Vec<Segment>, String> {
 }
 
 static RETRANSCRIBE_CANCEL_MAP: std::sync::LazyLock<
-    std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<std::sync::atomic::AtomicBool>>>,
+    std::sync::Mutex<
+        std::collections::HashMap<String, std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    >,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 struct RetranscribeGuard(String);
@@ -1863,7 +1876,10 @@ mod tests {
 
         let json_with = r#"{"id":"s1","created_at":"2026-09-04T10:00:00Z","title":"Test","engine":"gemini","source_lang":"ja","target_lang":"vi","duration_sec":60,"chunks":[],"retranscribed_at":"2026-09-04T12:00:00Z"}"#;
         let data2: SessionData = serde_json::from_str(json_with).unwrap();
-        assert_eq!(data2.retranscribed_at, Some("2026-09-04T12:00:00Z".to_string()));
+        assert_eq!(
+            data2.retranscribed_at,
+            Some("2026-09-04T12:00:00Z".to_string())
+        );
     }
 
     #[test]
@@ -1885,5 +1901,148 @@ mod tests {
             let _guard = RetranscribeGuard(id.to_string());
         }
         assert_eq!(cancel_retranscribe_session(id.to_string()).unwrap(), false);
+    }
+
+    #[test]
+    fn test_build_session_srt() {
+        let data = SessionData {
+            id: "session-test-srt".to_string(),
+            created_at: "2026-09-05T00:00:00Z".to_string(),
+            ended_at: None,
+            title: "SRT Test".to_string(),
+            engine: "gemini".to_string(),
+            source_lang: "ja".to_string(),
+            target_lang: "vi".to_string(),
+            duration_sec: 10,
+            chunks: vec![Chunk {
+                started_at: "2026-09-05T00:00:00Z".to_string(),
+                ended_at: None,
+                segments: vec![
+                    Segment {
+                        ts: "00:00:01".to_string(),
+                        src: "おはよう".to_string(),
+                        tgt: "Chào buổi sáng".to_string(),
+                        speaker: None,
+                    },
+                    Segment {
+                        ts: "00:00:05".to_string(),
+                        src: "はじめましょう".to_string(),
+                        tgt: "Bắt đầu thôi".to_string(),
+                        speaker: None,
+                    },
+                ],
+            }],
+            notes: None,
+            tags: vec![],
+            customer_id: None,
+            project_id: None,
+            category: None,
+            meeting_minutes: None,
+            meeting_minutes_lang: None,
+            meeting_minutes_ja: None,
+            meeting_minutes_vi: None,
+            retranscribed_at: None,
+        };
+
+        let srt = build_session_srt(&data);
+        assert!(srt.contains("1\n00:00:01,000 --> 00:00:05,000\nChào buổi sáng\n\n"));
+        // Segment cuối tự động cộng 3 giây
+        assert!(srt.contains("2\n00:00:05,000 --> 00:00:08,000\nBắt đầu thôi\n\n"));
+    }
+
+    #[test]
+    fn test_build_session_txt() {
+        let data = SessionData {
+            id: "session-test-txt".to_string(),
+            created_at: "2026-09-05T00:00:00Z".to_string(),
+            ended_at: None,
+            title: "TXT Test".to_string(),
+            engine: "gemini".to_string(),
+            source_lang: "ja".to_string(),
+            target_lang: "vi".to_string(),
+            duration_sec: 10,
+            chunks: vec![Chunk {
+                started_at: "2026-09-05T00:00:00Z".to_string(),
+                ended_at: None,
+                segments: vec![
+                    Segment {
+                        ts: "00:00:01".to_string(),
+                        src: "Line 1".to_string(),
+                        tgt: "Dòng 1".to_string(),
+                        speaker: None,
+                    },
+                    Segment {
+                        ts: "00:00:04".to_string(),
+                        src: "Line 2".to_string(),
+                        tgt: "Dòng 2".to_string(),
+                        speaker: None,
+                    },
+                ],
+            }],
+            notes: None,
+            tags: vec![],
+            customer_id: None,
+            project_id: None,
+            category: None,
+            meeting_minutes: None,
+            meeting_minutes_lang: None,
+            meeting_minutes_ja: None,
+            meeting_minutes_vi: None,
+            retranscribed_at: None,
+        };
+
+        let txt = build_session_txt(&data);
+        assert_eq!(txt, "Dòng 1\nDòng 2");
+    }
+
+    #[test]
+    fn test_session_item_matches_metadata() {
+        let item = SessionListItem {
+            id: "s1".to_string(),
+            title: "Họp Sprint Review Q3".to_string(),
+            engine: "gemini".to_string(),
+            source_lang: "ja".to_string(),
+            target_lang: "vi".to_string(),
+            created_at: "2026-09-05T10:00:00Z".to_string(),
+            ended_at: None,
+            duration_sec: 120,
+            chunk_count: 1,
+            segment_count: 5,
+            has_legacy_only: false,
+            has_meeting_minutes: false,
+            tags: vec!["sprint".to_string(), "Relipa".to_string()],
+            customer_id: None,
+            customer_name: Some("Toyota Corp".to_string()),
+            customer_color: None,
+            project_id: None,
+            project_name: Some("AutoPilot".to_string()),
+            project_color: None,
+            project_status: None,
+            category: Some("Review".to_string()),
+        };
+
+        // Match title (case-insensitive)
+        assert!(session_item_matches_metadata(
+            &item,
+            "sprint review",
+            "sprint review"
+        ));
+        // Match customer
+        assert!(session_item_matches_metadata(&item, "toyota", "toyota"));
+        // Match project
+        assert!(session_item_matches_metadata(
+            &item,
+            "autopilot",
+            "autopilot"
+        ));
+        // Match category
+        assert!(session_item_matches_metadata(&item, "review", "review"));
+        // Match tag without #
+        assert!(session_item_matches_metadata(&item, "relipa", "relipa"));
+        // Match tag with #
+        assert!(session_item_matches_metadata(&item, "#relipa", "relipa"));
+
+        // Không khớp
+        assert!(!session_item_matches_metadata(&item, "honda", "honda"));
     }
 }

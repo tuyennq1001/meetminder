@@ -146,11 +146,15 @@ pub async fn start_capture(
     let rms_milli_clone = rms_milli.clone();
     let record_path_clone = record_path;
 
+    let source_clone = source.clone();
     let worker = std::thread::spawn(move || {
         use std::io::{BufWriter, Read, Seek, Write};
         let mut buffer: Vec<u8> = Vec::with_capacity(32000); // ~1 sec at 16kHz s16le
         let batch_interval = std::time::Duration::from_millis(200);
         let mut last_flush = std::time::Instant::now();
+        let start_time = std::time::Instant::now();
+        let mut last_heartbeat = std::time::Instant::now();
+        let heartbeat_interval = std::time::Duration::from_secs(30);
 
         // Optional WAV file recording with 64KB buffer
         let mut total_pcm_bytes: u32 = 0;
@@ -260,6 +264,19 @@ pub async fn start_capture(
                 }
                 last_flush = std::time::Instant::now();
             }
+
+            // Periodic heartbeat log (every 30s)
+            if last_heartbeat.elapsed() >= heartbeat_interval {
+                let rec = received_samples_clone.load(Ordering::Relaxed);
+                let nonz = nonzero_samples_clone.load(Ordering::Relaxed);
+                let rms = rms_milli_clone.load(Ordering::Relaxed) as f64 / 1000.0;
+                let elapsed = start_time.elapsed().as_secs();
+                eprintln!(
+                    "[audio-heartbeat] source={} elapsed={}s total_pcm_bytes={} received_samples={} nonzero_samples={} current_rms={:.3}",
+                    source_clone, elapsed, total_pcm_bytes, rec, nonz, rms
+                );
+                last_heartbeat = std::time::Instant::now();
+            }
         }
 
         // Finalize WAV file header
@@ -275,6 +292,13 @@ pub async fn start_capture(
                 let _ = f.flush();
             }
         }
+
+        let rec = received_samples_clone.load(Ordering::Relaxed);
+        let elapsed = start_time.elapsed().as_secs_f64();
+        eprintln!(
+            "[audio-heartbeat] capture ended: source={} elapsed={:.1}s total_pcm_bytes={} total_samples={}",
+            source_clone, elapsed, total_pcm_bytes, rec
+        );
     });
 
     // Store the forwarder so we can stop it later
