@@ -789,6 +789,8 @@ const meetMinderDarkTheme = EditorView.theme(
       caretColor: '#d9b0de',
       padding: '8px 12px',
       minHeight: '100%',
+      wordBreak: 'break-word',
+      overflowWrap: 'anywhere',
     },
     '&.cm-focused': {
       outline: 'none',
@@ -807,7 +809,8 @@ const meetMinderDarkTheme = EditorView.theme(
       backgroundColor: 'rgba(255, 255, 255, 0.025)',
     },
     '.cm-scroller': {
-      overflow: 'auto',
+      overflowY: 'auto',
+      overflowX: 'hidden',
       fontFamily: 'inherit',
     },
     '.cm-placeholder': {
@@ -816,6 +819,8 @@ const meetMinderDarkTheme = EditorView.theme(
     },
     '.cm-line': {
       padding: '1px 0',
+      wordBreak: 'break-word',
+      overflowWrap: 'anywhere',
     },
   },
   { dark: true }
@@ -842,9 +847,10 @@ export class NotesEditor {
     this.view = null;
     this.readOnlyCompartment = new Compartment();
     this.placeholderCompartment = new Compartment();
+    this.lineWrappingCompartment = new Compartment();
   }
 
-  mount(container, { initialContent = '', readOnly = false, placeholderText = 'Nhập ghi chú...', onChange = null, onSave = null, onCancel = null } = {}) {
+  mount(container, { initialContent = '', readOnly = false, placeholderText = 'Nhập ghi chú...', lineWrapping = true, onChange = null, onSave = null, onCancel = null } = {}) {
     this.container = container;
     this.onChange = onChange;
     this.onSave = onSave;
@@ -874,6 +880,7 @@ export class NotesEditor {
       doc: initialContent || '',
       extensions: [
         meetMinderDarkTheme,
+        this.lineWrappingCompartment.of(lineWrapping !== false ? EditorView.lineWrapping : []),
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(markdownHighlightStyle),
         tableDecorationsField,
@@ -898,6 +905,13 @@ export class NotesEditor {
     });
 
     return this;
+  }
+
+  setLineWrapping(enabled) {
+    if (!this.view) return;
+    this.view.dispatch({
+      effects: this.lineWrappingCompartment.reconfigure(enabled ? EditorView.lineWrapping : []),
+    });
   }
 
   getContent() {

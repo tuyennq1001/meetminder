@@ -25713,7 +25713,9 @@ var meetMinderDarkTheme = EditorView.theme(
     ".cm-content": {
       caretColor: "#d9b0de",
       padding: "8px 12px",
-      minHeight: "100%"
+      minHeight: "100%",
+      wordBreak: "break-word",
+      overflowWrap: "anywhere"
     },
     "&.cm-focused": {
       outline: "none"
@@ -25732,7 +25734,8 @@ var meetMinderDarkTheme = EditorView.theme(
       backgroundColor: "rgba(255, 255, 255, 0.025)"
     },
     ".cm-scroller": {
-      overflow: "auto",
+      overflowY: "auto",
+      overflowX: "hidden",
       fontFamily: "inherit"
     },
     ".cm-placeholder": {
@@ -25740,7 +25743,9 @@ var meetMinderDarkTheme = EditorView.theme(
       fontStyle: "italic"
     },
     ".cm-line": {
-      padding: "1px 0"
+      padding: "1px 0",
+      wordBreak: "break-word",
+      overflowWrap: "anywhere"
     }
   },
   { dark: true }
@@ -25763,8 +25768,9 @@ var NotesEditor = class {
     this.view = null;
     this.readOnlyCompartment = new Compartment();
     this.placeholderCompartment = new Compartment();
+    this.lineWrappingCompartment = new Compartment();
   }
-  mount(container, { initialContent = "", readOnly: readOnly2 = false, placeholderText = "Nh\u1EADp ghi ch\xFA...", onChange = null, onSave = null, onCancel = null } = {}) {
+  mount(container, { initialContent = "", readOnly: readOnly2 = false, placeholderText = "Nh\u1EADp ghi ch\xFA...", lineWrapping = true, onChange = null, onSave = null, onCancel = null } = {}) {
     this.container = container;
     this.onChange = onChange;
     this.onSave = onSave;
@@ -25792,6 +25798,7 @@ var NotesEditor = class {
       doc: initialContent || "",
       extensions: [
         meetMinderDarkTheme,
+        this.lineWrappingCompartment.of(lineWrapping !== false ? EditorView.lineWrapping : []),
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(markdownHighlightStyle),
         tableDecorationsField,
@@ -25814,6 +25821,12 @@ var NotesEditor = class {
       parent: container
     });
     return this;
+  }
+  setLineWrapping(enabled) {
+    if (!this.view) return;
+    this.view.dispatch({
+      effects: this.lineWrappingCompartment.reconfigure(enabled ? EditorView.lineWrapping : [])
+    });
   }
   getContent() {
     return this.view ? this.view.state.doc.toString() : "";
