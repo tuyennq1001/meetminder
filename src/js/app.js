@@ -3182,114 +3182,313 @@ class App {
     }
 
     _setupTagAutocomplete(inputEl, suggestionsBoxEl, knownTags = []) {
-        if (!inputEl || !suggestionsBoxEl) return () => {};
+        if (!inputEl) return () => {};
+
+        // Ẩn box gợi ý tĩnh cũ nếu có
+        if (suggestionsBoxEl) {
+            suggestionsBoxEl.style.display = 'none';
+            suggestionsBoxEl.innerHTML = '';
+        }
 
         const uniqueKnownTags = Array.from(
             new Set(knownTags.map(t => String(t || '').trim().replace(/^#+/, '').toLowerCase()).filter(Boolean))
         ).sort((a, b) => a.localeCompare(b));
 
-        if (uniqueKnownTags.length === 0) {
-            suggestionsBoxEl.style.display = 'none';
-            suggestionsBoxEl.innerHTML = '';
-            return () => {};
-        }
+        // Lấy danh sách tag đã được chọn sẵn từ input
+        let selectedTags = (inputEl.value || '')
+            .split(',')
+            .map(t => t.trim().replace(/^#+/, '').toLowerCase())
+            .filter(Boolean);
 
-        const parseSelectedTags = () => {
-            return (inputEl.value || '')
-                .split(',')
-                .map(t => t.trim().replace(/^#+/, '').toLowerCase())
-                .filter(Boolean);
-        };
+        // Ẩn input ban đầu
+        inputEl.style.display = 'none';
 
-        const updateInputWithTags = (tags) => {
-            inputEl.value = tags.map(t => `#${t}`).join(', ');
+        // Xóa wrapper cũ nếu đã từng gắn vào input này
+        const existingWrap = inputEl.parentNode?.querySelector(`.tag-tokenize-wrap[data-for="${CSS.escape(inputEl.id || '')}"]`);
+        if (existingWrap) existingWrap.remove();
+
+        // Tạo cấu trúc Tokenize2
+        const wrap = document.createElement('div');
+        wrap.className = 'tag-tokenize-wrap';
+        if (inputEl.id) wrap.dataset.for = inputEl.id;
+
+        const box = document.createElement('div');
+        box.className = 'tag-tokenize-box';
+
+        const chipsWrap = document.createElement('div');
+        chipsWrap.className = 'tag-tokenize-chips';
+
+        const inlineInput = document.createElement('input');
+        inlineInput.type = 'text';
+        inlineInput.className = 'tag-tokenize-input';
+        inlineInput.autocomplete = 'off';
+        inlineInput.spellcheck = false;
+
+        box.appendChild(chipsWrap);
+        box.appendChild(inlineInput);
+        wrap.appendChild(box);
+
+        const dropdown = document.createElement('div');
+        dropdown.className = 'tag-tokenize-dropdown';
+        dropdown.style.display = 'none';
+        wrap.appendChild(dropdown);
+
+        // Chèn wrapper ngay sau inputEl
+        inputEl.parentNode.insertBefore(wrap, inputEl.nextSibling);
+
+        let highlightedIndex = -1;
+        let isDropdownOpen = false;
+        let currentSuggestions = [];
+
+        const syncToHiddenInput = () => {
+            inputEl.value = selectedTags.map(t => `#${t}`).join(', ');
             inputEl.dispatchEvent(new Event('input', { bubbles: true }));
         };
 
-        const render = () => {
-            const rawVal = inputEl.value || '';
-            const selectedTags = parseSelectedTags();
-            const selectedSet = new Set(selectedTags);
+        const renderChips = () => {
+            chipsWrap.innerHTML = '';
+            for (let i = 0; i < selectedTags.length; i++) {
+                const tag = selectedTags[i];
+                const chip = document.createElement('span');
+                chip.className = 'tag-chip';
+                chip.dataset.tag = tag;
 
-            // Determine if user is typing an unconfirmed tag at the end
-            const parts = rawVal.split(',');
-            const lastPart = (parts[parts.length - 1] || '').trim().replace(/^#+/, '').toLowerCase();
-            const hasTrailingComma = rawVal.trim().endsWith(',');
-            // If user has not ended with a comma and lastPart is not already an exact selected tag:
-            const filterQuery = (!hasTrailingComma && lastPart && !selectedSet.has(lastPart)) ? lastPart : '';
+                const label = document.createElement('span');
+                label.className = 'tag-chip-label';
+                label.textContent = `#${tag}`;
 
-            let visibleTags = uniqueKnownTags;
-            if (filterQuery) {
-                visibleTags = uniqueKnownTags.filter(t => t.includes(filterQuery));
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'tag-chip-remove';
+                removeBtn.title = 'Xoá thẻ';
+                removeBtn.tabIndex = -1;
+                removeBtn.innerHTML = '×';
+                removeBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    selectedTags.splice(i, 1);
+                    syncToHiddenInput();
+                    renderChips();
+                    if (isDropdownOpen) renderDropdown();
+                    inlineInput.focus();
+                });
+
+                chip.appendChild(label);
+                chip.appendChild(removeBtn);
+                chipsWrap.appendChild(chip);
             }
 
-            if (visibleTags.length === 0 && uniqueKnownTags.length > 0) {
-                suggestionsBoxEl.innerHTML = `
-                    <div class="tag-suggestions-header">
-                        <span>Gợi ý thẻ</span>
-                        <span style="font-size:10px;opacity:0.7">Nhập dấu phẩy để hoàn tất thẻ mới</span>
-                    </div>
-                    <div style="color:var(--text-muted, #8e8e93);font-size:11px;padding:2px 0;">
-                        Không có thẻ có sẵn khớp với "<b>${this._esc(filterQuery)}</b>" — gõ phẩy để tạo thẻ mới
-                    </div>
-                `;
-                suggestionsBoxEl.style.display = 'block';
+            inlineInput.placeholder = selectedTags.length === 0
+                ? '#frontend, #api, #sprint-12...'
+                : 'Thêm thẻ...';
+        };
+
+        const highlightMatch = (text, query) => {
+            if (!query) return this._esc(text);
+            const idx = text.toLowerCase().indexOf(query.toLowerCase());
+            if (idx === -1) return this._esc(text);
+            const before = text.slice(0, idx);
+            const match = text.slice(idx, idx + query.length);
+            const after = text.slice(idx + query.length);
+            return `${this._esc(before)}<mark>${this._esc(match)}</mark>${this._esc(after)}`;
+        };
+
+        const renderDropdown = () => {
+            const rawQuery = inlineInput.value.trim().replace(/^#+/, '').toLowerCase();
+            const selectedSet = new Set(selectedTags);
+
+            // Lọc các thẻ có sẵn chưa được chọn
+            const availableKnown = uniqueKnownTags.filter(t => !selectedSet.has(t));
+            let matches = rawQuery
+                ? availableKnown.filter(t => t.includes(rawQuery))
+                : availableKnown;
+
+            currentSuggestions = [];
+            dropdown.innerHTML = '';
+
+            // Thêm các thẻ khớp
+            for (const tag of matches) {
+                currentSuggestions.push({ type: 'existing', tag });
+            }
+
+            // Nếu người dùng nhập tag mới không trùng với tag nào
+            const isExactMatch = matches.some(t => t.toLowerCase() === rawQuery);
+            if (rawQuery && !selectedSet.has(rawQuery) && !isExactMatch) {
+                currentSuggestions.push({ type: 'create', tag: rawQuery });
+            }
+
+            if (currentSuggestions.length === 0) {
+                if (selectedTags.length > 0 && availableKnown.length === 0 && !rawQuery) {
+                    dropdown.innerHTML = `<div class="tag-tokenize-empty">Đã chọn tất cả thẻ có sẵn</div>`;
+                } else if (rawQuery) {
+                    dropdown.innerHTML = `<div class="tag-tokenize-empty">Nhấn Enter để thêm thẻ mới "<b>${this._esc(rawQuery)}</b>"</div>`;
+                } else {
+                    dropdown.innerHTML = `<div class="tag-tokenize-empty">Gõ để tìm hoặc tạo thẻ mới</div>`;
+                }
+                dropdown.style.display = 'block';
+                isDropdownOpen = true;
                 return;
             }
 
-            let chipsHtml = '';
-            for (const tag of visibleTags) {
-                const isSelected = selectedSet.has(tag);
-                chipsHtml += `<span class="tag-suggestion-chip ${isSelected ? 'selected' : ''}" data-tag="${this._escAttr(tag)}">#${this._esc(tag)}${isSelected ? ' ✓' : ''}</span>`;
+            if (highlightedIndex < 0 || highlightedIndex >= currentSuggestions.length) {
+                highlightedIndex = 0;
             }
 
-            suggestionsBoxEl.innerHTML = `
-                <div class="tag-suggestions-header">
-                    <span>Thẻ có sẵn (bấm để chọn / bỏ chọn):</span>
-                    <span style="font-size:10px;opacity:0.7">${visibleTags.length} thẻ</span>
-                </div>
-                <div class="tag-suggestions-list">${chipsHtml}</div>
-            `;
-            suggestionsBoxEl.style.display = 'block';
+            currentSuggestions.forEach((item, index) => {
+                const itemEl = document.createElement('div');
+                itemEl.className = `tag-tokenize-item ${index === highlightedIndex ? 'highlighted' : ''} ${item.type === 'create' ? 'create-item' : ''}`;
+                
+                if (item.type === 'existing') {
+                    itemEl.innerHTML = `<span>#${highlightMatch(item.tag, rawQuery)}</span>`;
+                } else {
+                    itemEl.innerHTML = `<span>➕ Tạo thẻ mới: <b>#${this._esc(item.tag)}</b></span><span style="font-size:10px;opacity:0.7">Enter</span>`;
+                }
 
-            suggestionsBoxEl.querySelectorAll('.tag-suggestion-chip').forEach(chip => {
-                chip.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const tag = chip.dataset.tag;
-
-                    let currentSelected;
-                    if (filterQuery) {
-                        currentSelected = parts.slice(0, -1)
-                            .map(t => t.trim().replace(/^#+/, '').toLowerCase())
-                            .filter(Boolean);
-                    } else {
-                        currentSelected = parseSelectedTags();
-                    }
-
-                    let nextSelected;
-                    if (currentSelected.includes(tag)) {
-                        nextSelected = currentSelected.filter(t => t !== tag);
-                    } else {
-                        nextSelected = [...currentSelected, tag];
-                    }
-                    updateInputWithTags(nextSelected);
-                    inputEl.focus();
+                itemEl.addEventListener('mouseenter', () => {
+                    highlightedIndex = index;
+                    updateHighlighted();
                 });
+
+                itemEl.addEventListener('mousedown', (e) => {
+                    e.preventDefault(); // Tránh mất focus inline input
+                    selectSuggestion(item);
+                });
+
+                dropdown.appendChild(itemEl);
+            });
+
+            dropdown.style.display = 'block';
+            isDropdownOpen = true;
+        };
+
+        const updateHighlighted = () => {
+            const items = dropdown.querySelectorAll('.tag-tokenize-item');
+            items.forEach((el, idx) => {
+                el.classList.toggle('highlighted', idx === highlightedIndex);
+                if (idx === highlightedIndex) {
+                    el.scrollIntoView({ block: 'nearest' });
+                }
             });
         };
 
-        const onInput = () => {
-            render();
+        const selectSuggestion = (item) => {
+            if (!item || !item.tag) return;
+            const cleanTag = item.tag.trim().replace(/^#+/, '').toLowerCase();
+            if (cleanTag && !selectedTags.includes(cleanTag)) {
+                selectedTags.push(cleanTag);
+                syncToHiddenInput();
+                renderChips();
+            }
+            inlineInput.value = '';
+            highlightedIndex = 0;
+            const remaining = uniqueKnownTags.filter(t => !selectedTags.includes(t));
+            if (remaining.length > 0) {
+                renderDropdown();
+            } else {
+                closeDropdown();
+            }
+            inlineInput.focus();
         };
 
-        inputEl.addEventListener('input', onInput);
-        render();
+        const openDropdown = () => {
+            highlightedIndex = 0;
+            renderDropdown();
+        };
+
+        const closeDropdown = () => {
+            dropdown.style.display = 'none';
+            dropdown.innerHTML = '';
+            isDropdownOpen = false;
+            highlightedIndex = -1;
+            box.classList.remove('is-focused');
+        };
+
+        box.addEventListener('click', (e) => {
+            if (e.target !== inlineInput) {
+                inlineInput.focus();
+            }
+        });
+
+        inlineInput.addEventListener('focus', () => {
+            box.classList.add('is-focused');
+            openDropdown();
+        });
+
+        inlineInput.addEventListener('input', () => {
+            highlightedIndex = 0;
+            renderDropdown();
+        });
+
+        inlineInput.addEventListener('keydown', (e) => {
+            e.stopPropagation(); // Không trigger submit hay close của modal cha
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (!isDropdownOpen) {
+                    openDropdown();
+                } else if (currentSuggestions.length > 0) {
+                    highlightedIndex = (highlightedIndex + 1) % currentSuggestions.length;
+                    updateHighlighted();
+                }
+                return;
+            }
+
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (isDropdownOpen && currentSuggestions.length > 0) {
+                    highlightedIndex = (highlightedIndex - 1 + currentSuggestions.length) % currentSuggestions.length;
+                    updateHighlighted();
+                }
+                return;
+            }
+
+            if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault();
+                if (isDropdownOpen && highlightedIndex >= 0 && currentSuggestions[highlightedIndex]) {
+                    selectSuggestion(currentSuggestions[highlightedIndex]);
+                } else {
+                    const raw = inlineInput.value.trim().replace(/^#+/, '').toLowerCase();
+                    if (raw) {
+                        selectSuggestion({ type: 'create', tag: raw });
+                    }
+                }
+                return;
+            }
+
+            if (e.key === 'Backspace') {
+                if (inlineInput.value === '' && selectedTags.length > 0) {
+                    e.preventDefault();
+                    selectedTags.pop();
+                    syncToHiddenInput();
+                    renderChips();
+                    if (isDropdownOpen) renderDropdown();
+                }
+                return;
+            }
+
+            if (e.key === 'Escape') {
+                if (isDropdownOpen) {
+                    e.preventDefault();
+                    closeDropdown();
+                }
+                return;
+            }
+        });
+
+        const onDocClick = (e) => {
+            if (!wrap.contains(e.target)) {
+                closeDropdown();
+            }
+        };
+        document.addEventListener('pointerdown', onDocClick);
+
+        // Render chips ban đầu
+        renderChips();
 
         return () => {
-            inputEl.removeEventListener('input', onInput);
-            suggestionsBoxEl.style.display = 'none';
-            suggestionsBoxEl.innerHTML = '';
+            document.removeEventListener('pointerdown', onDocClick);
+            wrap.remove();
+            inputEl.style.display = '';
         };
     }
 
@@ -3367,6 +3566,18 @@ class App {
             selectCat.value = sessionStore.category || '';
         }
 
+        const chkAutoRetranscript = document.getElementById('chk-stop-auto-retranscript');
+        const savedAutoRetranscript = localStorage.getItem('meet_minder_auto_retranscript');
+        if (chkAutoRetranscript) {
+            chkAutoRetranscript.checked = savedAutoRetranscript !== 'false';
+        }
+
+        const onAutoRetranscriptChange = () => {
+            if (!chkAutoRetranscript) return;
+            localStorage.setItem('meet_minder_auto_retranscript', chkAutoRetranscript.checked ? 'true' : 'false');
+        };
+        chkAutoRetranscript?.addEventListener('change', onAutoRetranscriptChange);
+
         const chkAutoMinutes = document.getElementById('chk-stop-auto-minutes');
 
         const savedAutoMinutes = localStorage.getItem('meet_minder_auto_minutes');
@@ -3380,38 +3591,18 @@ class App {
         };
         chkAutoMinutes?.addEventListener('change', onAutoMinutesChange);
 
-        const s = settingsManager.get();
-        const srcLang = sessionStore.sourceLang || s.source_language || 'ja';
-        const tgtLang = sessionStore.targetLang || s.target_language || 'vi';
-        const isNoTranslation = !tgtLang || tgtLang === 'none' || tgtLang === srcLang;
-
-        let autoMinutesLang = 'ja';
-        let autoMinutesLangText = 'Tiếng Nhật 🇯🇵';
-        let autoMinutesHintText = 'Mặc định tạo tiếng Nhật để tiết kiệm token. Có thể tạo thêm tiếng Việt trong tab Biên bản bất kỳ lúc nào.';
-
-        if (isNoTranslation) {
-            if (srcLang === 'vi') {
-                autoMinutesLang = 'vi';
-                autoMinutesLangText = 'Tiếng Việt 🇻🇳';
-                autoMinutesHintText = 'Cuộc họp không dịch sẽ được tự động tạo Meeting Minutes bằng Tiếng Việt.';
-            } else if (srcLang === 'ja') {
-                autoMinutesLang = 'ja';
-                autoMinutesLangText = 'Tiếng Nhật 🇯🇵';
-                autoMinutesHintText = 'Cuộc họp không dịch sẽ được tự động tạo Meeting Minutes bằng Tiếng Nhật.';
-            } else {
-                autoMinutesLang = 'vi';
-                autoMinutesLangText = 'Tiếng Việt 🇻🇳';
-                autoMinutesHintText = 'Biên bản cuộc họp sẽ được tự động tạo bằng Tiếng Việt.';
-            }
+        const chkAutoRetranscriptLabel = document.getElementById('chk-stop-auto-retranscript-label');
+        if (chkAutoRetranscriptLabel) {
+            chkAutoRetranscriptLabel.textContent = '🔄 Re-transcript để tối ưu nội dung';
         }
 
         const chkAutoMinutesLabel = document.getElementById('chk-stop-auto-minutes-label');
         const chkAutoMinutesHint = document.getElementById('chk-stop-auto-minutes-hint');
         if (chkAutoMinutesLabel) {
-            chkAutoMinutesLabel.textContent = `✨ Tự động tạo Meeting Minutes (${autoMinutesLangText}) sau khi lưu`;
+            chkAutoMinutesLabel.textContent = '✨ Tạo Meeting Minutes sau khi lưu';
         }
         if (chkAutoMinutesHint) {
-            chkAutoMinutesHint.textContent = autoMinutesHintText;
+            chkAutoMinutesHint.textContent = 'Tóm tắt theo template có sẵn';
         }
 
         if (!modal) {
@@ -3422,6 +3613,7 @@ class App {
                 customerId: sessionStore.customerId,
                 projectId: sessionStore.projectId,
                 category: sessionStore.category,
+                autoRetranscript: chkAutoRetranscript ? chkAutoRetranscript.checked : (savedAutoRetranscript !== 'false'),
                 autoGenerateMinutes: chkAutoMinutes ? chkAutoMinutes.checked : false,
                 minutesLang: autoMinutesLang,
                 discard: false
@@ -3453,6 +3645,7 @@ class App {
                 const chosenCustomerId = selectCust?.value || null;
                 const chosenProjectId = selectProj?.value || null;
                 const chosenCategory = selectCat?.value || null;
+                const autoRetranscript = chkAutoRetranscript ? chkAutoRetranscript.checked : false;
                 const autoGenerateMinutes = chkAutoMinutes ? chkAutoMinutes.checked : false;
                 modal.style.display = 'none';
                 resolve({
@@ -3461,6 +3654,7 @@ class App {
                     customerId: chosenCustomerId,
                     projectId: chosenProjectId,
                     category: chosenCategory,
+                    autoRetranscript,
                     autoGenerateMinutes,
                     minutesLang: autoMinutesLang,
                     discard: false,
@@ -3490,6 +3684,7 @@ class App {
                 cleanupTags?.();
                 selectCust?.removeEventListener('change', onCustChange);
                 selectProj?.removeEventListener('change', onProjChange);
+                chkAutoRetranscript?.removeEventListener('change', onAutoRetranscriptChange);
                 chkAutoMinutes?.removeEventListener('change', onAutoMinutesChange);
                 document.getElementById('btn-agree-confirm-stop')?.removeEventListener('click', onConfirm);
                 document.getElementById('btn-discard-confirm-stop')?.removeEventListener('click', onDiscard);
@@ -3600,11 +3795,44 @@ class App {
                     stopAction.category
                 );
 
-                if (stopAction.autoGenerateMinutes && savedId) {
-                    setActivity('library');
-                    await this._openSession(savedId);
-                    this._switchSessionTab('minutes');
-                    await this._generateMeetingMinutesForSession(savedId, stopAction.minutesLang || 'vi');
+                if (savedId) {
+                    if (stopAction.autoRetranscript) {
+                        setActivity('library');
+                        await this._openSession(savedId);
+
+                        const settings = settingsManager.get();
+                        const apiKey = settings.gemini_api_key?.trim();
+
+                        if (!apiKey) {
+                            this._showToast('Không thể tự động re-transcript: Cần Gemini API Key trong Cài đặt', 'warning');
+                            if (stopAction.autoGenerateMinutes) {
+                                this._switchSessionTab('minutes');
+                                await this._generateMeetingMinutesForSession(savedId, stopAction.minutesLang || 'vi');
+                            }
+                        } else {
+                            this._retranscribeSession(savedId, false, {
+                                generateMinutes: stopAction.autoGenerateMinutes,
+                                minutesLang: null,
+                                customTitle: 'Re-transcript để tối ưu nội dung'
+                            }).catch(err => {
+                                console.error('[App] Auto retranscript error:', err);
+                            });
+                        }
+                    } else if (stopAction.autoGenerateMinutes) {
+                        setActivity('library');
+                        await this._openSession(savedId);
+                        this._switchSessionTab('minutes');
+                        try {
+                            const res = await invoke('read_session', { id: savedId });
+                            const mLangs = this._getMinutesLangsForSession(res?.json || {});
+                            for (const mLang of mLangs) {
+                                await this._generateMeetingMinutesForSession(savedId, mLang);
+                            }
+                        } catch (minErr) {
+                            console.error('[App] Error creating minutes on stop:', minErr);
+                            await this._generateMeetingMinutesForSession(savedId, 'ja');
+                        }
+                    }
                 }
             }
         } catch (err) {
@@ -7417,7 +7645,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
     }
 
-    async _retranscribeSession(id, isLegacy = false) {
+    async _retranscribeSession(id, isLegacy = false, options = {}) {
         if (isLegacy) {
             this._showToast('Log định dạng cũ không có file ghi âm để re-transcript', 'info');
             return;
@@ -7465,9 +7693,11 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             stage: 'upload',
             text: 'Đang tải file ghi âm lên Gemini...',
             percent: 15,
+            options,
+            customTitle: options.customTitle || 'Re-transcript cuộc họp',
         };
 
-        this._setRetranscriptProgress('upload', 'Đang tải file ghi âm lên Gemini...', 15);
+        this._setRetranscriptProgress('upload', 'Đang tải file ghi âm lên Gemini...', 15, options.customTitle);
 
         let currentPct = 15;
         const progressInterval = setInterval(() => {
@@ -7506,27 +7736,33 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 this._updateRetranscriptStatus(result.json);
             }
 
-            // Tự động tạo lại Meeting Minutes ở các ngôn ngữ được chọn
-            const minutesLangs = this._getMinutesLangsForSession(result.json);
-            const totalLangs = minutesLangs.length;
-            for (let i = 0; i < totalLangs; i++) {
-                if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
-                const mLang = minutesLangs[i];
-                const langName = mLang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt';
-                const stepPct = totalLangs === 1 ? 94 : (i === 0 ? 92 : 96);
-                const stepLabel = totalLangs > 1
-                    ? `Đang tạo lại Meeting Minutes (${langName})... (${i + 1}/${totalLangs})`
-                    : `Đang tạo lại Meeting Minutes (${langName})...`;
+            const shouldGenerateMinutes = options.generateMinutes !== false;
+            if (shouldGenerateMinutes) {
+                // Tự động tạo lại Meeting Minutes ở các ngôn ngữ được chọn
+                const minutesLangs = options.minutesLang
+                    ? [options.minutesLang]
+                    : this._getMinutesLangsForSession(result.json);
+                const totalLangs = minutesLangs.length;
+                for (let i = 0; i < totalLangs; i++) {
+                    if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
+                    const mLang = minutesLangs[i];
+                    const langName = mLang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt';
+                    const stepPct = totalLangs === 1 ? 94 : (i === 0 ? 92 : 96);
+                    const stepLabel = totalLangs > 1
+                        ? `Đang tạo lại Meeting Minutes (${langName})... (${i + 1}/${totalLangs})`
+                        : `Đang tạo lại Meeting Minutes (${langName})...`;
 
-                this._setRetranscriptProgress('minutes', stepLabel, stepPct);
-                try {
-                    await this._generateMinutesCore(id, mLang);
-                } catch (minErr) {
-                    console.warn(`[App] Lỗi tạo Meeting Minutes (${mLang}) khi re-transcript:`, minErr);
+                    this._setRetranscriptProgress('minutes', stepLabel, stepPct);
+                    try {
+                        await this._generateMinutesCore(id, mLang);
+                    } catch (minErr) {
+                        console.warn(`[App] Lỗi tạo Meeting Minutes (${mLang}) khi re-transcript:`, minErr);
+                    }
                 }
+                this._setRetranscriptProgress('minutes', 'Hoàn tất Re-transcript & Meeting Minutes ✓', 100);
+            } else {
+                this._setRetranscriptProgress('save', 'Hoàn tất Re-transcript ✓', 100);
             }
-
-            this._setRetranscriptProgress('minutes', 'Hoàn tất Re-transcript & Meeting Minutes ✓', 100);
 
             if (this._activeRetranscribe?.buttonsToDisable) {
                 this._activeRetranscribe.buttonsToDisable.forEach((b, i) => {
@@ -7555,8 +7791,15 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 this._renderCurrentMinutesSubtab();
             }
 
-            this._showRetranscriptCompleted(id);
-            this._showToast('Đã tạo lại Logs & Meeting Minutes từ file ghi âm ✓', 'success');
+            const compTitle = shouldGenerateMinutes
+                ? 'Hoàn tất Re-transcript & Minutes ✓'
+                : 'Hoàn tất Re-transcript ✓';
+            this._showRetranscriptCompleted(id, compTitle);
+
+            const toastMsg = shouldGenerateMinutes
+                ? 'Đã tạo lại Logs & Meeting Minutes từ file ghi âm ✓'
+                : 'Đã tạo lại Logs từ file ghi âm ✓';
+            this._showToast(toastMsg, 'success');
             await this._showSessions();
         } catch (err) {
             clearInterval(progressInterval);

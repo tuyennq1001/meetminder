@@ -6473,3 +6473,153 @@ body.expanded #library-panel { padding: 8px 6%; }
   font-size: 10px;
 }
 
+/* ═══════════════════ TOKENIZE TAG INPUT & PULLDOWN ═══════════════════ */
+.tag-tokenize-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.tag-tokenize-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 5px 8px;
+  background: var(--md-sys-color-surface-container, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  cursor: text;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.tag-tokenize-box:focus-within,
+.tag-tokenize-box.is-focused {
+  border-color: var(--md-sys-color-primary, #a855f7);
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2);
+}
+
+.tag-tokenize-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(126, 62, 135, 0.2);
+  border: 1px solid rgba(126, 62, 135, 0.45);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface, #fff);
+  line-height: 1.3;
+  user-select: none;
+  animation: tagChipPop 0.15s ease-out;
+}
+
+@keyframes tagChipPop {
+  0% { transform: scale(0.85); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.tag-chip-label {
+  letter-spacing: 0.2px;
+}
+
+.tag-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--md-sys-color-on-surface-variant, rgba(255, 255, 255, 0.6));
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tag-chip-remove:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ff5449;
+}
+
+.tag-tokenize-input {
+  flex: 1 1 80px;
+  min-width: 60px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--md-sys-color-on-surface, #fff);
+  font-size: 12px;
+  padding: 4px 2px;
+  font-family: inherit;
+}
+
+.tag-tokenize-input::placeholder {
+  color: var(--text-muted, rgba(255, 255, 255, 0.35));
+}
+
+.tag-tokenize-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--md-sys-color-surface-container-high, #2b2733);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 1050;
+  padding: 4px 0;
+}
+
+.tag-tokenize-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface, #fff);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.tag-tokenize-item:hover,
+.tag-tokenize-item.highlighted {
+  background: rgba(126, 62, 135, 0.25);
+  color: var(--md-sys-color-primary, #e295e8);
+}
+
+.tag-tokenize-item mark {
+  background: transparent;
+  color: var(--md-sys-color-primary, #e295e8);
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.tag-tokenize-item.create-item {
+  color: var(--md-sys-color-primary, #e295e8);
+  font-weight: 500;
+  border-top: 1px dashed rgba(126, 62, 135, 0.3);
+}
+
+.tag-tokenize-empty {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--text-muted, rgba(255, 255, 255, 0.45));
+  text-align: center;
+}
+

@@ -1108,7 +1108,7 @@
 
   <!-- ═══════════════════ STOP & SAVE MEETING MODAL (UNIFIED) ═══════════════════ -->
   <div id="modal-confirm-stop" class="modal-overlay" style="display:none">
-    <div class="modal-card" style="max-width: 480px;">
+    <div class="modal-card" style="width: 624px; max-width: 92vw;">
       <div class="modal-header">
         <h3>⏹ Kết thúc & Lưu cuộc họp</h3>
         <button type="button" id="btn-close-confirm-stop" class="icon-btn close-btn" title="Đóng">×</button>
@@ -1143,13 +1143,31 @@
         <input type="text" id="input-stop-meeting-tags" class="modal-input" placeholder="#frontend, #api, #sprint-12 (cách nhau dấu phẩy)" autocomplete="off" />
         <div id="stop-meeting-tags-suggestions" class="tag-suggestions-box" style="display:none"></div>
         
-        <div style="margin-top: 12px; padding: 10px 12px; background: rgba(126, 62, 135, 0.08); border: 1px solid rgba(126, 62, 135, 0.2); border-radius: 8px;">
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
-            <input type="checkbox" id="chk-stop-auto-minutes" checked style="width: 16px; height: 16px; accent-color: var(--md-sys-color-primary); cursor: pointer;" />
-            <span id="chk-stop-auto-minutes-label" style="font-size: 12px; font-weight: 600; color: var(--md-sys-color-on-surface);">✨ Tự động tạo Meeting Minutes (Tiếng Nhật 🇯🇵) sau khi lưu</span>
-          </label>
-          <div id="chk-stop-auto-minutes-hint" style="margin-top: 4px; margin-left: 24px; font-size: 11px; color: var(--md-sys-color-on-surface-variant);">
-            Mặc định tạo tiếng Nhật để tiết kiệm token. Có thể tạo thêm tiếng Việt trong tab Biên bản bất kỳ lúc nào.
+        <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px;">
+          <!-- Auto Re-transcript option -->
+          <div style="padding: 10px 12px; background: rgba(126, 62, 135, 0.08); border: 1px solid rgba(126, 62, 135, 0.2); border-radius: 8px;">
+            <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; user-select: none;">
+              <input type="checkbox" id="chk-stop-auto-retranscript" checked style="width: 16px; height: 16px; margin-top: 1px; accent-color: var(--md-sys-color-primary); cursor: pointer;" />
+              <div>
+                <span id="chk-stop-auto-retranscript-label" style="font-size: 12px; font-weight: 600; color: var(--md-sys-color-on-surface);">🔄 Re-transcript để tối ưu nội dung</span>
+                <div id="chk-stop-auto-retranscript-hint" style="margin-top: 4px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;">
+                  Sử dụng file ghi âm để Gemini tạo lại Logs và bản dịch chuẩn xác hơn bản trực tiếp.
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <!-- Auto Meeting Minutes option -->
+          <div style="padding: 10px 12px; background: rgba(126, 62, 135, 0.08); border: 1px solid rgba(126, 62, 135, 0.2); border-radius: 8px;">
+            <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; user-select: none;">
+              <input type="checkbox" id="chk-stop-auto-minutes" checked style="width: 16px; height: 16px; margin-top: 1px; accent-color: var(--md-sys-color-primary); cursor: pointer;" />
+              <div>
+                <span id="chk-stop-auto-minutes-label" style="font-size: 12px; font-weight: 600; color: var(--md-sys-color-on-surface);">✨ Tạo Meeting Minutes sau khi lưu</span>
+                <div id="chk-stop-auto-minutes-hint" style="margin-top: 4px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;">
+                  Tóm tắt theo template có sẵn
+                </div>
+              </div>
+            </label>
           </div>
         </div>
 
