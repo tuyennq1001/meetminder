@@ -39,6 +39,23 @@ export class TranscriptUI {
         this.currentSpeaker = null; // Track current speaker to detect changes
         this.currentLanguage = null; // Track current language to detect changes
         this.lastConfidence = null; // Last confidence score from Soniox
+        this.userScrolledUp = false; // When true, user is reviewing history -> do not auto-scroll
+        this.isSyncingScroll = false; // Prevent feedback loops when syncing dual panels
+        this.isScrollingToSegment = false; // Prevent ratio-sync while smooth-scrolling to clicked segment
+        this.isScrollingToBottom = false; // Prevent scroll events from resetting userScrolledUp during smooth scroll to bottom
+        this._isRendering = false; // Prevent scroll events from firing during DOM mutations
+        this._renderedViewType = null; // 'single' or 'dual'
+        this._initJumpBottomButton();
+    }
+
+    _initJumpBottomButton() {
+        const btn = document.getElementById('live-jump-bottom-btn');
+        if (btn && !btn._hasClickListener) {
+            btn._hasClickListener = true;
+            btn.addEventListener('click', () => {
+                this._scrollPanelsToBottom();
+            });
+        }
     }
 
     isDualView() {
@@ -248,12 +265,15 @@ export class TranscriptUI {
         this.currentLanguage = null;
         this.lastConfidence = null;
         this.contentEl = null;
+        this.userScrolledUp = false;
+        this._renderedViewType = null;
     }
 
     /**
      * Show listening state (clears placeholder and renders clean empty transcript panel)
      */
     showListening() {
+        this.userScrolledUp = false;
         this.container.querySelectorAll('.listening-indicator').forEach(el => el.remove());
 
         const placeholder = this.container.querySelector('.transcript-placeholder');
@@ -434,6 +454,9 @@ export class TranscriptUI {
         this.currentLanguage = null;
         this.lastConfidence = null;
         this.contentEl = null;
+        this.userScrolledUp = false;
+        this._renderedViewType = null;
+        this._updateJumpButtons();
     }
 
     /**
@@ -450,6 +473,26 @@ export class TranscriptUI {
             this.container.innerHTML = '';
             this.contentEl = document.createElement('div');
             this.contentEl.className = 'transcript-flow';
+
+            // Detect mouse wheel / trackpad scroll up to pause auto-scroll immediately
+            this.container.addEventListener('wheel', (e) => {
+                if (this.isScrollingToBottom) return;
+                if (e.deltaY < 0) {
+                    let canScroll = false;
+                    if (this.isDualView()) {
+                        const srcPanel = this.contentEl?.querySelector('.panel-source');
+                        if (srcPanel && (srcPanel.scrollHeight - srcPanel.clientHeight) > 10) {
+                            canScroll = true;
+                        }
+                    } else if (this.container && (this.container.scrollHeight - this.container.clientHeight) > 10) {
+                        canScroll = true;
+                    }
+                    if (canScroll) {
+                        this.userScrolledUp = true;
+                        this._updateJumpButtons();
+                    }
+                }
+            }, { passive: true });
 
             // Event delegation for copy buttons on headers
             this.contentEl.addEventListener('click', async (e) => {
@@ -513,7 +556,15 @@ export class TranscriptUI {
         this._ensureContent();
         this._trimSegments();
 
-        if (this.isDualView()) {
+        const isDual = this.isDualView();
+        const viewType = isDual ? 'dual' : 'single';
+        if (this._renderedViewType !== viewType) {
+            if (this.contentEl) this.contentEl.innerHTML = '';
+            this._renderedViewType = viewType;
+            this.userScrolledUp = false;
+        }
+
+        if (isDual) {
             this._renderDual();
         } else {
             this._renderSingle();
@@ -585,23 +636,45 @@ export class TranscriptUI {
             }
         }
 
-        this.contentEl.innerHTML = headerHtml + html;
-        if (this.segments.length === 0 && !this.provisionalText && !this.sourceProvisionalText) {
-            if (this.container) this.container.scrollTop = 0;
+        this._isRendering = true;
+        let singleBody = this.contentEl.querySelector('.panel-single-body');
+        if (!singleBody) {
+            this.contentEl.innerHTML = `
+                ${headerHtml}
+                <div class="panel-single-body">${html}</div>
+            `;
+            this._bindSingleScrollEvents();
+            if (!this.userScrolledUp && this.container) {
+                this.container.scrollTop = this.container.scrollHeight;
+            }
         } else {
-            this._smartScroll(this.container);
+            const titleEl = this.contentEl.querySelector('.panel-header-title');
+            if (titleEl && titleEl.textContent !== headerTitle) {
+                titleEl.textContent = headerTitle;
+            }
+            const copyBtn = this.contentEl.querySelector('.panel-copy-btn');
+            if (copyBtn) {
+                copyBtn.className = `panel-copy-btn ${copyClass}`;
+                copyBtn.title = copyTitle;
+            }
+
+            const savedTop = this.container ? this.container.scrollTop : 0;
+            singleBody.innerHTML = html;
+
+            if (this.segments.length === 0 && !this.provisionalText && !this.sourceProvisionalText) {
+                if (this.container) this.container.scrollTop = 0;
+                this.userScrolledUp = false;
+            } else if (this.userScrolledUp) {
+                if (this.container) this.container.scrollTop = savedTop;
+            } else {
+                if (this.container) this.container.scrollTop = this.container.scrollHeight;
+            }
         }
+        this._isRendering = false;
+        this._updateJumpButtons();
     }
 
     _renderDual() {
-        // Save scroll state before re-render
-        const oldSrcPanel = this.contentEl.querySelector('.panel-source');
-        const oldTgtPanel = this.contentEl.querySelector('.panel-translation');
-        const oldTimePanel = this.contentEl.querySelector('.panel-timestamps');
-        const srcScrollState = oldSrcPanel ? this._getScrollState(oldSrcPanel) : { nearBottom: true, scrollTop: 0 };
-        const tgtScrollState = oldTgtPanel ? this._getScrollState(oldTgtPanel) : { nearBottom: true, scrollTop: 0 };
-        const timeScrollState = oldTimePanel ? this._getScrollState(oldTimePanel) : { nearBottom: true, scrollTop: 0 };
-
         let srcHtml = '';
         let timeHtml = '';
         let tgtHtml = '';
@@ -636,100 +709,200 @@ export class TranscriptUI {
             const usingOpenAi = this.provider === 'openai';
             const srcText = usingOpenAi ? this.sourceProvisionalText : this.provisionalText;
             const tgtText = usingOpenAi ? this.provisionalText : '';
-            if (srcText) srcHtml += `<div class="seg-text pending">${this._esc(srcText)}</div>`;
-            if (tgtText) tgtHtml += `<div class="seg-text pending">${this._esc(tgtText)}</div>`;
+
+            if (srcText) {
+                const pLang = this.provisionalLanguage || '';
+                const langBadge = pLang ? `<span class="lang-badge">${this._langEmoji(pLang)}</span> ` : '';
+                srcHtml += `${langBadge}<div class="seg-text seg-provisional">${this._esc(srcText)}</div>`;
+                timeHtml += `<div class="segment-time">...</div>`;
+                if (!usingOpenAi) {
+                    tgtHtml += `<div class="seg-text pending">...</div>`;
+                }
+            }
+
+            if (usingOpenAi && tgtText) {
+                tgtHtml += `<div class="seg-text seg-provisional">${this._esc(tgtText)}</div>`;
+            }
         }
 
-        this.contentEl.innerHTML = `
-            <div class="panel-source">
-                <div class="panel-column-header">
-                    <span class="panel-header-title">📝 Bản gốc</span>
-                    <button type="button" class="panel-copy-btn btn-copy-source" title="Copy toàn bộ bản gốc">
-                        <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                        </svg>
-                    </button>
-                </div>
-                ${srcHtml}
-            </div>
-            <div class="panel-timestamps-wrap">
-                <div class="panel-timestamps" aria-label="Timeline từng câu">
-                    <div class="panel-column-header panel-time-header">
-                        <span class="panel-header-title">Timeline</span>
+        this._isRendering = true;
+        let srcPanel = this.contentEl.querySelector('.panel-source');
+        let timePanel = this.contentEl.querySelector('.panel-timestamps');
+        let tgtPanel = this.contentEl.querySelector('.panel-translation');
+
+        if (!srcPanel || !timePanel || !tgtPanel) {
+            this.contentEl.innerHTML = `
+                <div class="panel-source">
+                    <div class="panel-source-header panel-column-header">
+                        <span class="panel-header-title">📝 Bản gốc</span>
+                        <button type="button" class="panel-copy-btn btn-copy-source" title="Copy toàn bộ bản gốc">
+                            <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                        </button>
                     </div>
-                    ${timeHtml}
+                    <div class="panel-source-body">${srcHtml}</div>
                 </div>
-                <button type="button" class="timeline-scroll-bottom" aria-label="Cuộn các khung xuống đoạn mới nhất" aria-hidden="true" title="Cuộn xuống đoạn mới nhất">↓</button>
-            </div>
-            <div class="panel-translation">
-                <div class="panel-column-header">
-                    <span class="panel-header-title">🌐 Bản dịch</span>
-                    <button type="button" class="panel-copy-btn btn-copy-translation" title="Copy toàn bộ bản dịch">
-                        <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                        </svg>
-                    </button>
+                <div class="panel-timestamps-wrap">
+                    <div class="panel-timestamps-header panel-column-header panel-time-header">
+                        <span class="timeline-header-label">Thời gian</span>
+                    </div>
+                    <div class="panel-timestamps">
+                        <div class="panel-time-body">${timeHtml}</div>
+                    </div>
                 </div>
-                ${tgtHtml}
-            </div>
-        `;
+                <div class="panel-translation">
+                    <div class="panel-translation-header panel-column-header">
+                        <span class="panel-header-title">🌐 Bản dịch</span>
+                        <button type="button" class="panel-copy-btn btn-copy-translation" title="Copy toàn bộ bản dịch">
+                            <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="panel-translation-body">${tgtHtml}</div>
+                </div>
+            `;
+            srcPanel = this.contentEl.querySelector('.panel-source');
+            timePanel = this.contentEl.querySelector('.panel-timestamps');
+            tgtPanel = this.contentEl.querySelector('.panel-translation');
+            this._bindDualScrollEvents(srcPanel, timePanel, tgtPanel);
+            if (!this.userScrolledUp) {
+                if (srcPanel) srcPanel.scrollTop = srcPanel.scrollHeight;
+                if (timePanel) timePanel.scrollTop = timePanel.scrollHeight;
+                if (tgtPanel) tgtPanel.scrollTop = tgtPanel.scrollHeight;
+            }
+        } else {
+            const savedSrcTop = srcPanel.scrollTop;
+            const savedTimeTop = timePanel.scrollTop;
+            const savedTgtTop = tgtPanel.scrollTop;
 
-        // Click on timestamp scrolls both source and translation panels in sync
-        const timePanel = this.contentEl.querySelector('.panel-timestamps');
-        if (timePanel) {
-            timePanel.addEventListener('click', (e) => {
-                const timeEl = e.target.closest('.segment-time.clickable-time');
-                if (!timeEl || timeEl.dataset.segIdx === undefined) return;
-                this._scrollToSegmentIndex(timeEl.dataset.segIdx);
-            });
-        }
+            const srcBody = srcPanel.querySelector('.panel-source-body');
+            const timeBody = timePanel.querySelector('.panel-time-body');
+            const tgtBody = tgtPanel.querySelector('.panel-translation-body');
 
-        // Restore scroll: auto-scroll if was near bottom, otherwise keep position
-        const srcPanel = this.contentEl.querySelector('.panel-source');
-        const tgtPanel = this.contentEl.querySelector('.panel-translation');
-        if (srcPanel) {
-            if (srcScrollState.nearBottom) {
+            if (srcBody) srcBody.innerHTML = srcHtml;
+            if (timeBody) timeBody.innerHTML = timeHtml;
+            if (tgtBody) tgtBody.innerHTML = tgtHtml;
+
+            if (this.segments.length === 0 && !this.provisionalText && !this.sourceProvisionalText) {
+                srcPanel.scrollTop = 0;
+                timePanel.scrollTop = 0;
+                tgtPanel.scrollTop = 0;
+                this.userScrolledUp = false;
+            } else if (this.userScrolledUp) {
+                srcPanel.scrollTop = savedSrcTop;
+                timePanel.scrollTop = savedTimeTop;
+                tgtPanel.scrollTop = savedTgtTop;
+            } else {
                 srcPanel.scrollTop = srcPanel.scrollHeight;
-            } else {
-                srcPanel.scrollTop = srcScrollState.scrollTop;
-            }
-        }
-        if (tgtPanel) {
-            if (tgtScrollState.nearBottom) {
+                timePanel.scrollTop = timePanel.scrollHeight;
                 tgtPanel.scrollTop = tgtPanel.scrollHeight;
-            } else {
-                tgtPanel.scrollTop = tgtScrollState.scrollTop;
             }
         }
-        const timePanelAfterRender = this.contentEl.querySelector('.panel-timestamps');
-        if (timePanelAfterRender) {
-            if (timeScrollState.nearBottom) {
-                timePanelAfterRender.scrollTop = timePanelAfterRender.scrollHeight;
-            } else {
-                timePanelAfterRender.scrollTop = timeScrollState.scrollTop;
+        this._isRendering = false;
+        this._updateJumpButtons();
+    }
+
+    _bindSingleScrollEvents() {
+        if (!this.container || this._singleScrollBound) return;
+        this._singleScrollBound = true;
+
+        this.container.addEventListener('scroll', () => {
+            if (this.isDualView() || this.isScrollingToBottom || this._isRendering) return;
+            const canScroll = (this.container.scrollHeight - this.container.clientHeight) > 10;
+            if (!canScroll) {
+                this.userScrolledUp = false;
+                this._updateJumpButtons();
+                return;
+            }
+            const nearBottom = this._isNearBottom(this.container, 36);
+            this.userScrolledUp = !nearBottom;
+            this._updateJumpButtons();
+        }, { passive: true });
+    }
+
+    _bindDualScrollEvents(srcPanel, timePanel, tgtPanel) {
+        if (!srcPanel || !timePanel || !tgtPanel) return;
+
+        const onPanelScroll = (sourcePanel) => {
+            if (this.isSyncingScroll || this.isScrollingToSegment || this.isScrollingToBottom || this._isRendering) return;
+
+            const canScroll = (sourcePanel.scrollHeight - sourcePanel.clientHeight) > 10;
+            if (!canScroll) {
+                this.userScrolledUp = false;
+                this._updateJumpButtons();
+                return;
             }
 
-            const jumpToBottomButton = this.contentEl.querySelector('.timeline-scroll-bottom');
-            const updateJumpToBottomButton = () => {
-                const isAwayFromBottom = !this._isNearBottom(timePanelAfterRender, 120);
-                jumpToBottomButton?.classList.toggle('is-visible', isAwayFromBottom);
-                jumpToBottomButton?.setAttribute('aria-hidden', String(!isAwayFromBottom));
-            };
-            timePanelAfterRender.addEventListener('scroll', updateJumpToBottomButton, { passive: true });
-            jumpToBottomButton?.addEventListener('click', () => {
-                this._scrollPanelsToBottom();
-            });
-            updateJumpToBottomButton();
+            const nearBottom = this._isNearBottom(sourcePanel, 36);
+            this.userScrolledUp = !nearBottom;
+            this._updateJumpButtons();
+
+            // Proportionally sync other panels
+            this.isSyncingScroll = true;
+            const maxSource = sourcePanel.scrollHeight - sourcePanel.clientHeight;
+            const ratio = maxSource > 0 ? sourcePanel.scrollTop / maxSource : 0;
+
+            const targets = [srcPanel, timePanel, tgtPanel].filter(p => p !== sourcePanel);
+            for (const target of targets) {
+                if (target) {
+                    const maxTarget = target.scrollHeight - target.clientHeight;
+                    const newTop = Math.round(ratio * maxTarget);
+                    if (Math.abs(target.scrollTop - newTop) > 1) {
+                        target.scrollTop = newTop;
+                    }
+                }
+            }
+            this.isSyncingScroll = false;
+        };
+
+        srcPanel.addEventListener('scroll', () => onPanelScroll(srcPanel), { passive: true });
+        tgtPanel.addEventListener('scroll', () => onPanelScroll(tgtPanel), { passive: true });
+        timePanel.addEventListener('scroll', () => onPanelScroll(timePanel), { passive: true });
+
+        timePanel.addEventListener('click', (e) => {
+            const timeEl = e.target.closest('.segment-time.clickable-time');
+            if (!timeEl || timeEl.dataset.segIdx === undefined) return;
+            this._scrollToSegmentIndex(timeEl.dataset.segIdx);
+        });
+    }
+
+    _updateJumpButtons() {
+        const liveJumpBtn = document.getElementById('live-jump-bottom-btn');
+        if (liveJumpBtn) {
+            liveJumpBtn.classList.toggle('is-visible', Boolean(this.userScrolledUp));
+            liveJumpBtn.setAttribute('aria-hidden', String(!this.userScrolledUp));
+            if (!liveJumpBtn._hasClickListener) {
+                liveJumpBtn._hasClickListener = true;
+                liveJumpBtn.addEventListener('click', () => {
+                    this._scrollPanelsToBottom();
+                });
+            }
         }
     }
 
     _scrollToSegmentIndex(idx) {
-        const srcPanel = this.contentEl.querySelector('.panel-source');
-        const tgtPanel = this.contentEl.querySelector('.panel-translation');
-        const timePanel = this.contentEl.querySelector('.panel-timestamps');
+        const srcPanel = this.contentEl?.querySelector('.panel-source');
+        const tgtPanel = this.contentEl?.querySelector('.panel-translation');
+        const timePanel = this.contentEl?.querySelector('.panel-timestamps');
         if (!srcPanel || !tgtPanel) return;
+
+        // User explicitly scrolled/clicked to review earlier segment
+        if (Number(idx) < this.segments.length - 1) {
+            this.userScrolledUp = true;
+            this._updateJumpButtons();
+        } else {
+            this.userScrolledUp = false;
+            this._updateJumpButtons();
+        }
+
+        this.isScrollingToSegment = true;
+        setTimeout(() => {
+            this.isScrollingToSegment = false;
+        }, 600);
 
         const srcEl = srcPanel.querySelector(`.seg-text[data-seg-idx="${idx}"]`);
         const tgtEl = tgtPanel.querySelector(`.seg-text[data-seg-idx="${idx}"]`);
@@ -761,14 +934,29 @@ export class TranscriptUI {
     }
 
     _scrollPanelsToBottom() {
+        this.userScrolledUp = false;
+        this.isScrollingToBottom = true;
         const panels = [
-            this.contentEl.querySelector('.panel-source'),
-            this.contentEl.querySelector('.panel-timestamps'),
-            this.contentEl.querySelector('.panel-translation'),
+            this.contentEl?.querySelector('.panel-source'),
+            this.contentEl?.querySelector('.panel-timestamps'),
+            this.contentEl?.querySelector('.panel-translation'),
+            this.container,
         ];
         panels.forEach((panel) => {
             panel?.scrollTo({ top: panel.scrollHeight, behavior: 'smooth' });
         });
+        this._updateJumpButtons();
+
+        setTimeout(() => {
+            this.isScrollingToBottom = false;
+            if (this.isDualView()) {
+                const srcPanel = this.contentEl?.querySelector('.panel-source');
+                if (srcPanel) this.userScrolledUp = !this._isNearBottom(srcPanel, 36);
+            } else if (this.container) {
+                this.userScrolledUp = !this._isNearBottom(this.container, 36);
+            }
+            this._updateJumpButtons();
+        }, 600);
     }
 
     _formatSegmentTime(timestamp) {
@@ -778,27 +966,28 @@ export class TranscriptUI {
 
     _getScrollState(el) {
         return {
-            nearBottom: this._isNearBottom(el),
+            nearBottom: this._isNearBottom(el, 36),
             scrollTop: el.scrollTop
         };
     }
 
-    _isNearBottom(el, threshold = 100) {
-        return (el.scrollHeight - el.scrollTop - el.clientHeight) < threshold;
+    _isNearBottom(el, threshold = 36) {
+        if (!el) return true;
+        const remaining = Math.round(el.scrollHeight - el.scrollTop - el.clientHeight);
+        return remaining <= threshold;
     }
 
     _smartScroll(el) {
-        const isNearBottom = this._isNearBottom(el);
-        if (isNearBottom) {
+        if (!this.userScrolledUp && el) {
             el.scrollTop = el.scrollHeight;
         }
     }
 
     _trimSegments() {
-        // Keep up to 500 completed segments on screen. Never evict a pending
-        // source: a slow REST response must not make its source disappear unless necessary.
-        if (this.segments.length <= 500) return;
-        while (this.segments.length > 500) {
+        // If user is scrolled up reading history, don't trim from the top unless buffer is very large
+        const limit = this.userScrolledUp ? 2000 : 500;
+        if (this.segments.length <= limit) return;
+        while (this.segments.length > limit) {
             const completedIndex = this.segments.findIndex(seg => seg.status !== 'original');
             if (completedIndex === -1) {
                 // Prevent unbounded growth if all segments are original
