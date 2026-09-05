@@ -1861,8 +1861,7 @@ pub async fn retranscribe_session_with_gemini(
                 "generationConfig": {
                     "temperature": 0.1,
                     "maxOutputTokens": 65536,
-                    "responseMimeType": "application/json",
-                    "thinkingConfig": { "thinkingBudget": 0 }
+                    "responseMimeType": "application/json"
                 }
             }))
             .send().await;
@@ -2239,8 +2238,7 @@ start_sec must be the approximate offset in seconds.";
                 "generationConfig": {
                     "temperature": 0.1,
                     "maxOutputTokens": 65536,
-                    "responseMimeType": "application/json",
-                    "thinkingConfig": { "thinkingBudget": 0 }
+                    "responseMimeType": "application/json"
                 }
             }))
             .send()

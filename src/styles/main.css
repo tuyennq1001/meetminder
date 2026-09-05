@@ -6410,3 +6410,66 @@ body.expanded #library-panel { padding: 8px 6%; }
   display: flex;
   flex-direction: column;
 }
+
+/* ═══════════════════ TAG SUGGESTIONS & AUTOCOMPLETE ═══════════════════ */
+.tag-suggestions-box {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--md-sys-color-surface-container);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  max-height: 125px;
+  overflow-y: auto;
+}
+
+.tag-suggestions-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tag-suggestions-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-suggestion-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  background: var(--md-sys-color-surface-container-highest, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--border-subtle);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface);
+  cursor: pointer !important;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.tag-suggestion-chip:hover {
+  background: var(--md-sys-color-primary-container, rgba(126, 62, 135, 0.3));
+  border-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-primary);
+  transform: translateY(-1px);
+}
+
+.tag-suggestion-chip.selected {
+  background: var(--md-sys-color-primary);
+  border-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary, #ffffff);
+  font-weight: 600;
+}
+
+.tag-suggestion-chip.selected::after {
+  content: " ✓";
+  font-size: 10px;
+}
+

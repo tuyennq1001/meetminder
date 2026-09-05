@@ -622,7 +622,7 @@ export class TranscriptUI {
                 timeHtml += `<div class="segment-time clickable-time" data-seg-idx="${i}" title="Nhấp để cuộn cả 2 khung tới đoạn này">${this._formatSegmentTime(seg.createdAt)}</div>`;
                 tgtHtml += `<div class="seg-text${confidenceClass}" data-seg-idx="${i}">${this._esc(seg.translation)}</div>`;
             } else if (seg.status === 'original' && seg.original) {
-                srcHtml += `${langHtml}<div class="seg-text pending" data-seg-idx="${i}">${this._esc(seg.original)}</div>`;
+                srcHtml += `${langHtml}<div class="seg-text" data-seg-idx="${i}">${this._esc(seg.original)}</div>`;
                 timeHtml += `<div class="segment-time clickable-time" data-seg-idx="${i}" title="Nhấp để cuộn cả 2 khung tới đoạn này">${this._formatSegmentTime(seg.createdAt)}</div>`;
                 tgtHtml += `<div class="seg-text pending" data-seg-idx="${i}">...</div>`;
             } else if (seg.status === 'translation_failed' && seg.original) {

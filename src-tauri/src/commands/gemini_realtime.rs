@@ -6,7 +6,7 @@
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
@@ -16,9 +16,9 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 const GEMINI_LIVE_WS_HOST: &str = "generativelanguage.googleapis.com";
 const DEFAULT_GEMINI_MODEL: &str = "models/gemini-3.5-transcribe-live";
-const TRANSLATION_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+const TRANSLATION_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(1500);
 const TRANSLATION_MAX_ATTEMPTS: usize = 5;
-const TRANSLATION_PACE_DELAY: std::time::Duration = std::time::Duration::from_millis(800);
+const TRANSLATION_PACE_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 
 #[derive(Debug, Deserialize)]
 pub struct GeminiRealtimeConfig {
@@ -79,6 +79,7 @@ struct Session {
 
 /// A finalized transcript awaiting REST translation. Keeping these in one
 /// bounded FIFO avoids unbounded task growth and preserves segment order.
+#[derive(Debug, Clone)]
 struct TranslationJob {
     id: u64,
     original: String,
@@ -267,7 +268,8 @@ async fn run_session(
         .map_err(|e| format!("send setup message: {}", e))?;
 
     let mut next_translation_id = 1u64;
-    let mut recent_committed: VecDeque<(String, std::time::Instant)> = VecDeque::with_capacity(16);
+    let mut recent_committed: VecDeque<(String, std::time::Instant)> = VecDeque::with_capacity(64);
+    let mut turn_committed: HashSet<String> = HashSet::new();
     let http_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
@@ -289,7 +291,15 @@ async fn run_session(
     let translation_cache_ref = translation_cache.clone();
 
     let translation_worker = tokio::spawn(async move {
-        while let Some(job) = translation_rx.recv().await {
+        while let Some(first_job) = translation_rx.recv().await {
+            let mut batch = vec![first_job];
+            while let Ok(next_job) = translation_rx.try_recv() {
+                batch.push(next_job);
+                if batch.len() >= 6 {
+                    break;
+                }
+            }
+
             let http = translation_http.clone();
             let api_key = translation_api_key.clone();
             let target_lang = translation_target_lang.clone();
@@ -297,8 +307,16 @@ async fn run_session(
             let cd = translation_cooldowns.clone();
             let cache = translation_cache_ref.clone();
 
-            let event = translate_job(http, api_key, target_lang, job, models, cd, cache).await;
-            let _ = translation_event_ch.send(event);
+            if batch.len() == 1 {
+                let job = batch.remove(0);
+                let event = translate_job(http, api_key, target_lang, job, models, cd, cache).await;
+                let _ = translation_event_ch.send(event);
+            } else {
+                let events = translate_batch_jobs(http, api_key, target_lang, batch, models, cd, cache).await;
+                for event in events {
+                    let _ = translation_event_ch.send(event);
+                }
+            }
 
             // Maintain gentle pacing between consecutive translation requests to stay safely below 15 RPM
             tokio::time::sleep(TRANSLATION_PACE_DELAY).await;
@@ -342,6 +360,7 @@ async fn run_session(
                             &event_ch,
                             &translation_tx,
                             &mut next_translation_id,
+                            &mut turn_committed,
                             &mut recent_committed,
                         ).await;
                     }
@@ -352,6 +371,7 @@ async fn run_session(
                                 &event_ch,
                                 &translation_tx,
                                 &mut next_translation_id,
+                                &mut turn_committed,
                                 &mut recent_committed,
                             ).await;
                         }
@@ -578,6 +598,12 @@ fn build_setup_message(cfg: &GeminiRealtimeConfig) -> String {
                 "temperature": 0.2
             },
             "inputAudioTranscription": input_audio_transcription,
+            "realtimeInputConfig": {
+                "automaticActivityDetection": {
+                    "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH",
+                    "silenceDurationMs": 600
+                }
+            },
             "systemInstruction": {
                 "parts": [
                     {
@@ -591,8 +617,9 @@ fn build_setup_message(cfg: &GeminiRealtimeConfig) -> String {
 }
 
 /// Extracts complete sentences (ending in punctuation or clause boundary >= min_clause_chars)
+/// Extracts complete sentences (ending in punctuation . ! ? 。 ！？ \n)
 /// and the remaining unfinalized provisional text.
-fn extract_sentences_and_provisional(text: &str, min_clause_chars: usize) -> (Vec<String>, String) {
+fn split_sentences(text: &str) -> (Vec<String>, String) {
     let mut sentences = Vec::new();
     let text_trimmed = text.trim();
     if text_trimmed.is_empty() {
@@ -603,12 +630,9 @@ fn extract_sentences_and_provisional(text: &str, min_clause_chars: usize) -> (Ve
     let total_len = chars.len();
     let mut start = 0;
     let mut i = 0;
-    let mut current_clause_len = 0;
 
     while i < total_len {
         let (byte_idx, ch) = chars[i];
-        current_clause_len += 1;
-
         let is_period = ch == '。'
             || ch == '！'
             || ch == '？'
@@ -621,18 +645,13 @@ fn extract_sentences_and_provisional(text: &str, min_clause_chars: usize) -> (Ve
                     && i + 1 < total_len
                     && chars[i + 1].1.is_ascii_digit()));
 
-        let is_comma_split = (ch == '、'
-            || (ch == ',' && i + 1 < total_len && chars[i + 1].1 == ' '))
-            && current_clause_len >= min_clause_chars;
-
-        if is_period || is_comma_split {
+        if is_period {
             let end_byte = byte_idx + ch.len_utf8();
             let slice = text_trimmed[start..end_byte].trim();
             if !slice.is_empty() {
                 sentences.push(slice.to_string());
             }
             start = end_byte;
-            current_clause_len = 0;
         }
         i += 1;
     }
@@ -646,49 +665,99 @@ fn extract_sentences_and_provisional(text: &str, min_clause_chars: usize) -> (Ve
     (sentences, provisional)
 }
 
-fn normalize_for_dedup(s: &str) -> String {
-    let has_cjk = s.chars().any(|c| {
-        ('\u{3040}'..='\u{30ff}').contains(&c) // Hiragana & Katakana
-            || ('\u{4e00}'..='\u{9fff}').contains(&c) // CJK Unified Ideographs
-            || ('\u{ac00}'..='\u{d7af}').contains(&c) // Hangul
-    });
-    if has_cjk {
-        s.chars().filter(|c| !c.is_whitespace()).collect()
-    } else {
-        s.split_whitespace().collect::<Vec<_>>().join(" ")
+fn clean_all(s: &str) -> String {
+    s.chars()
+        .filter(|c| !c.is_whitespace() && !c.is_ascii_punctuation() && !"。！？、，.!?, \t\r\n".contains(*c))
+        .collect::<String>()
+        .to_lowercase()
+}
+
+fn dice_similarity(s1: &str, s2: &str) -> f64 {
+    let a = clean_all(s1);
+    let b = clean_all(s2);
+    if a == b {
+        return 1.0;
     }
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+
+    // Substring containment check
+    if a.contains(&b) || b.contains(&a) {
+        let min_len = a.len().min(b.len()) as f64;
+        let max_len = a.len().max(b.len()) as f64;
+        let ratio = min_len / max_len;
+        if ratio >= 0.50 {
+            return ratio;
+        }
+    }
+
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    if a_chars.len() < 2 || b_chars.len() < 2 {
+        return if a_chars == b_chars { 1.0 } else { 0.0 };
+    }
+
+    let mut a_map: HashMap<(char, char), usize> = HashMap::new();
+    for w in a_chars.windows(2) {
+        *a_map.entry((w[0], w[1])).or_default() += 1;
+    }
+
+    let mut matches = 0;
+    for w in b_chars.windows(2) {
+        if let Some(count) = a_map.get_mut(&(w[0], w[1])) {
+            if *count > 0 {
+                *count -= 1;
+                matches += 1;
+            }
+        }
+    }
+
+    (2.0 * matches as f64) / ((a_chars.len() - 1 + b_chars.len() - 1) as f64)
 }
 
-fn clean_for_dedup(s: &str) -> String {
-    let norm = normalize_for_dedup(s);
-    norm.trim_matches(|c: char| {
-        c.is_ascii_punctuation() || "。！？、，.!?, \t\r\n".contains(c)
-    })
-    .to_lowercase()
+fn is_strong_sentence_end(text: &str) -> bool {
+    let t = text.trim();
+    if t.ends_with('.') || t.ends_with('!') || t.ends_with('?') {
+        return t.split_whitespace().count() >= 4;
+    }
+    let strong_endings = [
+        "ます。", "ました。", "ません。", "ましょう。",
+        "です。", "でした。", "ですね。", "ですよね。", "ですよ。",
+        "でしょうか。", "ましたね。", "ましたよ。", "と思います。", "と考えています。"
+    ];
+    if strong_endings.iter().any(|&e| t.ends_with(e)) {
+        return true;
+    }
+    if (t.ends_with('。') || t.ends_with('！') || t.ends_with('？')) && t.chars().count() >= 25 {
+        return true;
+    }
+    false
 }
 
-fn is_duplicate_sentence(
+fn is_recent_duplicate(
     candidate: &str,
+    turn_committed: &HashSet<String>,
     recent_committed: &VecDeque<(String, std::time::Instant)>,
 ) -> bool {
-    let cand_clean = clean_for_dedup(candidate);
-    if cand_clean.is_empty() {
+    let clean = clean_all(candidate);
+    if clean.is_empty() {
         return true;
     }
 
+    // 1. Check within active turn
+    if turn_committed.contains(&clean) {
+        return true;
+    }
+
+    // 2. Check recent history across turns (last 60 seconds)
     let now = std::time::Instant::now();
     for (prev_text, prev_time) in recent_committed.iter().rev() {
-        // Only check entries within the last 15 seconds
-        if now.duration_since(*prev_time) > std::time::Duration::from_secs(15) {
+        if now.duration_since(*prev_time) > std::time::Duration::from_secs(60) {
             break;
         }
-
-        let prev_clean = clean_for_dedup(prev_text);
-        if prev_clean.is_empty() {
-            continue;
-        }
-
-        if cand_clean == prev_clean {
+        let sim = dice_similarity(candidate, prev_text);
+        if sim >= 0.65 {
             return true;
         }
     }
@@ -701,6 +770,7 @@ async fn handle_server_message(
     event_ch: &Channel<GeminiEvent>,
     translation_tx: &mpsc::Sender<TranslationJob>,
     next_translation_id: &mut u64,
+    turn_committed: &mut HashSet<String>,
     recent_committed: &mut VecDeque<(String, std::time::Instant)>,
 ) {
     let value: serde_json::Value = match serde_json::from_str(text) {
@@ -718,27 +788,27 @@ async fn handle_server_message(
         return;
     }
 
-    // 2. Error response
-    if let Some(err) = value.get("error") {
-        let code = err
+    // 2. Check for server errors or warnings
+    if let Some(error) = value.get("error") {
+        let code = error
             .get("code")
             .and_then(|c| c.as_i64())
-            .map(|c| c.to_string())
-            .unwrap_or_else(|| "error".into());
-        let message = err
+            .unwrap_or(0);
+        let message = error
             .get("message")
             .and_then(|m| m.as_str())
-            .unwrap_or("Unknown Gemini error")
-            .to_string();
+            .unwrap_or("Unknown server error");
         eprintln!(
             "[gemini-live] Server error response: {} - {}",
             code, message
         );
-        let _ = event_ch.send(GeminiEvent::Error { code, message });
+        let _ = event_ch.send(GeminiEvent::Error {
+            code: format!("server_error_{}", code),
+            message: message.to_string(),
+        });
         return;
     }
 
-    // Handle goAway notification (Gemini Live sends ~60s before connection expires)
     if let Some(go_away) = value.get("goAway") {
         let time_remaining = go_away
             .get("timeRemaining")
@@ -752,15 +822,63 @@ async fn handle_server_message(
 
     // 3. Process serverContent
     if let Some(server_content) = value.get("serverContent") {
-        // A. Live interim transcription (real-time streaming preview only)
-        // Never auto-commit or send to translation worker from interim stream.
-        // Interim text is purely a live provisional preview that updates in-place.
+        // A. Live interim transcription (with real-time incremental sentence commit)
         if let Some(interim) = server_content.get("interimInputTranscription") {
             if let Some(speech) = interim.get("text").and_then(|t| t.as_str()) {
                 let speech_trimmed = speech.trim();
                 if !speech_trimmed.is_empty() {
+                    let speaker = interim
+                        .get("speaker")
+                        .or_else(|| interim.get("speakerLabel"))
+                        .and_then(|s| s.as_str())
+                        .map(str::to_string);
+
+                    let (sentences, provisional) = split_sentences(speech_trimmed);
+
+                    for (i, sent) in sentences.iter().enumerate() {
+                        let has_subsequent = (i < sentences.len() - 1) || (provisional.chars().count() >= 8);
+                        let sent_trimmed = sent.trim();
+                        if has_subsequent && is_strong_sentence_end(sent_trimmed) {
+                            if is_recent_duplicate(sent_trimmed, turn_committed, recent_committed) {
+                                continue;
+                            }
+
+                            let translation_id = *next_translation_id;
+                            *next_translation_id = (*next_translation_id).saturating_add(1);
+                            eprintln!(
+                                "[gemini-live] Stream commit sentence #{}: {}",
+                                translation_id, sent_trimmed
+                            );
+
+                            let _ = event_ch.send(GeminiEvent::SourceTranscript {
+                                id: translation_id,
+                                text: sent_trimmed.to_string(),
+                                is_final: true,
+                                speaker: speaker.clone(),
+                            });
+
+                            let _ = translation_tx
+                                .send(TranslationJob {
+                                    id: translation_id,
+                                    original: sent_trimmed.to_string(),
+                                    speaker: speaker.clone(),
+                                })
+                                .await;
+
+                            turn_committed.insert(clean_all(sent_trimmed));
+                            recent_committed.push_back((
+                                sent_trimmed.to_string(),
+                                std::time::Instant::now(),
+                            ));
+                            if recent_committed.len() > 64 {
+                                recent_committed.pop_front();
+                            }
+                        }
+                    }
+
+                    // Send live provisional preview for remaining unfinalized words
                     let _ = event_ch.send(GeminiEvent::Transcript {
-                        text: speech_trimmed.to_string(),
+                        text: provisional,
                         is_final: false,
                     });
                 }
@@ -784,9 +902,7 @@ async fn handle_server_message(
                         is_final: false,
                     });
 
-                    let (sentences, trailing) =
-                        extract_sentences_and_provisional(speech_clean, 45);
-
+                    let (sentences, trailing) = split_sentences(speech_clean);
                     let mut all_sentences = sentences;
                     let trailing_trimmed = trailing.trim();
                     if !trailing_trimmed.is_empty() {
@@ -799,9 +915,9 @@ async fn handle_server_message(
                             continue;
                         }
 
-                        if is_duplicate_sentence(sent_trimmed, recent_committed) {
+                        if is_recent_duplicate(sent_trimmed, turn_committed, recent_committed) {
                             eprintln!(
-                                "[gemini-live] Skipped duplicate sentence: {}",
+                                "[gemini-live] Skipped duplicate final sentence: {}",
                                 sent_trimmed
                             );
                             continue;
@@ -829,16 +945,25 @@ async fn handle_server_message(
                             })
                             .await;
 
+                        turn_committed.insert(clean_all(sent_trimmed));
                         recent_committed.push_back((
                             sent_trimmed.to_string(),
                             std::time::Instant::now(),
                         ));
-                        if recent_committed.len() > 16 {
+                        if recent_committed.len() > 64 {
                             recent_committed.pop_front();
                         }
                     }
+
+                    // Reset current turn committed set for the next turn
+                    turn_committed.clear();
                 }
             }
+        }
+
+        // Reset current turn committed set if turnComplete signal received
+        if server_content.get("turnComplete").is_some() {
+            turn_committed.clear();
         }
     }
 }
@@ -996,20 +1121,13 @@ async fn get_or_fetch_models(
     fresh
 }
 
-async fn translate_text_rest(
+async fn translate_raw_prompt(
     client: &reqwest::Client,
     api_key: &str,
-    text: &str,
-    target_lang: &str,
+    prompt: &str,
     models: &[String],
     cooldowns_ref: &Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
 ) -> Option<String> {
-    let target_name = map_lang_name(target_lang);
-    let prompt = format!(
-        "Translate the following speech accurately and naturally into {target_name}. Output ONLY the translated text in {target_name} without repeating the source language, and without notes or quotes:\n{}",
-        text.trim()
-    );
-
     let now = std::time::Instant::now();
     let mut soonest_wait: Option<std::time::Duration> = None;
 
@@ -1040,11 +1158,15 @@ async fn translate_text_rest(
                 {
                     "parts": [
                         {
-                            "text": &prompt
+                            "text": prompt
                         }
                     ]
                 }
-            ]
+            ],
+            "generationConfig": {
+                "temperature": 0.2,
+                "maxOutputTokens": 1024
+            }
         });
 
         match client
@@ -1127,15 +1249,275 @@ async fn translate_text_rest(
         }
     }
 
-    // If all models were in cooldown and the soonest cooldown is short (<= 5s), wait for it!
+    // If all models were in cooldown, wait up to 20s for the soonest cooldown to expire
     if let Some(wait) = soonest_wait {
-        if wait <= std::time::Duration::from_secs(5) {
+        if wait <= std::time::Duration::from_secs(20) {
+            eprintln!(
+                "[gemini-live] All candidate models in cooldown, waiting {:?} before retrying",
+                wait
+            );
             tokio::time::sleep(wait).await;
         }
     }
 
     None
 }
+
+async fn translate_text_rest(
+    client: &reqwest::Client,
+    api_key: &str,
+    text: &str,
+    target_lang: &str,
+    models: &[String],
+    cooldowns_ref: &Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
+) -> Option<String> {
+    let target_name = map_lang_name(target_lang);
+    let prompt = format!(
+        "Translate the following speech accurately and naturally into {target_name}. Output ONLY the translated text in {target_name} without repeating the source language, and without notes or quotes:\n{}",
+        text.trim()
+    );
+    translate_raw_prompt(client, api_key, &prompt, models, cooldowns_ref).await
+}
+
+fn parse_line_index_and_text(line: &str) -> Option<(usize, String)> {
+    let line = line.trim();
+    if line.starts_with('[') {
+        if let Some(close_bracket) = line.find(']') {
+            let num_str = line[1..close_bracket].trim();
+            if let Ok(idx) = num_str.parse::<usize>() {
+                let rest = line[close_bracket + 1..].trim().to_string();
+                return Some((idx, rest));
+            }
+        }
+    }
+    let chars: Vec<char> = line.chars().collect();
+    let mut digit_end = 0;
+    while digit_end < chars.len() && chars[digit_end].is_ascii_digit() {
+        digit_end += 1;
+    }
+    if digit_end > 0
+        && digit_end < chars.len()
+        && (chars[digit_end] == '.' || chars[digit_end] == ')' || chars[digit_end] == ']')
+    {
+        let num_str: String = chars[..digit_end].iter().collect();
+        if let Ok(idx) = num_str.parse::<usize>() {
+            let rest: String = chars[digit_end + 1..].iter().collect();
+            return Some((idx, rest.trim().to_string()));
+        }
+    }
+    None
+}
+
+fn parse_numbered_translations(text: &str, expected_count: usize) -> Vec<String> {
+    let mut items: Vec<(usize, String)> = Vec::new();
+    for line in text.lines() {
+        let line_trimmed = line.trim();
+        if line_trimmed.is_empty() {
+            continue;
+        }
+        if let Some(captures) = parse_line_index_and_text(line_trimmed) {
+            items.push(captures);
+        } else if let Some(last) = items.last_mut() {
+            last.1.push(' ');
+            last.1.push_str(line_trimmed);
+        }
+    }
+
+    if items.len() == expected_count {
+        return items.into_iter().map(|(_, t)| t.trim().to_string()).collect();
+    }
+
+    let non_empty_lines: Vec<&str> = text
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
+    if non_empty_lines.len() == expected_count {
+        return non_empty_lines
+            .into_iter()
+            .map(|l| {
+                if let Some((_, t)) = parse_line_index_and_text(l) {
+                    t
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect();
+    }
+
+    Vec::new()
+}
+
+async fn translate_batch_jobs(
+    http_client: reqwest::Client,
+    api_key: String,
+    target_lang_ref: std::sync::Arc<tokio::sync::RwLock<String>>,
+    jobs: Vec<TranslationJob>,
+    models_ref: std::sync::Arc<tokio::sync::RwLock<Vec<String>>>,
+    cooldowns_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
+    cache_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, String>>>,
+) -> Vec<GeminiEvent> {
+    let target_lang = target_lang_ref.read().await.clone();
+    let is_no_translate = target_lang == "none" || target_lang == "off" || target_lang.is_empty();
+
+    if is_no_translate {
+        return jobs
+            .into_iter()
+            .map(|job| GeminiEvent::Segment {
+                id: job.id,
+                original: job.original,
+                translation: String::new(),
+                speaker: job.speaker,
+            })
+            .collect();
+    }
+
+    let mut results: HashMap<u64, String> = HashMap::new();
+    let mut uncached_indices: Vec<usize> = Vec::new();
+
+    // Check cache for each job
+    {
+        let cache = cache_ref.lock().await;
+        for (idx, job) in jobs.iter().enumerate() {
+            let cache_key = format!("{}:{}", target_lang, job.original.trim());
+            if let Some(cached) = cache.get(&cache_key) {
+                results.insert(job.id, cached.clone());
+            } else {
+                uncached_indices.push(idx);
+            }
+        }
+    }
+
+    if uncached_indices.is_empty() {
+        return jobs
+            .into_iter()
+            .map(|job| {
+                let trans = results.remove(&job.id).unwrap_or_default();
+                GeminiEvent::Segment {
+                    id: job.id,
+                    original: job.original,
+                    translation: trans,
+                    speaker: job.speaker,
+                }
+            })
+            .collect();
+    }
+
+    if uncached_indices.len() == 1 {
+        let idx = uncached_indices[0];
+        let job = jobs[idx].clone();
+        let event = translate_job(
+            http_client,
+            api_key,
+            target_lang_ref,
+            job,
+            models_ref,
+            cooldowns_ref,
+            cache_ref,
+        )
+        .await;
+        if let GeminiEvent::Segment { id, translation, .. } = &event {
+            results.insert(*id, translation.clone());
+        }
+        return jobs
+            .into_iter()
+            .map(|j| {
+                let trans = results.remove(&j.id).unwrap_or_default();
+                GeminiEvent::Segment {
+                    id: j.id,
+                    original: j.original,
+                    translation: trans,
+                    speaker: j.speaker,
+                }
+            })
+            .collect();
+    }
+
+    let mut prompt_items = String::new();
+    for (seq, &idx) in uncached_indices.iter().enumerate() {
+        prompt_items.push_str(&format!("[{}] {}\n", seq + 1, jobs[idx].original.trim()));
+    }
+
+    let target_name = map_lang_name(&target_lang);
+    let prompt = format!(
+        "Translate the following numbered speech items accurately and naturally into {target_name}. Output ONLY the numbered translations in order, without notes, quotes, or repeating source text:\n{}",
+        prompt_items.trim()
+    );
+
+    let models = models_ref.read().await.clone();
+    let mut batch_text_opt = None;
+
+    for attempt in 0..TRANSLATION_MAX_ATTEMPTS {
+        if attempt > 0 {
+            let delay_ms = 2000u64 * (attempt as u64);
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        }
+        batch_text_opt = translate_raw_prompt(
+            &http_client,
+            &api_key,
+            &prompt,
+            &models,
+            &cooldowns_ref,
+        )
+        .await;
+        if batch_text_opt.as_ref().is_some_and(|t| !t.trim().is_empty()) {
+            break;
+        }
+    }
+
+    let mut parsed_success = false;
+    if let Some(resp_text) = batch_text_opt {
+        let parsed_items = parse_numbered_translations(&resp_text, uncached_indices.len());
+        if parsed_items.len() == uncached_indices.len() {
+            let mut cache = cache_ref.lock().await;
+            for (seq, &idx) in uncached_indices.iter().enumerate() {
+                let trans = parsed_items[seq].clone();
+                let job = &jobs[idx];
+                let trimmed = job.original.trim();
+                if trimmed.len() < 120 {
+                    let cache_key = format!("{}:{}", target_lang, trimmed);
+                    cache.insert(cache_key, trans.clone());
+                }
+                results.insert(job.id, trans);
+            }
+            parsed_success = true;
+        }
+    }
+
+    if !parsed_success {
+        // Fallback: translate uncached items individually
+        for &idx in &uncached_indices {
+            let job = jobs[idx].clone();
+            let event = translate_job(
+                http_client.clone(),
+                api_key.clone(),
+                target_lang_ref.clone(),
+                job,
+                models_ref.clone(),
+                cooldowns_ref.clone(),
+                cache_ref.clone(),
+            )
+            .await;
+            if let GeminiEvent::Segment { id, translation, .. } = event {
+                results.insert(id, translation);
+            }
+        }
+    }
+
+    jobs.into_iter()
+        .map(|job| {
+            let trans = results.remove(&job.id).unwrap_or_default();
+            GeminiEvent::Segment {
+                id: job.id,
+                original: job.original,
+                translation: trans,
+                speaker: job.speaker,
+            }
+        })
+        .collect()
+}
+
+
 
 #[cfg(test)]
 mod tests {
@@ -1171,7 +1553,7 @@ mod tests {
     #[test]
     fn test_extract_sentences_with_no_space_period() {
         let text = "Anh cơ bản là có hai ai mà là rồi thì nó dễ.Tôi thì học xong.";
-        let (sentences, provisional) = extract_sentences_and_provisional(text, 45);
+        let (sentences, provisional) = split_sentences(text);
         assert_eq!(sentences.len(), 2);
         assert_eq!(sentences[0], "Anh cơ bản là có hai ai mà là rồi thì nó dễ.");
         assert_eq!(sentences[1], "Tôi thì học xong.");
@@ -1181,7 +1563,7 @@ mod tests {
     #[test]
     fn test_extract_sentences_preserves_decimal_numbers() {
         let text = "Phiên bản 2.5 đã ra mắt.Tuyệt vời!";
-        let (sentences, provisional) = extract_sentences_and_provisional(text, 45);
+        let (sentences, provisional) = split_sentences(text);
         assert_eq!(sentences.len(), 2);
         assert_eq!(sentences[0], "Phiên bản 2.5 đã ra mắt.");
         assert_eq!(sentences[1], "Tuyệt vời!");
@@ -1189,22 +1571,43 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_and_clean_dedup_cjk() {
-        let s1 = "まさかの緊急収録 ですね。";
-        let s2 = "まさかの緊急収録ですね。";
-        assert_eq!(clean_for_dedup(s1), clean_for_dedup(s2));
+    fn test_clean_all_and_dice_similarity() {
+        let s1 = "その と 1 トランスフォーマーレイヤーに対してですね、 まず、まあ最初は普通の インプットが入ってきます。";
+        let s2 = "そのと1トランスフォーマーレイヤーに対してですね、まずまあ最初は普通のインプットが入ってきます。";
+        assert_eq!(clean_all(s1), clean_all(s2));
+        assert!(dice_similarity(s1, s2) >= 0.95);
 
-        let s3 = "今日やっぱ行けます つって なって。";
-        let s4 = "今日やっぱ行けます つってなって。";
-        assert_eq!(clean_for_dedup(s3), clean_for_dedup(s4));
+        // Substring revision
+        let s3 = "別のパラメーター持った。";
+        let s4 = "別のパラメータ持ったがはい。";
+        assert!(dice_similarity(s3, s4) >= 0.70);
 
-        let s5 = "Hello   world! ";
-        let s6 = "Hello world.";
-        assert_eq!(clean_for_dedup(s5), clean_for_dedup(s6));
+        // Speech recognition token revision
+        let s5 = "で、普通に考えたら これ、本人 が来るはず。";
+        let s6 = "で、普通に考えたら これ、トニンが来るはず。";
+        assert!(dice_similarity(s5, s6) >= 0.75);
+
+        // Completely different
+        let s7 = "全く同じパラメーターです。";
+        assert!(dice_similarity(s1, s7) < 0.20);
     }
 
     #[test]
-    fn test_is_duplicate_sentence() {
+    fn test_is_strong_sentence_end() {
+        assert!(is_strong_sentence_end("インプットが入ってきます。"));
+        assert!(is_strong_sentence_end("全く同じパラメーターです。"));
+        assert!(is_strong_sentence_end("昔のRNNとかよくやってたことなんですが、時間方向にぐるぐる回すんですね。"));
+        assert!(is_strong_sentence_end("This is a complete sentence."));
+        
+        // Incomplete / weak
+        assert!(!is_strong_sentence_end("で、出力する。"));
+        assert!(!is_strong_sentence_end("なんと。"));
+        assert!(!is_strong_sentence_end("Hi."));
+    }
+
+    #[test]
+    fn test_is_recent_duplicate() {
+        let mut turn_committed = HashSet::new();
         let mut recent = VecDeque::new();
         recent.push_back((
             "まさかの緊急収録 ですね。".to_string(),
@@ -1212,9 +1615,44 @@ mod tests {
         ));
 
         // Exact match with different CJK spacing
-        assert!(is_duplicate_sentence("まさかの緊急収録ですね。", &recent));
+        assert!(is_recent_duplicate("まさかの緊急収録ですね。", &turn_committed, &recent));
+
+        // Turn committed match
+        turn_committed.insert(clean_all("はい。"));
+        assert!(is_recent_duplicate("はい。", &turn_committed, &recent));
 
         // Different sentence
-        assert!(!is_duplicate_sentence("いや、本当にこれ緊急です。", &recent));
+        assert!(!is_recent_duplicate("いや、本当にこれ緊急です。", &turn_committed, &recent));
+    }
+
+    #[test]
+    fn test_parse_numbered_translations() {
+        let text = "[1] Tôi xin phép được chia sẻ 3 điểm chính.\n[2] Được gọi là bang\n[3] Tham gia vào chương trình đào tạo";
+        let parsed = parse_numbered_translations(text, 3);
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed[0], "Tôi xin phép được chia sẻ 3 điểm chính.");
+        assert_eq!(parsed[1], "Được gọi là bang");
+        assert_eq!(parsed[2], "Tham gia vào chương trình đào tạo");
+
+        // Format with dot "1. "
+        let text_dot = "1. Câu thứ nhất\n2. Câu thứ hai";
+        let parsed_dot = parse_numbered_translations(text_dot, 2);
+        assert_eq!(parsed_dot.len(), 2);
+        assert_eq!(parsed_dot[0], "Câu thứ nhất");
+        assert_eq!(parsed_dot[1], "Câu thứ hai");
+    }
+
+    #[test]
+    fn test_continuous_speech_incremental_finalization() {
+        let text = "え、今日はプーチン、ゼレンスキー両氏の思惑を読み解いていこうという風に思っております。今夜のゲストをご紹介します。元駐ウクライナ大使で";
+        let (sentences, provisional) = split_sentences(text);
+        assert_eq!(sentences.len(), 2);
+        assert_eq!(
+            sentences[0],
+            "え、今日はプーチン、ゼレンスキー両氏の思惑を読み解いていこうという風に思っております。"
+        );
+        assert_eq!(sentences[1], "今夜のゲストをご紹介します。");
+        assert_eq!(provisional, "元駐ウクライナ大使で");
     }
 }
+

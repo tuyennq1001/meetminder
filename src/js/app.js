@@ -133,6 +133,7 @@ class App {
         this._inactivityTimer = null;
         this._captureHealthTimer = null;
         this._isStopConfirmationOpen = false;
+        this._isStoppingSession = false;
         this._projectRegistry = null;
         this._activeCustomerFilter = [];
         this._activeProjectFilter = [];
@@ -643,7 +644,7 @@ class App {
 
         // Dynamic Stop / Save Log button
         document.getElementById('btn-stop')?.addEventListener('click', async () => {
-            if (this._isStopConfirmationOpen) return;
+            if (this._isStopConfirmationOpen || this._isStoppingSession) return;
             const stopAction = await this._promptConfirmStop();
             await this._handleStopSessionAction(stopAction);
         });
@@ -1162,7 +1163,7 @@ class App {
             if (hasModifier && (e.key === 't' || e.key === 'T')) {
                 e.preventDefault();
                 if (this.isRunning || this.isPaused || this._hasUnsavedMeetingData) {
-                    if (this._isStopConfirmationOpen) return;
+                    if (this._isStopConfirmationOpen || this._isStoppingSession) return;
                     // Keep the keyboard path consistent with the Stop button:
                     // users must be able to confirm the action and name the log.
                     (async () => {
@@ -3151,18 +3152,163 @@ class App {
         // lives across many Start/Pause cycles. stopSession() resets it.
     }
 
+    async _getAllKnownTags() {
+        try {
+            const reg = await this._loadProjectRegistry();
+            const regTags = reg.tags || [];
+            let sessionTags = [];
+            if (this._cachedSessions && this._cachedSessions.length > 0) {
+                sessionTags = this._cachedSessions.flatMap(sess => sess.tags || []);
+            } else {
+                try {
+                    const sessions = await invoke('list_sessions');
+                    this._cachedSessions = sessions || [];
+                    sessionTags = (this._cachedSessions || []).flatMap(sess => sess.tags || []);
+                } catch (_) {
+                    // Ignore
+                }
+            }
+            const tagSet = new Set();
+            for (const t of [...regTags, ...sessionTags]) {
+                if (typeof t === 'string' && t.trim()) {
+                    tagSet.add(t.trim().replace(/^#+/, '').toLowerCase());
+                }
+            }
+            return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
+        } catch (err) {
+            console.error('Failed to get known tags:', err);
+            return [];
+        }
+    }
+
+    _setupTagAutocomplete(inputEl, suggestionsBoxEl, knownTags = []) {
+        if (!inputEl || !suggestionsBoxEl) return () => {};
+
+        const uniqueKnownTags = Array.from(
+            new Set(knownTags.map(t => String(t || '').trim().replace(/^#+/, '').toLowerCase()).filter(Boolean))
+        ).sort((a, b) => a.localeCompare(b));
+
+        if (uniqueKnownTags.length === 0) {
+            suggestionsBoxEl.style.display = 'none';
+            suggestionsBoxEl.innerHTML = '';
+            return () => {};
+        }
+
+        const parseSelectedTags = () => {
+            return (inputEl.value || '')
+                .split(',')
+                .map(t => t.trim().replace(/^#+/, '').toLowerCase())
+                .filter(Boolean);
+        };
+
+        const updateInputWithTags = (tags) => {
+            inputEl.value = tags.map(t => `#${t}`).join(', ');
+            inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+
+        const render = () => {
+            const rawVal = inputEl.value || '';
+            const selectedTags = parseSelectedTags();
+            const selectedSet = new Set(selectedTags);
+
+            // Determine if user is typing an unconfirmed tag at the end
+            const parts = rawVal.split(',');
+            const lastPart = (parts[parts.length - 1] || '').trim().replace(/^#+/, '').toLowerCase();
+            const hasTrailingComma = rawVal.trim().endsWith(',');
+            // If user has not ended with a comma and lastPart is not already an exact selected tag:
+            const filterQuery = (!hasTrailingComma && lastPart && !selectedSet.has(lastPart)) ? lastPart : '';
+
+            let visibleTags = uniqueKnownTags;
+            if (filterQuery) {
+                visibleTags = uniqueKnownTags.filter(t => t.includes(filterQuery));
+            }
+
+            if (visibleTags.length === 0 && uniqueKnownTags.length > 0) {
+                suggestionsBoxEl.innerHTML = `
+                    <div class="tag-suggestions-header">
+                        <span>Gợi ý thẻ</span>
+                        <span style="font-size:10px;opacity:0.7">Nhập dấu phẩy để hoàn tất thẻ mới</span>
+                    </div>
+                    <div style="color:var(--text-muted, #8e8e93);font-size:11px;padding:2px 0;">
+                        Không có thẻ có sẵn khớp với "<b>${this._esc(filterQuery)}</b>" — gõ phẩy để tạo thẻ mới
+                    </div>
+                `;
+                suggestionsBoxEl.style.display = 'block';
+                return;
+            }
+
+            let chipsHtml = '';
+            for (const tag of visibleTags) {
+                const isSelected = selectedSet.has(tag);
+                chipsHtml += `<span class="tag-suggestion-chip ${isSelected ? 'selected' : ''}" data-tag="${this._escAttr(tag)}">#${this._esc(tag)}${isSelected ? ' ✓' : ''}</span>`;
+            }
+
+            suggestionsBoxEl.innerHTML = `
+                <div class="tag-suggestions-header">
+                    <span>Thẻ có sẵn (bấm để chọn / bỏ chọn):</span>
+                    <span style="font-size:10px;opacity:0.7">${visibleTags.length} thẻ</span>
+                </div>
+                <div class="tag-suggestions-list">${chipsHtml}</div>
+            `;
+            suggestionsBoxEl.style.display = 'block';
+
+            suggestionsBoxEl.querySelectorAll('.tag-suggestion-chip').forEach(chip => {
+                chip.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const tag = chip.dataset.tag;
+
+                    let currentSelected;
+                    if (filterQuery) {
+                        currentSelected = parts.slice(0, -1)
+                            .map(t => t.trim().replace(/^#+/, '').toLowerCase())
+                            .filter(Boolean);
+                    } else {
+                        currentSelected = parseSelectedTags();
+                    }
+
+                    let nextSelected;
+                    if (currentSelected.includes(tag)) {
+                        nextSelected = currentSelected.filter(t => t !== tag);
+                    } else {
+                        nextSelected = [...currentSelected, tag];
+                    }
+                    updateInputWithTags(nextSelected);
+                    inputEl.focus();
+                });
+            });
+        };
+
+        const onInput = () => {
+            render();
+        };
+
+        inputEl.addEventListener('input', onInput);
+        render();
+
+        return () => {
+            inputEl.removeEventListener('input', onInput);
+            suggestionsBoxEl.style.display = 'none';
+            suggestionsBoxEl.innerHTML = '';
+        };
+    }
+
     // Stop: pause (if running), finalize the current session file with custom title,
     // then start a fresh session so the next Start writes a new file pair.
     async _promptConfirmStop() {
         const modal = document.getElementById('modal-confirm-stop');
         const input = document.getElementById('input-stop-meeting-title');
         const inputTags = document.getElementById('input-stop-meeting-tags');
+        const suggestionsBox = document.getElementById('stop-meeting-tags-suggestions');
         const selectCust = document.getElementById('select-stop-meeting-customer');
         const selectProj = document.getElementById('select-stop-meeting-project');
         const selectCat = document.getElementById('select-stop-meeting-category');
         const defaultTitle = sessionStore.title || this._formatDefaultMeetingTitle(this.sessionStartTime || this.recordingStartTime);
 
-        const reg = await this._loadProjectRegistry();
+        const [reg, knownTags] = await Promise.all([
+            this._loadProjectRegistry(),
+            this._getAllKnownTags(),
+        ]);
         const activeCustomers = (reg.customers || []).filter(c => c.status === 'active');
         const activeProjects = (reg.projects || []).filter(p => p.status === 'active');
 
@@ -3288,6 +3434,7 @@ class App {
         if (inputTags) {
             inputTags.value = (sessionStore.tags || []).map(t => `#${t}`).join(', ');
         }
+        const cleanupTags = this._setupTagAutocomplete(inputTags, suggestionsBox, knownTags);
         this._isStopConfirmationOpen = true;
         modal.style.display = 'flex';
         if (input) {
@@ -3340,6 +3487,7 @@ class App {
             };
             const cleanup = () => {
                 this._isStopConfirmationOpen = false;
+                cleanupTags?.();
                 selectCust?.removeEventListener('change', onCustChange);
                 selectProj?.removeEventListener('change', onProjChange);
                 chkAutoMinutes?.removeEventListener('change', onAutoMinutesChange);
@@ -3432,6 +3580,14 @@ class App {
 
     async _handleStopSessionAction(stopAction) {
         if (!stopAction) return;
+        if (this._isStoppingSession) return;
+        this._isStoppingSession = true;
+        const btnStop = document.getElementById('btn-stop');
+        if (btnStop) {
+            btnStop.classList.add('disabled');
+            btnStop.style.pointerEvents = 'none';
+            btnStop.style.opacity = '0.5';
+        }
         try {
             if (stopAction.discard) {
                 await this.discardSession();
@@ -3454,6 +3610,13 @@ class App {
         } catch (err) {
             console.error('[App] Stop session error:', err);
             this._showToast(`Lỗi kết thúc: ${err}`, 'error');
+        } finally {
+            this._isStoppingSession = false;
+            if (btnStop) {
+                btnStop.classList.remove('disabled');
+                btnStop.style.pointerEvents = '';
+                btnStop.style.opacity = '';
+            }
         }
     }
 
@@ -5082,9 +5245,13 @@ class App {
         const selectProj = document.getElementById('select-edit-session-project');
         const selectCat = document.getElementById('select-edit-session-category');
         const inputTags = document.getElementById('input-edit-tags-value');
+        const suggestionsBox = document.getElementById('edit-session-tags-suggestions');
         if (!modal) return;
 
-        const reg = await this._loadProjectRegistry();
+        const [reg, knownTags] = await Promise.all([
+            this._loadProjectRegistry(),
+            this._getAllKnownTags(),
+        ]);
         const id = sess.id;
         const currentTitle = sess.title || '';
         const currentCustomerId = sess.customer_id || '';
@@ -5094,6 +5261,7 @@ class App {
 
         if (inputTitle) inputTitle.value = currentTitle;
         if (inputTags) inputTags.value = currentTags.map(t => `#${t}`).join(', ');
+        const cleanupTags = this._setupTagAutocomplete(inputTags, suggestionsBox, knownTags);
 
         const allCustomers = reg.customers || [];
         const allProjects = reg.projects || [];
@@ -5219,6 +5387,7 @@ class App {
                 }
             };
             const cleanup = () => {
+                cleanupTags?.();
                 selectCust?.removeEventListener('change', onCustChange);
                 selectProj?.removeEventListener('change', onProjChange);
                 document.getElementById('btn-confirm-edit-tags')?.removeEventListener('click', onConfirm);

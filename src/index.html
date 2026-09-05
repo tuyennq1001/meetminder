@@ -1140,7 +1140,8 @@
         </div>
 
         <label for="input-stop-meeting-tags" class="field-label" style="margin-top:10px; margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">#️⃣ Thẻ (Tags):</label>
-        <input type="text" id="input-stop-meeting-tags" class="modal-input" placeholder="#frontend, #api, #sprint-12 (cách nhau dấu phẩy)" />
+        <input type="text" id="input-stop-meeting-tags" class="modal-input" placeholder="#frontend, #api, #sprint-12 (cách nhau dấu phẩy)" autocomplete="off" />
+        <div id="stop-meeting-tags-suggestions" class="tag-suggestions-box" style="display:none"></div>
         
         <div style="margin-top: 12px; padding: 10px 12px; background: rgba(126, 62, 135, 0.08); border: 1px solid rgba(126, 62, 135, 0.2); border-radius: 8px;">
           <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
@@ -1283,7 +1284,8 @@
         </div>
 
         <label for="input-edit-tags-value" class="field-label" style="margin-top:10px; margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">#️⃣ Thẻ (Tags):</label>
-        <input type="text" id="input-edit-tags-value" class="modal-input" placeholder="#frontend, #api" />
+        <input type="text" id="input-edit-tags-value" class="modal-input" placeholder="#frontend, #api" autocomplete="off" />
+        <div id="edit-session-tags-suggestions" class="tag-suggestions-box" style="display:none"></div>
       </div>
       <div class="modal-footer">
         <button type="button" id="btn-cancel-edit-tags" class="secondary-btn">Hủy</button>
