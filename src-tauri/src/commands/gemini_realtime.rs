@@ -6,7 +6,7 @@
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
@@ -267,8 +267,7 @@ async fn run_session(
         .map_err(|e| format!("send setup message: {}", e))?;
 
     let mut next_translation_id = 1u64;
-    let mut committed_sentences: Vec<String> = Vec::new();
-    let mut last_committed: Option<(String, std::time::Instant)> = None;
+    let mut recent_committed: VecDeque<(String, std::time::Instant)> = VecDeque::with_capacity(16);
     let http_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
@@ -343,8 +342,7 @@ async fn run_session(
                             &event_ch,
                             &translation_tx,
                             &mut next_translation_id,
-                            &mut committed_sentences,
-                            &mut last_committed,
+                            &mut recent_committed,
                         ).await;
                     }
                     Some(Ok(Message::Binary(bin))) => {
@@ -354,8 +352,7 @@ async fn run_session(
                                 &event_ch,
                                 &translation_tx,
                                 &mut next_translation_id,
-                                &mut committed_sentences,
-                                &mut last_committed,
+                                &mut recent_committed,
                             ).await;
                         }
                     }
@@ -649,13 +646,62 @@ fn extract_sentences_and_provisional(text: &str, min_clause_chars: usize) -> (Ve
     (sentences, provisional)
 }
 
+fn normalize_for_dedup(s: &str) -> String {
+    let has_cjk = s.chars().any(|c| {
+        ('\u{3040}'..='\u{30ff}').contains(&c) // Hiragana & Katakana
+            || ('\u{4e00}'..='\u{9fff}').contains(&c) // CJK Unified Ideographs
+            || ('\u{ac00}'..='\u{d7af}').contains(&c) // Hangul
+    });
+    if has_cjk {
+        s.chars().filter(|c| !c.is_whitespace()).collect()
+    } else {
+        s.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+}
+
+fn clean_for_dedup(s: &str) -> String {
+    let norm = normalize_for_dedup(s);
+    norm.trim_matches(|c: char| {
+        c.is_ascii_punctuation() || "。！？、，.!?, \t\r\n".contains(c)
+    })
+    .to_lowercase()
+}
+
+fn is_duplicate_sentence(
+    candidate: &str,
+    recent_committed: &VecDeque<(String, std::time::Instant)>,
+) -> bool {
+    let cand_clean = clean_for_dedup(candidate);
+    if cand_clean.is_empty() {
+        return true;
+    }
+
+    let now = std::time::Instant::now();
+    for (prev_text, prev_time) in recent_committed.iter().rev() {
+        // Only check entries within the last 15 seconds
+        if now.duration_since(*prev_time) > std::time::Duration::from_secs(15) {
+            break;
+        }
+
+        let prev_clean = clean_for_dedup(prev_text);
+        if prev_clean.is_empty() {
+            continue;
+        }
+
+        if cand_clean == prev_clean {
+            return true;
+        }
+    }
+
+    false
+}
+
 async fn handle_server_message(
     text: &str,
     event_ch: &Channel<GeminiEvent>,
     translation_tx: &mpsc::Sender<TranslationJob>,
     next_translation_id: &mut u64,
-    committed_sentences: &mut Vec<String>,
-    last_committed: &mut Option<(String, std::time::Instant)>,
+    recent_committed: &mut VecDeque<(String, std::time::Instant)>,
 ) {
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
@@ -704,80 +750,24 @@ async fn handle_server_message(
         );
     }
 
-    let is_duplicate = |candidate: &str,
-                        committed_sentences: &[String],
-                        last_committed: &Option<(String, std::time::Instant)>|
-     -> bool {
-        let cand = candidate.trim();
-        if cand.is_empty() {
-            return true;
-        }
-        if committed_sentences.iter().any(|c| c.trim() == cand) {
-            return true;
-        }
-        if let Some((prev_text, prev_time)) = last_committed {
-            if prev_text.trim() == cand
-                && prev_time.elapsed() < std::time::Duration::from_millis(2000)
-            {
-                return true;
-            }
-        }
-        false
-    };
-
     // 3. Process serverContent
     if let Some(server_content) = value.get("serverContent") {
-        // A. Live interim transcription (real-time streaming speech delta)
-        // Auto-commit completed sentences as they arrive so continuous speech (e.g. news, long meetings)
-        // does not build up into an unfinalized wall of text, while keeping the uncommitted fragment in provisional.
+        // A. Live interim transcription (real-time streaming preview only)
+        // Never auto-commit or send to translation worker from interim stream.
+        // Interim text is purely a live provisional preview that updates in-place.
         if let Some(interim) = server_content.get("interimInputTranscription") {
             if let Some(speech) = interim.get("text").and_then(|t| t.as_str()) {
                 let speech_trimmed = speech.trim();
                 if !speech_trimmed.is_empty() {
-                    let (sentences, provisional) =
-                        extract_sentences_and_provisional(speech_trimmed, 45);
-
-                    for sentence in &sentences {
-                        if is_duplicate(sentence, committed_sentences, last_committed) {
-                            continue;
-                        }
-
-                        let translation_id = *next_translation_id;
-                        *next_translation_id = (*next_translation_id).saturating_add(1);
-                        eprintln!(
-                            "[gemini-live] Auto-committed interim sentence #{}: {}",
-                            translation_id, sentence
-                        );
-
-                        let _ = event_ch.send(GeminiEvent::SourceTranscript {
-                            id: translation_id,
-                            text: sentence.clone(),
-                            is_final: true,
-                            speaker: None,
-                        });
-
-                        let _ = translation_tx
-                            .send(TranslationJob {
-                                id: translation_id,
-                                original: sentence.clone(),
-                                speaker: None,
-                            })
-                            .await;
-
-                        committed_sentences.push(sentence.clone());
-                        *last_committed = Some((sentence.clone(), std::time::Instant::now()));
-                    }
-
-                    // Forward only the remaining in-progress fragment to the UI as provisional
                     let _ = event_ch.send(GeminiEvent::Transcript {
-                        text: provisional,
+                        text: speech_trimmed.to_string(),
                         is_final: false,
                     });
                 }
             }
         }
 
-        // B. Final input transcription (when an utterance completes)
+        // B. Final input transcription (when an utterance/turn completes)
         if let Some(input_tx) = server_content.get("inputTranscription") {
             if let Some(speech) = input_tx.get("text").and_then(|t| t.as_str()) {
                 let speech_clean = speech.trim();
@@ -788,11 +778,32 @@ async fn handle_server_message(
                         .and_then(|s| s.as_str())
                         .map(str::to_string);
 
-                    let (sentences, provisional) =
+                    // Clear provisional text in the UI immediately
+                    let _ = event_ch.send(GeminiEvent::Transcript {
+                        text: String::new(),
+                        is_final: false,
+                    });
+
+                    let (sentences, trailing) =
                         extract_sentences_and_provisional(speech_clean, 45);
 
-                    for sentence in &sentences {
-                        if is_duplicate(sentence, committed_sentences, last_committed) {
+                    let mut all_sentences = sentences;
+                    let trailing_trimmed = trailing.trim();
+                    if !trailing_trimmed.is_empty() {
+                        all_sentences.push(trailing_trimmed.to_string());
+                    }
+
+                    for sentence in all_sentences {
+                        let sent_trimmed = sentence.trim();
+                        if sent_trimmed.is_empty() {
+                            continue;
+                        }
+
+                        if is_duplicate_sentence(sent_trimmed, recent_committed) {
+                            eprintln!(
+                                "[gemini-live] Skipped duplicate sentence: {}",
+                                sent_trimmed
+                            );
                             continue;
                         }
 
@@ -800,12 +811,12 @@ async fn handle_server_message(
                         *next_translation_id = (*next_translation_id).saturating_add(1);
                         eprintln!(
                             "[gemini-live] Final speech sentence #{}: {}",
-                            translation_id, sentence
+                            translation_id, sent_trimmed
                         );
 
                         let _ = event_ch.send(GeminiEvent::SourceTranscript {
                             id: translation_id,
-                            text: sentence.clone(),
+                            text: sent_trimmed.to_string(),
                             is_final: true,
                             speaker: speaker.clone(),
                         });
@@ -813,52 +824,19 @@ async fn handle_server_message(
                         let _ = translation_tx
                             .send(TranslationJob {
                                 id: translation_id,
-                                original: sentence.clone(),
+                                original: sent_trimmed.to_string(),
                                 speaker: speaker.clone(),
                             })
                             .await;
 
-                        committed_sentences.push(sentence.clone());
-                        *last_committed = Some((sentence.clone(), std::time::Instant::now()));
+                        recent_committed.push_back((
+                            sent_trimmed.to_string(),
+                            std::time::Instant::now(),
+                        ));
+                        if recent_committed.len() > 16 {
+                            recent_committed.pop_front();
+                        }
                     }
-
-                    // If there is any trailing text that wasn't finalized by punctuation, commit it now!
-                    if !provisional.is_empty()
-                        && !is_duplicate(&provisional, committed_sentences, last_committed)
-                    {
-                        let translation_id = *next_translation_id;
-                        *next_translation_id = (*next_translation_id).saturating_add(1);
-                        eprintln!(
-                            "[gemini-live] Final speech trailing clause #{}: {}",
-                            translation_id, provisional
-                        );
-
-                        let _ = event_ch.send(GeminiEvent::SourceTranscript {
-                            id: translation_id,
-                            text: provisional.clone(),
-                            is_final: true,
-                            speaker: speaker.clone(),
-                        });
-
-                        let _ = translation_tx
-                            .send(TranslationJob {
-                                id: translation_id,
-                                original: provisional.clone(),
-                                speaker: speaker.clone(),
-                            })
-                            .await;
-
-                        *last_committed = Some((provisional, std::time::Instant::now()));
-                    }
-
-                    // Turn complete: clear turn-scoped committed sentences
-                    committed_sentences.clear();
-
-                    // Clear provisional text in the UI
-                    let _ = event_ch.send(GeminiEvent::Transcript {
-                        text: "".into(),
-                        is_final: false,
-                    });
                 }
             }
         }
@@ -1208,5 +1186,35 @@ mod tests {
         assert_eq!(sentences[0], "Phiên bản 2.5 đã ra mắt.");
         assert_eq!(sentences[1], "Tuyệt vời!");
         assert!(provisional.is_empty());
+    }
+
+    #[test]
+    fn test_normalize_and_clean_dedup_cjk() {
+        let s1 = "まさかの緊急収録 ですね。";
+        let s2 = "まさかの緊急収録ですね。";
+        assert_eq!(clean_for_dedup(s1), clean_for_dedup(s2));
+
+        let s3 = "今日やっぱ行けます つって なって。";
+        let s4 = "今日やっぱ行けます つってなって。";
+        assert_eq!(clean_for_dedup(s3), clean_for_dedup(s4));
+
+        let s5 = "Hello   world! ";
+        let s6 = "Hello world.";
+        assert_eq!(clean_for_dedup(s5), clean_for_dedup(s6));
+    }
+
+    #[test]
+    fn test_is_duplicate_sentence() {
+        let mut recent = VecDeque::new();
+        recent.push_back((
+            "まさかの緊急収録 ですね。".to_string(),
+            std::time::Instant::now(),
+        ));
+
+        // Exact match with different CJK spacing
+        assert!(is_duplicate_sentence("まさかの緊急収録ですね。", &recent));
+
+        // Different sentence
+        assert!(!is_duplicate_sentence("いや、本当にこれ緊急です。", &recent));
     }
 }
