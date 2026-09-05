@@ -16,6 +16,39 @@ use tauri::{AppHandle, Manager};
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
+pub const SUPPORTED_AUDIO_EXTS: &[&str] = &["wav", "mp3", "m4a", "aac", "ogg", "flac", "webm"];
+
+pub fn audio_mime_type(ext: &str) -> &'static str {
+    match ext.to_ascii_lowercase().as_str() {
+        "wav" => "audio/wav",
+        "mp3" => "audio/mp3",
+        "m4a" => "audio/m4a",
+        "aac" => "audio/aac",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "webm" => "audio/webm",
+        _ => "audio/wav",
+    }
+}
+
+pub fn find_session_audio(dir: &Path, id: &str) -> Option<(PathBuf, &'static str)> {
+    for ext in SUPPORTED_AUDIO_EXTS {
+        let p = dir.join(format!("session-{}.{}", id, ext));
+        if p.exists() {
+            return Some((p, audio_mime_type(ext)));
+        }
+    }
+    None
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AudioFileInfo {
+    pub file_path: String,
+    pub file_name: String,
+    pub file_size: u64,
+    pub extension: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Segment {
     pub ts: String, // "HH:MM:SS"
@@ -737,11 +770,13 @@ pub fn read_legacy_session(app: AppHandle, id: String) -> Result<String, String>
 pub fn delete_session(app: AppHandle, id: String) -> Result<(), String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
-    // New format: session-{id}.{md,json,wav}
+    // New format: session-{id}.{md,json,wav,mp3,...}
     let (md_path, json_path) = session_paths(&dir, &id);
     let _ = fs::remove_file(&json_path);
     let _ = fs::remove_file(&md_path);
-    let _ = fs::remove_file(dir.join(format!("session-{}.wav", id)));
+    for ext in SUPPORTED_AUDIO_EXTS {
+        let _ = fs::remove_file(dir.join(format!("session-{}.{}", id, ext)));
+    }
     // Legacy format: {id}.md (no session- prefix, no sidecar)
     let _ = fs::remove_file(dir.join(format!("{}.md", id)));
     Ok(())
@@ -1220,23 +1255,64 @@ fn add_seconds_hms(ts: &str, add: u64) -> String {
 }
 
 #[tauri::command]
+pub async fn select_audio_file(app: AppHandle) -> Result<Option<AudioFileInfo>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Chọn file ghi âm cuộc họp")
+        .add_filter("Audio Files", SUPPORTED_AUDIO_EXTS)
+        .pick_file(move |file| {
+            let _ = tx.send(file);
+        });
+
+    let file = rx.await.map_err(|e| e.to_string())?;
+    if let Some(file_path) = file {
+        let path_str = file_path.to_string();
+        let p = PathBuf::from(&path_str);
+        let file_name = p
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let extension = p
+            .extension()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase();
+        let file_size = p.metadata().map(|m| m.len()).unwrap_or(0);
+        Ok(Some(AudioFileInfo {
+            file_path: path_str,
+            file_name,
+            file_size,
+            extension,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
 pub fn get_session_record_path(app: AppHandle, id: String) -> Result<String, String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
-    let wav_path = dir.join(format!("session-{}.wav", id));
-    Ok(wav_path.to_string_lossy().to_string())
+    if let Some((p, _)) = find_session_audio(&dir, &id) {
+        Ok(p.to_string_lossy().to_string())
+    } else {
+        let wav_path = dir.join(format!("session-{}.wav", id));
+        Ok(wav_path.to_string_lossy().to_string())
+    }
 }
 
 #[tauri::command]
 pub fn read_session_audio(app: AppHandle, id: String) -> Result<Option<String>, String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
-    let wav_path = dir.join(format!("session-{}.wav", id));
-    if wav_path.exists() {
-        let bytes = fs::read(&wav_path).map_err(|e| e.to_string())?;
+    if let Some((p, mime)) = find_session_audio(&dir, &id) {
+        let bytes = fs::read(&p).map_err(|e| e.to_string())?;
         use base64::Engine;
         let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-        Ok(Some(format!("data:audio/wav;base64,{}", b64)))
+        Ok(Some(format!("data:{};base64,{}", mime, b64)))
     } else {
         Ok(None)
     }
@@ -1289,20 +1365,218 @@ fn transcript_timestamp(seconds: f64) -> String {
     )
 }
 
-fn parse_gemini_transcript(text: &str) -> Result<Vec<Segment>, String> {
-    let trimmed = text
-        .trim()
-        .strip_prefix("```json")
-        .or_else(|| text.trim().strip_prefix("```"))
-        .unwrap_or(text.trim())
-        .trim()
-        .strip_suffix("```")
-        .unwrap_or(text.trim())
-        .trim();
-    let payload: GeminiTranscriptPayload = serde_json::from_str(trimmed)
-        .map_err(|e| format!("Gemini returned an invalid transcript: {}", e))?;
-    let segments: Vec<Segment> = payload
-        .segments
+fn try_repair_truncated_json(text: &str) -> Option<String> {
+    let mut in_str = false;
+    let mut escape = false;
+    let mut last_valid_brace_end = None;
+
+    for (idx, ch) in text.char_indices() {
+        if escape {
+            escape = false;
+            continue;
+        }
+        if ch == '\\' && in_str {
+            escape = true;
+            continue;
+        }
+        if ch == '"' {
+            in_str = !in_str;
+            continue;
+        }
+        if !in_str && ch == '}' {
+            last_valid_brace_end = Some(idx + ch.len_utf8());
+        }
+    }
+
+    let end_idx = last_valid_brace_end?;
+    let candidate = &text[..end_idx];
+
+    let mut open_curlies = 0i32;
+    let mut open_squares = 0i32;
+    in_str = false;
+    escape = false;
+
+    for ch in candidate.chars() {
+        if escape {
+            escape = false;
+            continue;
+        }
+        if ch == '\\' && in_str {
+            escape = true;
+            continue;
+        }
+        if ch == '"' {
+            in_str = !in_str;
+            continue;
+        }
+        if !in_str {
+            match ch {
+                '{' => open_curlies += 1,
+                '}' => open_curlies -= 1,
+                '[' => open_squares += 1,
+                ']' => open_squares -= 1,
+                _ => {}
+            }
+        }
+    }
+
+    if open_curlies < 0 || open_squares < 0 {
+        return None;
+    }
+
+    let mut repaired = candidate.to_string();
+    for _ in 0..open_squares {
+        repaired.push(']');
+    }
+    for _ in 0..open_curlies {
+        repaired.push('}');
+    }
+    Some(repaired)
+}
+
+fn clean_gemini_json(text: &str) -> &str {
+    let mut s = text.trim();
+    if let Some(rest) = s.strip_prefix("```json") {
+        s = rest.trim();
+    } else if let Some(rest) = s.strip_prefix("```") {
+        s = rest.trim();
+    }
+    if let Some(rest) = s.strip_suffix("```") {
+        s = rest.trim();
+    }
+    s
+}
+
+fn extract_json_f64_field(chunk: &str, field: &str) -> Option<f64> {
+    let key = format!("\"{}\"", field);
+    let pos = chunk.find(&key)?;
+    let after_key = chunk[pos + key.len()..].trim_start();
+    let after_colon = after_key.strip_prefix(':')?.trim_start();
+    let end_idx = after_colon
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(after_colon.len());
+    after_colon[..end_idx].parse::<f64>().ok()
+}
+
+fn extract_json_string_field(chunk: &str, fields: &[&str]) -> String {
+    for f in fields {
+        let key = format!("\"{}\"", f);
+        if let Some(pos) = chunk.find(&key) {
+            let after_key = chunk[pos + key.len()..].trim_start();
+            if let Some(after_colon) = after_key.strip_prefix(':') {
+                let after_colon = after_colon.trim_start();
+                if let Some(content) = after_colon.strip_prefix('"') {
+                    // Search for `",` followed by optional whitespace and `"` (next field)
+                    let mut end_idx = None;
+                    let mut search_from = 0;
+                    while let Some(comma_pos) = content[search_from..].find("\",") {
+                        let actual_pos = search_from + comma_pos;
+                        let after_comma = content[actual_pos + 2..].trim_start();
+                        if after_comma.starts_with('"') {
+                            end_idx = Some(actual_pos);
+                            break;
+                        }
+                        search_from = actual_pos + 1;
+                    }
+
+                    // If not found, it is the last field before `}`
+                    if end_idx.is_none() {
+                        end_idx = content.rfind('"');
+                    }
+
+                    if let Some(idx) = end_idx {
+                        let raw = &content[..idx];
+                        return raw
+                            .replace("\\\"", "\"")
+                            .replace("\\\\", "\\")
+                            .trim()
+                            .to_string();
+                    }
+                }
+            }
+        }
+    }
+    String::new()
+}
+
+fn extract_segments_fallback(text: &str) -> Vec<Segment> {
+    let mut segments = Vec::new();
+    let mut i = 0;
+    let n = text.len();
+
+    while i < n {
+        let end = match text[i..].find('}') {
+            Some(pos) => i + pos,
+            None => break,
+        };
+
+        let start = match text[i..end].rfind('{') {
+            Some(pos) => i + pos,
+            None => {
+                i = end + 1;
+                continue;
+            }
+        };
+
+        let chunk = &text[start..=end];
+        let has_text = chunk.contains("\"text\"") || chunk.contains("\"src\"");
+        let has_meta = chunk.contains("\"start_sec\"") || chunk.contains("\"translation\"") || chunk.contains("\"tgt\"");
+
+        if has_text && has_meta {
+            if let Ok(item) = serde_json::from_str::<GeminiTranscriptSegment>(chunk) {
+                let src = if item.text.trim().is_empty() {
+                    item.src.trim().to_string()
+                } else {
+                    item.text.trim().to_string()
+                };
+                let tgt = if item.translation.trim().is_empty() {
+                    item.tgt.trim().to_string()
+                } else {
+                    item.translation.trim().to_string()
+                };
+                if !src.is_empty() {
+                    let sec = item.start_sec.unwrap_or(segments.len() as f64 * 5.0);
+                    segments.push(Segment {
+                        ts: transcript_timestamp(sec),
+                        src,
+                        tgt,
+                        speaker: None,
+                    });
+                }
+            } else {
+                let sec = extract_json_f64_field(chunk, "start_sec")
+                    .unwrap_or(segments.len() as f64 * 5.0);
+                let src = extract_json_string_field(chunk, &["text", "src"]);
+                let tgt = extract_json_string_field(chunk, &["translation", "tgt"]);
+                if !src.is_empty() {
+                    segments.push(Segment {
+                        ts: transcript_timestamp(sec),
+                        src,
+                        tgt,
+                        speaker: None,
+                    });
+                }
+            }
+        }
+
+        i = end + 1;
+    }
+
+    segments
+}
+
+fn extract_detected_language(text: &str) -> Option<String> {
+    let key = "\"detected_language\"";
+    let pos = text.find(key)?;
+    let after_key = text[pos + key.len()..].trim_start();
+    let after_colon = after_key.strip_prefix(':')?.trim_start();
+    let content = after_colon.strip_prefix('"')?;
+    let end_quote = content.find('"')?;
+    Some(content[..end_quote].trim().to_string())
+}
+
+fn build_segments_from_raw(raw_items: Vec<GeminiTranscriptSegment>) -> Vec<Segment> {
+    raw_items
         .into_iter()
         .enumerate()
         .filter_map(|(index, item)| {
@@ -1326,11 +1600,39 @@ fn parse_gemini_transcript(text: &str) -> Result<Vec<Segment>, String> {
                 speaker: None,
             })
         })
-        .collect();
-    if segments.is_empty() {
-        return Err("Gemini did not return any transcript segments".into());
+        .collect()
+}
+
+fn parse_gemini_transcript(text: &str) -> Result<Vec<Segment>, String> {
+    let trimmed = clean_gemini_json(text);
+
+    // Tier 1: Direct serde parsing
+    if let Ok(payload) = serde_json::from_str::<GeminiTranscriptPayload>(trimmed) {
+        let segs = build_segments_from_raw(payload.segments);
+        if !segs.is_empty() {
+            return Ok(segs);
+        }
     }
-    Ok(segments)
+
+    // Tier 2: Repaired JSON parsing
+    if let Some(repaired) = try_repair_truncated_json(trimmed) {
+        if let Ok(payload) = serde_json::from_str::<GeminiTranscriptPayload>(&repaired) {
+            let segs = build_segments_from_raw(payload.segments);
+            if !segs.is_empty() {
+                eprintln!("[session_store] Warning: salvaged {} segments from repaired Gemini transcript", segs.len());
+                return Ok(segs);
+            }
+        }
+    }
+
+    // Tier 3: Chunk-by-chunk fallback extraction (handles unescaped quotes & broken tokens)
+    let segs = extract_segments_fallback(trimmed);
+    if !segs.is_empty() {
+        eprintln!("[session_store] Warning: extracted {} segments via fallback scanner", segs.len());
+        return Ok(segs);
+    }
+
+    Err("Gemini returned an invalid transcript".into())
 }
 
 static RETRANSCRIBE_CANCEL_MAP: std::sync::LazyLock<
@@ -1376,11 +1678,9 @@ pub async fn retranscribe_session_with_gemini(
     }
     let dir = sessions_dir(&app)?;
     let (md_path, json_path) = session_paths(&dir, &id);
-    let wav_path = dir.join(format!("session-{}.wav", id));
-    if !wav_path.exists() {
-        return Err("This meeting does not have an audio recording".into());
-    }
-    let wav = fs::read(&wav_path).map_err(|e| format!("Read audio recording failed: {}", e))?;
+    let (audio_path, mime_type) = find_session_audio(&dir, &id)
+        .ok_or_else(|| "This meeting does not have an audio recording".to_string())?;
+    let wav = fs::read(&audio_path).map_err(|e| format!("Read audio recording failed: {}", e))?;
     if wav.len() <= 44 {
         return Err("The audio recording is empty".into());
     }
@@ -1412,7 +1712,7 @@ pub async fn retranscribe_session_with_gemini(
         .header("X-Goog-Upload-Protocol", "resumable")
         .header("X-Goog-Upload-Command", "start")
         .header("X-Goog-Upload-Header-Content-Length", wav.len().to_string())
-        .header("X-Goog-Upload-Header-Content-Type", "audio/wav")
+        .header("X-Goog-Upload-Header-Content-Type", mime_type)
         .header("Content-Type", "application/json")
         .body(r#"{"file":{"display_name":"Meet Minder recording"}}"#)
         .send()
@@ -1440,7 +1740,7 @@ pub async fn retranscribe_session_with_gemini(
         .post(&upload_url)
         .header("X-Goog-Upload-Offset", "0")
         .header("X-Goog-Upload-Command", "upload, finalize")
-        .header("Content-Type", "audio/wav")
+        .header("Content-Type", mime_type)
         .body(wav)
         .send()
         .await
@@ -1537,9 +1837,9 @@ pub async fn retranscribe_session_with_gemini(
     let mut last_error = None;
     for model in [
         "gemini-3.5-flash",
-        "gemini-2.5-flash",
-        "gemini-flash-latest",
         "gemini-3.1-flash-lite",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-flash-latest",
     ] {
         if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
             let _ = client
@@ -1556,9 +1856,14 @@ pub async fn retranscribe_session_with_gemini(
             .json(&serde_json::json!({
                 "contents": [{ "parts": [
                     { "text": prompt },
-                    { "fileData": { "mimeType": "audio/wav", "fileUri": file_uri } }
+                    { "fileData": { "mimeType": mime_type, "fileUri": file_uri } }
                 ] }],
-                "generationConfig": { "temperature": 0.1, "maxOutputTokens": 32768, "responseMimeType": "application/json" }
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "maxOutputTokens": 65536,
+                    "responseMimeType": "application/json",
+                    "thinkingConfig": { "thinkingBudget": 0 }
+                }
             }))
             .send().await;
         match response {
@@ -1629,6 +1934,438 @@ pub async fn retranscribe_session_with_gemini(
     Ok(SessionReadResult { md, json: data })
 }
 
+#[derive(Deserialize)]
+struct GeminiImportPayload {
+    #[serde(default)]
+    detected_language: Option<String>,
+    #[serde(default)]
+    segments: Vec<GeminiTranscriptSegment>,
+}
+
+fn build_import_result(
+    raw_lang: Option<String>,
+    mut segments: Vec<Segment>,
+) -> Result<(String, String, Vec<Segment>), String> {
+    if segments.is_empty() {
+        return Err("Gemini did not return any transcript segments".into());
+    }
+
+    let lang_str = raw_lang.unwrap_or_default().trim().to_lowercase();
+    let (source_lang, target_lang) = if lang_str.contains("vi") || lang_str.contains("viet") {
+        for s in &mut segments {
+            if s.tgt == s.src {
+                s.tgt.clear();
+            }
+        }
+        ("vi".to_string(), "".to_string())
+    } else if lang_str.contains("ja") || lang_str.contains("japan") || lang_str.contains("nihon") {
+        ("ja".to_string(), "vi".to_string())
+    } else if lang_str.contains("en") || lang_str.contains("eng") {
+        ("en".to_string(), "vi".to_string())
+    } else if lang_str.contains("zh") || lang_str.contains("chin") {
+        ("zh".to_string(), "vi".to_string())
+    } else if lang_str.contains("ko") || lang_str.contains("korean") {
+        ("ko".to_string(), "vi".to_string())
+    } else if !lang_str.is_empty() {
+        (lang_str, "vi".to_string())
+    } else {
+        let has_translation = segments.iter().any(|s| !s.tgt.is_empty() && s.tgt != s.src);
+        if has_translation {
+            ("auto".to_string(), "vi".to_string())
+        } else {
+            ("vi".to_string(), "".to_string())
+        }
+    };
+
+    Ok((source_lang, target_lang, segments))
+}
+
+fn parse_gemini_import(text: &str) -> Result<(String, String, Vec<Segment>), String> {
+    let trimmed = clean_gemini_json(text);
+
+    // Tier 1: Direct serde parsing
+    if let Ok(payload) = serde_json::from_str::<GeminiImportPayload>(trimmed) {
+        let segs = build_segments_from_raw(payload.segments);
+        if let Ok(res) = build_import_result(payload.detected_language, segs) {
+            return Ok(res);
+        }
+    }
+
+    // Tier 2: Repaired JSON parsing
+    if let Some(repaired) = try_repair_truncated_json(trimmed) {
+        if let Ok(payload) = serde_json::from_str::<GeminiImportPayload>(&repaired) {
+            let segs = build_segments_from_raw(payload.segments);
+            if let Ok(res) = build_import_result(payload.detected_language, segs) {
+                eprintln!("[session_store] Warning: salvaged segments from repaired Gemini import");
+                return Ok(res);
+            }
+        }
+    }
+
+    // Tier 3: Chunk-by-chunk fallback extraction (handles unescaped quotes & broken tokens)
+    let segs = extract_segments_fallback(trimmed);
+    if !segs.is_empty() {
+        let detected = extract_detected_language(trimmed);
+        if let Ok(res) = build_import_result(detected, segs) {
+            eprintln!("[session_store] Warning: extracted segments via fallback scanner for import");
+            return Ok(res);
+        }
+    }
+
+    Err("Gemini did not return any transcript segments".into())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn import_audio_session(
+    app: AppHandle,
+    id: String,
+    file_path: String,
+    title: String,
+    customer_id: Option<String>,
+    project_id: Option<String>,
+    category: Option<String>,
+    tags: Vec<String>,
+    api_key: String,
+) -> Result<SessionReadResult, String> {
+    validate_id(&id)?;
+    if api_key.trim().is_empty() {
+        return Err("Gemini API key is empty".into());
+    }
+    let src_path = PathBuf::from(file_path.trim());
+    if !src_path.exists() {
+        return Err("File ghi âm không tồn tại".into());
+    }
+    let ext = src_path
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_lowercase();
+    let mime_type = audio_mime_type(&ext);
+
+    let audio_bytes = fs::read(&src_path)
+        .map_err(|e| format!("Không thể đọc file ghi âm: {}", e))?;
+    if audio_bytes.len() <= 44 {
+        return Err("File ghi âm trống hoặc không hợp lệ".into());
+    }
+
+    let dir = sessions_dir(&app)?;
+    let (md_path, json_path) = session_paths(&dir, &id);
+    let dest_audio_path = dir.join(format!("session-{}.{}", id, ext));
+
+    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let mut map = RETRANSCRIBE_CANCEL_MAP.lock().map_err(|e| e.to_string())?;
+        map.insert(id.clone(), cancel_flag.clone());
+    }
+    let _guard = RetranscribeGuard(id.clone());
+
+    if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Quá trình Import đã bị hủy".into());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(600))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    let upload_start = client
+        .post(format!(
+            "https://generativelanguage.googleapis.com/upload/v1beta/files?key={}",
+            api_key.trim()
+        ))
+        .header("X-Goog-Upload-Protocol", "resumable")
+        .header("X-Goog-Upload-Command", "start")
+        .header("X-Goog-Upload-Header-Content-Length", audio_bytes.len().to_string())
+        .header("X-Goog-Upload-Header-Content-Type", mime_type)
+        .header("Content-Type", "application/json")
+        .body(r#"{"file":{"display_name":"Meet Minder imported recording"}}"#)
+        .send()
+        .await
+        .map_err(|e| format!("Start Gemini audio upload failed: {}", e))?;
+
+    if !upload_start.status().is_success() {
+        let status = upload_start.status();
+        return Err(gemini_error(
+            status,
+            upload_start.text().await.unwrap_or_default(),
+        ));
+    }
+
+    let upload_url = upload_start
+        .headers()
+        .get("x-goog-upload-url")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+        .ok_or("Gemini did not provide an upload URL")?;
+
+    if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Quá trình Import đã bị hủy".into());
+    }
+
+    let upload_finish = client
+        .post(&upload_url)
+        .header("X-Goog-Upload-Offset", "0")
+        .header("X-Goog-Upload-Command", "upload, finalize")
+        .header("Content-Type", mime_type)
+        .body(audio_bytes.clone())
+        .send()
+        .await
+        .map_err(|e| format!("Upload audio to Gemini failed: {}", e))?;
+
+    if !upload_finish.status().is_success() {
+        let status = upload_finish.status();
+        return Err(gemini_error(
+            status,
+            upload_finish.text().await.unwrap_or_default(),
+        ));
+    }
+
+    let mut file: Value = upload_finish
+        .json()
+        .await
+        .map_err(|e| format!("Read Gemini upload response failed: {}", e))?;
+    let file_name = file
+        .get("file")
+        .and_then(|f| f.get("name"))
+        .and_then(Value::as_str)
+        .ok_or("Gemini upload response has no file name")?
+        .to_string();
+
+    // Poll Gemini file processing
+    for _ in 0..120 {
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = client
+                .delete(format!(
+                    "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
+                    file_name,
+                    api_key.trim()
+                ))
+                .send()
+                .await;
+            return Err("Quá trình Import đã bị hủy".into());
+        }
+        let state = file
+            .get("file")
+            .and_then(|f| f.get("state"))
+            .and_then(Value::as_str)
+            .unwrap_or("ACTIVE");
+        if state == "ACTIVE" {
+            break;
+        }
+        if state == "FAILED" {
+            return Err("Gemini could not process this audio recording".into());
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        let poll = client
+            .get(format!(
+                "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
+                file_name,
+                api_key.trim()
+            ))
+            .send()
+            .await
+            .map_err(|e| format!("Check Gemini audio upload failed: {}", e))?;
+        if !poll.status().is_success() {
+            let status = poll.status();
+            return Err(gemini_error(status, poll.text().await.unwrap_or_default()));
+        }
+        file = poll
+            .json()
+            .await
+            .map_err(|e| format!("Read Gemini file status failed: {}", e))?;
+        if file.get("state").is_some() {
+            file = serde_json::json!({ "file": file });
+        }
+    }
+
+    let file_uri = file
+        .get("file")
+        .and_then(|f| f.get("uri"))
+        .and_then(Value::as_str)
+        .ok_or("Gemini upload response has no file URI")?
+        .to_string();
+
+    let prompt = "Transcribe this meeting audio recording accurately.
+First, automatically detect the primary spoken language of the audio recording (e.g. 'vi', 'ja', 'en', 'zh', 'ko', etc.).
+Split the transcript into short chronological segments, keeping all meaningful speech.
+If the primary detected language is Vietnamese ('vi'):
+- Set \"detected_language\" to \"vi\".
+- Put the original spoken speech into \"text\".
+- Set \"translation\" to \"\".
+If the primary detected language is NOT Vietnamese (e.g. 'ja', 'en', 'zh', 'ko', etc.):
+- Set \"detected_language\" to the language code (e.g. 'ja', 'en', 'zh', 'ko').
+- Put the original spoken speech in that language into \"text\".
+- Translate every segment accurately and naturally into Vietnamese and put it into \"translation\".
+Return JSON only, with this exact schema:
+{
+  \"detected_language\": \"vi|ja|en|...\",
+  \"segments\": [
+    {\"start_sec\": 0, \"text\": \"original speech\", \"translation\": \"Vietnamese translation\"}
+  ]
+}
+start_sec must be the approximate offset in seconds.";
+
+    let mut generated = None;
+    let mut last_error = None;
+    for model in [
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-flash-latest",
+    ] {
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = client
+                .delete(format!(
+                    "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
+                    file_name,
+                    api_key.trim()
+                ))
+                .send()
+                .await;
+            return Err("Quá trình Import đã bị hủy".into());
+        }
+        let response = client
+            .post(format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+                model,
+                api_key.trim()
+            ))
+            .json(&serde_json::json!({
+                "contents": [{ "parts": [
+                    { "text": prompt },
+                    { "fileData": { "mimeType": mime_type, "fileUri": file_uri } }
+                ] }],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "maxOutputTokens": 65536,
+                    "responseMimeType": "application/json",
+                    "thinkingConfig": { "thinkingBudget": 0 }
+                }
+            }))
+            .send()
+            .await;
+
+        match response {
+            Ok(response) if response.status().is_success() => {
+                let body: Value = response
+                    .json()
+                    .await
+                    .map_err(|e| format!("Read Gemini transcript failed: {}", e))?;
+                let text = body
+                    .get("candidates")
+                    .and_then(Value::as_array)
+                    .and_then(|candidates| candidates.first())
+                    .and_then(|candidate| candidate.get("content"))
+                    .and_then(|content| content.get("parts"))
+                    .and_then(Value::as_array)
+                    .map(|parts| {
+                        parts
+                            .iter()
+                            .filter_map(|part| part.get("text").and_then(Value::as_str))
+                            .collect::<String>()
+                    });
+                if let Some(text) = text.filter(|value| !value.trim().is_empty()) {
+                    generated = Some(text);
+                    break;
+                }
+                last_error = Some("Gemini returned an empty transcript".to_string());
+            }
+            Ok(response) => {
+                let status = response.status();
+                last_error = Some(gemini_error(
+                    status,
+                    response.text().await.unwrap_or_default(),
+                ));
+            }
+            Err(error) => last_error = Some(format!("Call Gemini transcription failed: {}", error)),
+        }
+    }
+
+    // Best-effort cleanup of remote file
+    let _ = client
+        .delete(format!(
+            "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
+            file_name,
+            api_key.trim()
+        ))
+        .send()
+        .await;
+
+    if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Quá trình Import đã bị hủy".into());
+    }
+
+    let generated_text = generated
+        .ok_or_else(|| last_error.unwrap_or_else(|| "Gemini transcription failed".into()))?;
+
+    let (source_lang, target_lang, segments) = parse_gemini_import(&generated_text)?;
+
+    // Copy the local audio file into sessions directory
+    if let Err(e) = fs::write(&dest_audio_path, &audio_bytes) {
+        return Err(format!("Lưu file ghi âm thất bại: {}", e));
+    }
+
+    let now = chrono::Local::now().to_rfc3339();
+    let max_start_sec = segments
+        .last()
+        .and_then(|s| {
+            let parts: Vec<&str> = s.ts.split(':').collect();
+            if parts.len() == 3 {
+                let h: u64 = parts[0].parse().unwrap_or(0);
+                let m: u64 = parts[1].parse().unwrap_or(0);
+                let sec: u64 = parts[2].parse().unwrap_or(0);
+                Some(h * 3600 + m * 60 + sec)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0);
+    let duration_sec = max_start_sec + 5;
+
+    let final_title = if title.trim().is_empty() {
+        src_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Cuộc họp import".to_string())
+    } else {
+        title
+    };
+
+    let data = SessionData {
+        id: id.clone(),
+        created_at: now.clone(),
+        ended_at: Some(now.clone()),
+        title: sanitize_title(&final_title),
+        engine: "gemini".to_string(),
+        source_lang,
+        target_lang,
+        duration_sec,
+        chunks: vec![Chunk {
+            started_at: now.clone(),
+            ended_at: Some(now.clone()),
+            segments,
+        }],
+        notes: None,
+        tags,
+        customer_id,
+        project_id,
+        category,
+        meeting_minutes: None,
+        meeting_minutes_lang: None,
+        meeting_minutes_ja: None,
+        meeting_minutes_vi: None,
+        retranscribed_at: Some(now),
+    };
+
+    let md = rebuild_session_markdown(&data);
+    let json_bytes = serde_json::to_vec_pretty(&data)
+        .map_err(|e| format!("Serialize transcript failed: {}", e))?;
+    write_atomic(&json_path, &json_bytes)?;
+    write_atomic(&md_path, md.as_bytes())?;
+    Ok(SessionReadResult { md, json: data })
+}
+
 #[tauri::command]
 pub fn get_storage_info(app: AppHandle) -> Result<StorageInfo, String> {
     let current = sessions_dir(&app)?;
@@ -1664,16 +2401,19 @@ pub fn get_storage_info(app: AppHandle) -> Result<StorageInfo, String> {
 }
 
 #[tauri::command]
-pub fn select_custom_transcripts_dir(app: AppHandle) -> Result<Option<StorageInfo>, String> {
+pub async fn select_custom_transcripts_dir(app: AppHandle) -> Result<Option<StorageInfo>, String> {
     use tauri_plugin_dialog::DialogExt;
     let current = sessions_dir(&app)?;
-    let folder = app
-        .dialog()
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
         .file()
         .set_title("Chọn thư mục lưu trữ dữ liệu cuộc họp")
         .set_directory(&current)
-        .blocking_pick_folder();
+        .pick_folder(move |folder| {
+            let _ = tx.send(folder);
+        });
 
+    let folder = rx.await.map_err(|e| e.to_string())?;
     if let Some(folder_path) = folder {
         let path_str = folder_path.to_string();
         set_custom_transcripts_dir(app.clone(), Some(path_str))?;
@@ -2044,5 +2784,117 @@ mod tests {
 
         // Không khớp
         assert!(!session_item_matches_metadata(&item, "honda", "honda"));
+    }
+
+    #[test]
+    fn test_audio_mime_types() {
+        assert_eq!(audio_mime_type("wav"), "audio/wav");
+        assert_eq!(audio_mime_type("WAV"), "audio/wav");
+        assert_eq!(audio_mime_type("mp3"), "audio/mp3");
+        assert_eq!(audio_mime_type("m4a"), "audio/m4a");
+        assert_eq!(audio_mime_type("aac"), "audio/aac");
+        assert_eq!(audio_mime_type("ogg"), "audio/ogg");
+        assert_eq!(audio_mime_type("flac"), "audio/flac");
+        assert_eq!(audio_mime_type("webm"), "audio/webm");
+    }
+
+    #[test]
+    fn test_parse_gemini_import_japanese() {
+        let json_str = r#"{
+            "detected_language": "ja",
+            "segments": [
+                {"start_sec": 1.5, "text": "お疲れ様です。", "translation": "Chào mọi người / Vất vả rồi."},
+                {"start_sec": 6.2, "text": "本日の議題について説明します。", "translation": "Tôi xin giải thích về chương trình nghị sự hôm nay."}
+            ]
+        }"#;
+
+        let (src_lang, tgt_lang, segs) = parse_gemini_import(json_str).expect("Parse should succeed");
+        assert_eq!(src_lang, "ja");
+        assert_eq!(tgt_lang, "vi");
+        assert_eq!(segs.len(), 2);
+        assert_eq!(segs[0].src, "お疲れ様です。");
+        assert_eq!(segs[0].tgt, "Chào mọi người / Vất vả rồi.");
+        assert_eq!(segs[0].ts, "00:00:02");
+    }
+
+    #[test]
+    fn test_parse_gemini_import_vietnamese() {
+        let json_str = r#"{
+            "detected_language": "vi",
+            "segments": [
+                {"start_sec": 0.0, "text": "Chào các bạn, hôm nay chúng ta họp dự án.", "translation": ""}
+            ]
+        }"#;
+
+        let (src_lang, tgt_lang, segs) = parse_gemini_import(json_str).expect("Parse should succeed");
+        assert_eq!(src_lang, "vi");
+        assert_eq!(tgt_lang, "");
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].src, "Chào các bạn, hôm nay chúng ta họp dự án.");
+        assert_eq!(segs[0].tgt, "");
+    }
+
+    #[test]
+    fn test_try_repair_truncated_json() {
+        // Truncated mid-string inside second segment
+        let broken = r#"{"segments":[{"start_sec":0,"text":"Line 1","translation":"Dòng 1"},{"start_sec":5,"text":"Line 2 cut off here"#;
+        let repaired = try_repair_truncated_json(broken).expect("Should repair truncated json");
+        assert!(repaired.ends_with("]}"));
+        let parsed: GeminiTranscriptPayload = serde_json::from_str(&repaired).expect("Repaired JSON must be valid");
+        assert_eq!(parsed.segments.len(), 1);
+        assert_eq!(parsed.segments[0].text, "Line 1");
+        assert_eq!(parsed.segments[0].translation, "Dòng 1");
+
+        // Truncated with detected_language
+        let broken_import = r#"{"detected_language":"ja","segments":[{"start_sec":0,"text":"こんにちは","translation":"Xin chào"},{"start_sec":4,"text":"今日の議"#;
+        let (src, tgt, segs) = parse_gemini_import(broken_import).expect("Should salvage segments");
+        assert_eq!(src, "ja");
+        assert_eq!(tgt, "vi");
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].src, "こんにちは");
+        assert_eq!(segs[0].tgt, "Xin chào");
+    }
+
+    #[test]
+    fn test_parse_gemini_transcript_truncated() {
+        let broken_transcript = "```json\n{\"segments\":[{\"start_sec\":0,\"text\":\"Hello world\",\"translation\":\"Xin chào thế giới\"},{\"start_sec\":10,\"text\":\"Cut";
+        let segs = parse_gemini_transcript(broken_transcript).expect("Should parse truncated transcript");
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].src, "Hello world");
+        assert_eq!(segs[0].tgt, "Xin chào thế giới");
+    }
+
+    #[test]
+    fn test_parse_gemini_transcript_unescaped_quotes() {
+        let text = r#"{"segments":[
+            {"start_sec":0,"text":"He said "Hello" to me","translation":"Ông ấy nói "Xin chào" với tôi"},
+            {"start_sec":5.5,"text":"Screen is 24" wide","translation":"Màn hình 24 inch"}
+        ]}"#;
+        let segs = parse_gemini_transcript(text).expect("Should parse segments with unescaped quotes");
+        assert_eq!(segs.len(), 2);
+        assert_eq!(segs[0].src, "He said \"Hello\" to me");
+        assert_eq!(segs[0].tgt, "Ông ấy nói \"Xin chào\" với tôi");
+        assert_eq!(segs[1].src, "Screen is 24\" wide");
+    }
+
+    #[test]
+    fn test_parse_gemini_transcript_cut_at_key_colon() {
+        // Truncated right at a key before the colon, exactly like "expected `:` at line 1 column 162365"
+        let text = r#"{"segments":[{"start_sec":0,"text":"Line 1","translation":"Dòng 1"},{"start_sec":10,"text":"Cut off","trans"#;
+        let segs = parse_gemini_transcript(text).expect("Should salvage segments even if cut at key");
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].src, "Line 1");
+        assert_eq!(segs[0].tgt, "Dòng 1");
+    }
+
+    #[test]
+    fn test_parse_gemini_import_unescaped_quotes() {
+        let text = r#"{"detected_language":"ja","segments":[
+            {"start_sec":1.0,"text":"先生は「"Hello"」と言いました","translation":"Thầy giáo nói "Hello""},
+            {"start_sec":10.0,"text":"Incomplete cut off"#;
+        let (src_lang, tgt_lang, segs) = parse_gemini_import(text).expect("Should parse import with unescaped quotes");
+        assert_eq!(src_lang, "ja");
+        assert_eq!(tgt_lang, "vi");
+        assert_eq!(segs.len(), 1);
     }
 }

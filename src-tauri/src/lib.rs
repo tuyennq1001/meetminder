@@ -141,6 +141,8 @@ pub fn run() {
             commands::session_store::search_sessions,
             commands::session_store::get_session_record_path,
             commands::session_store::read_session_audio,
+            commands::session_store::select_audio_file,
+            commands::session_store::import_audio_session,
             commands::session_store::retranscribe_session_with_gemini,
             commands::session_store::cancel_retranscribe_session,
             commands::session_store::get_storage_info,

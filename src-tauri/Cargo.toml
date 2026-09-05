@@ -39,6 +39,7 @@ rubato = "0.16"
 # Local offline TTS: Piper (VITS) via sherpa-onnx (static-linked, no dylib bundling).
 sherpa-onnx = "1.13.3"
 tauri-plugin-dialog = "2"
+regex = "1"
 # Model archive extraction (.tar.bz2) for downloaded Piper voices.
 tar = "0.4"
 bzip2 = "0.4"

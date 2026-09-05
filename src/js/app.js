@@ -484,6 +484,13 @@ class App {
         document.getElementById('btn-session-export-srt')?.addEventListener('click', () => this._exportCurrentSession('srt'));
         document.getElementById('btn-session-export-txt')?.addEventListener('click', () => this._exportCurrentSession('txt'));
 
+        // Import audio controls
+        document.getElementById('btn-open-import-audio')?.addEventListener('click', () => this._handleOpenImportAudio());
+        document.getElementById('btn-close-import-audio')?.addEventListener('click', () => this._closeImportAudioModal());
+        document.getElementById('btn-cancel-import-audio')?.addEventListener('click', () => this._closeImportAudioModal());
+        document.getElementById('btn-import-browse-file')?.addEventListener('click', () => this._browseAudioFileForImport());
+        document.getElementById('btn-confirm-import-audio')?.addEventListener('click', () => this._confirmImportAudio());
+
         // Re-transcript modal & background controls
         document.getElementById('btn-retranscript-minimize')?.addEventListener('click', () => this._minimizeRetranscript());
         document.getElementById('btn-retranscript-run-bg')?.addEventListener('click', () => this._minimizeRetranscript());
@@ -4436,7 +4443,8 @@ class App {
             this._renderTagFilterSelect();
 
             if (this._cachedSessions.length === 0) {
-                listEl.innerHTML = '<div class="sessions-empty">Chưa có meeting log nào được lưu.</div>';
+                listEl.innerHTML = '<div class="sessions-empty">Chưa có meeting log nào được lưu.<br><button type="button" class="btn-primary small" id="btn-empty-import-audio" style="margin-top:12px;">📥 Import file ghi âm</button></div>';
+                document.getElementById('btn-empty-import-audio')?.addEventListener('click', () => this._handleOpenImportAudio());
                 this._updateBatchSelectionUI();
                 return;
             }
@@ -6940,7 +6948,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         return lines.join('\n');
     }
 
-    _setRetranscriptProgress(stage, text, percent) {
+    _setRetranscriptProgress(stage, text, percent, customTitle = null) {
         const modal = document.getElementById('retranscript-progress-modal');
         const floatingBar = document.getElementById('retranscript-floating-bar');
         const progressText = document.getElementById('retranscript-progress-text');
@@ -6961,6 +6969,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             this._activeRetranscribe.stage = stage;
             this._activeRetranscribe.text = text;
             this._activeRetranscribe.percent = percent;
+            if (customTitle) this._activeRetranscribe.customTitle = customTitle;
         }
 
         // Đồng bộ trực tiếp vào Log Details nếu người dùng đang mở xem phiên này
@@ -6987,10 +6996,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
         this._updateFloatingBarsPosition();
 
+        const currentTitle = customTitle || this._activeRetranscribe?.customTitle || (this._activeRetranscribe?.isImport ? 'Import file ghi âm' : 'Re-transcript cuộc họp');
         if (floatingBar) floatingBar.classList.remove('is-completed');
         if (floatingSpinner) floatingSpinner.style.display = '';
         if (floatingCheck) floatingCheck.style.display = 'none';
-        if (floatingTitle) floatingTitle.textContent = 'Re-transcript cuộc họp';
+        if (floatingTitle) floatingTitle.textContent = currentTitle;
+        const modalTitle = document.getElementById('retranscript-progress-title');
+        if (modalTitle) modalTitle.textContent = this._activeRetranscribe?.isImport ? 'Đang import file ghi âm' : 'Đang re-transcript';
         if (floatingExpand) floatingExpand.style.display = '';
         if (floatingCancel) {
             floatingCancel.title = 'Hủy bỏ';
@@ -7017,7 +7029,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         });
     }
 
-    _showRetranscriptCompleted(id) {
+    _showRetranscriptCompleted(id, titleText = null) {
         const modal = document.getElementById('retranscript-progress-modal');
         const floatingBar = document.getElementById('retranscript-floating-bar');
         const floatingSpinner = document.getElementById('retranscript-floating-spinner');
@@ -7038,7 +7050,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
         if (floatingSpinner) floatingSpinner.style.display = 'none';
         if (floatingCheck) floatingCheck.style.display = 'flex';
-        if (floatingTitle) floatingTitle.textContent = 'Hoàn tất Re-transcript & Minutes ✓';
+        if (floatingTitle) floatingTitle.textContent = titleText || 'Hoàn tất Re-transcript & Minutes ✓';
         if (floatingStatus) floatingStatus.textContent = 'Nhấn để xem chi tiết log ➔';
         if (floatingFill) floatingFill.style.width = '100%';
         if (floatingPct) floatingPct.textContent = '100%';
@@ -7168,7 +7180,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
     async _cancelActiveRetranscript(isTimeout = false) {
         if (!this._activeRetranscribe) return;
-        const { id } = this._activeRetranscribe;
+        const { id, isImport } = this._activeRetranscribe;
         this._cleanupActiveRetranscribe();
         try {
             await invoke('cancel_retranscribe_session', { id });
@@ -7176,9 +7188,9 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             console.warn('[App] cancel_retranscribe_session warning:', e);
         }
         if (isTimeout) {
-            this._showToast('Quá thời gian xử lý. Đã tự động hủy re-transcript để tránh nghẽn hệ thống.', 'error');
+            this._showToast('Quá thời gian xử lý. Đã tự động hủy để tránh nghẽn hệ thống.', 'error');
         } else {
-            this._showToast('Đã hủy re-transcript', 'info');
+            this._showToast(isImport ? 'Đã hủy import file ghi âm' : 'Đã hủy re-transcript', 'info');
         }
     }
 
@@ -7385,6 +7397,280 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 if (!isCancelled) {
                     console.error('[App] Re-transcript failed:', err);
                     this._showToast(`Re-transcript thất bại: ${err}`, 'error');
+                }
+            }
+        }
+    }
+
+    // ─── Import Audio Recording ─────────────────────────────
+
+    _formatFileSize(bytes) {
+        if (!bytes || bytes <= 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+        return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+    }
+
+    async _handleOpenImportAudio() {
+        await this._browseAudioFileForImport();
+    }
+
+    async _browseAudioFileForImport() {
+        try {
+            const fileInfo = await invoke('select_audio_file');
+            if (!fileInfo) return;
+            this._pendingImportFile = fileInfo;
+            await this._showImportAudioModal(fileInfo);
+        } catch (err) {
+            console.error('[App] select_audio_file failed:', err);
+            this._showToast(`Lỗi chọn file: ${err}`, 'error');
+        }
+    }
+
+    async _showImportAudioModal(fileInfo) {
+        const modal = document.getElementById('modal-import-audio');
+        if (!modal) return;
+
+        const fileNameEl = document.getElementById('import-file-name');
+        const fileMetaEl = document.getElementById('import-file-meta');
+        const inputTitle = document.getElementById('input-import-meeting-title');
+        const selectCust = document.getElementById('select-import-meeting-customer');
+        const selectProj = document.getElementById('select-import-meeting-project');
+        const selectCat = document.getElementById('select-import-meeting-category');
+        const inputTags = document.getElementById('input-import-meeting-tags');
+        const chkAutoMinutes = document.getElementById('chk-import-auto-minutes');
+
+        if (fileNameEl) fileNameEl.textContent = fileInfo.file_name;
+        if (fileMetaEl) {
+            const sizeStr = this._formatFileSize(fileInfo.file_size);
+            const extStr = (fileInfo.extension || '').toUpperCase();
+            fileMetaEl.textContent = `${extStr} · ${sizeStr}`;
+        }
+
+        const stem = fileInfo.file_name.replace(/\.[^/.]+$/, '');
+        if (inputTitle) {
+            inputTitle.value = stem;
+        }
+        if (inputTags) {
+            inputTags.value = '';
+        }
+
+        const reg = await this._loadProjectRegistry();
+        const activeCustomers = (reg.customers || []).filter(c => c.status === 'active');
+        const activeProjects = (reg.projects || []).filter(p => p.status === 'active');
+
+        if (selectCust) {
+            let custHtml = '<option value="">(Không chọn KH)</option>';
+            for (const c of activeCustomers) {
+                custHtml += `<option value="${this._escAttr(c.id)}">🏢 ${this._esc(c.name)}</option>`;
+            }
+            selectCust.innerHTML = custHtml;
+            selectCust.value = '';
+        }
+
+        const updateProjectsDropdown = (selectedCustomerId) => {
+            if (!selectProj) return;
+            const filteredProjs = selectedCustomerId
+                ? activeProjects.filter(p => p.customer_id === selectedCustomerId)
+                : activeProjects;
+            let projHtml = '<option value="">(Không gán dự án)</option>';
+            for (const p of filteredProjs) {
+                projHtml += `<option value="${this._escAttr(p.id)}">📁 ${this._esc(p.name)}</option>`;
+            }
+            selectProj.innerHTML = projHtml;
+            selectProj.value = '';
+        };
+
+        updateProjectsDropdown('');
+
+        selectCust.onchange = () => updateProjectsDropdown(selectCust.value);
+        selectProj.onchange = () => {
+            const pId = selectProj.value;
+            if (pId) {
+                const foundProj = activeProjects.find(p => p.id === pId);
+                if (foundProj && foundProj.customer_id && selectCust) {
+                    selectCust.value = foundProj.customer_id;
+                    updateProjectsDropdown(foundProj.customer_id);
+                    selectProj.value = pId;
+                }
+            }
+        };
+
+        if (selectCat) {
+            let catHtml = '<option value="">(Không phân loại)</option>';
+            for (const c of (reg.categories || [])) {
+                catHtml += `<option value="${this._escAttr(c.name)}">📅 ${this._esc(c.name)}</option>`;
+            }
+            selectCat.innerHTML = catHtml;
+            selectCat.value = '';
+        }
+
+        if (chkAutoMinutes) {
+            chkAutoMinutes.checked = true;
+        }
+
+        modal.style.display = 'flex';
+        inputTitle?.focus();
+        inputTitle?.select();
+    }
+
+    _closeImportAudioModal() {
+        const modal = document.getElementById('modal-import-audio');
+        if (modal) modal.style.display = 'none';
+        this._pendingImportFile = null;
+    }
+
+    async _confirmImportAudio() {
+        if (!this._pendingImportFile) {
+            this._showToast('Vui lòng chọn file ghi âm trước', 'error');
+            return;
+        }
+        const fileInfo = this._pendingImportFile;
+        const inputTitle = document.getElementById('input-import-meeting-title');
+        const selectCust = document.getElementById('select-import-meeting-customer');
+        const selectProj = document.getElementById('select-import-meeting-project');
+        const selectCat = document.getElementById('select-import-meeting-category');
+        const inputTags = document.getElementById('input-import-meeting-tags');
+        const chkAutoMinutes = document.getElementById('chk-import-auto-minutes');
+
+        const title = (inputTitle?.value || '').trim() || fileInfo.file_name.replace(/\.[^/.]+$/, '');
+        const customerId = selectCust?.value || null;
+        const projectId = selectProj?.value || null;
+        const category = selectCat?.value || null;
+        const rawTags = (inputTags?.value || '').trim();
+        const tags = rawTags
+            ? rawTags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean)
+            : [];
+        const autoMinutes = chkAutoMinutes ? chkAutoMinutes.checked : true;
+
+        const settings = settingsManager.get();
+        const apiKey = settings.gemini_api_key?.trim();
+        if (!apiKey) {
+            this._showToast('Cần Gemini API Key trong Cài đặt để import và nhận diện file ghi âm', 'error');
+            return;
+        }
+
+        if (this._activeRetranscribe) {
+            this._showToast('Đang có tiến trình xử lý audio khác đang chạy', 'info');
+            return;
+        }
+
+        this._closeImportAudioModal();
+        await this._startAudioImport({ fileInfo, title, customerId, projectId, category, tags, autoMinutes, apiKey });
+    }
+
+    async _startAudioImport({ fileInfo, title, customerId, projectId, category, tags, autoMinutes, apiKey }) {
+        if (this._activeRetranscribe) {
+            this._showToast('Đang có tiến trình xử lý audio khác đang chạy', 'info');
+            return;
+        }
+
+        const d = new Date();
+        const p = n => String(n).padStart(2, '0');
+        const id = `${String(d.getFullYear()).slice(2)}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+
+        const TIMEOUT_MS = 600_000;
+        const timeoutId = setTimeout(() => {
+            this._cancelActiveRetranscript(true);
+        }, TIMEOUT_MS);
+
+        this._activeRetranscribe = {
+            id,
+            isImport: true,
+            timeoutId,
+            buttonsToDisable: [],
+            originalTexts: [],
+            isMinimized: true,
+            progressInterval: null,
+            stage: 'upload',
+            text: 'Đang đọc và tải file ghi âm lên Gemini...',
+            percent: 15,
+            customTitle: `Import: ${title}`,
+        };
+
+        this._setRetranscriptProgress('upload', 'Đang đọc và tải file ghi âm lên Gemini...', 15, `Import: ${title}`);
+
+        let currentPct = 15;
+        const progressInterval = setInterval(() => {
+            if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) {
+                clearInterval(progressInterval);
+                return;
+            }
+            if (currentPct < 88) {
+                currentPct += (currentPct < 45 ? 3 : (currentPct < 70 ? 2 : 1));
+                let text = 'Đang tải file ghi âm lên Gemini...';
+                let stage = 'upload';
+                if (currentPct >= 25 && currentPct < 55) {
+                    stage = 'transcribe';
+                    text = 'Gemini đang nhận diện ngôn ngữ và transcript...';
+                } else if (currentPct >= 55 && currentPct < 75) {
+                    stage = 'transcribe';
+                    text = 'Gemini đang phân tích và dịch sang Tiếng Việt...';
+                } else if (currentPct >= 75) {
+                    stage = 'transcribe';
+                    text = 'Gemini đang hoàn thiện các đoạn thoại...';
+                }
+                this._setRetranscriptProgress(stage, text, currentPct, `Import: ${title}`);
+            }
+        }, 1500);
+        this._activeRetranscribe.progressInterval = progressInterval;
+
+        try {
+            const result = await invoke('import_audio_session', {
+                id,
+                filePath: fileInfo.file_path,
+                title,
+                customerId,
+                projectId,
+                category,
+                tags,
+                apiKey,
+            });
+
+            clearInterval(progressInterval);
+            if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
+
+            this._setRetranscriptProgress('save', 'Đang lưu Log cuộc họp mới...', 90, `Import: ${title}`);
+
+            if (autoMinutes) {
+                const minutesLangs = this._getMinutesLangsForSession(result.json);
+                const totalLangs = minutesLangs.length;
+                for (let i = 0; i < totalLangs; i++) {
+                    if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
+                    const mLang = minutesLangs[i];
+                    const langName = mLang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt';
+                    const stepPct = totalLangs === 1 ? 95 : (i === 0 ? 93 : 97);
+                    const stepLabel = totalLangs > 1
+                        ? `Đang tạo Meeting Minutes (${langName})... (${i + 1}/${totalLangs})`
+                        : `Đang tạo Meeting Minutes (${langName})...`;
+                    this._setRetranscriptProgress('minutes', stepLabel, stepPct, `Import: ${title}`);
+                    try {
+                        await this._generateMinutesCore(id, mLang);
+                    } catch (minErr) {
+                        console.warn(`[App] Lỗi tạo Meeting Minutes (${mLang}) khi import:`, minErr);
+                    }
+                }
+            }
+
+            this._setRetranscriptProgress('minutes', 'Hoàn tất import file ghi âm ✓', 100, `Import: ${title}`);
+
+            if (this._activeRetranscribe?.timeoutId) {
+                clearTimeout(this._activeRetranscribe.timeoutId);
+            }
+            this._lastCompletedRetranscribeId = id;
+            this._activeRetranscribe = null;
+
+            this._showRetranscriptCompleted(id, `Hoàn tất import "${title}" ✓`);
+            this._showToast('Đã import thành công file ghi âm vào Logs ✓', 'success');
+            await this._showSessions();
+        } catch (err) {
+            clearInterval(progressInterval);
+            if (this._activeRetranscribe?.id === id) {
+                const isCancelled = String(err).includes('hủy') || String(err).includes('cancel');
+                this._cleanupActiveRetranscribe();
+                if (!isCancelled) {
+                    console.error('[App] Import audio failed:', err);
+                    this._showToast(`Import file ghi âm thất bại: ${err}`, 'error');
                 }
             }
         }
