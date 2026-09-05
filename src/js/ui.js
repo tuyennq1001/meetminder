@@ -73,21 +73,25 @@ export class TranscriptUI {
         if (fontSize !== undefined) {
             this.fontSize = fontSize;
             this.container.style.setProperty('--transcript-font-size', `${fontSize}px`);
+            document.documentElement?.style.setProperty('--transcript-font-size', `${fontSize}px`);
         }
         if (fontColor !== undefined) {
             this.fontColor = fontColor;
             this.container.style.setProperty('--transcript-font-color', fontColor);
+            document.documentElement?.style.setProperty('--transcript-font-color', fontColor);
         }
         if (fontFamily !== undefined) {
             this.fontFamily = fontFamily;
             const families = {
                 system: 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-                inter: 'Inter, sans-serif',
-                arial: 'Arial, sans-serif',
+                inter: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+                arial: 'Arial, -apple-system, sans-serif',
                 georgia: 'Georgia, serif',
                 monospace: 'ui-monospace, SFMono-Regular, Menlo, monospace',
             };
-            this.container.style.setProperty('--transcript-font-family', families[fontFamily] || families.system);
+            const fam = families[fontFamily] || families.system;
+            this.container.style.setProperty('--transcript-font-family', fam);
+            document.documentElement?.style.setProperty('--transcript-font-family', fam);
         }
         if (viewMode !== undefined) {
             this.viewMode = viewMode;
@@ -650,9 +654,9 @@ export class TranscriptUI {
                 ${srcHtml}
             </div>
             <div class="panel-timestamps-wrap">
-                <div class="panel-timestamps" aria-label="Thời gian từng câu">
+                <div class="panel-timestamps" aria-label="Timeline từng câu">
                     <div class="panel-column-header panel-time-header">
-                        <span class="panel-header-title">Thời gian</span>
+                        <span class="panel-header-title">Timeline</span>
                     </div>
                     ${timeHtml}
                 </div>

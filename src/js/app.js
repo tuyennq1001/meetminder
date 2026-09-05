@@ -865,10 +865,83 @@ class App {
         });
 
         // Stepper input fields live updates & clamping
-        const setupStepperInput = (id, min, max, defaultVal) => {
+        const syncMenuLivePreview = () => {
+            const familyKey = document.getElementById('select-menu-font-family')?.value || 'system';
+            const weightKey = document.getElementById('select-menu-font-weight')?.value || 'medium';
+            const sizeVal = parseInt(document.getElementById('input-menu-font-size')?.value || '12', 10);
+            const menuFamilies = {
+                system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                inter: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+                roboto: "'Roboto', 'Google Sans', -apple-system, sans-serif",
+                segoe: "'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif",
+                arial: "Arial, -apple-system, sans-serif",
+                monospace: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            };
+            const weightMap = { normal: '400', medium: '500', semibold: '700' };
+            const boldWeightMap = { normal: '600', medium: '700', semibold: '800' };
+            document.documentElement.style.setProperty('--menu-font-family', menuFamilies[familyKey] || menuFamilies.system);
+            document.documentElement.style.setProperty('--menu-font-size', `${sizeVal}px`);
+            document.documentElement.style.setProperty('--menu-font-weight', weightMap[weightKey] || '500');
+            document.documentElement.style.setProperty('--menu-font-weight-bold', boldWeightMap[weightKey] || '700');
+        };
+
+        const syncTableLivePreview = () => {
+            const familyKey = document.getElementById('select-table-font-family')?.value || 'system';
+            const weightKey = document.getElementById('select-table-font-weight')?.value || 'medium';
+            const sizeVal = parseInt(document.getElementById('input-table-font-size')?.value || '13', 10);
+            const menuFamilies = {
+                system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                inter: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+                roboto: "'Roboto', 'Google Sans', -apple-system, sans-serif",
+                segoe: "'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif",
+                arial: "Arial, -apple-system, sans-serif",
+                monospace: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            };
+            const weightMap = { normal: '400', medium: '500', semibold: '700' };
+            const boldWeightMap = { normal: '600', medium: '700', semibold: '800' };
+            document.documentElement.style.setProperty('--table-font-family', menuFamilies[familyKey] || menuFamilies.system);
+            document.documentElement.style.setProperty('--table-font-size', `${sizeVal}px`);
+            document.documentElement.style.setProperty('--table-font-weight', weightMap[weightKey] || '500');
+            document.documentElement.style.setProperty('--table-font-weight-bold', boldWeightMap[weightKey] || '700');
+            document.documentElement.style.setProperty('--table-title-weight', boldWeightMap[weightKey] || '700');
+        };
+
+        const syncTranscriptLivePreview = () => {
+            const familyKey = document.getElementById('select-font-family')?.value || 'system';
+            const sizeVal = parseInt(document.getElementById('input-font-size')?.value || '16', 10);
+            const colorVal = document.getElementById('input-font-color')?.value || '#ffffff';
+            const transcriptFamilies = {
+                system: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+                inter: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+                arial: "Arial, -apple-system, sans-serif",
+                georgia: "Georgia, serif",
+                monospace: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            };
+            document.documentElement.style.setProperty('--transcript-font-family', transcriptFamilies[familyKey] || transcriptFamilies.system);
+            document.documentElement.style.setProperty('--transcript-font-size', `${sizeVal}px`);
+            document.documentElement.style.setProperty('--transcript-font-color', colorVal);
+        };
+
+        const syncNoteLivePreview = () => {
+            const familyKey = document.getElementById('select-note-font-family')?.value || 'system';
+            const sizeVal = parseInt(document.getElementById('input-note-font-size')?.value || '14', 10);
+            const noteFamilies = {
+                system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                inter: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+                roboto: "'Roboto', -apple-system, sans-serif",
+                arial: "Arial, -apple-system, sans-serif",
+                georgia: "Georgia, serif",
+                monospace: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            };
+            document.documentElement.style.setProperty('--note-font-family', noteFamilies[familyKey] || noteFamilies.system);
+            document.documentElement.style.setProperty('--note-font-size', `${sizeVal}px`);
+        };
+
+        const setupStepperInput = (id, min, max, defaultVal, onSync) => {
             const el = document.getElementById(id);
             if (!el) return;
             el.addEventListener('input', () => {
+                if (onSync) onSync();
                 this._debouncedAutoSave();
             });
             el.addEventListener('change', () => {
@@ -876,42 +949,50 @@ class App {
                 if (isNaN(v)) v = defaultVal;
                 v = Math.max(min, Math.min(max, v));
                 el.value = v;
+                if (onSync) onSync();
                 this._autoSaveSettingsFromForm();
             });
         };
-        setupStepperInput('input-menu-font-size', 10, 18, 12);
-        setupStepperInput('input-table-font-size', 11, 22, 13);
-        setupStepperInput('input-note-font-size', 12, 36, 14);
-        setupStepperInput('input-font-size', 12, 36, 16);
+        setupStepperInput('input-menu-font-size', 10, 18, 12, syncMenuLivePreview);
+        setupStepperInput('input-table-font-size', 11, 22, 13, syncTableLivePreview);
+        setupStepperInput('input-note-font-size', 12, 36, 14, syncNoteLivePreview);
+        setupStepperInput('input-font-size', 12, 36, 16, syncTranscriptLivePreview);
         setupStepperInput('input-max-lines', 2, 15, 5);
 
         document.getElementById('select-menu-font-family')?.addEventListener('change', () => {
+            syncMenuLivePreview();
             this._autoSaveSettingsFromForm();
         });
 
         document.getElementById('select-menu-font-weight')?.addEventListener('change', () => {
+            syncMenuLivePreview();
             this._autoSaveSettingsFromForm();
         });
 
         document.getElementById('select-table-font-family')?.addEventListener('change', () => {
+            syncTableLivePreview();
             this._autoSaveSettingsFromForm();
         });
 
         document.getElementById('select-table-font-weight')?.addEventListener('change', () => {
+            syncTableLivePreview();
             this._autoSaveSettingsFromForm();
         });
 
         document.getElementById('select-note-font-family')?.addEventListener('change', () => {
+            syncNoteLivePreview();
             this._autoSaveSettingsFromForm();
         });
 
         document.getElementById('input-font-color')?.addEventListener('input', (e) => {
             const valEl = document.getElementById('font-color-value');
             if (valEl) valEl.textContent = e.target.value.toUpperCase();
+            syncTranscriptLivePreview();
             this._autoSaveSettingsFromForm();
         });
 
         document.getElementById('select-font-family')?.addEventListener('change', () => {
+            syncTranscriptLivePreview();
             this._autoSaveSettingsFromForm();
         });
 
@@ -1590,37 +1671,57 @@ class App {
         const weightMap = {
             normal: '400',
             medium: '500',
-            semibold: '600',
+            semibold: '700',
         };
 
-        const titleWeightMap = {
+        const boldWeightMap = {
             normal: '600',
-            medium: '650',
-            semibold: '750',
+            medium: '700',
+            semibold: '800',
         };
 
         const menuFontFam = menuFamilies[settings.menu_font_family] || menuFamilies.system;
         const menuFontSize = settings.menu_font_size || 12;
         const menuFontWeight = weightMap[settings.menu_font_weight] || '500';
+        const menuFontWeightBold = boldWeightMap[settings.menu_font_weight] || '700';
         const noteFontFam = noteFamilies[settings.note_font_family] || noteFamilies.system;
 
         const tableFontFam = menuFamilies[settings.table_font_family] || menuFamilies.system;
         const tableFontSize = settings.table_font_size || 13;
         const tableFontWeight = weightMap[settings.table_font_weight] || '500';
-        const tableTitleWeight = titleWeightMap[settings.table_font_weight] || '650';
+        const tableFontWeightBold = boldWeightMap[settings.table_font_weight] || '700';
+        const tableTitleWeight = boldWeightMap[settings.table_font_weight] || '700';
 
         document.documentElement.style.setProperty('--menu-font-family', menuFontFam);
         document.documentElement.style.setProperty('--menu-font-size', `${menuFontSize}px`);
         document.documentElement.style.setProperty('--menu-font-weight', menuFontWeight);
+        document.documentElement.style.setProperty('--menu-font-weight-bold', menuFontWeightBold);
         document.documentElement.style.setProperty('--note-font-family', noteFontFam);
         document.documentElement.style.setProperty('--table-font-family', tableFontFam);
         document.documentElement.style.setProperty('--table-font-size', `${tableFontSize}px`);
         document.documentElement.style.setProperty('--table-font-weight', tableFontWeight);
+        document.documentElement.style.setProperty('--table-font-weight-bold', tableFontWeightBold);
         document.documentElement.style.setProperty('--table-title-weight', tableTitleWeight);
 
         // Update note editor font size
         const noteFontSize = settings.note_font_size || 14;
         document.documentElement.style.setProperty('--note-font-size', `${noteFontSize}px`);
+
+        // Update transcript font variables
+        const transcriptFamilies = {
+            system: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+            inter: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+            arial: "Arial, -apple-system, sans-serif",
+            georgia: "Georgia, serif",
+            monospace: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        };
+        const transcriptFontFam = transcriptFamilies[settings.font_family] || transcriptFamilies.system;
+        const transcriptFontSize = settings.font_size || 16;
+        const transcriptFontColor = settings.font_color || '#ffffff';
+
+        document.documentElement.style.setProperty('--transcript-font-family', transcriptFontFam);
+        document.documentElement.style.setProperty('--transcript-font-size', `${transcriptFontSize}px`);
+        document.documentElement.style.setProperty('--transcript-font-color', transcriptFontColor);
 
         // Update overlay opacity
         const overlayView = document.getElementById('overlay-view');
@@ -6757,7 +6858,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         container.innerHTML = `<div class="session-logs-live session-logs-dual">
             <section class="session-log-column" data-log-panel="source"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', 'Copy toàn bộ bản gốc', 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.src)).join('')}</div></section>
             <div class="session-log-timeline-wrap">
-              <div class="session-log-timeline" data-log-panel="timeline"><header class="panel-column-header panel-time-header"><span class="panel-header-title">Thời gian</span></header>${segments.map((segment, index) => timelineRow(index, segment)).join('')}</div>
+              <div class="session-log-timeline" data-log-panel="timeline"><header class="panel-column-header panel-time-header"><span class="panel-header-title">Timeline</span></header>${segments.map((segment, index) => timelineRow(index, segment)).join('')}</div>
               <button type="button" class="session-log-scroll-bottom" aria-label="Cuộn xuống đoạn mới nhất" title="Cuộn xuống đoạn mới nhất">↓</button>
             </div>
             <section class="session-log-column" data-log-panel="translation"><header class="panel-column-header"><span class="panel-header-title">🌐 ${esc(targetName)}</span>${copyButton('translation', 'Copy toàn bộ bản dịch', 'btn-copy-translation')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.tgt || '—')).join('')}</div></section>

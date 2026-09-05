@@ -114,11 +114,19 @@
   --menu-font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
   --menu-font-size: 12px;
   --menu-font-weight: 500;
+  --menu-font-weight-bold: 700;
   --note-font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+  --note-font-size: 14px;
   --table-font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
   --table-font-size: 13px;
   --table-font-weight: 500;
-  --table-title-weight: 650;
+  --table-font-weight-bold: 700;
+  --table-title-weight: 700;
+
+  /* Transcript Font Variables */
+  --transcript-font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --transcript-font-size: 16px;
+  --transcript-font-color: #ffffff;
 }
 
 html,
@@ -906,6 +914,7 @@ body:not(.activity-live) .header-divider {
   width: 100%;
   box-sizing: border-box;
   padding: 0;
+  font-family: var(--transcript-font-family, system-ui, sans-serif);
 }
 
 .dual-view .transcript-flow {
@@ -917,10 +926,10 @@ body:not(.activity-live) .header-divider {
   min-height: 0;
   box-sizing: border-box;
   padding: 0;
+  font-family: var(--transcript-font-family, system-ui, sans-serif);
 }
 
 .dual-view .panel-source,
-.dual-view .panel-timestamps,
 .dual-view .panel-translation {
   box-sizing: border-box;
   overflow-y: auto;
@@ -930,6 +939,7 @@ body:not(.activity-live) .header-divider {
   overflow-wrap: break-word;
   -webkit-app-region: no-drag;
   overscroll-behavior: contain;
+  font-family: var(--transcript-font-family, system-ui, sans-serif);
 }
 
 .dual-view .panel-timestamps-wrap {
@@ -951,11 +961,17 @@ body:not(.activity-live) .header-divider {
 }
 
 .dual-view .panel-timestamps {
+  box-sizing: border-box;
+  overflow-y: auto;
   width: 100%;
   height: 100%;
+  min-height: 0;
   padding: 0 4px;
   text-align: center;
   scrollbar-width: none;
+  font-family: var(--menu-font-family);
+  -webkit-app-region: no-drag;
+  overscroll-behavior: contain;
 }
 
 .dual-view .panel-timestamps::-webkit-scrollbar {
@@ -979,8 +995,9 @@ body:not(.activity-live) .header-divider {
   background: var(--md-sys-color-surface-container-low);
   backdrop-filter: blur(12px);
   padding: 6px 10px;
-  font-size: 11px;
-  font-weight: 600;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight-bold, 700);
   color: var(--md-sys-color-on-surface-variant);
   border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 8px;
@@ -995,11 +1012,17 @@ body:not(.activity-live) .header-divider {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight-bold, 700);
 }
 
 .panel-time-header {
   justify-content: center;
   white-space: nowrap;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight-bold, 700);
 }
 
 .timeline-scroll-bottom {
@@ -1040,6 +1063,7 @@ body:not(.activity-live) .header-divider {
   min-height: calc(var(--transcript-font-size, 16px) * 1.5);
   margin-bottom: 6px;
   color: var(--md-sys-color-on-surface-variant);
+  font-family: var(--menu-font-family);
   font-size: 10px;
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
@@ -1119,6 +1143,7 @@ body:not(.activity-live) .header-divider {
 .dual-view .panel-source .seg-text {
   color: var(--transcript-font-color, rgba(255, 255, 255, 0.5));
   font-size: var(--transcript-font-size, 16px);
+  font-family: var(--transcript-font-family, system-ui, sans-serif);
   margin-bottom: 6px;
   line-height: 1.5;
 }
@@ -1126,6 +1151,7 @@ body:not(.activity-live) .header-divider {
 .dual-view .panel-translation .seg-text {
   color: var(--transcript-font-color, var(--text-primary));
   font-size: var(--transcript-font-size, 16px);
+  font-family: var(--transcript-font-family, system-ui, sans-serif);
   font-weight: 400;
   margin-bottom: 6px;
   line-height: 1.5;
@@ -1145,7 +1171,13 @@ body:not(.activity-live) .header-divider {
 .seg-translated {
   display: block;
   color: var(--transcript-font-color, var(--text-primary));
+  font-family: var(--transcript-font-family, system-ui, sans-serif);
   font-weight: 400;
+}
+
+.seg-text,
+.seg-provisional {
+  font-family: var(--transcript-font-family, system-ui, sans-serif);
 }
 
 .seg-translation-failed,
@@ -1364,6 +1396,7 @@ body:not(.activity-live) .header-divider {
    ═══════════════════════════════════════════════════════════ */
 
 #settings-view {
+  font-family: var(--menu-font-family);
   background: var(--md-sys-color-surface-container-low);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
@@ -1388,8 +1421,9 @@ body:not(.activity-live) .header-divider {
 }
 
 .settings-header h2 {
+  font-family: var(--menu-font-family);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: var(--menu-font-weight-bold, 700);
   color: var(--md-sys-color-on-surface);
   letter-spacing: 0.01em;
 }
@@ -1412,6 +1446,7 @@ body:not(.activity-live) .header-divider {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  font-family: var(--menu-font-family);
 }
 
 .settings-sidebar::-webkit-scrollbar {
@@ -1431,7 +1466,7 @@ body:not(.activity-live) .header-divider {
 .settings-nav-group-title {
   font-family: var(--menu-font-family);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: var(--menu-font-weight-bold, 700);
   letter-spacing: 0.06em;
   color: var(--md-sys-color-on-surface-variant);
   padding: 4px 8px 6px;
@@ -1451,7 +1486,7 @@ body:not(.activity-live) .header-divider {
   color: var(--md-sys-color-on-surface-variant);
   font-family: var(--menu-font-family);
   font-size: var(--menu-font-size, 12px);
-  font-weight: 500;
+  font-weight: var(--menu-font-weight, 500);
   cursor: pointer;
   transition: all var(--transition-fast);
   text-align: left;
@@ -1465,7 +1500,7 @@ body:not(.activity-live) .header-divider {
 .settings-nav-item.active {
   background: var(--md-sys-color-primary);
   color: var(--md-sys-color-on-primary);
-  font-weight: 600;
+  font-weight: var(--menu-font-weight-bold, 700);
   box-shadow: var(--elevation-1);
 }
 
@@ -1501,6 +1536,7 @@ body:not(.activity-live) .header-divider {
   min-width: 0;
   overflow-y: auto;
   padding: 16px 20px 24px;
+  font-family: var(--menu-font-family);
 }
 
 .settings-content-panel::-webkit-scrollbar {
@@ -1523,8 +1559,9 @@ body:not(.activity-live) .header-divider {
 }
 
 .settings-panel-title {
+  font-family: var(--menu-font-family);
   font-size: 15px;
-  font-weight: 700;
+  font-weight: var(--menu-font-weight-bold, 700);
   color: var(--md-sys-color-on-surface);
   margin: 0;
 }
@@ -1925,14 +1962,25 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .settings-group-header {
+  font-family: var(--menu-font-family);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: var(--menu-font-weight-bold, 700);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-secondary, #94a3b8);
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   padding-bottom: 5px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settings-group-hint {
+  font-family: var(--menu-font-family);
+  font-size: calc(var(--menu-font-size, 12px) - 1px);
+  font-weight: var(--menu-font-weight, 400);
+  color: var(--text-secondary, #94a3b8);
+  margin: 0 0 10px 0;
+  line-height: 1.45;
+  opacity: 0.85;
 }
 
 .settings-grid-row {
@@ -1952,8 +2000,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
   width: 140px;
   min-width: 140px;
   flex-shrink: 0;
-  font-size: 12px;
-  font-weight: 500;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 12px);
+  font-weight: var(--menu-font-weight, 500);
   color: var(--text-primary, #e2e8f0);
 }
 
@@ -1977,8 +2026,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
   border-radius: var(--radius-sm, 6px);
   background: var(--bg-input, rgba(255, 255, 255, 0.05));
   color: var(--text-primary, #e2e8f0);
+  font-family: var(--menu-font-family);
   font-size: 16px;
-  font-weight: 600;
+  font-weight: var(--menu-font-weight-bold, 700);
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -2010,9 +2060,10 @@ input[type="range"]::-webkit-slider-thumb:hover {
   height: 28px;
   padding: 0 4px;
   text-align: center;
+  font-family: var(--menu-font-family);
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--menu-font-size, 12px);
+  font-weight: var(--menu-font-weight, 500);
   border: 1px solid var(--border-light, rgba(255, 255, 255, 0.12));
   border-radius: var(--radius-sm, 6px);
   background: var(--bg-input, rgba(255, 255, 255, 0.05));
@@ -2034,8 +2085,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .stepper-unit {
-  font-size: 12px;
-  font-weight: 500;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 12px);
+  font-weight: var(--menu-font-weight, 500);
   color: var(--text-secondary, #94a3b8);
   min-width: 24px;
 }
@@ -2043,6 +2095,15 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .settings-grid-row .source-select {
   flex: 1;
   max-width: 240px;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 12px);
+  font-weight: var(--menu-font-weight, 500);
+}
+
+.checkbox-label {
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 12px);
+  font-weight: var(--menu-font-weight, 500);
 }
 
 /* Checkbox */
@@ -2703,8 +2764,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
   gap: 8px;
 }
 .minutes-floating-title {
-  font-size: 12px;
-  font-weight: 600;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 12px);
+  font-weight: var(--menu-font-weight-bold, 700);
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -2712,8 +2774,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
   transition: color 0.15s;
 }
 .minutes-floating-pct {
-  font-size: 11px;
-  font-weight: 700;
+  font-family: var(--menu-font-family);
+  font-size: calc(var(--menu-font-size, 12px) - 1px);
+  font-weight: var(--menu-font-weight-bold, 700);
   color: var(--accent, #c084fc);
   flex-shrink: 0;
 }
@@ -2736,7 +2799,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
   background: #22c55e;
 }
 .minutes-floating-status {
-  font-size: 10.5px;
+  font-family: var(--menu-font-family);
+  font-size: calc(var(--menu-font-size, 12px) - 1.5px);
+  font-weight: var(--menu-font-weight, 500);
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -3093,7 +3158,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   background: var(--md-sys-color-surface-container-high);
   font-family: var(--menu-font-family);
   font-size: calc(var(--menu-font-size, 12px) - 1px);
-  font-weight: 700;
+  font-weight: var(--menu-font-weight-bold, 700);
   white-space: nowrap;
   letter-spacing: 0.02em;
 }
@@ -3119,12 +3184,12 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .logs-filter-row td {
   padding: 6px 8px;
   background: var(--md-sys-color-surface-container-low);
+  border-bottom: 2px solid var(--border-subtle);
 }
 
 .logs-filter-actions-cell {
-  padding: 6px 4px !important;
-  text-align: center;
   vertical-align: middle;
+  padding: 4px 6px;
 }
 
 .logs-delete-selected {
@@ -3138,7 +3203,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   white-space: nowrap;
   font-family: var(--menu-font-family);
   font-size: var(--menu-font-size, 11px);
-  font-weight: 600;
+  font-weight: var(--menu-font-weight-bold, 700);
   background: var(--md-sys-color-error, #cf6679);
   color: #fff;
   border: none;
@@ -3169,6 +3234,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   color: var(--md-sys-color-on-surface);
   font-family: var(--menu-font-family);
   font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight, 500);
   box-sizing: border-box;
 }
 
@@ -3229,7 +3295,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   color: var(--md-sys-color-primary);
   font-family: var(--table-font-family);
   font-size: var(--table-font-size, 13px);
-  font-weight: var(--table-title-weight, 650);
+  font-weight: var(--table-title-weight, 700);
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3270,7 +3336,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
   min-height: 32px;
   padding: 2px 4px 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight, 500);
   white-space: nowrap;
 }
 
@@ -3573,7 +3641,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .session-player-time {
   min-width: 30px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-family: var(--menu-font-family);
+  font-size: calc(var(--menu-font-size, 12px) - 2px);
+  font-weight: var(--menu-font-weight, 500);
   font-variant-numeric: tabular-nums;
   text-align: center;
   white-space: nowrap;
@@ -3742,12 +3812,14 @@ input[type="range"]::-webkit-slider-thumb:hover {
   flex-shrink: 0;
   background: rgba(20, 20, 30, 0.3);
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  font-family: var(--menu-font-family);
 }
 
 .session-viewer-title-text {
   flex: 1;
-  font-size: 12px;
-  font-weight: 600;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 12px);
+  font-weight: var(--menu-font-weight-bold, 700);
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3777,6 +3849,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
+  font-family: var(--table-font-family);
 }
 
 .session-viewer-meta-bar::-webkit-scrollbar {
@@ -3795,7 +3868,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .session-viewer-badges .session-project-badge,
 .session-viewer-badges .session-category-badge,
 .session-viewer-badges .session-tag-badge {
-  font-size: 10.5px;
+  font-family: var(--table-font-family);
+  font-size: calc(var(--table-font-size, 13px) - 2.5px);
+  font-weight: var(--table-font-weight, 500);
   padding: 2px 7px;
   cursor: pointer;
   white-space: nowrap;
@@ -3815,7 +3890,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  font-size: 10.5px;
+  font-family: var(--menu-font-family);
+  font-size: calc(var(--menu-font-size, 12px) - 1.5px);
+  font-weight: var(--menu-font-weight, 500);
   border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.04);
   border: 1px dashed var(--border-subtle);
@@ -4016,10 +4093,12 @@ input[type="range"]::-webkit-slider-thumb:hover {
   color: #6b7280;
 }
 
-/* Test connection button — small, muted */
+/* Small buttons */
 .btn-secondary.small {
   padding: 0.35rem 0.7rem;
-  font-size: 0.8rem;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight, 500);
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.12);
   color: #cbd5e1;
@@ -4028,6 +4107,20 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 .btn-secondary.small:hover { background: rgba(255,255,255,0.1); }
 .btn-secondary.small:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-primary.small {
+  padding: 0.35rem 0.7rem;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight-bold, 700);
+  background: var(--md-sys-color-primary, #7e3e87);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--md-sys-color-on-primary, #ffffff);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.btn-primary.small:hover { filter: brightness(1.12); }
+.btn-primary.small:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ─── Engine picker (welcome-screen cards) ───────────────────────────── */
 .engine-picker {
@@ -4289,7 +4382,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .activity-tab.active {
   background: var(--md-sys-color-secondary-container);
   color: var(--md-sys-color-on-secondary-container);
-  font-weight: 600;
+  font-weight: var(--menu-font-weight-bold, 700);
   box-shadow: var(--elevation-1);
 }
 
@@ -4388,6 +4481,7 @@ body:not(.activity-live) .floating-controls { display: none; }
   color: var(--text-primary);
   font-family: var(--menu-font-family);
   font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight, 500);
 }
 
 #select-view-mode {
@@ -4397,8 +4491,9 @@ body:not(.activity-live) .floating-controls { display: none; }
 
 .toolbar-source-label {
   color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 600;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight-bold, 700);
   white-space: nowrap;
 }
 
@@ -4575,7 +4670,7 @@ body:not(.activity-live) .floating-controls { display: none; }
   border: 1px solid rgba(255, 255, 255, 0.15);
   font-family: var(--menu-font-family);
   font-size: var(--menu-font-size, 11px);
-  font-weight: var(--menu-font-weight, 600);
+  font-weight: var(--menu-font-weight-bold, 700);
   line-height: 1;
   cursor: pointer !important;
   box-shadow: var(--elevation-1);
@@ -4734,6 +4829,7 @@ body.resizing-vertical * {
   flex-shrink: 0;
   gap: 6px;
   flex-wrap: wrap;
+  font-family: var(--menu-font-family);
 }
 
 .notes-tools-left {
@@ -4741,6 +4837,7 @@ body.resizing-vertical * {
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
+  font-family: var(--menu-font-family);
 }
 
 .notes-tools-right {
@@ -4748,6 +4845,7 @@ body.resizing-vertical * {
   align-items: center;
   gap: 6px;
   margin-left: auto;
+  font-family: var(--menu-font-family);
 }
 
 .notes-tools-meta {
@@ -4756,6 +4854,7 @@ body.resizing-vertical * {
   gap: 6px;
   flex: 1 1 auto;
   min-width: 0;
+  font-family: var(--table-font-family);
 }
 
 .note-meta-select {
@@ -4765,8 +4864,9 @@ body.resizing-vertical * {
   border: 1px solid var(--border-subtle);
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 500;
+  font-family: var(--table-font-family, var(--menu-font-family));
+  font-size: calc(var(--table-font-size, 13px) - 2px);
+  font-weight: var(--table-font-weight, 500);
   outline: none;
   cursor: pointer;
   max-width: 140px;
@@ -4787,6 +4887,7 @@ body.resizing-vertical * {
 .note-meta-select option {
   background: var(--md-sys-color-surface-container-high, #2b2930);
   color: var(--text-primary);
+  font-family: var(--table-font-family, var(--menu-font-family));
 }
 
 .note-tags-wrap {
@@ -4805,7 +4906,9 @@ body.resizing-vertical * {
   border: 1px solid var(--border-subtle);
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-primary);
-  font-size: 11px;
+  font-family: var(--table-font-family, var(--menu-font-family));
+  font-size: calc(var(--table-font-size, 13px) - 2px);
+  font-weight: var(--table-font-weight, 500);
   outline: none;
   transition: all 0.12s ease;
   -webkit-app-region: no-drag;
@@ -4819,12 +4922,14 @@ body.resizing-vertical * {
 
 .note-meta-input::placeholder {
   color: var(--text-tertiary);
-  font-size: 10.5px;
+  font-family: var(--table-font-family, var(--menu-font-family));
+  font-size: calc(var(--table-font-size, 13px) - 2.5px);
 }
 
 .notes-header-title {
-  font-size: 11px;
-  font-weight: 700;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight-bold, 700);
   color: var(--text-primary);
   letter-spacing: 0.3px;
   padding: 0 4px;
@@ -4845,8 +4950,9 @@ body.resizing-vertical * {
   border: 1px solid var(--border-subtle);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 500;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight, 500);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -4868,8 +4974,9 @@ body.resizing-vertical * {
   border: 1px solid rgba(126, 62, 135, 0.45);
   background: rgba(126, 62, 135, 0.15);
   color: #d9b0de;
-  font-size: 11px;
-  font-weight: 600;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight-bold, 700);
   cursor: pointer;
   transition: all 0.12s ease;
   -webkit-app-region: no-drag;
@@ -5005,8 +5112,9 @@ body.resizing-vertical * {
   background: var(--md-sys-color-surface-container-low);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 600;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight-bold, 700);
 }
 .session-log-scroll {
   flex: 1;
@@ -5028,8 +5136,9 @@ body.resizing-vertical * {
   background: var(--md-sys-color-surface-container-low);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 600;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight-bold, 700);
 }
 .session-log-dual-line {
   display: block;
@@ -5044,7 +5153,7 @@ body.resizing-vertical * {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  font: inherit;
+  font-family: var(--menu-font-family);
   font-size: 11px;
 }
 .session-log-timeline-row:hover,
@@ -5079,12 +5188,14 @@ body.resizing-vertical * {
   gap: 8px;
   padding: 5px 0;
   color: var(--text-primary);
+  font-family: var(--transcript-font-family, system-ui, sans-serif);
   font-size: var(--transcript-font-size, 16px);
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
 .session-log-time {
   color: var(--text-secondary);
+  font-family: var(--menu-font-family);
   font-size: 11px;
   line-height: 2.1;
   white-space: nowrap;
@@ -5970,8 +6081,9 @@ body.expanded #library-panel { padding: 8px 6%; }
   border-radius: var(--radius-pill);
   border: none;
   background: transparent;
-  font-size: 11px;
-  font-weight: 500;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight, 500);
   color: var(--md-sys-color-on-surface-variant);
   white-space: nowrap;
   cursor: pointer;
@@ -5986,17 +6098,18 @@ body.expanded #library-panel { padding: 8px 6%; }
 .session-nav-tab.active {
   background: var(--md-sys-color-secondary-container);
   color: var(--md-sys-color-on-secondary-container);
-  font-weight: 600;
+  font-weight: var(--menu-font-weight-bold, 700);
   box-shadow: var(--elevation-1);
 }
 
 .session-tab-badge {
+  font-family: var(--menu-font-family);
   font-size: 9px;
   padding: 1px 5px;
   border-radius: 8px;
   background: #10b981;
   color: #ffffff;
-  font-weight: 700;
+  font-weight: var(--menu-font-weight-bold, 700);
   line-height: 1;
 }
 
@@ -6035,14 +6148,17 @@ body.expanded #library-panel { padding: 8px 6%; }
 }
 
 .subbar-label {
-  font-size: 11px;
-  font-weight: 600;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight-bold, 700);
   color: var(--md-sys-color-on-surface-variant);
   white-space: nowrap;
 }
 
 .subbar-info {
-  font-size: 11px;
+  font-family: var(--menu-font-family);
+  font-size: calc(var(--menu-font-size, 11px) - 0.5px);
+  font-weight: var(--menu-font-weight, 500);
   color: var(--md-sys-color-on-surface-variant);
   white-space: nowrap;
   overflow: hidden;
@@ -6093,8 +6209,9 @@ body.expanded #library-panel { padding: 8px 6%; }
   border: 1px solid transparent;
   background: transparent;
   color: var(--md-sys-color-on-surface-variant);
-  font-size: 12px;
-  font-weight: 500;
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 12px);
+  font-weight: var(--menu-font-weight, 500);
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -6108,18 +6225,33 @@ body.expanded #library-panel { padding: 8px 6%; }
   background: var(--md-sys-color-surface-container-high);
   color: var(--md-sys-color-primary);
   border-color: rgba(126, 62, 135, 0.35);
-  font-weight: 600;
+  font-weight: var(--menu-font-weight-bold, 700);
   box-shadow: var(--elevation-1);
 }
 
 .subtab-badge {
+  font-family: var(--menu-font-family);
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 6px;
   background: rgba(16, 185, 129, 0.2);
   color: #34d399;
-  font-weight: 600;
+  font-weight: var(--menu-font-weight-bold, 700);
   line-height: 1.2;
+}
+
+.minutes-actions-group button,
+.session-tab-subbar-right button,
+.session-tab-subbar-left button {
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 11px);
+  font-weight: var(--menu-font-weight, 500);
+}
+
+.minutes-actions-group button.btn-primary,
+.session-tab-subbar-right button.btn-primary,
+.session-tab-subbar-left button.btn-primary {
+  font-weight: var(--menu-font-weight-bold, 700);
 }
 
 /* ─── Yellow Pencil Icon ───────────────────────────────────── */
