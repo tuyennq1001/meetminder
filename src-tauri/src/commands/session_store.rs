@@ -93,6 +93,8 @@ pub struct Project {
     pub status: String, // "active" | "archived"
     #[serde(default)]
     pub color: String,
+    #[serde(default = "default_work_scope")]
+    pub scope: String, // "work" | "personal"
     pub created_at: String,
     pub updated_at: String,
 }
@@ -101,12 +103,20 @@ fn default_active_status() -> String {
     "active".to_string()
 }
 
+fn default_work_scope() -> String {
+    "work".to_string()
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Category {
     pub id: String,
     pub name: String,
     #[serde(default)]
     pub color: String,
+    #[serde(default)]
+    pub template_id: Option<String>, // "standard" | "tech" | "one_on_one" | "personal"
+    #[serde(default)]
+    pub scope: Option<String>, // "work" | "personal" | "all"
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -118,6 +128,8 @@ pub struct ProjectRegistry {
     pub projects: Vec<Project>,
     pub categories: Vec<Category>,
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub tag_scopes: std::collections::HashMap<String, String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -141,6 +153,8 @@ pub struct SessionData {
     pub project_id: Option<String>,
     #[serde(default)]
     pub category: Option<String>,
+    #[serde(default)]
+    pub scope: Option<String>, // "work" | "personal"
     #[serde(default)]
     pub meeting_minutes: Option<String>,
     #[serde(default)]
@@ -176,6 +190,7 @@ pub struct SessionListItem {
     pub project_color: Option<String>,
     pub project_status: Option<String>,
     pub category: Option<String>,
+    pub scope: String, // "work" | "personal"
 }
 
 #[derive(Serialize, Debug)]
@@ -216,34 +231,54 @@ pub fn load_project_registry(app: &AppHandle) -> Result<ProjectRegistry, String>
                     id: "cat_weekly".into(),
                     name: "Weekly".into(),
                     color: "#10b981".into(),
+                    template_id: Some("standard".into()),
+                    scope: Some("work".into()),
                 },
                 Category {
                     id: "cat_daily".into(),
                     name: "Daily".into(),
                     color: "#431A46".into(),
+                    template_id: Some("standard".into()),
+                    scope: Some("work".into()),
                 },
                 Category {
                     id: "cat_sales".into(),
                     name: "Sales".into(),
                     color: "#f59e0b".into(),
+                    template_id: Some("standard".into()),
+                    scope: Some("work".into()),
                 },
                 Category {
                     id: "cat_1on1".into(),
                     name: "1-on-1".into(),
                     color: "#ec4899".into(),
+                    template_id: Some("one_on_one".into()),
+                    scope: Some("work".into()),
                 },
                 Category {
                     id: "cat_planning".into(),
                     name: "Planning".into(),
                     color: "#8b5cf6".into(),
+                    template_id: Some("tech".into()),
+                    scope: Some("work".into()),
                 },
                 Category {
                     id: "cat_retro".into(),
                     name: "Retro".into(),
                     color: "#14b8a6".into(),
+                    template_id: Some("standard".into()),
+                    scope: Some("work".into()),
+                },
+                Category {
+                    id: "cat_personal".into(),
+                    name: "Cá nhân".into(),
+                    color: "#3b82f6".into(),
+                    template_id: Some("personal".into()),
+                    scope: Some("personal".into()),
                 },
             ],
             tags: Vec::new(),
+            tag_scopes: std::collections::HashMap::new(),
         };
         let _ = save_project_registry(app, &default_reg);
         return Ok(default_reg);
@@ -424,6 +459,9 @@ pub fn save_project(app: AppHandle, mut project: Project) -> Result<Project, Str
     if project.status.is_empty() {
         project.status = "active".to_string();
     }
+    if project.scope.is_empty() {
+        project.scope = "work".to_string();
+    }
     let now = chrono_now_iso();
     project.updated_at = now.clone();
 
@@ -439,6 +477,7 @@ pub fn save_project(app: AppHandle, mut project: Project) -> Result<Project, Str
             existing.description = project.description.clone();
             existing.color = project.color.clone();
             existing.status = project.status.clone();
+            existing.scope = project.scope.clone();
             existing.updated_at = project.updated_at.clone();
         } else {
             project.created_at = now;
@@ -491,6 +530,8 @@ pub fn save_category(app: AppHandle, mut category: Category) -> Result<Category,
         if let Some(existing) = reg.categories.iter_mut().find(|c| c.id == category.id) {
             existing.name = category.name.clone();
             existing.color = category.color.clone();
+            existing.template_id = category.template_id.clone();
+            existing.scope = category.scope.clone();
         } else {
             reg.categories.push(category.clone());
         }
@@ -508,7 +549,7 @@ pub fn delete_category(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_tag(app: AppHandle, tag: String) -> Result<String, String> {
+pub fn save_tag(app: AppHandle, tag: String, scope: Option<String>) -> Result<String, String> {
     let clean = tag.trim().trim_start_matches('#').to_lowercase();
     if clean.is_empty() {
         return Err("Thẻ không được để trống".into());
@@ -516,8 +557,13 @@ pub fn save_tag(app: AppHandle, tag: String) -> Result<String, String> {
     let mut reg = load_project_registry(&app)?;
     if !reg.tags.contains(&clean) {
         reg.tags.push(clean.clone());
-        save_project_registry(&app, &reg)?;
     }
+    if let Some(s) = scope {
+        if !s.is_empty() {
+            reg.tag_scopes.insert(clean.clone(), s);
+        }
+    }
+    save_project_registry(&app, &reg)?;
     Ok(clean)
 }
 
@@ -526,6 +572,7 @@ pub fn delete_tag(app: AppHandle, tag: String) -> Result<(), String> {
     let clean = tag.trim().trim_start_matches('#').to_lowercase();
     let mut reg = load_project_registry(&app)?;
     reg.tags.retain(|t| t != &clean);
+    reg.tag_scopes.remove(&clean);
     save_project_registry(&app, &reg)?;
     Ok(())
 }
@@ -600,11 +647,11 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
         .into_iter()
         .map(|c| (c.id, (c.name, c.color, c.status)))
         .collect();
-    let project_map: std::collections::HashMap<String, (String, String, String, Option<String>)> =
+    let project_map: std::collections::HashMap<String, (String, String, String, Option<String>, String)> =
         registry
             .projects
             .into_iter()
-            .map(|p| (p.id, (p.name, p.color, p.status, p.customer_id)))
+            .map(|p| (p.id, (p.name, p.color, p.status, p.customer_id, p.scope)))
             .collect();
 
     let entries = fs::read_dir(&dir).map_err(|e| format!("Read dir failed: {}", e))?;
@@ -629,20 +676,21 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
         let segment_count: usize = data.chunks.iter().map(|c| c.segments.len()).sum();
         seen_new_ids.insert(id.to_string());
 
-        let (project_name, project_color, project_status, proj_cust_id) =
+        let (project_name, project_color, project_status, proj_cust_id, proj_scope) =
             if let Some(ref pid) = data.project_id {
-                if let Some((pname, pcol, pstat, cid)) = project_map.get(pid) {
+                if let Some((pname, pcol, pstat, cid, pscope)) = project_map.get(pid) {
                     (
                         Some(pname.clone()),
                         Some(pcol.clone()),
                         Some(pstat.clone()),
                         cid.clone(),
+                        Some(pscope.clone()),
                     )
                 } else {
-                    (None, None, None, None)
+                    (None, None, None, None, None)
                 }
             } else {
-                (None, None, None, None)
+                (None, None, None, None, None)
             };
 
         let effective_cust_id = data.customer_id.clone().or(proj_cust_id);
@@ -672,6 +720,16 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
                 .map(|m| !m.trim().is_empty())
                 .unwrap_or(false);
 
+        let scope = data.scope.clone().unwrap_or_else(|| {
+            if let Some(ref ps) = proj_scope {
+                return ps.clone();
+            }
+            if effective_cust_id.is_some() {
+                return "work".to_string();
+            }
+            "work".to_string()
+        });
+
         items.push(SessionListItem {
             id: data.id,
             title: data.title,
@@ -694,6 +752,7 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
             project_color,
             project_status,
             category: data.category,
+            scope,
         });
     }
 
@@ -733,6 +792,7 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
             project_color: None,
             project_status: None,
             category: None,
+            scope: "work".to_string(),
         });
     }
 
@@ -792,7 +852,7 @@ pub fn delete_sessions(app: AppHandle, ids: Vec<String>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn update_session_title(app: AppHandle, id: String, title: String) -> Result<(), String> {
-    update_session_metadata(app, id, Some(title), None, None, None, None)
+    update_session_metadata(app, id, Some(title), None, None, None, None, None)
 }
 
 #[tauri::command]
@@ -804,6 +864,7 @@ pub fn update_session_metadata(
     project_id: Option<String>,
     category: Option<String>,
     tags: Option<Vec<String>>,
+    scope: Option<String>,
 ) -> Result<(), String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
@@ -836,6 +897,13 @@ pub fn update_session_metadata(
             Some(cat.trim().to_string())
         };
     }
+    if let Some(sc) = scope {
+        data.scope = if sc.trim().is_empty() {
+            None
+        } else {
+            Some(sc.trim().to_string())
+        };
+    }
     if let Some(t_list) = tags {
         let clean_tags: Vec<String> = t_list
             .into_iter()
@@ -863,7 +931,7 @@ pub fn update_session_metadata(
 
 #[tauri::command]
 pub fn update_session_tags(app: AppHandle, id: String, tags: Vec<String>) -> Result<(), String> {
-    update_session_metadata(app, id, None, None, None, None, Some(tags))
+    update_session_metadata(app, id, None, None, None, None, Some(tags), None)
 }
 
 #[tauri::command]
@@ -2349,6 +2417,7 @@ start_sec must be the approximate offset in seconds.";
         customer_id,
         project_id,
         category,
+        scope: None,
         meeting_minutes: None,
         meeting_minutes_lang: None,
         meeting_minutes_ja: None,
@@ -2588,6 +2657,7 @@ mod tests {
             customer_id: None,
             project_id: None,
             category: Some("Weekly".to_string()),
+            scope: Some("work".to_string()),
             meeting_minutes: None,
             meeting_minutes_lang: Some("vi".to_string()),
             meeting_minutes_ja: None,
@@ -2675,6 +2745,7 @@ mod tests {
             customer_id: None,
             project_id: None,
             category: None,
+            scope: None,
             meeting_minutes: None,
             meeting_minutes_lang: None,
             meeting_minutes_ja: None,
@@ -2722,6 +2793,7 @@ mod tests {
             customer_id: None,
             project_id: None,
             category: None,
+            scope: None,
             meeting_minutes: None,
             meeting_minutes_lang: None,
             meeting_minutes_ja: None,
@@ -2757,6 +2829,7 @@ mod tests {
             project_color: None,
             project_status: None,
             category: Some("Review".to_string()),
+            scope: "work".to_string(),
         };
 
         // Match title (case-insensitive)

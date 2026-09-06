@@ -30,10 +30,16 @@ const DEFAULT_SETTINGS = {
   show_original: true,
   translation_mode: 'gemini',
   inactivity_timeout_min: 10,
-  custom_context: null,
   template_notes: '',
   template_minutes_vi: '',
   template_minutes_ja: '',
+  template_minutes_tech_vi: '',
+  template_minutes_tech_ja: '',
+  template_minutes_1on1_vi: '',
+  template_minutes_1on1_ja: '',
+  template_minutes_personal_vi: '',
+  template_minutes_personal_ja: '',
+  default_logs_scope: 'work',
 };
 
 class SettingsManager {

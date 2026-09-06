@@ -74,7 +74,7 @@
               <polyline points="17 21 17 13 7 13 7 21" />
               <polyline points="7 3 7 8 15 8" />
             </svg>
-            <span id="btn-stop-label">S<u>t</u>op</span>
+            <span id="btn-stop-label">Save & S<u>t</u>op</span>
           </button>
 
           <!-- Live Meeting Duration -->
@@ -202,6 +202,10 @@
           </div>
           <div class="notes-tools-meta">
             <div class="notes-sep"></div>
+            <select id="select-note-scope" class="note-meta-select" title="Phạm vi: Công việc hoặc Cá nhân">
+              <option value="work">💼 Công việc</option>
+              <option value="personal">👤 Cá nhân</option>
+            </select>
             <select id="select-note-customer" class="note-meta-select" title="Gán Khách hàng cho cuộc họp">
               <option value="">🏢 Khách hàng...</option>
             </select>
@@ -238,17 +242,30 @@
     <div id="library-panel" class="activity-panel" data-activity="library">
       <!-- Session list -->
       <div id="sessions-list-panel" class="sessions-body">
-        <div class="sessions-list-toolbar">
-          <div class="sessions-list-toolbar-left">
-            <span class="sessions-list-title">📚 Cuộc họp đã lưu</span>
-          </div>
+        <div class="sessions-list-header-bar">
+          <span class="sessions-list-title">📚 Cuộc họp đã lưu</span>
           <div class="sessions-list-toolbar-right">
             <button type="button" id="btn-open-import-audio" class="btn-primary small btn-import-audio" title="Import file ghi âm cuộc họp (WAV, MP3, M4A, AAC, OGG, FLAC...)">
               📥 Import file ghi âm
             </button>
           </div>
         </div>
-        <div id="sessions-list"></div>
+
+        <div class="logs-folder-tab-bar folder-tab-bar" id="logs-scope-tabs" role="tablist">
+          <button type="button" class="logs-scope-tab folder-tab-btn active" data-scope="work" id="scope-tab-work" title="Các cuộc họp công việc & khách hàng">
+            💼 Công việc (<span id="scope-count-work">0</span>)
+          </button>
+          <button type="button" class="logs-scope-tab folder-tab-btn" data-scope="personal" id="scope-tab-personal" title="Các cuộc họp & ghi chép cá nhân">
+            👤 Cá nhân (<span id="scope-count-personal">0</span>)
+          </button>
+          <button type="button" class="logs-scope-tab folder-tab-btn" data-scope="all" id="scope-tab-all" title="Toàn bộ danh sách cuộc họp">
+            📑 Tất cả (<span id="scope-count-all">0</span>)
+          </button>
+        </div>
+
+        <div class="logs-folder-tab-pane folder-tab-pane" id="logs-content-pane">
+          <div id="sessions-list"></div>
+        </div>
       </div>
 
       <!-- Session viewer (shown when a session is selected) -->
@@ -281,16 +298,16 @@
         </div>
 
         <!-- 3-Tab Bar: Minutes | Notes | Logs + Metadata Bar -->
-        <div class="session-nav-tabbar">
-          <div class="session-nav-tab-group">
-            <button type="button" class="session-nav-tab active" data-tab="minutes" id="tab-btn-minutes">
+        <div class="session-nav-tabbar folder-tab-bar">
+          <div class="session-nav-tab-group folder-tabs">
+            <button type="button" class="session-nav-tab folder-tab-btn active" data-tab="minutes" id="tab-btn-minutes">
               <span>📋</span> Minutes
               <span id="tab-badge-minutes" class="session-tab-badge" style="display:none">✓</span>
             </button>
-            <button type="button" class="session-nav-tab" data-tab="notes" id="tab-btn-notes">
+            <button type="button" class="session-nav-tab folder-tab-btn" data-tab="notes" id="tab-btn-notes">
               <span>📝</span> Notes
             </button>
-            <button type="button" class="session-nav-tab" data-tab="logs" id="tab-btn-logs">
+            <button type="button" class="session-nav-tab folder-tab-btn" data-tab="logs" id="tab-btn-logs">
               <span>📜</span> Logs
             </button>
           </div>
@@ -303,18 +320,21 @@
         </div>
 
         <!-- TAB 1: MINUTES -->
-        <div id="session-tab-panel-minutes" class="session-tab-panel active">
+        <div id="session-tab-panel-minutes" class="session-tab-panel folder-tab-panel active">
           <!-- Sub-tabs: JA & VI + Actions (Same row, right-aligned) -->
           <div class="minutes-subtab-bar">
-            <div class="minutes-subtab-group">
-              <button type="button" class="minutes-subtab active" id="subtab-btn-minutes-ja" data-lang="ja" title="Biên bản cuộc họp Tiếng Nhật">
-                <span>🇯🇵 Tiếng Nhật (日本語)</span>
-                <span class="subtab-badge" id="subtab-badge-minutes-ja" style="display:none">✓ Đã có</span>
-              </button>
-              <button type="button" class="minutes-subtab" id="subtab-btn-minutes-vi" data-lang="vi" title="Biên bản cuộc họp Tiếng Việt">
-                <span>🇻🇳 Tiếng Việt</span>
-                <span class="subtab-badge" id="subtab-badge-minutes-vi" style="display:none">✓ Đã có</span>
-              </button>
+            <div class="minutes-subtab-container">
+              <span class="minutes-subtab-label">🌐 Ngôn ngữ biên bản:</span>
+              <div class="minutes-subtab-group">
+                <button type="button" class="minutes-subtab active" id="subtab-btn-minutes-ja" data-lang="ja" title="Biên bản cuộc họp Tiếng Nhật">
+                  <span>🇯🇵 Tiếng Nhật (日本語)</span>
+                  <span class="subtab-badge" id="subtab-badge-minutes-ja" style="display:none">✓ Đã có</span>
+                </button>
+                <button type="button" class="minutes-subtab" id="subtab-btn-minutes-vi" data-lang="vi" title="Biên bản cuộc họp Tiếng Việt">
+                  <span>🇻🇳 Tiếng Việt</span>
+                  <span class="subtab-badge" id="subtab-badge-minutes-vi" style="display:none">✓ Đã có</span>
+                </button>
+              </div>
             </div>
             <div class="minutes-actions-group">
               <button type="button" id="btn-minutes-regenerate" class="btn-secondary small" title="Yêu cầu AI tạo lại biên bản cho ngôn ngữ đang chọn">🔄 Tạo lại (AI)</button>
@@ -342,7 +362,7 @@
         </div>
 
         <!-- TAB 2: NOTES -->
-        <div id="session-tab-panel-notes" class="session-tab-panel" style="display:none">
+        <div id="session-tab-panel-notes" class="session-tab-panel folder-tab-panel" style="display:none">
           <div class="session-tab-subbar">
             <div class="session-tab-subbar-left">
               <span class="subbar-info">📝 Ghi chú do bạn tự nhập trong và sau cuộc họp</span>
@@ -359,7 +379,7 @@
         </div>
 
         <!-- TAB 3: LOGS -->
-        <div id="session-tab-panel-logs" class="session-tab-panel" style="display:none">
+        <div id="session-tab-panel-logs" class="session-tab-panel folder-tab-panel" style="display:none">
           <div class="session-tab-subbar">
             <div class="session-tab-subbar-left">
               <button type="button" id="btn-session-retranscript" class="btn-primary small" title="Dùng file ghi âm để Gemini tạo lại toàn bộ Logs">🔄 Re-transcript</button>
@@ -436,8 +456,12 @@
             <span class="settings-nav-label">Hiển thị & Giao diện</span>
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-templates">
-            <span class="settings-nav-icon">📑</span>
-            <span class="settings-nav-label">Mẫu (Templates)</span>
+            <span class="settings-nav-icon">📋</span>
+            <span class="settings-nav-label">Meeting Minutes Template</span>
+          </button>
+          <button type="button" class="settings-nav-item" data-screen="tab-notes-template">
+            <span class="settings-nav-icon">📝</span>
+            <span class="settings-nav-label">Note Template</span>
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-storage">
             <span class="settings-nav-icon">📂</span>
@@ -468,15 +492,32 @@
         <div class="settings-tab-content" id="tab-projects">
           <div class="settings-panel-header">
             <h3 class="settings-panel-title">📁 Quản lý Dự án</h3>
-            <div class="settings-panel-actions">
-              <select id="select-settings-proj-cust-filter" class="modal-input modal-select filter-sm" style="max-width: 170px; padding: 5px 8px; font-size: 12px;">
-                <option value="">🏢 Tất cả khách hàng</option>
-              </select>
-              <input type="text" id="input-search-projects" class="modal-input search-sm" placeholder="🔍 Tìm dự án..." style="width: 150px; padding: 5px 10px; font-size: 12px;" />
+          </div>
+
+          <div class="folder-tab-bar" id="projects-scope-tabs" role="tablist">
+            <button type="button" class="folder-tab-btn active" data-scope="work" id="proj-scope-tab-work">
+              💼 Công việc (<span id="proj-scope-count-work">0</span>)
+            </button>
+            <button type="button" class="folder-tab-btn" data-scope="personal" id="proj-scope-tab-personal">
+              👤 Cá nhân (<span id="proj-scope-count-personal">0</span>)
+            </button>
+            <button type="button" class="folder-tab-btn" data-scope="" id="proj-scope-tab-all">
+              📑 Tất cả (<span id="proj-scope-count-all">0</span>)
+            </button>
+          </div>
+
+          <div class="folder-tab-pane" id="projects-folder-pane">
+            <div class="mgr-pane-toolbar" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px; flex-wrap:wrap;">
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <select id="select-settings-proj-cust-filter" class="modal-input modal-select filter-sm" style="max-width: 180px; padding: 5px 8px; font-size: 12px;">
+                  <option value="">🏢 Tất cả khách hàng</option>
+                </select>
+                <input type="text" id="input-search-projects" class="modal-input search-sm" placeholder="🔍 Tìm dự án..." style="width: 160px; padding: 5px 10px; font-size: 12px;" />
+              </div>
               <button type="button" id="btn-open-add-project" class="btn-primary-small">+ Thêm dự án</button>
             </div>
+            <div id="settings-projects-list" class="mgr-items-list"></div>
           </div>
-          <div id="settings-projects-list" class="mgr-items-list"></div>
         </div>
 
         <!-- 3. Detail: Categories -->
@@ -484,12 +525,38 @@
           <div class="settings-panel-header">
             <h3 class="settings-panel-title">📅 Phân loại cuộc họp (Categories)</h3>
           </div>
-          <div class="mgr-quick-add-row" style="display:flex; gap:8px; align-items:center; margin-bottom:14px;">
-            <input type="text" id="input-new-cat-name" class="modal-input" placeholder="Tên phân loại (vd: Sprint Planning, Sales, 1-on-1)..." style="flex:1;" />
-            <input type="color" id="input-new-cat-color" value="#10b981" class="color-picker-input" title="Chọn màu phân loại" />
-            <button type="button" id="btn-create-category" class="btn-primary-small">+ Thêm phân loại</button>
+
+          <div class="folder-tab-bar" id="categories-scope-tabs" role="tablist">
+            <button type="button" class="folder-tab-btn active" data-scope="work" id="cat-scope-tab-work">
+              💼 Công việc (<span id="cat-scope-count-work">0</span>)
+            </button>
+            <button type="button" class="folder-tab-btn" data-scope="personal" id="cat-scope-tab-personal">
+              👤 Cá nhân (<span id="cat-scope-count-personal">0</span>)
+            </button>
+            <button type="button" class="folder-tab-btn" data-scope="" id="cat-scope-tab-all">
+              📑 Tất cả (<span id="cat-scope-count-all">0</span>)
+            </button>
           </div>
-          <div id="settings-categories-list" class="mgr-items-list"></div>
+
+          <div class="folder-tab-pane" id="categories-folder-pane">
+            <div class="mgr-quick-add-row" style="display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap;">
+              <input type="text" id="input-new-cat-name" class="modal-input" placeholder="Tên phân loại (vd: Sprint Planning, Kỹ thuật, 1-on-1)..." style="flex:1; min-width:180px;" />
+              <select id="select-new-cat-template" class="modal-input modal-select" style="max-width: 200px;" title="Mẫu Minutes liên kết khi tạo tóm tắt">
+                <option value="standard">🏢 Mẫu Tiêu chuẩn / Khách hàng</option>
+                <option value="tech">💻 Mẫu Kỹ thuật / Architecture</option>
+                <option value="one_on_one">👥 Mẫu 1-on-1 / Đánh giá</option>
+                <option value="personal">👤 Mẫu Cá nhân / Tự học</option>
+              </select>
+              <select id="select-new-cat-scope" class="modal-input modal-select" style="max-width: 120px;" title="Phạm vi áp dụng">
+                <option value="work">💼 Công việc</option>
+                <option value="personal">👤 Cá nhân</option>
+                <option value="all">🌐 Cả hai</option>
+              </select>
+              <input type="color" id="input-new-cat-color" value="#10b981" class="color-picker-input" title="Chọn màu phân loại" />
+              <button type="button" id="btn-create-category" class="btn-primary-small">+ Thêm phân loại</button>
+            </div>
+            <div id="settings-categories-list" class="mgr-items-list"></div>
+          </div>
         </div>
 
         <!-- 4. Detail: Tags -->
@@ -497,11 +564,31 @@
           <div class="settings-panel-header">
             <h3 class="settings-panel-title">#️⃣ Quản lý Thẻ (Tags)</h3>
           </div>
-          <div class="mgr-quick-add-row" style="display:flex; gap:8px; align-items:center; margin-bottom:14px;">
-            <input type="text" id="input-new-tag-name" class="modal-input" placeholder="Tên thẻ (vd: frontend, backend, sprint-12)..." style="flex:1;" />
-            <button type="button" id="btn-create-tag" class="btn-primary-small">+ Thêm Thẻ</button>
+
+          <div class="folder-tab-bar" id="tags-scope-tabs" role="tablist">
+            <button type="button" class="folder-tab-btn active" data-scope="work" id="tag-scope-tab-work">
+              💼 Công việc (<span id="tag-scope-count-work">0</span>)
+            </button>
+            <button type="button" class="folder-tab-btn" data-scope="personal" id="tag-scope-tab-personal">
+              👤 Cá nhân (<span id="tag-scope-count-personal">0</span>)
+            </button>
+            <button type="button" class="folder-tab-btn" data-scope="" id="tag-scope-tab-all">
+              📑 Tất cả (<span id="tag-scope-count-all">0</span>)
+            </button>
           </div>
-          <div id="settings-tags-list" class="mgr-tags-cloud"></div>
+
+          <div class="folder-tab-pane" id="tags-folder-pane">
+            <div class="mgr-quick-add-row" style="display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap;">
+              <input type="text" id="input-new-tag-name" class="modal-input" placeholder="Tên thẻ (vd: frontend, backend, sprint-12)..." style="flex:1; min-width:180px;" />
+              <select id="select-new-tag-scope" class="modal-input modal-select" style="max-width: 120px;" title="Phạm vi áp dụng">
+                <option value="work">💼 Công việc</option>
+                <option value="personal">👤 Cá nhân</option>
+                <option value="all">🌐 Cả hai</option>
+              </select>
+              <button type="button" id="btn-create-tag" class="btn-primary-small">+ Thêm Thẻ</button>
+            </div>
+            <div id="settings-tags-list" class="mgr-items-list"></div>
+          </div>
         </div>
 
         <!-- 5. Detail: Translation -->
@@ -768,6 +855,15 @@
                 <option value="semibold">Đậm rõ nét (Semi-Bold 700)</option>
               </select>
             </div>
+            <div class="settings-grid-row" style="border-bottom: none;">
+              <span class="field-label">Tab mặc định khi mở Logs</span>
+              <select id="select-default-logs-scope" class="source-select" title="Lựa chọn tab hiển thị đầu tiên khi mở danh sách cuộc họp">
+                <option value="work">💼 Luôn mở tab Công việc (Khuyên dùng - Riêng tư)</option>
+                <option value="personal">👤 Luôn mở tab Cá nhân</option>
+                <option value="all">📑 Tất cả cuộc họp</option>
+                <option value="last">🕒 Nhớ tab mở gần nhất</option>
+              </select>
+            </div>
           </div>
 
           <!-- Note Editor Display Settings -->
@@ -845,31 +941,68 @@
           </div>
         </div>
 
-        <!-- Detail: Templates -->
+        <!-- Detail: Meeting Minutes Templates -->
         <div class="settings-tab-content" id="tab-templates">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">📑 Cài đặt Mẫu văn bản (Templates)</h3>
+            <h3 class="settings-panel-title">📋 Meeting Minutes Template</h3>
           </div>
           <div class="settings-section" style="padding-bottom: 4px;">
             <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;">
-              Tuỳ chỉnh cấu trúc mẫu Markdown cho Ghi chú (Notes) và Biên bản cuộc họp (Meeting Minutes). Khi bắt đầu take note hoặc tạo minutes bằng AI, ứng dụng sẽ tự động áp dụng đúng cấu trúc bạn đã thiết lập tại đây.
+              Cung cấp 4 Mẫu Preset chuẩn mực cho từng ngữ cảnh cuộc họp. AI sẽ tự động áp dụng đúng mẫu theo Danh mục cuộc họp. Bạn có thể xem trước hoặc tuỳ biến cấu trúc mẫu bên dưới:
             </p>
 
-            <div class="templates-subtab-bar">
-              <button type="button" class="templates-subtab active" data-template="notes" id="subtab-template-notes">📝 Mẫu Ghi chú (Notes)</button>
-              <button type="button" class="templates-subtab" data-template="minutes-ja" id="subtab-template-minutes-ja">🇯🇵 Minutes (Tiếng Nhật)</button>
-              <button type="button" class="templates-subtab" data-template="minutes-vi" id="subtab-template-minutes-vi">🇻🇳 Minutes (Tiếng Việt)</button>
+            <div class="templates-preset-bar folder-tab-bar" id="templates-preset-bar" role="tablist">
+              <button type="button" class="templates-preset-btn folder-tab-btn active" data-preset="standard">🏢 Tiêu chuẩn / Khách hàng</button>
+              <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="tech">💻 Kỹ thuật / Architecture</button>
+              <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="one_on_one">👥 1-on-1 / Đánh giá</button>
+              <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="personal">👤 Cá nhân / Tự học</button>
             </div>
 
-            <div class="template-editor-wrapper">
-              <div class="template-editor-info">
-                <span id="template-editor-hint" class="hint" style="margin:0; font-size:12px;">Biến tự động: <code>{{date}}</code>, <code>{{time}}</code>, <code>{{title}}</code></span>
-                <div class="template-editor-actions">
-                  <button type="button" id="btn-template-reset" class="btn-secondary small" title="Khôi phục mẫu mặc định ban đầu">🔄 Khôi phục mặc định</button>
-                  <button type="button" id="btn-template-save" class="btn-primary small" title="Lưu mẫu (⌘S)">💾 Lưu mẫu</button>
+            <!-- Khung bao trùm nội dung trực thuộc Preset được chọn -->
+            <div class="templates-preset-content folder-tab-pane" id="templates-preset-content">
+              <div class="templates-subtab-container" id="templates-lang-subtabs-container">
+                <span class="templates-subtab-label">🌐 Ngôn ngữ mẫu:</span>
+                <div class="templates-subtab-bar" id="templates-lang-subtabs">
+                  <button type="button" class="templates-subtab active" data-lang="vi" id="subtab-template-lang-vi">🇻🇳 Tiếng Việt</button>
+                  <button type="button" class="templates-subtab" data-lang="ja" id="subtab-template-lang-ja">🇯🇵 Tiếng Nhật</button>
                 </div>
               </div>
-              <div id="template-codemirror-container" class="template-cm-container"></div>
+
+              <div class="template-editor-wrapper">
+                <div class="template-editor-info">
+                  <span id="template-editor-hint" class="hint" style="margin:0; font-size:12px;">Biến tự động: <code>{{title}}</code>, <code>{{date}}</code>, <code>{{duration}}</code>, <code>{{participants}}</code></span>
+                  <div class="template-editor-actions">
+                    <button type="button" id="btn-template-reset" class="btn-secondary small" title="Khôi phục mẫu mặc định ban đầu">🔄 Khôi phục mặc định</button>
+                    <button type="button" id="btn-template-save" class="btn-primary small" title="Lưu mẫu (⌘S)">💾 Lưu mẫu</button>
+                  </div>
+                </div>
+                <div id="template-codemirror-container" class="template-cm-container"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detail: Note Template -->
+        <div class="settings-tab-content" id="tab-notes-template">
+          <div class="settings-panel-header">
+            <h3 class="settings-panel-title">📝 Note Template (Mẫu Ghi chú)</h3>
+          </div>
+          <div class="settings-section" style="padding-bottom: 4px;">
+            <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;">
+              Cấu trúc mẫu ghi chú mặc định khi bắt đầu cuộc họp mới hoặc tạo ghi chép nhanh. Bạn có thể tuỳ biến các đề mục bên dưới:
+            </p>
+
+            <div class="folder-tab-pane" style="border-radius: 8px;">
+              <div class="template-editor-wrapper">
+                <div class="template-editor-info">
+                  <span class="hint" style="margin:0; font-size:12px;">Biến tự động: <code>{{date}}</code>, <code>{{time}}</code>, <code>{{title}}</code></span>
+                  <div class="template-editor-actions">
+                    <button type="button" id="btn-notes-template-reset" class="btn-secondary small" title="Khôi phục mẫu ghi chú mặc định ban đầu">🔄 Khôi phục mặc định</button>
+                    <button type="button" id="btn-notes-template-save" class="btn-primary small" title="Lưu mẫu ghi chú (⌘S)">💾 Lưu mẫu</button>
+                  </div>
+                </div>
+                <div id="notes-template-codemirror-container" class="template-cm-container"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -967,7 +1100,7 @@
       <h3 class="shortcut-title">⌨️ Phím tắt</h3>
       <table class="shortcut-table">
         <tr><td><kbd>⌘S</kbd> / <kbd>⌘P</kbd> / <kbd>⌘C</kbd></td><td>Start / Pause / Continue</td></tr>
-        <tr><td><kbd>⌘T</kbd></td><td>Kết thúc cuộc họp & Lưu (Stop)</td></tr>
+        <tr><td><kbd>⌘T</kbd></td><td>Kết thúc cuộc họp & Lưu (Save & Stop)</td></tr>
         <tr><td><kbd>⌘N</kbd></td><td>Mở / Đóng ghi chú (Take Note)</td></tr>
         <tr><td><kbd>⌘1</kbd> / <kbd>⌘2</kbd> / <kbd>⌘3</kbd></td><td>Nguồn: System / Mic / Cả 2</td></tr>
         <tr><td><kbd>⌘,</kbd></td><td>Mở Cài đặt</td></tr>
@@ -1123,18 +1256,32 @@
         <button type="button" id="btn-close-confirm-stop" class="icon-btn close-btn" title="Đóng">×</button>
       </div>
       <div class="modal-body">
+        <div style="margin-bottom: 12px;">
+          <label class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Phạm vi cuộc họp:</label>
+          <div class="scope-choice-group" id="stop-meeting-scope-group" style="display:flex; gap:8px;">
+            <label class="scope-radio-btn active" id="label-stop-scope-work">
+              <input type="radio" name="stop-meeting-scope" value="work" checked />
+              <span>💼 Công việc</span>
+            </label>
+            <label class="scope-radio-btn" id="label-stop-scope-personal">
+              <input type="radio" name="stop-meeting-scope" value="personal" />
+              <span>👤 Cá nhân</span>
+            </label>
+          </div>
+        </div>
+
         <label for="input-stop-meeting-title" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tên cuộc họp:</label>
         <input type="text" id="input-stop-meeting-title" class="modal-input" placeholder="MM_20260901_11:00" />
         
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-          <div>
+        <div id="stop-customer-project-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+          <div id="stop-customer-field-wrap">
             <label for="select-stop-meeting-customer" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🏢 Khách hàng:</label>
             <select id="select-stop-meeting-customer" class="modal-input modal-select">
               <option value="">(Không chọn KH)</option>
             </select>
           </div>
-          <div>
-            <label for="select-stop-meeting-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">📁 Dự án (Active):</label>
+          <div id="stop-project-field-wrap">
+            <label for="select-stop-meeting-project" id="label-stop-meeting-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">📁 Dự án (Active):</label>
             <select id="select-stop-meeting-project" class="modal-input modal-select">
               <option value="">(Không gán dự án)</option>
             </select>
@@ -1285,18 +1432,32 @@
         <button type="button" id="btn-close-edit-tags" class="icon-btn close-btn">×</button>
       </div>
       <div class="modal-body">
+        <div style="margin-bottom: 12px;">
+          <label class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Phạm vi cuộc họp:</label>
+          <div class="scope-choice-group" id="edit-session-scope-group" style="display:flex; gap:8px;">
+            <label class="scope-radio-btn active" id="label-edit-scope-work">
+              <input type="radio" name="edit-session-scope" value="work" checked />
+              <span>💼 Công việc</span>
+            </label>
+            <label class="scope-radio-btn" id="label-edit-scope-personal">
+              <input type="radio" name="edit-session-scope" value="personal" />
+              <span>👤 Cá nhân</span>
+            </label>
+          </div>
+        </div>
+
         <label for="input-edit-session-title" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tiêu đề cuộc họp:</label>
         <input type="text" id="input-edit-session-title" class="modal-input" />
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-          <div>
+        <div id="edit-customer-project-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+          <div id="edit-customer-field-wrap">
             <label for="select-edit-session-customer" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🏢 Khách hàng:</label>
             <select id="select-edit-session-customer" class="modal-input modal-select">
               <option value="">(Không chọn KH)</option>
             </select>
           </div>
-          <div>
-            <label for="select-edit-session-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">📁 Dự án:</label>
+          <div id="edit-project-field-wrap">
+            <label for="select-edit-session-project" id="label-edit-session-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">📁 Dự án:</label>
             <select id="select-edit-session-project" class="modal-input modal-select">
               <option value="">(Không gán dự án)</option>
             </select>
@@ -1386,15 +1547,29 @@
     </div>
   </div>
 
-  <!-- ═══════════════════ ADD PROJECT MODAL ═══════════════════ -->
+  <!-- ═══════════════════ ADD / EDIT PROJECT MODAL ═══════════════════ -->
   <div id="modal-add-project" class="modal-overlay" style="display:none">
     <div class="modal-card" style="max-width: 460px;">
       <div class="modal-header">
-        <h3>📁 Thêm Dự án mới</h3>
+        <h3 id="modal-proj-title">📁 Thêm Dự án mới</h3>
         <button type="button" id="btn-close-add-project" class="icon-btn close-btn">×</button>
       </div>
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+        <input type="hidden" id="input-modal-proj-id" value="" />
         <div>
+          <label class="field-label" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Phạm vi dự án:</label>
+          <div class="scope-choice-group" id="modal-proj-scope-group" style="display:flex; gap:8px;">
+            <label class="scope-radio-btn active" id="label-modal-proj-scope-work">
+              <input type="radio" name="modal-proj-scope" value="work" checked />
+              <span>💼 Công việc</span>
+            </label>
+            <label class="scope-radio-btn" id="label-modal-proj-scope-personal">
+              <input type="radio" name="modal-proj-scope" value="personal" />
+              <span>👤 Cá nhân</span>
+            </label>
+          </div>
+        </div>
+        <div id="modal-proj-customer-wrap">
           <label class="field-label" for="select-modal-proj-customer" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Khách hàng trực thuộc:</label>
           <select id="select-modal-proj-customer" class="modal-input modal-select">
             <option value="">(Không chọn KH / Dự án nội bộ)</option>
@@ -1418,6 +1593,79 @@
       <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
         <button type="button" id="btn-cancel-add-project" class="secondary-btn">Huỷ</button>
         <button type="button" id="btn-save-add-project" class="primary-action-btn">+ Tạo Dự án</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ EDIT CATEGORY MODAL ═══════════════════ -->
+  <div id="modal-edit-category" class="modal-overlay" style="display:none">
+    <div class="modal-card" style="max-width: 460px;">
+      <div class="modal-header">
+        <h3 id="modal-cat-title">📅 Chỉnh sửa Phân loại</h3>
+        <button type="button" id="btn-close-edit-category" class="icon-btn close-btn">×</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+        <input type="hidden" id="input-modal-cat-id" value="" />
+        <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: flex-end;">
+          <div>
+            <label class="field-label" for="input-modal-cat-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Tên phân loại (*):</label>
+            <input type="text" id="input-modal-cat-name" class="modal-input" placeholder="Tên phân loại..." />
+          </div>
+          <div>
+            <label class="field-label" for="input-modal-cat-color" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Màu nhận diện:</label>
+            <input type="color" id="input-modal-cat-color" value="#10b981" class="color-picker-input" title="Chọn màu" />
+          </div>
+        </div>
+        <div>
+          <label class="field-label" for="select-modal-cat-scope" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Phạm vi áp dụng:</label>
+          <select id="select-modal-cat-scope" class="modal-input modal-select">
+            <option value="work">💼 Công việc</option>
+            <option value="personal">👤 Cá nhân</option>
+            <option value="all">🌐 Cả hai</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="select-modal-cat-template" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Mẫu biên bản liên kết (Template):</label>
+          <select id="select-modal-cat-template" class="modal-input modal-select">
+            <option value="standard">🏢 Mẫu Tiêu chuẩn / Khách hàng</option>
+            <option value="tech">💻 Mẫu Kỹ thuật / Architecture</option>
+            <option value="one_on_one">👥 Mẫu 1-on-1 / Đánh giá</option>
+            <option value="personal">👤 Mẫu Cá nhân / Tự học</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button type="button" id="btn-cancel-edit-category" class="secondary-btn">Huỷ</button>
+        <button type="button" id="btn-save-edit-category" class="primary-action-btn">Lưu thay đổi</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ EDIT TAG MODAL ═══════════════════ -->
+  <div id="modal-edit-tag" class="modal-overlay" style="display:none">
+    <div class="modal-card" style="max-width: 400px;">
+      <div class="modal-header">
+        <h3 id="modal-tag-title">#️⃣ Chỉnh sửa Thẻ</h3>
+        <button type="button" id="btn-close-edit-tag" class="icon-btn close-btn">×</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+        <input type="hidden" id="input-modal-tag-old-name" value="" />
+        <div>
+          <label class="field-label" for="input-modal-tag-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Tên thẻ (*):</label>
+          <input type="text" id="input-modal-tag-name" class="modal-input" placeholder="Tên thẻ..." />
+        </div>
+        <div>
+          <label class="field-label" for="select-modal-tag-scope" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Phạm vi áp dụng:</label>
+          <select id="select-modal-tag-scope" class="modal-input modal-select">
+            <option value="work">💼 Công việc</option>
+            <option value="personal">👤 Cá nhân</option>
+            <option value="all">🌐 Cả hai</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button type="button" id="btn-cancel-edit-tag" class="secondary-btn">Huỷ</button>
+        <button type="button" id="btn-save-edit-tag" class="primary-action-btn">Lưu thay đổi</button>
       </div>
     </div>
   </div>
