@@ -3242,6 +3242,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .logs-col-check { width: 42px; }
 .logs-col-index { width: 48px; }
 .logs-col-title { width: 30%; }
+.logs-col-date { width: 130px; }
 .logs-col-customer { width: 15%; }
 .logs-col-project { width: 15%; }
 .logs-col-category { width: 12%; }
@@ -3386,6 +3387,11 @@ input[type="range"]::-webkit-slider-thumb:hover {
   width: 1%;
   white-space: nowrap;
   text-align: center;
+  font-size: var(--table-font-size, 13px);
+}
+
+.logs-date {
+  white-space: nowrap;
   font-size: var(--table-font-size, 13px);
 }
 
