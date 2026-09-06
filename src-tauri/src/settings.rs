@@ -82,6 +82,12 @@ pub struct Settings {
     pub show_original: bool,
     /// Translation mode: "soniox" | "local" | "openai"
     pub translation_mode: String,
+    /// Translation timing: "on_pause" (whole sentence) | "realtime"
+    #[serde(default = "default_translation_timing")]
+    pub translation_timing: String,
+    /// Endpoint delay in milliseconds for endpoint-based providers
+    #[serde(default = "default_endpoint_delay")]
+    pub endpoint_delay: u32,
     /// Optional custom context for better transcription
     pub custom_context: Option<CustomContext>,
     /// ElevenLabs API key for TTS narration
@@ -200,6 +206,8 @@ impl Default for Settings {
             max_lines: 5,
             show_original: true,
             translation_mode: "gemini".to_string(),
+            translation_timing: default_translation_timing(),
+            endpoint_delay: default_endpoint_delay(),
             custom_context: None,
             elevenlabs_api_key: String::new(),
             tts_enabled: false,
@@ -241,6 +249,14 @@ impl Default for Settings {
 
 fn default_logs_scope_setting() -> String {
     "work".to_string()
+}
+
+fn default_translation_timing() -> String {
+    "on_pause".to_string()
+}
+
+fn default_endpoint_delay() -> u32 {
+    3000
 }
 
 fn default_overlay_opacity() -> f64 {
@@ -370,6 +386,8 @@ mod tests {
         assert!((s.overlay_opacity - 0.85).abs() < f64::EPSILON);
         assert_eq!(s.tts_provider, "edge");
         assert_eq!(s.inactivity_timeout_min, 10);
+        assert_eq!(s.translation_timing, "on_pause");
+        assert_eq!(s.endpoint_delay, 3000);
         assert!(s.show_original);
         assert!(s.tts_auto_read);
         assert!(!s.tts_enabled);
@@ -390,6 +408,8 @@ mod tests {
         assert_eq!(s.table_font_size, 13);
         assert_eq!(s.table_font_weight, "medium");
         assert_eq!(s.inactivity_timeout_min, 10);
+        assert_eq!(s.translation_timing, "on_pause");
+        assert_eq!(s.endpoint_delay, 3000);
         assert_eq!(s.font_color, "#ffffff");
     }
 

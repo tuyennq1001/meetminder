@@ -45,6 +45,8 @@ if (!window.__TAURI__ && location.port === '3111') {
         table_font_weight: 'medium',
         font_color: '#ffffff',
         font_family: 'system',
+        translation_timing: 'on_pause',
+        endpoint_delay: 3000,
     };
 
     // Sample local (Piper) voice catalog so the download/delete UI can be exercised.

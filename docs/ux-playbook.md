@@ -94,6 +94,10 @@ review.
   phải đoán icon.
 - Khi đóng bằng Escape, hãy chạy cùng cleanup path với Cancel để Promise,
   timer, suggestion list và dữ liệu tạm không bị bỏ lại.
+- Phân cấp thị giác giữa Primary Action (CTA chính như Start/Lưu) và Toggle/Utility Action (như Take Note):
+  CTA chính dùng màu bão hòa cao, glow và elevation rõ nét để dẫn dắt hành động; nút toggle phụ dùng màu
+  bão hòa thấp (tinted surface), bỏ glow chói, chỉ giữ viền và độ tương phản vừa đủ để thể hiện trạng thái
+  pressed mà không tranh chấp sự chú ý với CTA chính.
 
 ### Khoảng trống cần chuẩn hóa ở dự án mới
 
