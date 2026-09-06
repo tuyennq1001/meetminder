@@ -352,7 +352,17 @@ class App {
         this._minutesDismissTimeout = null;
         this._suppressNextShowSessions = false;
         this._sessionNameQuery = '';
+        // Logs table sort: default newest first, restore the user's last choice.
         this._sessionSort = { field: 'created_at', dir: 'desc' };
+        try {
+            const savedSort = JSON.parse(localStorage.getItem('meet_minder_logs_sort') || 'null');
+            const validFields = ['created_at', 'title', 'customer_name', 'project_name', 'category', 'tags'];
+            if (savedSort && validFields.includes(savedSort.field) && ['asc', 'desc'].includes(savedSort.dir)) {
+                this._sessionSort = { field: savedSort.field, dir: savedSort.dir };
+            }
+        } catch (_) {
+            // keep default sort
+        }
         this._sessionPage = 1;
         try {
             const savedPageSize = Number(localStorage.getItem('meet_minder_logs_page_size'));
@@ -5424,7 +5434,7 @@ class App {
 
         const rows = pageItems.length
             ? pageItems.map((session, index) => this._renderSessionTableRow(session, pageStart + index + 1, isPersonalScope, isAllScope)).join('')
-            : `<tr><td class="logs-table-empty" colspan="${isPersonalScope ? 7 : 8}">Không tìm thấy log nào phù hợp bộ lọc.</td></tr>`;
+            : `<tr><td class="logs-table-empty" colspan="${isPersonalScope ? 8 : 9}">Không tìm thấy log nào phù hợp bộ lọc.</td></tr>`;
 
         const existingTable = listEl.querySelector('.logs-table');
         if (existingTable && existingTable.dataset.scope === activeScope) {
@@ -5531,8 +5541,9 @@ class App {
 
         const header = `<tr class="logs-column-header">
                 <th class="logs-check-column"><input id="chk-select-all-sessions" type="checkbox" title="Chọn tất cả log đang lọc"></th>
-                <th class="sortable" data-sort="created_at"># <span>${sortIcon('created_at')}</span></th>
+                <th>#</th>
                 <th class="sortable" data-sort="title">Tên log <span>${sortIcon('title')}</span></th>
+                <th class="sortable" data-sort="created_at">Ngày <span>${sortIcon('created_at')}</span></th>
                 ${customerHeader}
                 <th class="sortable" data-sort="project_name">${projectHeaderTitle} <span>${sortIcon('project_name')}</span></th>
                 <th class="sortable" data-sort="category">Category <span>${sortIcon('category')}</span></th>
@@ -5544,6 +5555,7 @@ class App {
                     <button type="button" class="btn-danger-small logs-delete-selected ${selectedCount ? 'is-visible' : ''}" data-batch-delete ${selectedCount ? '' : 'disabled'} title="Xóa các log đã chọn">🗑 Xoá (${selectedCount})</button>
                 </td>
                 <td><input type="search" class="logs-filter-input" data-filter-name value="${this._escAttr(this._sessionNameQuery)}" placeholder="Lọc tên log"></td>
+                <td></td>
                 ${customerFilterCell}
                 <td><select class="logs-filter-select" data-filter-select="project">${renderSelectOptions(relevantProjects, activeProject, isPersonalScope ? 'dự án cá nhân' : 'dự án')}</select></td>
                 <td><select class="logs-filter-select" data-filter-select="category">${renderSelectOptions(categories, activeCategory, 'category')}</select></td>
@@ -5555,8 +5567,8 @@ class App {
             </tr>`;
 
         const colGroup = isPersonalScope
-            ? `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`
-            : `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-customer"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`;
+            ? `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`
+            : `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-customer"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`;
 
         listEl.innerHTML = `<div class="logs-table-container"><table class="logs-table" data-scope="${activeScope}">${colGroup}<thead>${header}</thead><tbody>${rows}</tbody></table></div>
             <div class="session-pagination">
@@ -5570,6 +5582,20 @@ class App {
         if (selectAllCheckbox) {
             selectAllCheckbox.checked = allFilteredSelected;
             selectAllCheckbox.indeterminate = selectedInFiltered > 0 && !allFilteredSelected;
+        }
+    }
+
+    _formatSessionDate(iso) {
+        // Display session created_at (ISO UTC) as local dd/MM/yyyy HH:mm.
+        // Falls back to the raw value when parsing fails.
+        try {
+            if (!iso) return '<span class="logs-empty-value">—</span>';
+            const d = new Date(iso);
+            if (Number.isNaN(d.getTime())) return this._esc(String(iso).slice(0, 16));
+            const p = n => String(n).padStart(2, '0');
+            return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+        } catch (_) {
+            return this._esc(String(iso || '').slice(0, 16));
         }
     }
 
@@ -5593,6 +5619,7 @@ class App {
             <td class="logs-check-column"><input type="checkbox" data-session-check="${this._escAttr(session.id)}" ${this._selectedSessionIds.has(session.id) ? 'checked' : ''}></td>
             <td class="logs-index">${number}</td>
             <td class="logs-title-cell"><button type="button" class="logs-title-link" data-open-session="${this._escAttr(session.id)}">${scopeBadge}${this._esc(session.title || 'Cuộc họp chưa đặt tên')}</button></td>
+            <td class="logs-date">${this._formatSessionDate(session.created_at)}</td>
             ${customerTd}<td>${project}</td><td>${category}</td><td><div class="logs-tags">${tags}</div></td>
             <td><div class="logs-actions">${retranscriptButton}${editButton}<button type="button" class="session-btn-action" data-copy-session="${this._escAttr(session.id)}" title="Copy nội dung">⧉</button><button type="button" class="session-delete-btn" data-delete-session="${this._escAttr(session.id)}" title="Xoá log">×</button></div></td>
         </tr>`;
@@ -5699,6 +5726,7 @@ class App {
             this._sessionSort = this._sessionSort.field === field
                 ? { field, dir: this._sessionSort.dir === 'asc' ? 'desc' : 'asc' }
                 : { field, dir: 'asc' };
+            try { localStorage.setItem('meet_minder_logs_sort', JSON.stringify(this._sessionSort)); } catch (_) {}
             this._sessionPage = 1;
             this._renderFilteredSessions();
         }));
