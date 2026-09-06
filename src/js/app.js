@@ -18,7 +18,7 @@ const { invoke, Channel } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
 
 const LANGUAGE_DISPLAY = {
-    auto: ['🌐', 'Tự động'], en: ['🇬🇧', 'English'], ja: ['🇯🇵', '日本語'],
+    auto: ['🌐', 'Auto'], en: ['🇬🇧', 'English'], ja: ['🇯🇵', '日本語'],
     ko: ['🇰🇷', '한국어'], zh: ['🇨🇳', '中文'], vi: ['🇻🇳', 'Tiếng Việt'],
     fr: ['🇫🇷', 'Français'], de: ['🇩🇪', 'Deutsch'], es: ['🇪🇸', 'Español'],
     th: ['🇹🇭', 'ไทย'], id: ['🇮🇩', 'Bahasa Indonesia'], pt: ['🇵🇹', 'Português'],
@@ -1199,11 +1199,6 @@ class App {
             await this._handleQuickLangSwap();
         });
 
-        // Translation Timing select pulldown (Realtime vs Chờ dứt câu)
-        document.getElementById('select-translation-timing')?.addEventListener('change', async (e) => {
-            await this._setTranslationTiming(e.target.value);
-        });
-
         // Font size quick controls
         document.getElementById('btn-font-up')?.addEventListener('click', () => this._adjustFontSize(4));
         document.getElementById('btn-font-down')?.addEventListener('click', () => this._adjustFontSize(-4));
@@ -1422,6 +1417,11 @@ class App {
             if (this.isRunning) {
                 await this._hotSwapToEngine(newMode);
             }
+        });
+
+        // Translation timing (configured in Settings, not the compact toolbar)
+        document.getElementById('select-translation-timing')?.addEventListener('change', async (e) => {
+            await this._setTranslationTiming(e.target.value);
         });
 
         // Inactivity timeout change
@@ -2319,6 +2319,8 @@ class App {
         if (selectTgt) selectTgt.value = s.target_language || 'vi';
         const selectTransMode = document.getElementById('select-translation-mode');
         if (selectTransMode) selectTransMode.value = s.translation_mode || 'gemini';
+        const selectTiming = document.getElementById('select-translation-timing');
+        if (selectTiming) selectTiming.value = s.translation_timing || 'on_pause';
         const inactSelect = document.getElementById('select-inactivity-timeout');
         if (inactSelect) inactSelect.value = String(s.inactivity_timeout_min ?? 10);
         this._updateModeUI(s.translation_mode || 'gemini');
@@ -2450,6 +2452,7 @@ class App {
             source_language: document.getElementById('quick-select-source-lang')?.value || settingsManager.get().source_language || 'ja',
             target_language: document.getElementById('quick-select-target-lang')?.value || settingsManager.get().target_language || 'vi',
             translation_mode: document.getElementById('select-translation-mode')?.value || 'gemini',
+            translation_timing: document.getElementById('select-translation-timing')?.value || settingsManager.get().translation_timing || 'on_pause',
             inactivity_timeout_min: parseInt(document.getElementById('select-inactivity-timeout')?.value || '10', 10),
             translation_type: 'one_way',
             language_a: 'ja',
@@ -4078,6 +4081,43 @@ class App {
         }
     }
 
+    _getKnownTagsForScope(scope = 'work') {
+        const reg = this._projectRegistry || { tags: [], tag_scopes: {} };
+        const sessions = this._cachedSessions || [];
+        const tagScopes = reg.tag_scopes || {};
+        const allTagNames = new Set();
+
+        const normalizeTag = (value) => String(value || '').trim().replace(/^#+/, '').toLowerCase();
+        for (const tag of reg.tags || []) {
+            const cleanTag = normalizeTag(tag);
+            if (cleanTag) allTagNames.add(cleanTag);
+        }
+        for (const session of sessions) {
+            for (const tag of session.tags || []) {
+                const cleanTag = normalizeTag(tag);
+                if (cleanTag) allTagNames.add(cleanTag);
+            }
+        }
+
+        return Array.from(allTagNames)
+            .filter((tag) => {
+                const declaredScope = tagScopes[tag] || tagScopes[`#${tag}`];
+                if (declaredScope === 'all') return true;
+                if (declaredScope === 'work' || declaredScope === 'personal') {
+                    return declaredScope === scope;
+                }
+
+                const matchingSessions = sessions.filter((session) =>
+                    (session.tags || []).some((sessionTag) => normalizeTag(sessionTag) === tag)
+                );
+                if (matchingSessions.length === 0) return scope === 'work';
+                return matchingSessions.some((session) =>
+                    (session.scope || 'work') === scope
+                );
+            })
+            .sort((a, b) => a.localeCompare(b));
+    }
+
     _setupTagAutocomplete(inputEl, suggestionsBoxEl, knownTags = []) {
         if (!inputEl) return () => {};
 
@@ -4120,6 +4160,7 @@ class App {
         inlineInput.className = 'tag-tokenize-input';
         inlineInput.autocomplete = 'off';
         inlineInput.spellcheck = false;
+        inlineInput.setAttribute('aria-label', inputEl.getAttribute('aria-label') || 'Chọn tag');
 
         box.appendChild(chipsWrap);
         box.appendChild(inlineInput);
@@ -5406,7 +5447,7 @@ class App {
         const selectTiming = document.getElementById('select-translation-timing');
         if (selectTiming) selectTiming.value = timing;
         await settingsManager.save(s);
-        this._showToast(timing === 'realtime' ? '⚡ Kiểu dịch: Dịch real time' : '⏳ Kiểu dịch: Dịch hết câu', 'info');
+        this._showToast(timing === 'realtime' ? '⚡ Kiểu dịch: Dịch ngay lập tức' : '⏳ Kiểu dịch: Dịch khi hết câu', 'info');
     }
 
     _adjustFontSize(delta) {
@@ -11386,17 +11427,12 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
     _initNotesModule() {
         const btnToggleNotes = document.getElementById('btn-toggle-notes');
-        const btnClose = document.getElementById('btn-note-close');
         const btnCopy = document.getElementById('btn-note-copy');
         const editorContainer = document.getElementById('live-note-editor');
         const fmtButtons = document.querySelectorAll('.note-fmt-btn');
 
         btnToggleNotes?.addEventListener('click', () => {
             this._toggleNotesDrawer();
-        });
-
-        btnClose?.addEventListener('click', () => {
-            this._toggleNotesDrawer(false);
         });
 
         btnCopy?.addEventListener('click', async () => {
@@ -11469,6 +11505,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (selectProj && !selectProj.value) {
                 sessionStore.projectId = null;
             }
+            this._refreshNoteTagsAutocomplete();
         });
 
         selectCust?.addEventListener('change', () => {
@@ -11527,7 +11564,6 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const selectCust = document.getElementById('select-note-customer');
         const selectProj = document.getElementById('select-note-project');
         const selectCat = document.getElementById('select-note-category');
-        const datalistTags = document.getElementById('datalist-note-tags');
         const inputTags = document.getElementById('input-note-tags');
         const selectScope = document.getElementById('select-note-scope');
 
@@ -11566,20 +11602,26 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             selectCat.classList.toggle('has-value', Boolean(curCat));
         }
 
-        if (datalistTags) {
-            let tagHtml = '';
-            for (const t of (reg.tags || [])) {
-                tagHtml += `<option value="#${this._escAttr(t.name)}">`;
-            }
-            datalistTags.innerHTML = tagHtml;
-        }
-
         if (inputTags) {
             if (!inputTags.value && sessionStore.tags && sessionStore.tags.length > 0) {
                 inputTags.value = sessionStore.tags.map(t => `#${t}`).join(', ');
             }
             inputTags.classList.toggle('has-value', Boolean(inputTags.value.trim()));
         }
+
+        this._refreshNoteTagsAutocomplete();
+    }
+
+    _refreshNoteTagsAutocomplete() {
+        const inputTags = document.getElementById('input-note-tags');
+        if (!inputTags) return;
+
+        this._cleanupNoteTagsAutocomplete?.();
+        this._cleanupNoteTagsAutocomplete = this._setupTagAutocomplete(
+            inputTags,
+            null,
+            this._getKnownTagsForScope(sessionStore.scope || 'work')
+        );
     }
 
     _updateNoteProjectsDropdown(selectedCustomerId = null, targetProjectId = null, scope = null) {
@@ -11641,6 +11683,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             inputTags.value = '';
             inputTags.classList.remove('has-value');
         }
+        this._refreshNoteTagsAutocomplete();
     }
 
     _initNotesResize() {
@@ -11734,11 +11777,11 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const btnToggleNotes = document.getElementById('btn-toggle-notes');
         if (!drawer) return;
 
-        const isOpen = drawer.style.display !== 'none';
+        const isOpen = !drawer.classList.contains('is-collapsed');
         const shouldOpen = forceOpen !== null ? forceOpen : !isOpen;
 
         if (shouldOpen) {
-            drawer.style.display = 'flex';
+            drawer.classList.remove('is-collapsed');
             if (btnToggleNotes) btnToggleNotes.classList.add('active');
             this._populateNoteMetadataSelectors?.();
 
@@ -11763,8 +11806,14 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 }
             }
         } else {
-            drawer.style.display = 'none';
+            drawer.classList.add('is-collapsed');
             if (btnToggleNotes) btnToggleNotes.classList.remove('active');
+        }
+
+        if (btnToggleNotes) {
+            btnToggleNotes.setAttribute('aria-pressed', String(shouldOpen));
+            btnToggleNotes.setAttribute('aria-expanded', String(shouldOpen));
+            btnToggleNotes.title = `${shouldOpen ? 'Thu gọn' : 'Mở'} ghi chú cuộc họp (⌘N)`;
         }
     }
 

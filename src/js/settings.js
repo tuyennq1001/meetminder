@@ -29,6 +29,8 @@ const DEFAULT_SETTINGS = {
   max_lines: 5,
   show_original: true,
   translation_mode: 'gemini',
+  translation_timing: 'on_pause',
+  endpoint_delay: 3000,
   inactivity_timeout_min: 10,
   template_notes: '',
   template_minutes_vi: '',
