@@ -435,12 +435,12 @@
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-categories">
             <span class="settings-nav-icon">📅</span>
-            <span class="settings-nav-label">Phân loại</span>
+            <span class="settings-nav-label">Category</span>
             <span class="settings-nav-badge" id="badge-nav-categories">0</span>
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-tags">
             <span class="settings-nav-icon">#️⃣</span>
-            <span class="settings-nav-label">Thẻ (Tags)</span>
+            <span class="settings-nav-label">Tag</span>
             <span class="settings-nav-badge" id="badge-nav-tags">0</span>
           </button>
         </div>
@@ -523,7 +523,7 @@
         <!-- 3. Detail: Categories -->
         <div class="settings-tab-content" id="tab-categories">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">📅 Phân loại cuộc họp (Categories)</h3>
+            <h3 class="settings-panel-title">📅 Category cuộc họp</h3>
           </div>
 
           <div class="folder-tab-bar" id="categories-scope-tabs" role="tablist">
@@ -540,7 +540,7 @@
 
           <div class="folder-tab-pane" id="categories-folder-pane">
             <div class="mgr-quick-add-row" style="display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap;">
-              <input type="text" id="input-new-cat-name" class="modal-input" placeholder="Tên phân loại (vd: Sprint Planning, Kỹ thuật, 1-on-1)..." style="flex:1; min-width:180px;" />
+              <input type="text" id="input-new-cat-name" class="modal-input" placeholder="Tên category (vd: Sprint Planning, Kỹ thuật, 1-on-1)..." style="flex:1; min-width:180px;" />
               <select id="select-new-cat-template" class="modal-input modal-select" style="max-width: 200px;" title="Mẫu Minutes liên kết khi tạo tóm tắt">
                 <option value="standard">🏢 Mẫu Tiêu chuẩn / Khách hàng</option>
                 <option value="tech">💻 Mẫu Kỹ thuật / Architecture</option>
@@ -553,7 +553,7 @@
                 <option value="all">🌐 Cả hai</option>
               </select>
               <input type="color" id="input-new-cat-color" value="#10b981" class="color-picker-input" title="Chọn màu phân loại" />
-              <button type="button" id="btn-create-category" class="btn-primary-small">+ Thêm phân loại</button>
+              <button type="button" id="btn-create-category" class="btn-primary-small">+ Thêm category</button>
             </div>
             <div id="settings-categories-list" class="mgr-items-list"></div>
           </div>
@@ -562,7 +562,7 @@
         <!-- 4. Detail: Tags -->
         <div class="settings-tab-content" id="tab-tags">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">#️⃣ Quản lý Thẻ (Tags)</h3>
+            <h3 class="settings-panel-title">#️⃣ Quản lý Tag</h3>
           </div>
 
           <div class="folder-tab-bar" id="tags-scope-tabs" role="tablist">
@@ -579,13 +579,13 @@
 
           <div class="folder-tab-pane" id="tags-folder-pane">
             <div class="mgr-quick-add-row" style="display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap;">
-              <input type="text" id="input-new-tag-name" class="modal-input" placeholder="Tên thẻ (vd: frontend, backend, sprint-12)..." style="flex:1; min-width:180px;" />
+              <input type="text" id="input-new-tag-name" class="modal-input" placeholder="Tên tag (vd: frontend, backend, sprint-12)..." style="flex:1; min-width:180px;" />
               <select id="select-new-tag-scope" class="modal-input modal-select" style="max-width: 120px;" title="Phạm vi áp dụng">
                 <option value="work">💼 Công việc</option>
                 <option value="personal">👤 Cá nhân</option>
                 <option value="all">🌐 Cả hai</option>
               </select>
-              <button type="button" id="btn-create-tag" class="btn-primary-small">+ Thêm Thẻ</button>
+              <button type="button" id="btn-create-tag" class="btn-primary-small">+ Thêm Tag</button>
             </div>
             <div id="settings-tags-list" class="mgr-items-list"></div>
           </div>
@@ -1601,15 +1601,15 @@
   <div id="modal-edit-category" class="modal-overlay" style="display:none">
     <div class="modal-card" style="max-width: 460px;">
       <div class="modal-header">
-        <h3 id="modal-cat-title">📅 Chỉnh sửa Phân loại</h3>
+        <h3 id="modal-cat-title">📅 Chỉnh sửa Category</h3>
         <button type="button" id="btn-close-edit-category" class="icon-btn close-btn">×</button>
       </div>
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
         <input type="hidden" id="input-modal-cat-id" value="" />
         <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: flex-end;">
           <div>
-            <label class="field-label" for="input-modal-cat-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Tên phân loại (*):</label>
-            <input type="text" id="input-modal-cat-name" class="modal-input" placeholder="Tên phân loại..." />
+            <label class="field-label" for="input-modal-cat-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Tên category (*):</label>
+            <input type="text" id="input-modal-cat-name" class="modal-input" placeholder="Tên category..." />
           </div>
           <div>
             <label class="field-label" for="input-modal-cat-color" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Màu nhận diện:</label>
@@ -1625,7 +1625,7 @@
           </select>
         </div>
         <div>
-          <label class="field-label" for="select-modal-cat-template" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Mẫu biên bản liên kết (Template):</label>
+          <label class="field-label" for="select-modal-cat-template" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Template liên kết:</label>
           <select id="select-modal-cat-template" class="modal-input modal-select">
             <option value="standard">🏢 Mẫu Tiêu chuẩn / Khách hàng</option>
             <option value="tech">💻 Mẫu Kỹ thuật / Architecture</option>
@@ -1645,14 +1645,14 @@
   <div id="modal-edit-tag" class="modal-overlay" style="display:none">
     <div class="modal-card" style="max-width: 400px;">
       <div class="modal-header">
-        <h3 id="modal-tag-title">#️⃣ Chỉnh sửa Thẻ</h3>
+        <h3 id="modal-tag-title">#️⃣ Chỉnh sửa Tag</h3>
         <button type="button" id="btn-close-edit-tag" class="icon-btn close-btn">×</button>
       </div>
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
         <input type="hidden" id="input-modal-tag-old-name" value="" />
         <div>
-          <label class="field-label" for="input-modal-tag-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Tên thẻ (*):</label>
-          <input type="text" id="input-modal-tag-name" class="modal-input" placeholder="Tên thẻ..." />
+          <label class="field-label" for="input-modal-tag-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Tên tag (*):</label>
+          <input type="text" id="input-modal-tag-name" class="modal-input" placeholder="Tên tag..." />
         </div>
         <div>
           <label class="field-label" for="select-modal-tag-scope" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Phạm vi áp dụng:</label>
