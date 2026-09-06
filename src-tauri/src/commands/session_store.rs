@@ -998,7 +998,7 @@ pub fn rebuild_session_markdown(data: &SessionData) -> String {
     let lang_pair = format!("{} → {}", data.source_lang, data.target_lang);
     let mut meta_extras = Vec::new();
     if let Some(ref cat) = data.category {
-        meta_extras.push(format!("📅 Phân loại: {}", cat));
+        meta_extras.push(format!("🗂️ Category: {}", cat));
     }
     if !data.tags.is_empty() {
         meta_extras.push(
@@ -2768,7 +2768,7 @@ mod tests {
         let md = rebuild_session_markdown(&data);
         assert!(md.contains("# Họp kế hoạch tuần"));
         assert!(md.contains("ja → vi"));
-        assert!(md.contains("📅 Phân loại: Weekly"));
+        assert!(md.contains("🗂️ Category: Weekly"));
         assert!(md.contains("#sprint #planning"));
         assert!(md.contains("(Speaker 1) はじめましょう"));
         assert!(md.contains("(Speaker 1) Hãy bắt đầu thôi"));

@@ -404,7 +404,7 @@ export class SessionStore {
         const langPair = (this.sourceLang || '?') + ' → ' + (this.targetLang || '?');
         const metaExtras = [];
         if (this.scope === 'personal') metaExtras.push('👤 Cá nhân');
-        if (this.category) metaExtras.push(`📅 Phân loại: ${this.category}`);
+        if (this.category) metaExtras.push(`🗂️ Category: ${this.category}`);
         if (this.tags && this.tags.length > 0) metaExtras.push(this.tags.map(t => `#${t}`).join(' '));
         const extraStr = metaExtras.length > 0 ? ' · ' + metaExtras.join(' · ') : '';
 
