@@ -1602,7 +1602,7 @@ class App {
     }
 
     /** Show one settings screen (sidebar item selected) inside the 2-column settings view. */
-    _showSettingsScreen(id) {
+    async _showSettingsScreen(id) {
         if (!id || !document.getElementById(id)) id = 'tab-customers';
         this._currentSettingsScreen = id;
 
@@ -1634,8 +1634,46 @@ class App {
             this._renderSettingsNotesTemplateTab();
         }
 
-        this._updateSidebarBadges();
+        this._updateSidebarBadges().catch(err => console.error('Failed to update sidebar badges:', err));
         document.querySelector('.settings-content-panel')?.scrollTo(0, 0);
+    }
+
+    /** Refresh sidebar badges after registry/sessions are loaded (e.g. app init, logs loaded). */
+    async refreshSettingsBadges() {
+        await this._updateSidebarBadges();
+    }
+
+    /**
+     * Jump from a Settings row to Logs (library) with a single fresh filter.
+     * Clears all previous log conditions. Scope defaults to 'all'; pass
+     * scopeOverride ('work' | 'personal') to open Logs in a matching scope tab
+     * (e.g. a personal tag opens personal logs, never work logs).
+     * kind: 'customer' (id) | 'project' (id) | 'category' (name) | 'tag' (name)
+     */
+    async _jumpToLogsWithFilter(kind, value, scopeOverride) {
+        this._activeCustomerFilter = [];
+        this._activeProjectFilter = [];
+        this._activeCategoryFilter = [];
+        this._activeTagFilter = [];
+        this._sessionNameQuery = '';
+        const searchInput = document.getElementById('input-session-search');
+        if (searchInput) searchInput.value = '';
+        this._sessionPage = 1;
+        if (kind === 'customer' && value) this._activeCustomerFilter = [value];
+        else if (kind === 'project' && value) this._activeProjectFilter = [value];
+        else if (kind === 'category' && value) this._activeCategoryFilter = [value];
+        else if (kind === 'tag' && value) this._activeTagFilter = [value];
+        this._activeLogsScopeFilter = (scopeOverride === 'work' || scopeOverride === 'personal') ? scopeOverride : 'all';
+        setActivity('library');
+        this._showView('overlay');
+        await this._showSessions();
+    }
+
+    /** Jump from a Category row to the linked Minutes template setting. */
+    _jumpToTemplateSetting(templateId) {
+        if (!templateId) return;
+        this._showSettingsScreen('tab-templates');
+        this._switchSettingsTemplatePreset(templateId);
     }
 
     // ─── Settings: Scope Tabs (Projects, Categories, Tags) ───
@@ -5267,7 +5305,7 @@ class App {
             this._projectRegistry = await invoke('get_project_registry');
         } catch (err) {
             console.error('Failed to load project registry:', err);
-            this._projectRegistry = { projects: [], categories: [], tags: [] };
+            this._projectRegistry = { customers: [], projects: [], categories: [], tags: [] };
         }
         this._populateNoteMetadataSelectors?.();
         return this._projectRegistry;
@@ -5319,7 +5357,8 @@ class App {
         const allTags = Array.from(new Set([...regTags, ...sessionTags])).filter(Boolean);
         let html = '<option value="" disabled>#️⃣ Tag</option>';
         for (const tag of allTags) {
-            const count = (this._cachedSessions || []).filter(s => (s.tags || []).includes(tag)).length;
+            const tagKey = (tag || '').toLowerCase();
+            const count = (this._cachedSessions || []).filter(s => (s.tags || []).some(x => (x || '').toLowerCase() === tagKey)).length;
             const selected = this._activeTagFilter.includes(tag) ? 'selected' : '';
             html += `<option value="${this._escAttr(tag)}" ${selected}>#${this._esc(tag)} (${count})</option>`;
         }
@@ -5364,6 +5403,8 @@ class App {
             this._cachedSessions.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
 
             this._renderFilteredSessions();
+            // Sessions cache changed → tag badge + session counts depend on it
+            this._updateSidebarBadges().catch(err => console.error('Failed to update sidebar badges:', err));
         } catch (err) {
             listEl.innerHTML = `<div class="sessions-empty">Error: ${err}</div>`;
         }
@@ -5398,6 +5439,7 @@ class App {
         }
 
         const nameQuery = this._sessionNameQuery.trim().toLocaleLowerCase();
+        const lowerTagFilter = (this._activeTagFilter || []).map(f => (f || '').toLowerCase());
         let filtered = (this._cachedSessions || []).filter(session => {
             const sessScope = session.scope || 'work';
             const scopeMatches = isAllScope || sessScope === activeScope;
@@ -5405,7 +5447,7 @@ class App {
             const customerMatches = isPersonalScope || !this._activeCustomerFilter.length || this._activeCustomerFilter.includes(session.customer_id);
             const projectMatches = !this._activeProjectFilter.length || this._activeProjectFilter.includes(session.project_id);
             const categoryMatches = !this._activeCategoryFilter.length || this._activeCategoryFilter.includes(session.category);
-            const tagMatches = !this._activeTagFilter.length || (session.tags || []).some(tag => this._activeTagFilter.includes(tag));
+            const tagMatches = !lowerTagFilter.length || (session.tags || []).some(tag => lowerTagFilter.includes((tag || '').toLowerCase()));
             return scopeMatches && titleMatches && customerMatches && projectMatches && categoryMatches && tagMatches;
         });
         this._filteredSessions = filtered;
@@ -5560,7 +5602,8 @@ class App {
                 <td><select class="logs-filter-select" data-filter-select="project">${renderSelectOptions(relevantProjects, activeProject, isPersonalScope ? 'dự án cá nhân' : 'dự án')}</select></td>
                 <td><select class="logs-filter-select" data-filter-select="category">${renderSelectOptions(categories, activeCategory, 'category')}</select></td>
                 <td><select class="logs-filter-select" data-filter-select="tag">${renderSelectOptions(tags, activeTag, 'tag', t => {
-                    const count = (this._cachedSessions || []).filter(s => (s.tags || []).includes(t)).length;
+                    const tKey = (t || '').toLowerCase();
+                    const count = (this._cachedSessions || []).filter(s => (s.tags || []).some(x => (x || '').toLowerCase() === tKey)).length;
                     return `#${t} (${count})`;
                 })}</select></td>
                 <td><button type="button" class="logs-reset-filters" data-clear-filters title="Xoá toàn bộ điều kiện lọc">↺ Reset</button></td>
@@ -6690,6 +6733,10 @@ class App {
             if (badgeTags) badgeTags.textContent = String(allTags.length);
         } catch (err) {
             console.error('Failed to update sidebar badges:', err);
+            for (const bid of ['badge-nav-customers', 'badge-nav-projects', 'badge-nav-categories', 'badge-nav-tags']) {
+                const el = document.getElementById(bid);
+                if (el && el.textContent === '0') el.textContent = '–';
+            }
         }
     }
 
@@ -6790,7 +6837,7 @@ class App {
                   ${projCount > 0 ? `<button type="button" class="btn-jump-to-cust-projects" data-id="${this._escAttr(c.id)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;">${projCount} dự án</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
                 </td>
                 <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
-                  ${sessCount > 0 ? `${sessCount} cuộc họp` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                  ${sessCount > 0 ? `<button type="button" class="btn-jump-to-cust-logs" data-id="${this._escAttr(c.id)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;" title="Mở Logs lọc theo khách hàng ${this._escAttr(c.name)}">${sessCount} cuộc họp</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
                 </td>
                 <td style="text-align: center;">
                   <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
@@ -6850,6 +6897,13 @@ class App {
                     filter.value = cid;
                     this._renderSettingsProjectsTab(cid);
                 }
+            });
+        });
+
+        // Jump to Logs filtered by this customer
+        listEl.querySelectorAll('.btn-jump-to-cust-logs').forEach(el => {
+            el.addEventListener('click', () => {
+                this._jumpToLogsWithFilter('customer', el.dataset.id);
             });
         });
 
@@ -7033,7 +7087,7 @@ class App {
                   <span class="status-pill ${isActive ? 'active' : 'archived'}">${isActive ? '🟢 Đang chạy' : '⚪ Đã dừng'}</span>
                 </td>
                 <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
-                  ${sessCount > 0 ? `${sessCount} cuộc họp` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                  ${sessCount > 0 ? `<button type="button" class="btn-jump-to-proj-logs" data-id="${this._escAttr(p.id)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;" title="Mở Logs lọc theo dự án ${this._escAttr(p.name)}">${sessCount} cuộc họp</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
                 </td>
                 <td style="text-align: center;">
                   <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
@@ -7096,6 +7150,13 @@ class App {
                 if (targetCust) {
                     this._openEditCustomerModal(targetCust);
                 }
+            });
+        });
+
+        // Jump to Logs filtered by this project
+        listEl.querySelectorAll('.btn-jump-to-proj-logs').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._jumpToLogsWithFilter('project', btn.dataset.id);
             });
         });
 
@@ -7187,7 +7248,7 @@ class App {
         }
 
         if (categories.length === 0) {
-            listEl.innerHTML = '<div class="sessions-empty" style="padding: 24px;">Chưa có phân loại nào trong mục này. Hãy thêm phân loại ở ô trên.</div>';
+            listEl.innerHTML = '<div class="sessions-empty" style="padding: 24px;">Chưa có category nào trong mục này. Hãy thêm category ở ô trên.</div>';
             return;
         }
 
@@ -7205,9 +7266,9 @@ class App {
             <thead>
               <tr>
                 <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
-                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên phân loại cuộc họp ${this._getSortIcon(sort, 'name')}</th>
+                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên category cuộc họp ${this._getSortIcon(sort, 'name')}</th>
                 ${isAllCatTab ? '<th style="width: 120px; text-align: center;">Phạm vi</th>' : ''}
-                <th style="width: 160px; text-align: center;">Mẫu biên bản (Template)</th>
+                <th style="width: 160px; text-align: center;">Template</th>
                 <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 120px; text-align: center;">Số cuộc họp gắn ${this._getSortIcon(sort, 'sessions')}</th>
                 <th style="width: 90px; text-align: center;">Thao tác</th>
               </tr>
@@ -7228,7 +7289,7 @@ class App {
                 ? '<span class="scope-badge-personal">👤 Cá nhân</span>'
                 : (c.scope === 'work' ? '<span class="scope-badge-work">💼 Công việc</span>' : '<span style="font-size:11px; opacity:0.6;">🌐 Cả hai</span>');
             const tmplBadge = c.template_id && templateLabels[c.template_id]
-                ? `<span class="template-badge-pill">${templateLabels[c.template_id]}</span>`
+                ? `<button type="button" class="template-badge-pill btn-jump-to-template" data-template="${this._escAttr(c.template_id)}" style="cursor:pointer; font:inherit;" title="Mở cài đặt mẫu ${this._escAttr(templateLabels[c.template_id])}">${templateLabels[c.template_id]} ↗</button>`
                 : '<span style="font-size:11px; opacity:0.4;">(Mặc định)</span>';
 
             html += `
@@ -7243,14 +7304,14 @@ class App {
                 ${isAllCatTab ? `<td style="text-align: center;">${scopeBadge}</td>` : ''}
                 <td style="text-align: center;">${tmplBadge}</td>
                 <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
-                  ${sessCount > 0 ? `${sessCount} cuộc họp` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                  ${sessCount > 0 ? `<button type="button" class="btn-jump-to-cat-logs" data-cat="${this._escAttr(c.name)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;" title="Mở Logs lọc theo category ${this._escAttr(c.name)}">${sessCount} cuộc họp</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
                 </td>
                 <td style="text-align: center;">
                   <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
-                    <button type="button" class="btn-secondary-small btn-edit-cat" data-id="${this._escAttr(c.id)}" title="Chỉnh sửa phân loại" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      <button type="button" class="btn-secondary-small btn-edit-cat" data-id="${this._escAttr(c.id)}" title="Chỉnh sửa category" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                       ✏️
                     </button>
-                    <button type="button" class="btn-danger-small btn-del-cat" data-id="${this._escAttr(c.id)}" data-name="${this._escAttr(c.name)}" title="Xoá phân loại" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      <button type="button" class="btn-danger-small btn-del-cat" data-id="${this._escAttr(c.id)}" data-name="${this._escAttr(c.name)}" title="Xoá category" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                       🗑
                     </button>
                   </div>
@@ -7279,6 +7340,20 @@ class App {
             });
         });
 
+        // Jump to linked Minutes template setting
+        listEl.querySelectorAll('.btn-jump-to-template').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._jumpToTemplateSetting(btn.dataset.template);
+            });
+        });
+
+        // Jump to Logs filtered by this category
+        listEl.querySelectorAll('.btn-jump-to-cat-logs').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._jumpToLogsWithFilter('category', btn.dataset.cat);
+            });
+        });
+
         // Sort header listeners
         listEl.querySelectorAll('th.sortable').forEach(th => {
             th.addEventListener('click', () => {
@@ -7297,16 +7372,16 @@ class App {
         listEl.querySelectorAll('.btn-del-cat').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const id = btn.dataset.id;
-                const name = btn.dataset.name || 'phân loại';
+                const name = btn.dataset.name || 'category';
                 const agreed = await this._promptConfirmDelete({
-                    title: 'Xoá phân loại',
-                    message: `Bạn có chắc muốn xoá phân loại "${name}" khỏi hệ thống?`,
-                    confirmText: 'Xoá phân loại'
+                    title: 'Xoá category',
+                    message: `Bạn có chắc muốn xoá category "${name}" khỏi hệ thống?`,
+                    confirmText: 'Xoá category'
                 });
                 if (!agreed) return;
                 try {
                     await invoke('delete_category', { id });
-                    this._showToast('Đã xóa phân loại', 'success');
+                    this._showToast('Đã xóa category', 'success');
                     await this._loadProjectRegistry();
                     this._renderSettingsCategoriesTab();
                     this._renderCategoryFilterSelect();
@@ -7354,7 +7429,7 @@ class App {
         const tmplSelect = document.getElementById('select-modal-cat-template');
         const name = nameInput?.value.trim();
         if (!name) {
-            this._showToast('Vui lòng nhập tên phân loại', 'error');
+            this._showToast('Vui lòng nhập tên category', 'error');
             return;
         }
         const id = idInput?.value.trim() || '';
@@ -7373,14 +7448,14 @@ class App {
                 }
             });
             this._closeEditCategoryModal();
-            this._showToast(`Đã cập nhật phân loại "${name}" ✓`, 'success');
+            this._showToast(`Đã cập nhật category "${name}" ✓`, 'success');
             await this._loadProjectRegistry();
             this._renderSettingsCategoriesTab();
             this._renderCategoryFilterSelect();
             this._updateSidebarBadges();
             await this._showSessions();
         } catch (err) {
-            this._showToast(`Cập nhật phân loại thất bại: ${err}`, 'error');
+            this._showToast(`Cập nhật category thất bại: ${err}`, 'error');
         }
     }
 
@@ -7453,7 +7528,7 @@ class App {
         }
 
         if (filteredTags.length === 0) {
-            listEl.innerHTML = '<div class="sessions-empty" style="padding: 24px;">Chưa có thẻ nào trong mục này. Hãy thêm thẻ mới ở ô trên.</div>';
+            listEl.innerHTML = '<div class="sessions-empty" style="padding: 24px;">Chưa có tag nào trong mục này. Hãy thêm tag mới ở ô trên.</div>';
             return;
         }
 
@@ -7470,7 +7545,7 @@ class App {
             <thead>
               <tr>
                 <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
-                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên thẻ (Tag) ${this._getSortIcon(sort, 'name')}</th>
+                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên tag ${this._getSortIcon(sort, 'name')}</th>
                 ${isAllTagTab ? '<th style="width: 130px; text-align: center;">Phạm vi</th>' : ''}
                 <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 140px; text-align: center;">Số cuộc họp gắn ${this._getSortIcon(sort, 'sessions')}</th>
                 <th style="width: 90px; text-align: center;">Thao tác</th>
@@ -7492,14 +7567,14 @@ class App {
                 </td>
                 ${isAllTagTab ? `<td style="text-align: center;">${scopeBadge}</td>` : ''}
                 <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
-                  ${t.count > 0 ? `${t.count} cuộc họp` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                  ${t.count > 0 ? `<button type="button" class="btn-jump-to-tag-logs" data-tag="${this._escAttr(t.name)}" data-scope="${this._escAttr(t.scope || 'work')}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;" title="Mở Logs lọc theo tag #${this._escAttr(t.name)}">${t.count} cuộc họp</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
                 </td>
                 <td style="text-align: center;">
                   <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
-                    <button type="button" class="btn-secondary-small btn-edit-tag" data-tag="${this._escAttr(t.name)}" data-scope="${this._escAttr(t.scope || 'work')}" title="Chỉnh sửa thẻ" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      <button type="button" class="btn-secondary-small btn-edit-tag" data-tag="${this._escAttr(t.name)}" data-scope="${this._escAttr(t.scope || 'work')}" title="Chỉnh sửa tag" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                       ✏️
                     </button>
-                    <button type="button" class="btn-danger-small btn-del-tag-tbl" data-tag="${this._escAttr(t.name)}" title="Xoá thẻ" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      <button type="button" class="btn-danger-small btn-del-tag-tbl" data-tag="${this._escAttr(t.name)}" title="Xoá tag" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                       🗑
                     </button>
                   </div>
@@ -7525,6 +7600,29 @@ class App {
             });
         });
 
+        // Jump to Logs filtered by this tag, in the scope tab where its logs live.
+        // Scope is derived from actual sessions (case-insensitive), NOT the
+        // registry tag_scopes which may be stale: work-only → work logs,
+        // personal-only → personal logs, both/unused → all.
+        listEl.querySelectorAll('.btn-jump-to-tag-logs').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tagName = btn.dataset.tag || '';
+                const key = tagName.toLowerCase();
+                const matched = (this._cachedSessions || []).filter(s =>
+                    (s.tags || []).some(t => (t || '').toLowerCase() === key));
+                const hasWork = matched.some(s => (s.scope || 'work') === 'work');
+                const hasPersonal = matched.some(s => s.scope === 'personal');
+                let logsScope = 'all';
+                if (hasWork && !hasPersonal) logsScope = 'work';
+                else if (hasPersonal && !hasWork) logsScope = 'personal';
+                if (logsScope === 'all') {
+                    const fallback = btn.dataset.scope || '';
+                    if (fallback === 'work' || fallback === 'personal') logsScope = fallback;
+                }
+                this._jumpToLogsWithFilter('tag', tagName, logsScope);
+            });
+        });
+
         // Sort header listeners
         listEl.querySelectorAll('th.sortable').forEach(th => {
             th.addEventListener('click', () => {
@@ -7544,14 +7642,14 @@ class App {
             btn.addEventListener('click', async () => {
                 const tag = btn.dataset.tag;
                 const agreed = await this._promptConfirmDelete({
-                    title: 'Xoá thẻ',
-                    message: `Bạn có chắc muốn xoá thẻ #${tag} khỏi hệ thống?`,
-                    confirmText: 'Xoá thẻ'
+                    title: 'Xoá tag',
+                    message: `Bạn có chắc muốn xoá tag #${tag} khỏi hệ thống?`,
+                    confirmText: 'Xoá tag'
                 });
                 if (!agreed) return;
                 try {
                     await invoke('delete_tag', { tag });
-                    this._showToast(`Đã xóa thẻ #${tag}`, 'success');
+                    this._showToast(`Đã xóa tag #${tag}`, 'success');
                     await this._loadProjectRegistry();
                     this._renderSettingsTagsTab();
                     this._renderTagFilterSelect();
@@ -7595,7 +7693,7 @@ class App {
         const scope = scopeSelect?.value || 'work';
 
         if (!newTag) {
-            this._showToast('Vui lòng nhập tên thẻ', 'error');
+            this._showToast('Vui lòng nhập tên tag', 'error');
             return;
         }
 
@@ -7605,14 +7703,14 @@ class App {
             }
             await invoke('save_tag', { tag: newTag, scope });
             this._closeEditTagModal();
-            this._showToast(`Đã cập nhật thẻ #${newTag} ✓`, 'success');
+            this._showToast(`Đã cập nhật tag #${newTag} ✓`, 'success');
             await this._loadProjectRegistry();
             this._renderSettingsTagsTab();
             this._renderTagFilterSelect();
             this._updateSidebarBadges();
             await this._showSessions();
         } catch (err) {
-            this._showToast(`Cập nhật thẻ thất bại: ${err}`, 'error');
+            this._showToast(`Cập nhật tag thất bại: ${err}`, 'error');
         }
     }
 
@@ -7623,7 +7721,7 @@ class App {
         const templateSelect = document.getElementById('select-new-cat-template');
         const name = nameInput?.value.trim();
         if (!name) {
-            this._showToast('Vui lòng nhập tên phân loại', 'error');
+            this._showToast('Vui lòng nhập tên category', 'error');
             return;
         }
         const color = colorInput?.value || '#10b981';
@@ -7642,14 +7740,14 @@ class App {
             if (nameInput) nameInput.value = '';
             if (scopeSelect) scopeSelect.value = '';
             if (templateSelect) templateSelect.value = '';
-            this._showToast(`Đã thêm phân loại "${name}" ✓`, 'success');
+            this._showToast(`Đã thêm category "${name}" ✓`, 'success');
             await this._loadProjectRegistry();
             this._renderSettingsCategoriesTab();
             this._renderCategoryFilterSelect();
             this._updateSidebarBadges();
             await this._showSessions();
         } catch (err) {
-            this._showToast(`Thêm phân loại thất bại: ${err}`, 'error');
+            this._showToast(`Thêm category thất bại: ${err}`, 'error');
         }
     }
 
@@ -7658,14 +7756,14 @@ class App {
         const scopeSelect = document.getElementById('select-new-tag-scope');
         const tag = tagInput?.value.trim().replace(/^#+/, '');
         if (!tag) {
-            this._showToast('Vui lòng nhập tên thẻ', 'error');
+            this._showToast('Vui lòng nhập tên tag', 'error');
             return;
         }
         const scope = scopeSelect?.value || this._tagScopeFilter || 'work';
         try {
             await invoke('save_tag', { tag, scope });
             if (tagInput) tagInput.value = '';
-            this._showToast(`Đã thêm thẻ #${tag} ✓`, 'success');
+            this._showToast(`Đã thêm tag #${tag} ✓`, 'success');
             await this._loadProjectRegistry();
             this._renderSettingsTagsTab();
             this._renderTagFilterSelect();
