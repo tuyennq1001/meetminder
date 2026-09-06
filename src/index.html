@@ -462,11 +462,7 @@
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-templates">
             <span class="settings-nav-icon">📋</span>
-            <span class="settings-nav-label">Meeting Minutes Template</span>
-          </button>
-          <button type="button" class="settings-nav-item" data-screen="tab-notes-template">
-            <span class="settings-nav-icon">📝</span>
-            <span class="settings-nav-label">Note Template</span>
+            <span class="settings-nav-label">Templates</span>
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-storage">
             <span class="settings-nav-icon">📂</span>
@@ -946,67 +942,77 @@
           </div>
         </div>
 
-        <!-- Detail: Meeting Minutes Templates -->
+        <!-- Detail: Templates (Meeting Minutes & Note Templates) -->
         <div class="settings-tab-content" id="tab-templates">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">📋 Meeting Minutes Template</h3>
+            <h3 class="settings-panel-title">📋 Templates (Mẫu văn bản)</h3>
           </div>
-          <div class="settings-section" style="padding-bottom: 4px;">
-            <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;">
-              Cung cấp 4 Mẫu Preset chuẩn mực cho từng ngữ cảnh cuộc họp. AI sẽ tự động áp dụng đúng mẫu theo Danh mục cuộc họp. Bạn có thể xem trước hoặc tuỳ biến cấu trúc mẫu bên dưới:
-            </p>
 
-            <div class="templates-preset-bar folder-tab-bar" id="templates-preset-bar" role="tablist">
-              <button type="button" class="templates-preset-btn folder-tab-btn active" data-preset="standard">🏢 Tiêu chuẩn / Khách hàng</button>
-              <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="tech">💻 Kỹ thuật / Architecture</button>
-              <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="one_on_one">👥 1-on-1 / Đánh giá</button>
-              <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="personal">👤 Cá nhân / Tự học</button>
-            </div>
+          <div class="folder-tab-bar" id="templates-main-tabs" role="tablist">
+            <button type="button" class="folder-tab-btn active" data-tmpl-tab="minutes" id="tab-btn-tmpl-minutes">
+              📋 Meeting Minutes
+            </button>
+            <button type="button" class="folder-tab-btn" data-tmpl-tab="notes" id="tab-btn-tmpl-notes">
+              📝 Ghi chú (Note)
+            </button>
+          </div>
 
-            <!-- Khung bao trùm nội dung trực thuộc Preset được chọn -->
-            <div class="templates-preset-content folder-tab-pane" id="templates-preset-content">
-              <div class="templates-subtab-container" id="templates-lang-subtabs-container">
-                <span class="templates-subtab-label">🌐 Ngôn ngữ mẫu:</span>
-                <div class="templates-subtab-bar" id="templates-lang-subtabs">
-                  <button type="button" class="templates-subtab active" data-lang="vi" id="subtab-template-lang-vi">🇻🇳 Tiếng Việt</button>
-                  <button type="button" class="templates-subtab" data-lang="ja" id="subtab-template-lang-ja">🇯🇵 Tiếng Nhật</button>
-                </div>
+          <!-- Tab 1: Meeting Minutes Templates -->
+          <div class="template-main-pane" id="pane-template-minutes">
+            <div class="settings-section" style="padding-top: 12px; padding-bottom: 4px;">
+              <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;">
+                Cung cấp 4 Mẫu Preset chuẩn mực cho từng ngữ cảnh cuộc họp. AI sẽ tự động áp dụng đúng mẫu theo Danh mục cuộc họp. Bạn có thể xem trước hoặc tuỳ biến cấu trúc mẫu bên dưới:
+              </p>
+
+              <div class="templates-preset-bar folder-tab-bar" id="templates-preset-bar" role="tablist">
+                <button type="button" class="templates-preset-btn folder-tab-btn active" data-preset="standard">🏢 Tiêu chuẩn / Khách hàng</button>
+                <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="tech">💻 Kỹ thuật / Architecture</button>
+                <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="one_on_one">👥 1-on-1 / Đánh giá</button>
+                <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="personal">👤 Cá nhân / Tự học</button>
               </div>
 
-              <div class="template-editor-wrapper">
-                <div class="template-editor-info">
-                  <span id="template-editor-hint" class="hint" style="margin:0; font-size:12px;">Biến tự động: <code>{{title}}</code>, <code>{{date}}</code>, <code>{{duration}}</code>, <code>{{participants}}</code></span>
-                  <div class="template-editor-actions">
-                    <button type="button" id="btn-template-reset" class="btn-secondary small" title="Khôi phục mẫu mặc định ban đầu">🔄 Khôi phục mặc định</button>
-                    <button type="button" id="btn-template-save" class="btn-primary small" title="Lưu mẫu (⌘S)">💾 Lưu mẫu</button>
+              <!-- Khung bao trùm nội dung trực thuộc Preset được chọn -->
+              <div class="templates-preset-content folder-tab-pane" id="templates-preset-content">
+                <div class="templates-subtab-container" id="templates-lang-subtabs-container">
+                  <span class="templates-subtab-label">🌐 Ngôn ngữ mẫu:</span>
+                  <div class="templates-subtab-bar" id="templates-lang-subtabs">
+                    <button type="button" class="templates-subtab active" data-lang="vi" id="subtab-template-lang-vi">🇻🇳 Tiếng Việt</button>
+                    <button type="button" class="templates-subtab" data-lang="ja" id="subtab-template-lang-ja">🇯🇵 Tiếng Nhật</button>
                   </div>
                 </div>
-                <div id="template-codemirror-container" class="template-cm-container"></div>
+
+                <div class="template-editor-wrapper">
+                  <div class="template-editor-info">
+                    <span id="template-editor-hint" class="hint" style="margin:0; font-size:12px;">Biến tự động: <code>{{title}}</code>, <code>{{date}}</code>, <code>{{duration}}</code>, <code>{{participants}}</code></span>
+                    <div class="template-editor-actions">
+                      <button type="button" id="btn-template-reset" class="btn-secondary small" title="Khôi phục mẫu mặc định ban đầu">🔄 Khôi phục mặc định</button>
+                      <button type="button" id="btn-template-save" class="btn-primary small" title="Lưu mẫu (⌘S)">💾 Lưu mẫu</button>
+                    </div>
+                  </div>
+                  <div id="template-codemirror-container" class="template-cm-container"></div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Detail: Note Template -->
-        <div class="settings-tab-content" id="tab-notes-template">
-          <div class="settings-panel-header">
-            <h3 class="settings-panel-title">📝 Note Template (Mẫu Ghi chú)</h3>
-          </div>
-          <div class="settings-section" style="padding-bottom: 4px;">
-            <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;">
-              Cấu trúc mẫu ghi chú mặc định khi bắt đầu cuộc họp mới hoặc tạo ghi chép nhanh. Bạn có thể tuỳ biến các đề mục bên dưới:
-            </p>
+          <!-- Tab 2: Note Template -->
+          <div class="template-main-pane" id="pane-template-notes" style="display: none;">
+            <div class="settings-section" style="padding-top: 12px; padding-bottom: 4px;">
+              <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;">
+                Cấu trúc mẫu ghi chú mặc định khi bắt đầu cuộc họp mới hoặc tạo ghi chép nhanh. Bạn có thể tuỳ biến các đề mục bên dưới:
+              </p>
 
-            <div class="folder-tab-pane" style="border-radius: 8px;">
-              <div class="template-editor-wrapper">
-                <div class="template-editor-info">
-                  <span class="hint" style="margin:0; font-size:12px;">Biến tự động: <code>{{date}}</code>, <code>{{time}}</code>, <code>{{title}}</code></span>
-                  <div class="template-editor-actions">
-                    <button type="button" id="btn-notes-template-reset" class="btn-secondary small" title="Khôi phục mẫu ghi chú mặc định ban đầu">🔄 Khôi phục mặc định</button>
-                    <button type="button" id="btn-notes-template-save" class="btn-primary small" title="Lưu mẫu ghi chú (⌘S)">💾 Lưu mẫu</button>
+              <div class="folder-tab-pane" style="border-radius: 8px;">
+                <div class="template-editor-wrapper">
+                  <div class="template-editor-info">
+                    <span class="hint" style="margin:0; font-size:12px;">Biến tự động: <code>{{date}}</code>, <code>{{time}}</code>, <code>{{title}}</code></span>
+                    <div class="template-editor-actions">
+                      <button type="button" id="btn-notes-template-reset" class="btn-secondary small" title="Khôi phục mẫu ghi chú mặc định ban đầu">🔄 Khôi phục mặc định</button>
+                      <button type="button" id="btn-notes-template-save" class="btn-primary small" title="Lưu mẫu ghi chú (⌘S)">💾 Lưu mẫu</button>
+                    </div>
                   </div>
+                  <div id="notes-template-codemirror-container" class="template-cm-container"></div>
                 </div>
-                <div id="notes-template-codemirror-container" class="template-cm-container"></div>
               </div>
             </div>
           </div>

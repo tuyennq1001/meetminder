@@ -378,6 +378,7 @@ class App {
         this._catScopeFilter = 'work';
         this._tagScopeFilter = 'work';
         this._templateEditor = null;
+        this._activeTemplatesMainTab = 'minutes';
         this._activeTemplatePreset = 'standard';
         this._activeTemplateLang = 'vi';
         this._templateDrafts = {};
@@ -1603,35 +1604,38 @@ class App {
 
     /** Show one settings screen (sidebar item selected) inside the 2-column settings view. */
     async _showSettingsScreen(id) {
-        if (!id || !document.getElementById(id)) id = 'tab-customers';
-        this._currentSettingsScreen = id;
+        if (!id || (!document.getElementById(id) && id !== 'tab-notes-template')) id = 'tab-customers';
+        const targetScreen = id === 'tab-notes-template' ? 'tab-templates' : id;
+        this._currentSettingsScreen = targetScreen;
 
         // Highlight sidebar nav item
         document.querySelectorAll('.settings-nav-item').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.screen === id);
+            btn.classList.toggle('active', btn.dataset.screen === targetScreen);
         });
 
         // Show active content tab
         document.querySelectorAll('.settings-tab-content').forEach(c => {
-            c.classList.toggle('active', c.id === id);
+            c.classList.toggle('active', c.id === targetScreen);
         });
 
-        if (id === 'tab-customers') {
+        if (targetScreen === 'tab-customers') {
             this._renderSettingsCustomersTab(document.getElementById('input-search-customers')?.value || '');
-        } else if (id === 'tab-projects') {
+        } else if (targetScreen === 'tab-projects') {
             const custFilter = document.getElementById('select-settings-proj-cust-filter')?.value || '';
             const searchVal = document.getElementById('input-search-projects')?.value || '';
             this._renderSettingsProjectsTab(custFilter, searchVal);
-        } else if (id === 'tab-categories') {
+        } else if (targetScreen === 'tab-categories') {
             this._renderSettingsCategoriesTab();
-        } else if (id === 'tab-tags') {
+        } else if (targetScreen === 'tab-tags') {
             this._renderSettingsTagsTab();
-        } else if (id === 'tab-storage') {
+        } else if (targetScreen === 'tab-storage') {
             this._renderSettingsStorageTab();
-        } else if (id === 'tab-templates') {
-            this._renderSettingsTemplatesTab();
-        } else if (id === 'tab-notes-template') {
-            this._renderSettingsNotesTemplateTab();
+        } else if (targetScreen === 'tab-templates') {
+            if (id === 'tab-notes-template') {
+                this._switchTemplatesMainTab('notes');
+            } else {
+                this._switchTemplatesMainTab(this._activeTemplatesMainTab || 'minutes');
+            }
         }
 
         this._updateSidebarBadges().catch(err => console.error('Failed to update sidebar badges:', err));
@@ -1673,6 +1677,7 @@ class App {
     _jumpToTemplateSetting(templateId) {
         if (!templateId) return;
         this._showSettingsScreen('tab-templates');
+        this._switchTemplatesMainTab('minutes');
         this._switchSettingsTemplatePreset(templateId);
     }
 
@@ -1709,6 +1714,14 @@ class App {
     // ─── Settings: Templates Manager ─────────────────────────
 
     _initSettingsTemplatesTab() {
+        // Main tabs (Meeting Minutes vs Note Template)
+        document.querySelectorAll('#templates-main-tabs .folder-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.tmplTab;
+                if (tab) this._switchTemplatesMainTab(tab);
+            });
+        });
+
         // Presets selector buttons
         document.querySelectorAll('#templates-preset-bar .templates-preset-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1732,6 +1745,24 @@ class App {
         document.getElementById('btn-template-save')?.addEventListener('click', async () => {
             await this._saveSettingsTemplates();
         });
+    }
+
+    _switchTemplatesMainTab(tab) {
+        this._activeTemplatesMainTab = tab || 'minutes';
+        document.querySelectorAll('#templates-main-tabs .folder-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tmplTab === this._activeTemplatesMainTab);
+        });
+
+        const paneMinutes = document.getElementById('pane-template-minutes');
+        const paneNotes = document.getElementById('pane-template-notes');
+        if (paneMinutes) paneMinutes.style.display = this._activeTemplatesMainTab === 'minutes' ? '' : 'none';
+        if (paneNotes) paneNotes.style.display = this._activeTemplatesMainTab === 'notes' ? '' : 'none';
+
+        if (this._activeTemplatesMainTab === 'minutes') {
+            this._renderSettingsTemplatesTab();
+        } else {
+            this._renderSettingsNotesTemplateTab();
+        }
     }
 
     _getCurrentTemplateKey() {
