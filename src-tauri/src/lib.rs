@@ -153,6 +153,8 @@ pub fn run() {
             commands::local_pipeline::stop_local_pipeline,
             commands::local_pipeline::check_mlx_setup,
             commands::local_pipeline::run_mlx_setup,
+            commands::local_pipeline::get_local_models_info,
+            commands::local_pipeline::delete_local_models,
             commands::edge_tts::edge_tts_speak,
             commands::microsoft_tts::microsoft_list_voices,
             commands::google_free_tts::google_free_tts_speak,

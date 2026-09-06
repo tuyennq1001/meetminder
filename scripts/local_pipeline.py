@@ -20,10 +20,14 @@ import time
 import wave
 import tempfile
 import threading
+import warnings
 import numpy as np
 
-# Suppress warnings
+# Suppress warnings and force offline mode for Hugging Face Hub (models are pre-cached)
+warnings.filterwarnings("ignore")
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 
 def log(msg):
@@ -41,6 +45,7 @@ LANG_NAMES = {
     "vi": "Vietnamese", "en": "English", "ja": "Japanese",
     "ko": "Korean", "zh": "Chinese", "fr": "French",
     "de": "German", "es": "Spanish", "th": "Thai",
+    "auto": "the spoken language",
 }
 
 
@@ -55,6 +60,7 @@ class LocalPipeline:
     ):
         self.asr_model_type = asr_model  # "whisper" or "qwen"
         self.source_lang = source_lang
+        self.source_lang_name = LANG_NAMES.get(source_lang, "the spoken language")
         self.target_lang = target_lang
         self.target_lang_name = LANG_NAMES.get(target_lang, "Vietnamese")
         self.chunk_seconds = chunk_seconds
@@ -66,6 +72,11 @@ class LocalPipeline:
         self.audio_buffer = bytearray()
         self.lock = threading.Lock()
         self.running = True
+        self.models_ready = False
+
+        # Start stdin reader immediately so OS pipe buffer never fills up/blocks
+        self.reader_thread = threading.Thread(target=self.stdin_reader, daemon=True)
+        self.reader_thread.start()
 
         # Chunk size in bytes
         self.chunk_bytes = self.chunk_seconds * self.sample_rate * self.bytes_per_sample
@@ -84,6 +95,7 @@ class LocalPipeline:
         self.llm_tokenizer = None
 
         self._load_models()
+        self.models_ready = True
 
     def _load_models(self):
         """Load ASR + LLM translator."""
@@ -115,17 +127,20 @@ class LocalPipeline:
             raise ValueError(f"Unknown ASR model: {self.asr_model_type}")
 
         # --- LLM Translator ---
-        log("Loading Gemma-3-4B translator...")
-        emit({"type": "status", "message": "Loading Gemma-3-4B translator..."})
-        t = time.time()
-        from mlx_lm import load
-        self.llm_model, self.llm_tokenizer = load("mlx-community/gemma-3-4b-it-qat-4bit")
-        log(f"LLM loaded in {time.time()-t:.1f}s")
+        if self.target_lang not in ("none", "off", ""):
+            log("Loading Gemma-3-4B translator...")
+            emit({"type": "status", "message": "Loading Gemma-3-4B translator..."})
+            t = time.time()
+            from mlx_lm import load
+            self.llm_model, self.llm_tokenizer = load("mlx-community/gemma-3-4b-it-qat-4bit")
+            log(f"LLM loaded in {time.time()-t:.1f}s")
 
-        # Warm up LLM
-        log("Warming up LLM...")
-        emit({"type": "status", "message": "Warming up translator..."})
-        self._translate("テスト")
+            # Warm up LLM
+            log("Warming up LLM...")
+            emit({"type": "status", "message": "Warming up translator..."})
+            self._translate("テスト")
+        else:
+            log("Target language is none - skipping LLM translator load")
 
         log("Pipeline ready!")
         emit({"type": "ready"})
@@ -154,6 +169,11 @@ class LocalPipeline:
                 path_or_hf_repo=self.asr_model,
                 language=self._whisper_lang_code(),
                 task="transcribe",
+                condition_on_previous_text=False,
+                temperature=0.0,
+                compression_ratio_threshold=2.4,
+                no_speech_threshold=0.6,
+                logprob_threshold=-1.0,
             )
             text = result.get("text", "").strip()
             lang = result.get("language", self.source_lang)
@@ -179,34 +199,47 @@ class LocalPipeline:
             "Vietnamese": "vi", "vi": "vi",
             "auto": None,
         }
-        return lang_map.get(self.source_lang, "ja")
+        return lang_map.get(self.source_lang, None)
+
+    def _clean_repetitions(self, text):
+        """Remove pathological repetitions caused by Whisper hallucination loops."""
+        if not text:
+            return ""
+        import re
+        # 1. Collapse words repeated 3+ times: 'thấy thấy thấy thấy' -> 'thấy'
+        cleaned = re.sub(r'(\b[^\W\d_]+\b)(?:\s+\1){2,}', r'\1', text, flags=re.IGNORECASE)
+        # 2. Collapse 2-word phrases repeated 3+ times: 'xin chào xin chào xin chào' -> 'xin chào'
+        cleaned = re.sub(r'(\b\S+\s+\S+\b)(?:\s+\1){2,}', r'\1', cleaned, flags=re.IGNORECASE)
+        # 3. Collapse 3-word phrases repeated 3+ times
+        cleaned = re.sub(r'(\b\S+\s+\S+\s+\S+\b)(?:\s+\1){2,}', r'\1', cleaned, flags=re.IGNORECASE)
+        # 4. Collapse non-spaced characters repeated 4+ times (for JA/ZH): 'ああああ' -> 'あ'
+        cleaned = re.sub(r'(.{1,4}?)\1{3,}', r'\1', cleaned)
+        return cleaned.strip()
 
     def _translate(self, text):
         """Translate text using Gemma-3 LLM with rolling context."""
-        if not text:
+        if not text or self.target_lang in ("none", "off", ""):
+            return ""
+        if not self.llm_model or not self.llm_tokenizer:
             return ""
         from mlx_lm import generate
 
-        # Build context: only JA originals (no translations to avoid copying)
+        # Build context: only recent originals (no translations to avoid copying)
         context_block = ""
         if self.context_history:
             recent = self.context_history[-self.max_context:]
-            ctx_ja = " / ".join(orig for orig, _ in recent)
-            context_block = (
-                f"[Topic context: {ctx_ja}]\n\n"
-            )
+            ctx = " / ".join(orig for orig, _ in recent)
+            context_block = f"[Topic context: {ctx}]\n\n"
 
         prompt = (
             "<start_of_turn>user\n"
-            f"Translate this ONE Japanese sentence to {self.target_lang_name}.\n"
+            f"Translate this speech ({self.source_lang_name}) to {self.target_lang_name}.\n"
             f"Output ONLY the {self.target_lang_name} translation of the LAST line. Do NOT repeat previous content.\n"
+            "Preserve any technical terms, proper nouns, and code names naturally.\n"
             "\n"
             "Examples:\n"
-            "JA: こんにちは、マイです。→ Xin chào, tôi là Mai.\n"
-            "JA: おでんを作って食べました。→ Tôi đã làm oden ăn.\n"
-            "JA: えっ？コンビニにおでん？→ Hả? Oden ở cửa hàng tiện lợi á?\n"
-            "\n"
-            "Rules: Vietnamese only. Keep names (マイ=Mai). Keep food (おでん=oden). ONE sentence output only.\n"
+            "こんにちは、マイです。→ Xin chào, tôi là Mai.\n"
+            "Tôi đã test thử API này rồi.→ I tested this API already.\n"
             "\n"
             f"{context_block}"
             f"Translate: {text}\n"
@@ -314,22 +347,30 @@ class LocalPipeline:
             text, lang = self._transcribe(wav_path)
             t_asr = time.time() - t1
 
+            # Clean repetition loops from Whisper
+            text = self._clean_repetitions(text)
+
             if not text or text == self.prev_text:
                 return
 
             # Dedup transcript: strip overlap with previous chunk
             new_text = self._dedup_transcript(text)
-            if not new_text or len(new_text) < 3:
+            new_text = self._clean_repetitions(new_text)
+            if not new_text or len(new_text) < 2:
                 self.prev_text = text
                 return
 
             log(f"Transcript: {text}")
             log(f"New text:   {new_text}")
 
-            # Translate
-            t2 = time.time()
-            translated = self._translate(new_text)
-            t_llm = time.time() - t2
+            # Translate (skip if target_lang is none / off)
+            if self.target_lang in ("none", "off", ""):
+                translated = ""
+                t_llm = 0.0
+            else:
+                t2 = time.time()
+                translated = self._translate(new_text)
+                t_llm = time.time() - t2
 
             total = time.time() - t_start
             log(f"ASR={t_asr:.2f}s LLM={t_llm:.2f}s total={total:.2f}s")
@@ -339,7 +380,7 @@ class LocalPipeline:
                 "type": "result",
                 "original": new_text,
                 "translated": translated,
-                "language": lang if isinstance(lang, str) else (lang[0] if lang else "ja"),
+                "language": lang if isinstance(lang, str) else (lang[0] if lang else "vi"),
                 "timing": {
                     "asr": round(t_asr, 2),
                     "translate": round(t_llm, 2),
@@ -355,12 +396,20 @@ class LocalPipeline:
     def stdin_reader(self):
         """Read PCM bytes from stdin into buffer."""
         try:
+            fd = sys.stdin.fileno()
             while self.running:
-                data = sys.stdin.buffer.read(4096)
+                try:
+                    data = os.read(fd, 4096)
+                except (OSError, ValueError):
+                    break
                 if not data:
                     break
                 with self.lock:
                     self.audio_buffer.extend(data)
+                    # While models are loading or before ready, keep at most 10s of audio
+                    max_preload_bytes = self.sample_rate * self.bytes_per_sample * 10
+                    if not self.models_ready and len(self.audio_buffer) > max_preload_bytes:
+                        self.audio_buffer = self.audio_buffer[-max_preload_bytes:]
         except Exception as e:
             log(f"stdin reader error: {e}")
         finally:
@@ -368,10 +417,6 @@ class LocalPipeline:
 
     def run(self):
         """Main loop: read audio, process chunks with sliding window."""
-        # Start stdin reader thread
-        reader = threading.Thread(target=self.stdin_reader, daemon=True)
-        reader.start()
-
         processed_pos = 0  # Track how far we've processed
 
         while self.running:

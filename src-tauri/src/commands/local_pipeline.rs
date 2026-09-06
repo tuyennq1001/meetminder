@@ -50,7 +50,7 @@ pub fn start_local_pipeline(
         .args(["-f", "local_pipeline.py"])
         .output();
 
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    std::thread::sleep(std::time::Duration::from_millis(100));
 
     let _ = channel.send(r#"{"type":"status","message":"Finding pipeline script..."}"#.to_string());
 
@@ -117,7 +117,10 @@ pub fn start_local_pipeline(
         .arg(&target_lang)
         .env("PATH", path_env)
         .env("HOME", &home)
+        .env("PYTHONUNBUFFERED", "1")
         .env("TOKENIZERS_PARALLELISM", "false")
+        .env("HF_HUB_OFFLINE", "1")
+        .env("TRANSFORMERS_OFFLINE", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -160,8 +163,7 @@ pub fn start_local_pipeline(
         log_to_file("stdout reader ended");
     });
 
-    // Log stderr AND forward to frontend as status
-    let channel_clone2 = channel.clone();
+    // Log stderr for debugging (do not forward raw stderr to frontend)
     std::thread::spawn(move || {
         use std::io::BufRead;
         let reader = std::io::BufReader::new(stderr);
@@ -169,10 +171,6 @@ pub fn start_local_pipeline(
             match line {
                 Ok(line) => {
                     log_to_file(&format!("stderr: {}", line));
-                    // Forward pipeline status to frontend
-                    let escaped = line.replace('"', r#"\""#);
-                    let _ = channel_clone2
-                        .send(format!(r#"{{"type":"status","message":"{}"}}"#, escaped));
                 }
                 Err(_) => break,
             }
@@ -193,14 +191,12 @@ pub fn send_audio_to_pipeline(
     data: Vec<u8>,
     state: tauri::State<'_, LocalPipelineState>,
 ) -> Result<(), String> {
-    let mut proc = state.process.lock().map_err(|e| e.to_string())?;
-    if let Some(ref mut child) = *proc {
-        if let Some(ref mut stdin) = child.stdin {
-            stdin.write_all(&data).map_err(|e| {
-                log_to_file(&format!("stdin write error: {}", e));
-                e.to_string()
-            })?;
-            stdin.flush().map_err(|e| e.to_string())?;
+    if let Ok(mut proc) = state.process.try_lock() {
+        if let Some(ref mut child) = *proc {
+            if let Some(ref mut stdin) = child.stdin {
+                let _ = stdin.write_all(&data);
+                let _ = stdin.flush();
+            }
         }
     }
     Ok(())
@@ -221,7 +217,7 @@ fn stop_local_pipeline_inner(state: &LocalPipelineState) {
             // Close stdin to signal the pipeline to stop
             drop(child.stdin.take());
             // Give it a moment, then kill if needed
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::thread::sleep(std::time::Duration::from_millis(100));
             let _ = child.kill();
             let _ = child.wait();
             log_to_file("Pipeline killed");
@@ -335,3 +331,154 @@ pub fn run_mlx_setup(channel: Channel<String>) -> Result<(), String> {
 
     Ok(())
 }
+
+fn dir_size(path: &std::path::Path) -> u64 {
+    let mut total = 0;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                total += dir_size(&p);
+            } else if let Ok(meta) = entry.metadata() {
+                total += meta.len();
+            }
+        }
+    }
+    total
+}
+
+fn format_size(bytes: u64) -> String {
+    const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
+    const MIB: f64 = 1024.0 * 1024.0;
+    if bytes >= (GIB as u64) {
+        format!("{:.1} GB", bytes as f64 / GIB)
+    } else if bytes >= (MIB as u64) {
+        format!("{:.0} MB", bytes as f64 / MIB)
+    } else if bytes >= 1024 {
+        format!("{} KB", bytes / 1024)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+/// Query disk usage and installation status of Local MLX models
+#[tauri::command]
+pub fn get_local_models_info() -> Result<String, String> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "".to_string());
+    if home.is_empty() {
+        return Ok(r#"{"ready":false,"size_bytes":0,"size_formatted":"0 B","has_env":false,"has_models":false}"#.to_string());
+    }
+
+    let env_path = std::path::PathBuf::from(&home).join("Library/Application Support/Meet Minder/mlx-env");
+    let marker = env_path.join(".setup_complete");
+    let venv_python = env_path.join("bin/python3");
+    let ready = marker.exists() && venv_python.exists();
+
+    let mut total_bytes = 0u64;
+    let has_env = env_path.exists();
+    if has_env {
+        total_bytes += dir_size(&env_path);
+    }
+
+    let mut has_models = false;
+    let hf_hub = std::path::PathBuf::from(&home).join(".cache/huggingface/hub");
+    if hf_hub.exists() {
+        if let Ok(entries) = std::fs::read_dir(&hf_hub) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("models--mlx-community--") {
+                    has_models = true;
+                    total_bytes += dir_size(&entry.path());
+                }
+            }
+        }
+    }
+
+    let size_formatted = format_size(total_bytes);
+
+    Ok(format!(
+        r#"{{"ready":{},"size_bytes":{},"size_formatted":"{}","has_env":{},"has_models":{}}}"#,
+        ready, total_bytes, size_formatted, has_env, has_models
+    ))
+}
+
+/// Delete local MLX environment and downloaded models to reclaim disk space
+#[tauri::command]
+pub fn delete_local_models(state: tauri::State<'_, LocalPipelineState>) -> Result<String, String> {
+    log_to_file("delete_local_models called");
+
+    // 1. Stop local pipeline if running
+    let _ = stop_local_pipeline(state);
+
+    let home = std::env::var("HOME").unwrap_or_else(|_| "".to_string());
+    if home.is_empty() {
+        return Err("HOME directory not found".to_string());
+    }
+
+    // 2. Calculate total bytes to free
+    let env_path = std::path::PathBuf::from(&home).join("Library/Application Support/Meet Minder/mlx-env");
+    let mut total_bytes = 0u64;
+    if env_path.exists() {
+        total_bytes += dir_size(&env_path);
+    }
+
+    let hf_hub = std::path::PathBuf::from(&home).join(".cache/huggingface/hub");
+    let mut model_paths = Vec::new();
+    if hf_hub.exists() {
+        if let Ok(entries) = std::fs::read_dir(&hf_hub) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("models--mlx-community--") {
+                    total_bytes += dir_size(&entry.path());
+                    model_paths.push(entry.path());
+                }
+            }
+        }
+    }
+
+    let freed_formatted = format_size(total_bytes);
+
+    // 3. Delete mlx-env
+    if env_path.exists() {
+        if let Err(e) = std::fs::remove_dir_all(&env_path) {
+            log_to_file(&format!("Failed to delete mlx-env: {}", e));
+            return Err(format!("Failed to delete mlx-env: {}", e));
+        }
+        log_to_file("Deleted mlx-env successfully");
+    }
+
+    // 4. Delete huggingface models
+    for p in model_paths {
+        if p.exists() {
+            if let Err(e) = std::fs::remove_dir_all(&p) {
+                log_to_file(&format!("Failed to delete model {:?}: {}", p, e));
+            } else {
+                log_to_file(&format!("Deleted model {:?} successfully", p));
+            }
+        }
+    }
+
+    // 5. Clean locks if any
+    let locks_dir = hf_hub.join(".locks");
+    if locks_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&locks_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains("models--mlx-community--") {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        let _ = std::fs::remove_dir_all(&p);
+                    } else {
+                        let _ = std::fs::remove_file(&p);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(format!(
+        r#"{{"success":true,"freed_bytes":{},"freed_formatted":"{}"}}"#,
+        total_bytes, freed_formatted
+    ))
+}
+

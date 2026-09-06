@@ -31,7 +31,7 @@
         </div>
 
         <!-- Settings button -->
-        <button id="btn-settings" class="icon-btn" title="Cài đặt (⌘,)">
+        <button id="btn-settings" class="icon-btn" title="Cài đặt (⌘,)" type="button" data-tauri-drag-region="false">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3" />
             <path
@@ -95,6 +95,7 @@
           <!-- Language Selector -->
           <div class="quick-lang-wrap" title="Chọn ngôn ngữ trực tiếp trong khi dịch">
             <select id="quick-select-source-lang" class="source-select quick-lang-select" title="Ngôn ngữ nguồn (ngôn ngữ nói)">
+              <option value="auto">🌐 Tự động (Auto)</option>
               <option value="vi">🇻🇳 Tiếng Việt</option>
               <option value="ja">🇯🇵 日本語</option>
               <option value="en">🇬🇧 English</option>
@@ -157,6 +158,24 @@
 
     <!-- Transcript Area (Live activity panel) -->
     <div id="transcript-container" class="activity-panel active" data-activity="live">
+      <!-- Smart Network Interruption Banner -->
+      <div id="live-network-alert-banner" class="live-network-alert-banner" style="display: none;">
+        <div class="network-alert-content">
+          <span class="network-alert-icon" id="network-alert-icon">⚠️</span>
+          <div class="network-alert-text-wrap">
+            <div class="network-alert-title" id="network-alert-title">Mạng gián đoạn — Bản dịch trực tiếp tạm dừng</div>
+            <div class="network-alert-desc" id="network-alert-desc">File ghi âm (.wav) &amp; ghi chú vẫn đang được lưu an toàn 100%.</div>
+          </div>
+        </div>
+        <div class="network-alert-actions">
+          <button type="button" id="btn-net-fallback-local" class="btn-net-action btn-net-primary" style="display: none;">🖥️ Dùng Local MLX</button>
+          <button type="button" id="btn-net-fallback-gemini" class="btn-net-action btn-net-primary" style="display: none;">✨ Chuyển về Gemini</button>
+          <button type="button" id="btn-net-fallback-notrans" class="btn-net-action btn-net-secondary">🚫 Chỉ chép lời</button>
+          <button type="button" id="btn-net-retry" class="btn-net-action btn-net-secondary">🔄 Thử lại</button>
+          <button type="button" id="btn-net-dismiss" class="btn-net-close" title="Đóng thông báo">✕</button>
+        </div>
+      </div>
+
       <div class="transcript-viewport-wrap">
         <div id="transcript-content" data-tauri-drag-region>
           <div class="transcript-placeholder">
@@ -612,6 +631,23 @@
             <p class="hint" id="hint-mode-qwen" style="display:none">Cloud · 60+ languages · text-only · free preview · pick a source language</p>
             <div id="openai-cost-warning" class="cost-warning" style="display:none">
               ⚠️ ~$4/hr — much pricier than Soniox. Charged to your OpenAI account.
+            </div>
+          </div>
+
+          <!-- Local MLX Offline Package Card -->
+          <div class="settings-section" id="section-local-mlx-status">
+            <span class="field-label">🖥️ Gói Dịch Ngoại Tuyến (Local MLX)</span>
+            <div class="local-mlx-card">
+              <div class="local-mlx-status-row">
+                <span id="local-mlx-badge" class="local-mlx-badge is-checking">Đang kiểm tra...</span>
+                <span id="local-mlx-info" class="local-mlx-info">Whisper Large v3 Turbo + Gemma-3-4B</span>
+                <span id="local-mlx-size" class="local-mlx-size" style="display:none;"></span>
+              </div>
+              <p class="hint" id="local-mlx-desc" style="margin-bottom: 10px;">Dùng để tự động dịch ngoại tuyến khi mất mạng hoặc không có Wi-Fi (Hỗ trợ macOS Apple Silicon M1-M4).</p>
+              <div class="local-mlx-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button type="button" id="btn-install-mlx" class="btn-primary-small">⬇️ Cài đặt / Tải trước mô hình Local MLX</button>
+                <button type="button" id="btn-delete-mlx" class="btn-danger-small" style="display:none;">🗑️ Xoá mô hình Local (Giải phóng dung lượng)</button>
+              </div>
             </div>
           </div>
 

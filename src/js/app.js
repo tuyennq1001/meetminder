@@ -393,50 +393,67 @@ class App {
         this._geminiDiscoveredModels = null;
         this._geminiModelsCacheTime = 0;
         this._geminiBlacklistedModels = new Set();
+        this._networkAlertBannerVisible = false;
+        this._hadNetworkIssueInSession = false;
+        this._isLocalMlxReady = false;
     }
 
     async init() {
-        // UI Shell tabs (must be initialized first so tabs work immediately)
-        this._initShellAndMenus();
+        try {
+            // UI Shell tabs (must be initialized first so tabs work immediately)
+            this._initShellAndMenus();
 
-        // Load settings
-        await settingsManager.load();
+            // Load settings
+            await settingsManager.load();
 
-        // Init transcript UI
-        const transcriptContainer = document.getElementById('transcript-content');
-        this.transcriptUI = new TranscriptUI(transcriptContainer);
-        this.transcriptUI.onToast = (msg, type) => this._showToast(msg, type);
-        this.transcriptUI.onActivity = () => this._resetInactivityTimer();
+            // Init transcript UI
+            const transcriptContainer = document.getElementById('transcript-content');
+            this.transcriptUI = new TranscriptUI(transcriptContainer);
+            this.transcriptUI.onToast = (msg, type) => this._showToast(msg, type);
+            this.transcriptUI.onActivity = () => this._resetInactivityTimer();
 
-        // Init session store — one session file lives across many Start/Pause
-        // cycles; it autosaves while recording and finalizes on Stop or app close.
-        const initSettings = settingsManager.get();
-        sessionStore.init({
-            engine: initSettings.translation_mode || 'gemini',
-            sourceLang: initSettings.source_language || 'ja',
-            targetLang: initSettings.target_language || 'vi',
-        });
+            // Init session store — one session file lives across many Start/Pause
+            // cycles; it autosaves while recording and finalizes on Stop or app close.
+            const initSettings = settingsManager.get();
+            sessionStore.init({
+                engine: initSettings.translation_mode || 'gemini',
+                sourceLang: initSettings.source_language || 'ja',
+                targetLang: initSettings.target_language || 'vi',
+            });
 
-        // Check platform — hide Local MLX on non-Apple-Silicon
-        await this._checkPlatformSupport();
+            // Check platform — hide Local MLX on non-Apple-Silicon
+            await this._checkPlatformSupport();
+            await this._checkMlxReadiness();
 
-        // Apply saved settings to UI
-        this._applySettings(settingsManager.get());
+            // Apply saved settings to UI
+            this._applySettings(settingsManager.get());
+        } catch (initErr) {
+            console.error('[App] Partial error during early init:', initErr);
+        }
 
-        // Bind event listeners
-        this._bindEvents();
+        // Bind event listeners (always runs)
+        try {
+            this._bindEvents();
+        } catch (err) {
+            console.error('[App] _bindEvents error:', err);
+        }
 
         // Flush the session on every close route (window ✕, Cmd+Q, Dock quit).
-        await this._bindCloseHooks();
+        try {
+            await this._bindCloseHooks();
+        } catch (err) {
+            console.warn('[App] _bindCloseHooks error:', err);
+        }
 
         // Bind keyboard shortcuts
-        this._bindKeyboardShortcuts();
+        try {
+            this._bindKeyboardShortcuts();
+        } catch (err) {
+            console.error('[App] _bindKeyboardShortcuts error:', err);
+        }
 
         // Subscribe to settings changes
         settingsManager.onChange((settings) => this._applySettings(settings));
-
-        // Window position restore disabled — causes issues on Retina displays
-        // await this._restoreWindowPosition();
 
         // Window modes: overlay ↔ expanded (⤢), restores last mode + sizes
         // Maximize window by default on app launch
@@ -509,9 +526,291 @@ class App {
         }
     }
 
+    async _checkMlxReadiness() {
+        if (!this.isAppleSilicon) {
+            this._isLocalMlxReady = false;
+            this._localMlxInfo = null;
+            this._updateMlxSettingsUI();
+            return false;
+        }
+        try {
+            const infoResult = await invoke('get_local_models_info');
+            const info = typeof infoResult === 'string' ? JSON.parse(infoResult) : infoResult;
+            this._isLocalMlxReady = !!info?.ready;
+            this._localMlxInfo = info;
+        } catch (e) {
+            console.warn('[App] get_local_models_info error, falling back:', e);
+            try {
+                const checkResult = await invoke('check_mlx_setup');
+                const status = typeof checkResult === 'string' ? JSON.parse(checkResult) : checkResult;
+                this._isLocalMlxReady = !!status?.ready;
+            } catch {
+                this._isLocalMlxReady = false;
+            }
+            this._localMlxInfo = null;
+        }
+        this._updateMlxSettingsUI();
+        return this._isLocalMlxReady;
+    }
+
+    _updateMlxSettingsUI() {
+        const badge = document.getElementById('local-mlx-badge');
+        const btnInstall = document.getElementById('btn-install-mlx');
+        const btnDelete = document.getElementById('btn-delete-mlx');
+        const sizeTag = document.getElementById('local-mlx-size');
+        const desc = document.getElementById('local-mlx-desc');
+        if (!badge || !btnInstall) return;
+
+        if (!this.isAppleSilicon) {
+            badge.className = 'local-mlx-badge not-ready';
+            badge.textContent = 'Không khả dụng';
+            btnInstall.style.display = 'none';
+            if (btnDelete) btnDelete.style.display = 'none';
+            if (sizeTag) sizeTag.style.display = 'none';
+            if (desc) desc.textContent = 'Local MLX chỉ hoạt động trên macOS với chip Apple Silicon (M1/M2/M3/M4).';
+            return;
+        }
+
+        btnInstall.style.display = 'inline-flex';
+        const info = this._localMlxInfo;
+        const sizeBytes = Number(info?.size_bytes || 0);
+        const sizeFormatted = info?.size_formatted || '';
+
+        if (sizeBytes > 0 && sizeTag) {
+            sizeTag.textContent = `💾 ${sizeFormatted}`;
+            sizeTag.style.display = 'inline-flex';
+        } else if (sizeTag) {
+            sizeTag.style.display = 'none';
+        }
+
+        if (btnDelete) {
+            if (sizeBytes > 0) {
+                btnDelete.style.display = 'inline-flex';
+                btnDelete.textContent = `🗑️ Xoá mô hình (${sizeFormatted})`;
+            } else {
+                btnDelete.style.display = 'none';
+            }
+        }
+
+        if (this._isLocalMlxReady) {
+            badge.className = 'local-mlx-badge is-ready';
+            badge.textContent = '✅ Đã cài đặt sẵn sàng';
+            btnInstall.textContent = '🔄 Cài đặt lại mô hình';
+            if (desc) desc.textContent = 'Mô hình Whisper & Gemma đã tải sẵn trên máy. Sẵn sàng dự phòng ngoại tuyến 100% khi mất mạng.';
+        } else {
+            badge.className = 'local-mlx-badge not-ready';
+            badge.textContent = '⚠️ Chưa cài đặt mô hình';
+            btnInstall.textContent = '⬇️ Cài đặt / Tải trước mô hình Local MLX';
+            if (desc) desc.textContent = 'Tải trước mô hình AI (~3.5 GB) về máy Mac để có thể phiên dịch ngoại tuyến bất cứ khi nào mất mạng hoặc Wi-Fi yếu.';
+        }
+    }
+
+    async _handleInstallMlxClick() {
+        try {
+            await this._runMlxSetup();
+            await this._checkMlxReadiness();
+            this._showToast('Cài đặt mô hình Local MLX hoàn tất ✓', 'success');
+        } catch (err) {
+            console.error('[App] MLX setup failed:', err);
+            this._showToast(`Cài đặt MLX không thành công: ${err?.message || err}`, 'error');
+            await this._checkMlxReadiness();
+        }
+    }
+
+    async _handleDeleteMlxClick() {
+        const sizeFormatted = this._localMlxInfo?.size_formatted || 'khoảng 5.7 GB';
+        const confirmed = window.confirm(
+            `Bạn có chắc chắn muốn xoá toàn bộ mô hình Local AI và môi trường offline (${sizeFormatted}) để giải phóng ổ cứng?\n\n` +
+            `• Dung lượng sẽ được giải phóng: ${sizeFormatted}\n` +
+            `• Thư mục sẽ xoá: mlx-env và cache mô hình mlx-community\n\n` +
+            `Lưu ý: Sau khi xoá, nếu mất mạng app sẽ không tự động chuyển sang dịch offline được cho đến khi bạn cài đặt lại.`
+        );
+        if (!confirmed) return;
+
+        const badge = document.getElementById('local-mlx-badge');
+        const btnInstall = document.getElementById('btn-install-mlx');
+        const btnDelete = document.getElementById('btn-delete-mlx');
+
+        if (badge) {
+            badge.className = 'local-mlx-badge is-checking';
+            badge.textContent = 'Đang xoá mô hình...';
+        }
+        if (btnInstall) btnInstall.disabled = true;
+        if (btnDelete) btnDelete.disabled = true;
+
+        try {
+            // If user currently has 'local' mode selected, fallback to 'gemini'
+            if (this.translationMode === 'local') {
+                console.log('[App] Switching from local mode to gemini before model deletion...');
+                this.translationMode = 'gemini';
+                settingsManager.save({ translation_mode: 'gemini' });
+                const select = document.getElementById('select-translation-mode');
+                if (select) select.value = 'gemini';
+                this._updateModeUI('gemini');
+                this._showToast('Đã tự động chuyển sang engine Gemini Live', 'info');
+            }
+
+            const res = await invoke('delete_local_models');
+            const data = typeof res === 'string' ? JSON.parse(res) : res;
+            const freed = data?.freed_formatted || sizeFormatted;
+
+            this._showToast(`Đã xoá mô hình cục bộ và giải phóng ${freed} dung lượng ổ cứng ✓`, 'success');
+        } catch (err) {
+            console.error('[App] Failed to delete local models:', err);
+            this._showToast(`Lỗi khi xoá mô hình: ${err?.message || err}`, 'error');
+        } finally {
+            if (btnInstall) btnInstall.disabled = false;
+            if (btnDelete) btnDelete.disabled = false;
+            await this._checkMlxReadiness();
+        }
+    }
+
+    async _showNetworkAlertBanner(engine = '', reason = '') {
+        if (!this.isRunning || this.translationMode === 'local') return;
+        const banner = document.getElementById('live-network-alert-banner');
+        if (!banner) return;
+
+        this._networkAlertBannerVisible = true;
+        this._hadNetworkIssueInSession = true;
+
+        await this._checkMlxReadiness();
+
+        const icon = document.getElementById('network-alert-icon');
+        const title = document.getElementById('network-alert-title');
+        const desc = document.getElementById('network-alert-desc');
+        const btnLocal = document.getElementById('btn-net-fallback-local');
+        const btnGemini = document.getElementById('btn-net-fallback-gemini');
+        const btnNoTrans = document.getElementById('btn-net-fallback-notrans');
+        const btnRetry = document.getElementById('btn-net-retry');
+
+        if (icon) icon.textContent = '⚠️';
+        if (title) title.textContent = 'Mạng gián đoạn — Bản dịch trực tiếp tạm dừng';
+        if (desc) desc.textContent = 'File ghi âm (.wav) & ghi chú vẫn đang được lưu an toàn 100%.';
+        if (btnGemini) btnGemini.style.display = 'none';
+        if (btnRetry) btnRetry.style.display = 'inline-flex';
+
+        if (btnLocal) {
+            btnLocal.style.display = (this._isLocalMlxReady && this.isAppleSilicon) ? 'inline-flex' : 'none';
+        }
+        if (btnNoTrans) {
+            const s = settingsManager.get();
+            btnNoTrans.style.display = (s.target_language === 'none') ? 'none' : 'inline-flex';
+        }
+
+        banner.style.display = 'flex';
+    }
+
+    _showNetworkRestoredBanner() {
+        const banner = document.getElementById('live-network-alert-banner');
+        if (!banner) return;
+        this._networkAlertBannerVisible = true;
+
+        const icon = document.getElementById('network-alert-icon');
+        const title = document.getElementById('network-alert-title');
+        const desc = document.getElementById('network-alert-desc');
+        const btnLocal = document.getElementById('btn-net-fallback-local');
+        const btnGemini = document.getElementById('btn-net-fallback-gemini');
+        const btnNoTrans = document.getElementById('btn-net-fallback-notrans');
+        const btnRetry = document.getElementById('btn-net-retry');
+
+        if (icon) icon.textContent = '🌐';
+        if (title) title.textContent = 'Đã có kết nối mạng internet trở lại';
+        if (desc) desc.textContent = 'Bạn có thể chuyển về Google Gemini Live để tiếp tục phiên dịch trực tuyến.';
+        if (btnLocal) btnLocal.style.display = 'none';
+        if (btnGemini) btnGemini.style.display = 'inline-flex';
+        if (btnNoTrans) btnNoTrans.style.display = 'none';
+        if (btnRetry) btnRetry.style.display = 'none';
+
+        banner.style.display = 'flex';
+        this._showToast('🌐 Đã có mạng internet trở lại. Có thể chuyển về Gemini Live.', 'info');
+    }
+
+    _hideNetworkAlertBanner() {
+        const banner = document.getElementById('live-network-alert-banner');
+        if (banner) banner.style.display = 'none';
+        this._networkAlertBannerVisible = false;
+    }
+
+    async _hotSwapToEngine(newMode) {
+        if (!this.isRunning) return;
+        this._hideNetworkAlertBanner();
+        const modeLabel = newMode === 'local' ? 'Local MLX (Offline)' : (newMode === 'gemini' ? 'Google Gemini Live' : newMode);
+        this._showToast(`Đang chuyển sang ${modeLabel}...`, 'info');
+
+        // Completely stop previous engine, capture channel, and reconnect timers
+        await this._stopTranslationEngine();
+
+        this.translationMode = newMode;
+        await settingsManager.save({ translation_mode: newMode });
+
+        const selectMode = document.getElementById('select-translation-mode');
+        if (selectMode) selectMode.value = newMode;
+        this._updateModeUI(newMode);
+
+        sessionStore.beginChunk({
+            engine: newMode,
+            sourceLang: this.sessionSourceLang,
+            targetLang: this.sessionTargetLang,
+        });
+
+        try {
+            await this._startTranslationEngine(settingsManager.get());
+            this._showToast(`Đã chuyển sang ${modeLabel} ✓`, 'success');
+        } catch (err) {
+            console.error(`[App] Hot-swap to ${newMode} failed:`, err);
+            this._showToast(`Lỗi chuyển engine: ${err}`, 'error');
+            this._showNetworkAlertBanner(newMode, String(err));
+        }
+    }
+
     // ─── Event Binding ──────────────────────────────────────
 
     _bindEvents() {
+        // Smart Network Interruption Banner buttons
+        document.getElementById('btn-net-fallback-local')?.addEventListener('click', () => {
+            this._hotSwapToEngine('local');
+        });
+        document.getElementById('btn-net-fallback-gemini')?.addEventListener('click', () => {
+            this._hideNetworkAlertBanner();
+            this._hotSwapToEngine('gemini');
+        });
+        document.getElementById('btn-net-fallback-notrans')?.addEventListener('click', () => {
+            this._hideNetworkAlertBanner();
+            this._handleQuickTargetLangChange('none');
+        });
+        document.getElementById('btn-net-retry')?.addEventListener('click', () => {
+            this._showToast('Đang thử kết nối lại...', 'info');
+            this._restartLiveEngineForSettings();
+        });
+        document.getElementById('btn-net-dismiss')?.addEventListener('click', () => {
+            this._hideNetworkAlertBanner();
+        });
+
+        // Local MLX install & delete buttons in Settings
+        document.getElementById('btn-install-mlx')?.addEventListener('click', () => {
+            this._handleInstallMlxClick();
+        });
+        document.getElementById('btn-delete-mlx')?.addEventListener('click', () => {
+            this._handleDeleteMlxClick();
+        });
+
+        // Offline / Online window events
+        window.addEventListener('offline', () => {
+            if (this.isRunning && this.translationMode !== 'local') {
+                this._showNetworkAlertBanner(this.translationMode, 'Mất kết nối mạng internet');
+            }
+        });
+        window.addEventListener('online', () => {
+            if (this.isRunning) {
+                if (this.translationMode === 'local') {
+                    this._showNetworkRestoredBanner();
+                } else if (this._networkAlertBannerVisible) {
+                    this._showToast('Đã có mạng trở lại. Đang tự động kết nối...', 'info');
+                    this._restartLiveEngineForSettings();
+                }
+            }
+        });
+
         // Settings button
         document.getElementById('btn-settings')?.addEventListener('click', () => {
             this._showView('settings');
@@ -1113,9 +1412,14 @@ class App {
         document.getElementById('btn-test-openai')?.addEventListener('click', () => this._testConnection('openai'));
 
         // Translation mode toggle
-        document.getElementById('select-translation-mode')?.addEventListener('change', (e) => {
-            this._updateModeUI(e.target.value);
-            this._autoSaveSettingsFromForm();
+        document.getElementById('select-translation-mode')?.addEventListener('change', async (e) => {
+            const newMode = e.target.value;
+            this._updateModeUI(newMode);
+            this.translationMode = newMode;
+            await this._autoSaveSettingsFromForm();
+            if (this.isRunning) {
+                await this._hotSwapToEngine(newMode);
+            }
         });
 
         // Inactivity timeout change
@@ -1136,10 +1440,6 @@ class App {
         // Toolbar engine pill
         document.querySelectorAll('#engine-pill .engine-pill-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                if (this.isRunning || this.isStarting) {
-                    this._showToast('Pause the session before switching engine', 'error');
-                    return;
-                }
                 this._selectEngineClass(btn.dataset.engineClass);
             });
         });
@@ -1381,10 +1681,16 @@ class App {
 
         sonioxClient.onStatusChange = (status) => {
             this._updateStatus(status);
+            if (status === 'connected') {
+                this._hideNetworkAlertBanner();
+            }
         };
 
         sonioxClient.onError = (error) => {
             this._showToast(error, 'error');
+            if (this.isRunning && (String(error).includes('Reconnect') || String(error).includes('lost') || String(error).includes('timeout') || !navigator.onLine)) {
+                this._showNetworkAlertBanner('soniox', error);
+            }
         };
 
         sonioxClient.onConfidence = (avgConfidence) => {
@@ -1585,19 +1891,20 @@ class App {
     // ─── Views ──────────────────────────────────────────────
 
     _showView(view) {
-        document.getElementById('overlay-view').classList.toggle('active', view === 'overlay');
-        document.getElementById('settings-view').classList.toggle('active', view === 'settings');
+        try {
+            document.getElementById('overlay-view')?.classList.toggle('active', view === 'overlay');
+            document.getElementById('settings-view')?.classList.toggle('active', view === 'settings');
 
-        if (view === 'settings') {
-            this._populateSettingsForm();
-            this._showSettingsScreen('tab-customers');
-        }
-        // Returning to the overlay while in Read mode: a voice/provider may have
-        // changed in Settings — refresh both the capability hint AND the voice
-        // quick-pick (else it keeps the old provider's options + settings key).
-        if (view === 'overlay' && getActivity() === 'read') {
-            this._populateReadQuickPick();
-            this._showReadCapabilityHint();
+            if (view === 'settings') {
+                this._populateSettingsForm();
+                this._showSettingsScreen('tab-customers');
+            }
+            if (view === 'overlay' && typeof getActivity === 'function' && getActivity() === 'read') {
+                this._populateReadQuickPick?.();
+                this._showReadCapabilityHint?.();
+            }
+        } catch (err) {
+            console.error('[App] _showView error:', err);
         }
     }
 
@@ -1632,6 +1939,8 @@ class App {
             this._renderSettingsTemplatesTab();
         } else if (id === 'tab-notes-template') {
             this._renderSettingsNotesTemplateTab();
+        } else if (id === 'tab-translation') {
+            await this._checkMlxReadiness();
         }
 
         this._updateSidebarBadges().catch(err => console.error('Failed to update sidebar badges:', err));
@@ -1905,9 +2214,11 @@ class App {
     // ─── Settings Form ─────────────────────────────────────
 
     _populateSettingsForm() {
-        const s = settingsManager.get();
+        try {
+            const s = settingsManager.get();
 
-        document.getElementById('input-api-key').value = s.soniox_api_key || '';
+            const sonioxKeyInput = document.getElementById('input-api-key');
+            if (sonioxKeyInput) sonioxKeyInput.value = s.soniox_api_key || '';
         const openaiKeyInput = document.getElementById('input-openai-key');
         if (openaiKeyInput) openaiKeyInput.value = s.openai_api_key || '';
         const geminiKeyInput = document.getElementById('input-gemini-key');
@@ -1996,14 +2307,18 @@ class App {
         if (fontSizeInput) fontSizeInput.value = s.font_size || 16;
 
         const fontColor = s.font_color || '#ffffff';
-        document.getElementById('input-font-color').value = fontColor;
-        document.getElementById('font-color-value').textContent = fontColor.toUpperCase();
-        document.getElementById('select-font-family').value = s.font_family || 'system';
+        const fontColorInput = document.getElementById('input-font-color');
+        if (fontColorInput) fontColorInput.value = fontColor;
+        const fontColorVal = document.getElementById('font-color-value');
+        if (fontColorVal) fontColorVal.textContent = fontColor.toUpperCase();
+        const fontFamSelect = document.getElementById('select-font-family');
+        if (fontFamSelect) fontFamSelect.value = s.font_family || 'system';
 
         const maxLinesInput = document.getElementById('input-max-lines');
         if (maxLinesInput) maxLinesInput.value = s.max_lines || 5;
 
-        document.getElementById('check-show-original').checked = s.show_original !== false;
+        const checkShowOrig = document.getElementById('check-show-original');
+        if (checkShowOrig) checkShowOrig.checked = s.show_original !== false;
 
         const defLogsScopeSelect = document.getElementById('select-default-logs-scope');
         if (defLogsScopeSelect) defLogsScopeSelect.value = s.default_logs_scope || 'work';
@@ -2033,6 +2348,9 @@ class App {
             termsList.innerHTML = '';
             const terms = ctx?.translation_terms || [];
             terms.forEach(t => this._addTermRow(t.source, t.target));
+        }
+        } catch (err) {
+            console.error('[App] _populateSettingsForm error:', err);
         }
     }
 
@@ -2228,12 +2546,22 @@ class App {
         }
         this._setViewMode(viewMode);
 
+        // Keep translationMode and mode UI synced with settings
+        if (settings.translation_mode) {
+            this.translationMode = settings.translation_mode;
+            const selectMode = document.getElementById('select-translation-mode');
+            if (selectMode && selectMode.value !== settings.translation_mode) {
+                selectMode.value = settings.translation_mode;
+            }
+            this._updateModeUI(settings.translation_mode);
+        }
+
         // Update quick language and timing in toolbar
         const quickSrc = document.getElementById('quick-select-source-lang');
         const quickTgt = document.getElementById('quick-select-target-lang');
         if (quickSrc) {
-            const validSrcs = ['vi', 'ja', 'en'];
-            quickSrc.value = validSrcs.includes(settings.source_language) ? settings.source_language : 'vi';
+            const validSrcs = ['auto', 'vi', 'ja', 'en'];
+            quickSrc.value = validSrcs.includes(settings.source_language) ? settings.source_language : 'auto';
         }
         if (quickTgt) {
             const validTgts = ['vi', 'ja', 'en', 'none'];
@@ -2366,10 +2694,15 @@ class App {
                 ? currentMode : 'soniox';
         }
 
+        this.translationMode = nextMode;
         settingsManager.save({ translation_mode: nextMode });
         const select = document.getElementById('select-translation-mode');
         if (select) select.value = nextMode;
         this._updateModeUI(nextMode);
+
+        if (this.isRunning) {
+            this._hotSwapToEngine(nextMode);
+        }
     }
 
     _resetInactivityTimer() {
@@ -2411,7 +2744,6 @@ class App {
         const pill = document.getElementById('engine-pill');
         if (!pill) return;
         pill.dataset.locked = locked ? 'true' : 'false';
-        pill.querySelectorAll('.engine-pill-btn').forEach(btn => { btn.disabled = locked; });
     }
 
     _showEnginePicker() {}
@@ -2507,11 +2839,10 @@ class App {
             if (twoWayOpt) twoWayOpt.disabled = isCloudRealtime;
             if (isCloudRealtime && typeSelect.value === 'two_way') {
                 typeSelect.value = 'one_way';
-                this._updateTranslationTypeUI('one_way');
+                this._updateTranslationTypeUI?.('one_way');
             }
         }
 
-        this._updateSettingsCards();
         const btnOpenAiAudio = document.getElementById('btn-openai-audio');
         if (btnOpenAiAudio) btnOpenAiAudio.style.display = 'none';
 
@@ -2574,9 +2905,9 @@ class App {
     // Inline format check — runs on every keystroke. Cheap, no network.
     // Updates: per-field status badge + engine dropdown option enable/disable.
     _refreshKeyStatus() {
-        const sonioxKey = document.getElementById('input-api-key')?.value.trim() || '';
-        const openaiKey = document.getElementById('input-openai-key')?.value.trim() || '';
-        const geminiKey = document.getElementById('input-gemini-key')?.value.trim() || '';
+        const sonioxKey = document.getElementById('input-api-key')?.value?.trim() || '';
+        const openaiKey = document.getElementById('input-openai-key')?.value?.trim() || '';
+        const geminiKey = document.getElementById('input-gemini-key')?.value?.trim() || '';
 
         // Soniox keys are opaque hex-like strings, ~32+ chars. Be lenient.
         const sonioxOk = sonioxKey.length >= 20;
@@ -2743,6 +3074,10 @@ class App {
 
         this.isRunning = true;
         this.isPaused = false;
+        this._hideNetworkAlertBanner();
+        if (!this.sessionStartTime) {
+            this._hadNetworkIssueInSession = false;
+        }
         this._hasUnsavedMeetingData = false;
         this._updateStartButton();
         this._hideEnginePicker();
@@ -2876,8 +3211,12 @@ class App {
         this.openAiClient = new OpenAiRealtimeClient();
 
         this.openAiClient.onStatusChange = (state) => {
-            if (state === 'ready') this._updateStatus('connected');
-            else if (state === 'connecting') this._updateStatus('connecting');
+            if (state === 'ready') {
+                this._updateStatus('connected');
+                this._hideNetworkAlertBanner();
+            } else if (state === 'connecting') {
+                this._updateStatus('connecting');
+            }
         };
         this.openAiClient.onProvisional = (text) => {
             this.transcriptUI.setProvisional(text, null, null);
@@ -2893,11 +3232,15 @@ class App {
             console.error('[OpenAI Realtime] error:', err);
             this._showToast(`OpenAI error: ${err}`, 'error');
             this._updateStatus('error');
+            if (this.isRunning) {
+                this._showNetworkAlertBanner('openai', err);
+            }
         };
         this.openAiClient.onClosed = (reason) => {
             console.warn('[OpenAI Realtime] closed:', reason);
             if (this.isRunning) {
                 this._showToast('OpenAI session closed — reconnecting…', 'success');
+                this._showNetworkAlertBanner('openai', reason);
                 setTimeout(() => {
                     if (this.isRunning) this._restartLiveEngineForSettings();
                 }, 1000);
@@ -2957,8 +3300,12 @@ class App {
         this.geminiClient = new GeminiRealtimeClient();
 
         this.geminiClient.onStatusChange = (state) => {
-            if (state === 'ready') this._updateStatus('connected');
-            else if (state === 'connecting') this._updateStatus('connecting');
+            if (state === 'ready') {
+                this._updateStatus('connected');
+                this._hideNetworkAlertBanner();
+            } else if (state === 'connecting') {
+                this._updateStatus('connecting');
+            }
         };
         this.geminiClient.onProvisional = (text) => {
             this.transcriptUI.setProvisional(text, null, null);
@@ -3036,44 +3383,32 @@ class App {
         };
         this.geminiClient.onError = (code, msg) => {
             console.error('[Gemini Realtime]', code, msg);
+            if (this.translationMode !== 'gemini') return;
             const msgStr = String(msg || '');
             if ((code === 'connect_failed' || code === 'session_failed') && (msgStr.includes('API key') || msgStr.includes('PERMISSION_DENIED'))) {
                 this._showToast(`Gemini: ${msgStr || code}`, 'error');
                 this._updateStatus('error');
                 this.pause();
             } else if (this.isRunning) {
-                this._scheduleGeminiReconnect(1000);
+                this._showNetworkAlertBanner('gemini', msgStr || code);
+                if (navigator.onLine) {
+                    this._scheduleGeminiReconnect(2500);
+                }
             }
         };
         this.geminiClient.onClosed = (reason) => {
             console.warn('[Gemini Realtime] closed:', reason);
+            if (this.translationMode !== 'gemini') return;
             if (this.isRunning) {
-                this._scheduleGeminiReconnect(500);
+                this._showNetworkAlertBanner('gemini', reason);
+                if (navigator.onLine) {
+                    this._scheduleGeminiReconnect(2500);
+                }
             }
         };
 
-        try {
-            await this.geminiClient.connect({
-                apiKey: settings.gemini_api_key,
-                sourceLanguage: settings.source_language || 'ja',
-                targetLanguage: settings.target_language || 'vi',
-                model: settings.gemini_model || 'models/gemini-3.5-transcribe-live',
-            });
-        } catch (err) {
-            console.error('[Gemini Realtime] connect error:', err);
-            const errStr = String(err);
-            if (errStr.includes('API key') || errStr.includes('PERMISSION_DENIED')) {
-                this._showToast(`Gemini connect failed: ${err}`, 'error');
-                await this.pause();
-                return;
-            }
-            if (this.isRunning) {
-                console.log('[Gemini Realtime] Connection failed, retrying in 2000ms...');
-                this._scheduleGeminiReconnect(2000);
-            }
-            return;
-        }
-
+        // 1. Ensure audio capture is running FIRST so meeting recording (.wav) continues 100% uninterrupted
+        // and the macOS microphone privacy indicator remains steadily active without any flickering.
         if (!this._audioCaptureActive) {
             try {
                 let audioBatchCount = 0;
@@ -3109,12 +3444,43 @@ class App {
                     this._showToast(`Audio error: ${err}`, 'error');
                 }
                 await this.pause();
+                return;
             }
+        }
+
+        // 2. Connect to Gemini Realtime WebSocket
+        try {
+            await this.geminiClient.connect({
+                apiKey: settings.gemini_api_key,
+                sourceLanguage: settings.source_language || 'ja',
+                targetLanguage: settings.target_language || 'vi',
+                model: settings.gemini_model || 'models/gemini-3.5-transcribe-live',
+            });
+        } catch (err) {
+            console.error('[Gemini Realtime] connect error:', err);
+            const errStr = String(err);
+            if (errStr.includes('API key') || errStr.includes('PERMISSION_DENIED')) {
+                this._showToast(`Gemini connect failed: ${err}`, 'error');
+                await this.pause();
+                return;
+            }
+            if (this.isRunning) {
+                console.log('[Gemini Realtime] Connection failed, showing network banner...');
+                this._showNetworkAlertBanner('gemini', errStr);
+                if (navigator.onLine) {
+                    this._scheduleGeminiReconnect(3000);
+                }
+            }
+            return;
         }
     }
 
-    _scheduleGeminiReconnect(delayMs = 500) {
-        if (!this.isRunning) return;
+    _scheduleGeminiReconnect(delayMs = 2500) {
+        if (!this.isRunning || this.translationMode !== 'gemini') return;
+        if (!navigator.onLine) {
+            console.log('[Gemini Realtime] Network offline, skipping auto-reconnect loop');
+            return;
+        }
         if (this._geminiReconnectTimer) {
             clearTimeout(this._geminiReconnectTimer);
             this._geminiReconnectTimer = null;
@@ -3122,7 +3488,7 @@ class App {
         console.log(`[Gemini Realtime] Scheduling auto-reconnect in ${delayMs}ms...`);
         this._geminiReconnectTimer = setTimeout(async () => {
             this._geminiReconnectTimer = null;
-            if (!this.isRunning) return;
+            if (!this.isRunning || this.translationMode !== 'gemini' || !navigator.onLine) return;
             await this._restartLiveEngineForSettings();
         }, delayMs);
     }
@@ -3139,8 +3505,12 @@ class App {
         this.qwenClient = new QwenRealtimeClient();
 
         this.qwenClient.onStatusChange = (state) => {
-            if (state === 'ready') this._updateStatus('connected');
-            else if (state === 'connecting') this._updateStatus('connecting');
+            if (state === 'ready') {
+                this._updateStatus('connected');
+                this._hideNetworkAlertBanner();
+            } else if (state === 'connecting') {
+                this._updateStatus('connecting');
+            }
         };
         this.qwenClient.onProvisional = (text) => {
             this.transcriptUI.setProvisional(text, null, null);
@@ -3154,11 +3524,15 @@ class App {
             console.error('[Qwen Realtime]', code, msg);
             this._showToast(`${code}: ${msg}`, 'error');
             this._updateStatus('error');
+            if (this.isRunning) {
+                this._showNetworkAlertBanner('qwen', msg || code);
+            }
         };
         this.qwenClient.onClosed = (reason) => {
             console.warn('[Qwen Realtime] closed:', reason);
             if (this.isRunning) {
                 this._showToast('Qwen session closed — reconnecting…', 'success');
+                this._showNetworkAlertBanner('qwen', reason);
                 setTimeout(() => {
                     if (this.isRunning) this._restartLiveEngineForSettings();
                 }, 1000);
@@ -3272,17 +3646,8 @@ class App {
         this.transcriptUI.provider = 'soniox';
         this._updateStatus('connecting');
 
-        // Step 0: Check audio permission FIRST (before loading models)
-        try {
-            await invoke('start_capture', {
-                source: this.currentSource,
-                channel: new window.__TAURI__.core.Channel(), // dummy channel for permission check
-                recordPath: null,
-            });
-            await invoke('stop_capture');
-        } catch (err) {
-            console.error('[App] Audio permission check failed:', err);
-            this._showToast(`Audio permission required: ${err}`, 'error');
+        // Step 0: Check audio permission
+        if (!await this._ensureMicrophonePermission()) {
             this.isRunning = false;
             this._updateStartButton();
             this._updateStatus('error');
@@ -3296,6 +3661,14 @@ class App {
             const checkResult = await invoke('check_mlx_setup');
             const status = JSON.parse(checkResult);
             if (!status.ready) {
+                if (!navigator.onLine) {
+                    this._showToast('Mô hình Local MLX chưa tải và máy đang mất mạng.', 'error');
+                    this.transcriptUI.showStatusMessage('Chưa có mô hình offline. Cần có internet để tải mô hình lần đầu.');
+                    this._updateStatus('error');
+                    this.isRunning = false;
+                    this._updateStartButton();
+                    return;
+                }
                 this._showToast('Setting up MLX models (one-time, ~5GB)...', 'success');
                 this.transcriptUI.showStatusMessage('Downloading MLX models (one-time setup)...');
                 await this._runMlxSetup();
@@ -3306,7 +3679,7 @@ class App {
 
         console.log('[App] MLX check passed, starting pipeline...');
 
-        // Step 1: Start pipeline FIRST (independent of audio)
+        // Step 2: Start pipeline FIRST (independent of audio)
         try {
             this._showToast('Starting local pipeline...', 'success');
 
@@ -3347,7 +3720,7 @@ class App {
             return;
         }
 
-        // Step 2: Start audio capture
+        // Step 3: Start audio capture
         try {
             const audioChannel = new window.__TAURI__.core.Channel();
             let audioChunkCount = 0;
@@ -3358,6 +3731,8 @@ class App {
                     console.log(`[Local] Audio batch #${audioChunkCount}, size:`, pcmData?.length || 0);
                 }
                 this._updateAudioMeter(pcmData);
+                // Do NOT send audio chunks into pipe until models are loaded
+                if (!this.localPipelineReady) return;
                 try {
                     await invoke('send_audio_to_pipeline', { data: Array.from(new Uint8Array(pcmData)) });
                 } catch (e) {
@@ -3371,6 +3746,7 @@ class App {
                 channel: audioChannel,
                 recordPath,
             });
+            this._audioCaptureActive = true;
             console.log('[App] Audio capture started');
             this._scheduleCaptureHealthCheck();
         } catch (err) {
@@ -3545,42 +3921,19 @@ class App {
             console.error('Failed to stop audio capture:', err);
         }
 
-        if (this.translationMode === 'local') {
-            // Stop local pipeline
-            try {
-                await invoke('stop_local_pipeline');
-            } catch (err) {
-                console.error('Failed to stop local pipeline:', err);
-            }
-            this.localPipelineReady = false;
-            this.transcriptUI.removeStatusMessage();
-            this._updateStatus('disconnected');
-        } else if (this.translationMode === 'openai') {
-            if (this.openAiClient) {
-                try { await this.openAiClient.disconnect(); } catch {}
-                this.openAiClient = null;
-            }
-            if (this.openAiOutputQueue) {
-                this.openAiOutputQueue.close();
-                this.openAiOutputQueue = null;
-            }
-            this._updateStatus('disconnected');
-        } else if (this.translationMode === 'gemini') {
-            if (this.geminiClient) {
-                try { await this.geminiClient.disconnect(); } catch {}
-                this.geminiClient = null;
-            }
-            this._updateStatus('disconnected');
-        } else if (this.translationMode === 'qwen') {
-            if (this.qwenClient) {
-                try { await this.qwenClient.disconnect(); } catch {}
-                this.qwenClient = null;
-            }
-            this._updateStatus('disconnected');
-        } else {
-            // Disconnect Soniox
-            sonioxClient.disconnect();
+        // Cleanly detach and disconnect all live engines & cancel reconnect timers
+        await this._disconnectLiveEngine();
+
+        // Ensure local pipeline is stopped if active
+        try {
+            await invoke('stop_local_pipeline');
+        } catch (err) {
+            console.error('Failed to stop local pipeline:', err);
         }
+        this.localPipelineReady = false;
+        this.localPipelineChannel = null;
+        this.transcriptUI.removeStatusMessage();
+        this._updateStatus('disconnected');
 
         // Keep transcript visible — don't clear
         this.transcriptUI.clearProvisional();
@@ -3603,6 +3956,7 @@ class App {
         this._updateStartButton();
         this._setEnginePillLocked(false);
         this._clearInactivityTimer();
+        this._hideNetworkAlertBanner();
         await this._stopTranslationEngine();
 
         // Close the chunk and persist the whole session (md + json sidecar).
@@ -4100,7 +4454,11 @@ class App {
         const chkAutoRetranscript = document.getElementById('chk-stop-auto-retranscript');
         const savedAutoRetranscript = localStorage.getItem('meet_minder_auto_retranscript');
         if (chkAutoRetranscript) {
-            chkAutoRetranscript.checked = savedAutoRetranscript !== 'false';
+            if (this._hadNetworkIssueInSession) {
+                chkAutoRetranscript.checked = true;
+            } else {
+                chkAutoRetranscript.checked = savedAutoRetranscript !== 'false';
+            }
         }
 
         const onAutoRetranscriptChange = () => {
@@ -4124,7 +4482,11 @@ class App {
 
         const chkAutoRetranscriptLabel = document.getElementById('chk-stop-auto-retranscript-label');
         if (chkAutoRetranscriptLabel) {
-            chkAutoRetranscriptLabel.textContent = '🔄 Re-transcript để tối ưu nội dung';
+            if (this._hadNetworkIssueInSession) {
+                chkAutoRetranscriptLabel.innerHTML = '🔄 Re-transcript để tối ưu nội dung <span style="color:#f59e0b;font-size:11px;font-weight:normal;margin-left:4px;">(Khuyên dùng vì có đoạn mạng gián đoạn)</span>';
+            } else {
+                chkAutoRetranscriptLabel.textContent = '🔄 Re-transcript để tối ưu nội dung';
+            }
         }
 
         const chkAutoMinutesLabel = document.getElementById('chk-stop-auto-minutes-label');
@@ -4297,6 +4659,8 @@ class App {
 
         this.isRunning = false;
         this.isPaused = false;
+        this._hideNetworkAlertBanner();
+        this._hadNetworkIssueInSession = false;
         this.sessionStartTime = null;
         this.recordingStartTime = null;
         this._stopLiveDurationTimer();
@@ -4781,7 +5145,11 @@ class App {
      * disconnect() may flush an in-flight partial result.
      */
     async _disconnectLiveEngine() {
-        if (this.translationMode === 'gemini' && this.geminiClient) {
+        if (this._geminiReconnectTimer) {
+            clearTimeout(this._geminiReconnectTimer);
+            this._geminiReconnectTimer = null;
+        }
+        if (this.geminiClient) {
             const client = this.geminiClient;
             this.geminiClient = null;
             client.onStatusChange = () => {};
@@ -4794,7 +5162,8 @@ class App {
             try { await client.disconnect(); } catch (err) {
                 console.warn('[Gemini Realtime] Error stopping old client:', err);
             }
-        } else if (this.translationMode === 'openai' && this.openAiClient) {
+        }
+        if (this.openAiClient) {
             const client = this.openAiClient;
             this.openAiClient = null;
             client.onStatusChange = () => {};
@@ -4810,7 +5179,8 @@ class App {
                 this.openAiOutputQueue.close();
                 this.openAiOutputQueue = null;
             }
-        } else if (this.translationMode === 'qwen' && this.qwenClient) {
+        }
+        if (this.qwenClient) {
             const client = this.qwenClient;
             this.qwenClient = null;
             client.onStatusChange = () => {};
@@ -4821,16 +5191,21 @@ class App {
             try { await client.disconnect(); } catch (err) {
                 console.warn('[Qwen Realtime] Error stopping old client:', err);
             }
-        } else if (this.translationMode === 'soniox') {
-            sonioxClient.disconnect();
-            // A source-only Soniox segment can be left pending when a socket is
-            // restarted. Mark it as intentionally untranslated so a new
-            // socket's translation cannot attach to an old UI segment.
-            for (const pending of this._sonioxOriginalQueue) {
-                this.transcriptUI.addTranslation('', pending.pendingId);
-            }
-            this._sonioxOriginalQueue.length = 0;
         }
+        try {
+            sonioxClient.disconnect();
+            if (this._sonioxOriginalQueue) {
+                for (const pending of this._sonioxOriginalQueue) {
+                    this.transcriptUI.addTranslation('', pending.pendingId);
+                }
+                this._sonioxOriginalQueue.length = 0;
+            }
+        } catch {}
+
+        try {
+            await invoke('stop_local_pipeline');
+        } catch {}
+        this.localPipelineReady = false;
         this.transcriptUI.clearProvisional();
     }
 
@@ -4850,10 +5225,14 @@ class App {
             .then(async () => {
                 if (!this.isRunning || generation !== this._liveEngineGeneration) return;
                 if (this.translationMode === 'local') {
-                    // The local pipeline reads its language pair only at
-                    // startup, so it also needs the shared capture restarted.
+                    // Local MLX needs Python process and its audio capture restarted
                     await this._stopTranslationEngine();
                 } else {
+                    // For cloud realtime engines (Gemini, Soniox, OpenAI, Qwen),
+                    // only disconnect and reconnect the network socket.
+                    // DO NOT stop audio capture! Keeping CoreAudio active ensures:
+                    // 1. Meeting audio recording (.wav) continues 100% uninterrupted.
+                    // 2. The macOS microphone privacy indicator never flickers on/off.
                     await this._disconnectLiveEngine();
                 }
                 if (!this.isRunning || generation !== this._liveEngineGeneration) return;
@@ -10854,6 +11233,13 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             }, 3000);
         });
     }
+
+    _speakIfEnabled(text) {}
+    _saveSessionEdit() {}
+    _populateReadQuickPick() {}
+    _showReadCapabilityHint() {}
+    _updateTranslationTypeUI(type) {}
+    _updateSettingsCards() {}
 }
 
 // Initialize on DOM ready or immediately if already loaded
