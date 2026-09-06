@@ -24,6 +24,7 @@ export class SessionStore {
         this.customerId = null;
         this.projectId = null;
         this.category = null;
+        this.scope = 'work'; // 'work' | 'personal'
         this.engine = null;            // 'openai' | 'soniox' | 'local'
         this.sourceLang = '';
         this.targetLang = '';
@@ -42,7 +43,7 @@ export class SessionStore {
         this._autosaveTimer = null;
     }
 
-    init({ engine, sourceLang, targetLang, tags, customerId, projectId, category } = {}) {
+    init({ engine, sourceLang, targetLang, tags, customerId, projectId, category, scope } = {}) {
         this._cancelAutosave();
         this.id = this._generateId();
         this.createdAt = new Date().toISOString();
@@ -57,6 +58,7 @@ export class SessionStore {
         this.customerId = customerId || null;
         this.projectId = projectId || null;
         this.category = category || null;
+        this.scope = scope || 'work';
         this.engine = engine || null;
         this.sourceLang = sourceLang || '';
         this.targetLang = targetLang || '';
@@ -145,7 +147,8 @@ export class SessionStore {
     }
 
     async _persistNow() {
-        if (this._mutations === this._persistedMutations || this.totalSegmentCount() === 0) {
+        const hasContent = this.totalSegmentCount() > 0 || Boolean(this.notes && this.notes.trim());
+        if (this._mutations === this._persistedMutations || !hasContent) {
             return 'skipped';
         }
         const gen = this._mutations;
@@ -254,7 +257,8 @@ export class SessionStore {
     isEmpty() {
         const chunkSegs = this.chunks.reduce((n, c) => n + c.segments.length, 0);
         const liveSegs = this.currentChunk?.segments.length || 0;
-        return chunkSegs + liveSegs === 0;
+        const hasNotes = Boolean(this.notes && this.notes.trim());
+        return chunkSegs + liveSegs === 0 && !hasNotes;
     }
 
     totalSegmentCount() {
@@ -365,6 +369,7 @@ export class SessionStore {
             customer_id: this.customerId || null,
             project_id: this.projectId || null,
             category: this.category || null,
+            scope: this.scope || 'work',
             engine: this.engine || 'unknown',
             source_lang: this.sourceLang || '',
             target_lang: this.targetLang || '',
@@ -395,6 +400,7 @@ export class SessionStore {
         const dur = this._formatDuration(this._totalDurationSec());
         const langPair = (this.sourceLang || '?') + ' → ' + (this.targetLang || '?');
         const metaExtras = [];
+        if (this.scope === 'personal') metaExtras.push('👤 Cá nhân');
         if (this.category) metaExtras.push(`📅 Phân loại: ${this.category}`);
         if (this.tags && this.tags.length > 0) metaExtras.push(this.tags.map(t => `#${t}`).join(' '));
         const extraStr = metaExtras.length > 0 ? ' · ' + metaExtras.join(' · ') : '';

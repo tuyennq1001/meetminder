@@ -3958,6 +3958,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   overflow-x: auto;
   scrollbar-width: none;
   font-family: var(--table-font-family);
+  margin-bottom: 6px;
 }
 
 .session-viewer-meta-bar::-webkit-scrollbar {
@@ -3975,7 +3976,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .session-viewer-badges .session-customer-badge,
 .session-viewer-badges .session-project-badge,
 .session-viewer-badges .session-category-badge,
-.session-viewer-badges .session-tag-badge {
+.session-viewer-badges .session-tag-badge,
+.session-viewer-badges .scope-badge-work,
+.session-viewer-badges .scope-badge-personal {
   font-family: var(--table-font-family);
   font-size: calc(var(--table-font-size, 13px) - 2.5px);
   font-weight: var(--table-font-weight, 500);
@@ -3988,7 +3991,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .session-viewer-badges .session-customer-badge:hover,
 .session-viewer-badges .session-project-badge:hover,
 .session-viewer-badges .session-category-badge:hover,
-.session-viewer-badges .session-tag-badge:hover {
+.session-viewer-badges .session-tag-badge:hover,
+.session-viewer-badges .scope-badge-work:hover,
+.session-viewer-badges .scope-badge-personal:hover {
   transform: translateY(-1px);
   filter: brightness(1.2);
 }
@@ -4959,6 +4964,7 @@ body.resizing-vertical * {
 .notes-tools-meta {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
   flex: 1 1 auto;
   min-width: 0;
@@ -6158,56 +6164,125 @@ body.expanded #library-panel { padding: 8px 6%; }
   padding: 0 2px;
 }
 
+/* ─── Base Folder-Tab System (Nielsen Norman Group Metaphor) ────────── */
+:root {
+  --folder-bg: var(--md-sys-color-surface-container, #1e1e24);
+  --folder-border: var(--border-subtle, rgba(255, 255, 255, 0.16));
+  --folder-inactive-bg: var(--md-sys-color-surface-container-lowest, rgba(15, 15, 18, 0.6));
+}
+
+.folder-tab-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  position: relative;
+  z-index: 2;
+  margin-bottom: -1px;
+}
+
+.folder-tab-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px 8px 0 0;
+  border: 1px solid var(--folder-border);
+  border-bottom: 1px solid var(--folder-border);
+  background: var(--folder-inactive-bg);
+  color: var(--md-sys-color-on-surface-variant, #9ca3af);
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 12px);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  user-select: none;
+  outline: none;
+  z-index: 1;
+}
+
+.folder-tab-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--md-sys-color-on-surface, #ffffff);
+}
+
+.folder-tab-btn.active {
+  background: var(--folder-bg);
+  border-color: var(--folder-border);
+  border-bottom-color: var(--folder-bg) !important;
+  color: var(--md-sys-color-on-surface, #ffffff);
+  font-weight: var(--menu-font-weight-bold, 700);
+  z-index: 3;
+  box-shadow: 0 -2px 0 0 var(--md-sys-color-primary, #a855f7) inset;
+}
+
+.folder-tab-pane {
+  position: relative;
+  z-index: 1;
+  background: var(--folder-bg);
+  border: 1px solid var(--folder-border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
 /* ─── Session Viewer 3-Tab Bar (Minutes | Notes | Logs) ────────── */
 .session-nav-tabbar {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 12px;
-  background: rgba(0, 0, 0, 0.25);
+  padding: 8px 16px 0 16px;
+  background: var(--md-sys-color-surface-container-lowest, rgba(0, 0, 0, 0.25));
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
+  position: relative;
+  z-index: 2;
 }
 
 .session-nav-tab-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 3px;
-  border-radius: var(--radius-pill);
-  background: var(--md-sys-color-surface-container-highest);
-  border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-bottom: -1px;
 }
 
 .session-nav-tab {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 12px;
-  border-radius: var(--radius-pill);
-  border: none;
-  background: transparent;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: 8px 8px 0 0;
+  border: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--md-sys-color-surface-container-low, rgba(255, 255, 255, 0.04));
   font-family: var(--menu-font-family);
-  font-size: var(--menu-font-size, 11px);
-  font-weight: var(--menu-font-weight, 500);
+  font-size: var(--menu-font-size, 12px);
+  font-weight: 500;
   color: var(--md-sys-color-on-surface-variant);
   white-space: nowrap;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background 0.15s ease, color 0.15s ease;
+  user-select: none;
+  z-index: 1;
 }
 
-.session-nav-tab:hover {
+.session-nav-tab:hover:not(.active) {
   color: var(--md-sys-color-on-surface);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .session-nav-tab.active {
-  background: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-surface, #141218);
+  border-color: var(--border-subtle);
+  border-bottom-color: var(--md-sys-color-surface, #141218) !important;
+  color: var(--md-sys-color-on-surface, #ffffff);
   font-weight: var(--menu-font-weight-bold, 700);
-  box-shadow: var(--elevation-1);
+  z-index: 3;
+  box-shadow: 0 -2px 0 0 var(--md-sys-color-primary, #a855f7) inset;
 }
 
 .session-tab-badge {
@@ -6228,6 +6303,8 @@ body.expanded #library-panel { padding: 8px 6%; }
   width: 100%;
   position: relative;
   flex-direction: column;
+  background: var(--md-sys-color-surface, #141218);
+  z-index: 1;
 }
 
 .session-tab-subbar {
@@ -6288,17 +6365,38 @@ body.expanded #library-panel { padding: 8px 6%; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 5px 12px;
-  background: var(--md-sys-color-surface-container-low);
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--md-sys-color-surface-container-low, rgba(0, 0, 0, 0.2));
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
+}
+
+.minutes-subtab-container {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.minutes-subtab-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--md-sys-color-primary, #a855f7);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .minutes-subtab-group {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--md-sys-color-surface-container-highest, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
 }
 
 .minutes-actions-group {
@@ -6314,27 +6412,26 @@ body.expanded #library-panel { padding: 8px 6%; }
   gap: 6px;
   padding: 4px 12px;
   border-radius: 6px;
-  border: 1px solid transparent;
+  border: none;
   background: transparent;
   color: var(--md-sys-color-on-surface-variant);
   font-family: var(--menu-font-family);
   font-size: var(--menu-font-size, 12px);
-  font-weight: var(--menu-font-weight, 500);
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.minutes-subtab:hover {
-  background: rgba(255, 255, 255, 0.05);
+.minutes-subtab:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.06);
   color: var(--md-sys-color-on-surface);
 }
 
 .minutes-subtab.active {
-  background: var(--md-sys-color-surface-container-high);
-  color: var(--md-sys-color-primary);
-  border-color: rgba(126, 62, 135, 0.35);
+  background: var(--md-sys-color-primary, #7e3e87);
+  color: #ffffff;
   font-weight: var(--menu-font-weight-bold, 700);
-  box-shadow: var(--elevation-1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 .subtab-badge {
@@ -6373,50 +6470,73 @@ body.expanded #library-panel { padding: 8px 6%; }
   flex-shrink: 0;
 }
 
-/* ─── Settings: Templates Editor ───────────────────────────── */
-.templates-subtab-bar {
+/* ─── Settings: Templates Sub-Tabs & Editor ───────────────────────────── */
+.templates-subtab-container {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08));
-  padding-bottom: 8px;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--md-sys-color-surface-container-low, rgba(0, 0, 0, 0.2));
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.templates-subtab-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--md-sys-color-primary, #a855f7);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.templates-subtab-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  background: var(--md-sys-color-surface-container-highest, rgba(255, 255, 255, 0.06));
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  margin: 0;
 }
 
 .templates-subtab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
-  border-radius: 8px;
-  border: 1px solid transparent;
+  padding: 5px 14px;
+  border-radius: 4px;
+  border: none;
   background: transparent;
   color: var(--md-sys-color-on-surface-variant);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.templates-subtab:hover {
-  background: rgba(255, 255, 255, 0.05);
+.templates-subtab:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.06);
   color: var(--md-sys-color-on-surface);
 }
 
 .templates-subtab.active {
-  background: var(--md-sys-color-surface-container-high);
-  color: var(--md-sys-color-primary);
-  border-color: rgba(126, 62, 135, 0.35);
+  background: var(--md-sys-color-primary, #7e3e87);
+  color: #ffffff;
   font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .template-editor-wrapper {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: var(--md-sys-color-surface-container);
-  border: 1px solid var(--md-sys-color-outline-variant, rgba(255, 255, 255, 0.08));
-  border-radius: 10px;
+  background: var(--md-sys-color-surface-container-low, rgba(0, 0, 0, 0.2));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
   padding: 12px;
 }
 
@@ -6656,5 +6776,210 @@ body.expanded #library-panel { padding: 8px 6%; }
   font-size: 11px;
   color: var(--text-muted, rgba(255, 255, 255, 0.45));
   text-align: center;
+}
+
+/* ─── Work / Personal Logs Scope Tabs (Folder-Tab Metaphor) ────────── */
+.sessions-list-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.logs-folder-tab-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  position: relative;
+  z-index: 2;
+  margin-bottom: -1px;
+  padding-left: 8px;
+}
+
+.logs-scope-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px 8px 0 0;
+  border: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--md-sys-color-surface-container-lowest, rgba(15, 15, 18, 0.6));
+  color: var(--md-sys-color-on-surface-variant, #9ca3af);
+  font-family: var(--menu-font-family, inherit);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  user-select: none;
+  z-index: 1;
+}
+
+.logs-scope-tab:hover:not(.active) {
+  color: var(--md-sys-color-on-surface, #ffffff);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.logs-scope-tab.active {
+  background: var(--md-sys-color-surface-container, #1e1e24);
+  border-color: var(--border-subtle);
+  border-bottom-color: var(--md-sys-color-surface-container, #1e1e24) !important;
+  color: var(--md-sys-color-on-surface, #ffffff);
+  font-weight: 700;
+  z-index: 3;
+  box-shadow: 0 -2px 0 0 var(--md-sys-color-primary, #a855f7) inset;
+}
+
+.logs-folder-tab-pane {
+  position: relative;
+  z-index: 1;
+  background: var(--md-sys-color-surface-container, #1e1e24);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 12px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.scope-choice-group {
+  display: flex;
+  gap: 8px;
+}
+
+.scope-radio-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
+  background: var(--md-sys-color-surface-container, rgba(255, 255, 255, 0.04));
+  color: var(--md-sys-color-on-surface-variant, #9ca3af);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  position: relative;
+}
+
+.scope-radio-btn input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  margin: 0;
+}
+
+.scope-radio-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--md-sys-color-on-surface, #ffffff);
+}
+
+.scope-radio-btn.active {
+  background: var(--md-sys-color-primary, #7e3e87);
+  border-color: var(--md-sys-color-primary, #7e3e87);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* ─── Templates Preset Folder Tabs (Parent encloses child content) ────────── */
+.templates-preset-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  position: relative;
+  z-index: 2;
+  margin-bottom: -1px;
+  padding-left: 8px;
+  flex-wrap: wrap;
+}
+
+.templates-preset-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--md-sys-color-surface-container-lowest, rgba(15, 15, 18, 0.6));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
+  color: var(--md-sys-color-on-surface-variant, #9ca3af);
+  padding: 8px 14px;
+  border-radius: 8px 8px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  user-select: none;
+  z-index: 1;
+}
+
+.templates-preset-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--md-sys-color-on-surface, #ffffff);
+}
+
+.templates-preset-btn.active {
+  background: var(--md-sys-color-surface-container, #1e1e24);
+  border-color: var(--border-subtle, rgba(255, 255, 255, 0.2));
+  border-bottom-color: var(--md-sys-color-surface-container, #1e1e24) !important;
+  color: var(--md-sys-color-on-surface, #ffffff);
+  font-weight: 700;
+  z-index: 3;
+  box-shadow: 0 -2px 0 0 var(--md-sys-color-primary, #a855f7) inset;
+}
+
+/* Khung bao trùm con kết nối liền với tab cha */
+.templates-preset-content {
+  position: relative;
+  z-index: 1;
+  background: var(--md-sys-color-surface-container, #1e1e24);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.2));
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scope-badge-work {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.scope-badge-personal {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.template-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.3);
 }
 

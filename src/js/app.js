@@ -101,6 +101,214 @@ const DEFAULT_TEMPLATE_MINUTES_VI = `# 📋 BIÊN BẢN CUỘC HỌP (MEETING MI
 | 1 | ... | ... | ... | ... |
 `;
 
+const PRESET_TEMPLATE_TECH_JA = `# 💻 技術・アーキテクチャ検討議事録 (Technical Review)
+
+### 📌 基本情報
+- **議題**: {{title}}
+- **日時**: {{date}} (所要時間: 約 {{duration}} 分)
+- **参加エンジニア**: {{participants}}
+
+---
+
+### 🔍 1. 課題と背景 (Problem Statement)
+- **技術的課題・背景**:
+  - (パフォーマンス問題、新アーキテクチャ要件、リファクタリング等の課題)
+- **達成目標**:
+  - (要件、SLA、制約条件)
+
+---
+
+### ⚙️ 2. 検討案と比較 (Options & Trade-offs)
+- **案A**: (メリット・デメリット・コスト)
+- **案B**: (メリット・デメリット・コスト)
+
+---
+
+### 🎯 3. 採択された技術方針・決定事項 (Technical Decisions)
+- **決定方針**:
+  - (採択理由と留意点)
+- **潜在的リスクと対策**:
+  - (懸念点およびバックアッププラン)
+
+---
+
+### 🛠 4. 実装タスク・次のステップ (Implementation Tasks)
+| No | タスク (Task) | 担当者 | 期日 | 備考 / PR |
+|:---|:---|:---|:---|:---|
+| 1 | ... | ... | ... | ... |
+`;
+
+const PRESET_TEMPLATE_TECH_VI = `# 💻 BIÊN BẢN HỌP KỸ THUẬT & KIẾN TRÚC (TECHNICAL SYNC)
+
+### 📌 THÔNG TIN CHUNG
+- **Chủ đề kỹ thuật**: {{title}}
+- **Thời gian**: {{date}} (Thời lượng: ~{{duration}} phút)
+- **Kỹ sư / Thành viên tham gia**: {{participants}}
+
+---
+
+### 🔍 1. VẤN ĐỀ & BỐI CẢNH KỸ THUẬT (PROBLEM STATEMENT)
+- **Vấn đề / Thách thức kỹ thuật đặt ra**:
+  - (Mô tả lỗi, nút thắt hiệu năng, yêu cầu kiến trúc mới hoặc công nghệ cần tích hợp)
+- **Mục tiêu kỹ thuật cần đạt**:
+  - (SLAs, hiệu năng, độ chịu tải, thời gian hoàn thành)
+
+---
+
+### ⚙️ 2. CÁC PHƯƠNG ÁN CÂN NHẮC (OPTIONS & TRADE-OFFS)
+- **Phương án A**: (Ưu điểm & Nhược điểm)
+- **Phương án B**: (Ưu điểm & Nhược điểm)
+
+---
+
+### 🎯 3. QUYẾT ĐỊNH KIẾN TRÚC & CÔNG NGHỆ (ARCHITECTURAL DECISIONS)
+- **Giải pháp được chọn chốt**:
+  - (Lý do chọn phương án và các lưu ý triển khai)
+- **Rủi ro kỹ thuật & Giải pháp dự phòng**:
+  - (Các rủi ro tiềm ẩn và kế hoạch xử lý)
+
+---
+
+### 🛠 4. KẾ HOẠCH TRIỂN KHAI (IMPLEMENTATION TASKS)
+| STT | Nhiệm vụ kỹ thuật (Tech Task) | Người phụ trách | Hạn chót | Nhánh / PR / Repo |
+|:---|:---|:---|:---|:---|
+| 1 | ... | ... | ... | ... |
+`;
+
+const PRESET_TEMPLATE_1ON1_JA = `# 👥 1on1ミーティング・面談記録 (1-on-1 Notes)
+
+### 📌 基本情報
+- **面談名**: {{title}}
+- **日時**: {{date}} (所要時間: 約 {{duration}} 分)
+- **参加者**: {{participants}}
+
+---
+
+### 📊 1. 業務進捗と成果 (Status & Achievements)
+- **良かった点・達成できた成果**:
+  - (直近のポジティブな成果、貢献)
+- **現在の業務状況**:
+  - (進行中プロジェクトの状況)
+
+---
+
+### 💬 2. フィードバックと対話 (Feedback & Discussion)
+- **メンバーからの共有・所感**:
+  - (業務のやりがい、関心事、キャリアに関する希望など)
+- **マネージャーからのフィードバック・期待**:
+  - (評価点、今後の成長に向けたアドバイス)
+
+---
+
+### 🚧 3. 課題・ボトルネックと支援 (Blockers & Support)
+- (チーム連携、ツール、リソースなどの課題と必要なサポート)
+
+---
+
+### 🎯 4. 次回までのアクションプラン (Action Items)
+- [ ] **アクション 1**: (期日・コミット内容)
+- [ ] **アクション 2**: (期日・コミット内容)
+`;
+
+const PRESET_TEMPLATE_1ON1_VI = `# 👥 BIÊN BẢN TRAO ĐỔI 1-ON-1 & ĐÁNH GIÁ
+
+### 📌 THÔNG TIN BUỔI GẶP
+- **Chủ đề**: {{title}}
+- **Thời gian**: {{date}} (Thời lượng: ~{{duration}} phút)
+- **Thành viên tham gia**: {{participants}}
+
+---
+
+### 📊 1. CẬP NHẬT TÌNH HÌNH & TIẾN ĐỘ HIỆN TẠI (STATUS UPDATE)
+- **Những kết quả tốt đạt được**:
+  - (Những việc đã hoàn thành tốt, điểm sáng trong kỳ)
+- **Tình trạng công việc đang chạy**:
+  - (Tiến độ thực tế so với kế hoạch)
+
+---
+
+### 💬 2. PHẢN HỒI & TÂM TƯ HAI CHIỀU (FEEDBACK & INSIGHTS)
+- **Chia sẻ từ nhân viên / thành viên**:
+  - (Tâm tư, nguyện vọng, mức độ hài lòng hoặc khó khăn trong công việc)
+- **Phản hồi & Định hướng từ Quản lý / Mentor**:
+  - (Góp ý mang tính xây dựng, định hướng phát triển)
+
+---
+
+### 🚧 3. KHÓ KHĂN & ĐỀ XUẤT HỖ TRỢ (BLOCKERS & SUPPORT NEEDED)
+- (Các rào cản về công cụ, quy trình, phối hợp team cần tháo gỡ)
+
+---
+
+### 🎯 4. MỤC TIÊU TIẾP THEO & HÀNH ĐỘNG CỤ THỂ (NEXT GOALS & ACTIONS)
+- [ ] **Mục tiêu 1**: (Thời hạn & cam kết)
+- [ ] **Mục tiêu 2**: (Thời hạn & cam kết)
+`;
+
+const PRESET_TEMPLATE_PERSONAL_JA = `# 👤 個人メモ・学習まとめ (Personal Notes)
+
+### 📌 基本情報
+- **テーマ**: {{title}}
+- **日時**: {{date}} (所要時間: 約 {{duration}} 分)
+- **相手 / ソース**: {{participants}}
+
+---
+
+### 💡 1. 主な学びと気づき (Key Takeaways)
+- (会話やセッションから得られた最も重要・印象的なインサイト)
+
+---
+
+### 📝 2. 内容の要約 (Detailed Summary)
+- **トピック 1**:
+  - (具体的なポイントや議論の内容)
+- **トピック 2**:
+  - (具体的なポイントや議論の内容)
+
+---
+
+### 🎯 3. 自分自身のアクションプラン (My Next Steps)
+- [ ] ...
+- [ ] ...
+
+---
+
+### 💭 4. 所感・振り返り (Reflections)
+- (個人的な考察、感想、さらに深掘りしたい疑問など)
+`;
+
+const PRESET_TEMPLATE_PERSONAL_VI = `# 👤 GHI CHÉP & TÓM TẮT CÁ NHÂN
+
+### 📌 THÔNG TIN
+- **Chủ đề**: {{title}}
+- **Thời gian**: {{date}} (Thời lượng: ~{{duration}} phút)
+- **Người trao đổi / Nguồn**: {{participants}}
+
+---
+
+### 💡 1. ĐIỂM MẤU CHỐT & BÀI HỌC RÚT RA (KEY TAKEAWAYS)
+- (Những ý tưởng hay, góc nhìn mới, bài học sâu sắc nhất từ cuộc trò chuyện/buổi học)
+
+---
+
+### 📝 2. TÓM TẮT NỘI DUNG TRAO ĐỔI (DETAILED SUMMARY)
+- **Chủ đề 1**:
+  - (Chi tiết các điểm đáng chú ý)
+- **Chủ đề 2**:
+  - (Chi tiết các điểm đáng chú ý)
+
+---
+
+### 🎯 3. VIỆC CẦN LÀM CHO BẢN THÂN (MY ACTION ITEMS)
+- [ ] ...
+- [ ] ...
+
+---
+
+### 💭 4. CẢM NHẬN & SUY NGẪM THÊM (REFLECTIONS)
+- (Ghi chú suy nghĩ cá nhân, cảm xúc hoặc câu hỏi cần đào sâu thêm)
+`;
+
 class App {
     constructor() {
         this.isRunning = false;
@@ -113,20 +321,18 @@ class App {
         this.appWindow = getCurrentWindow();
         this.sessionStartTime = null;
         this.recordingStartTime = null;
-        this.liveDurationInterval = null;
-        this.sessionMode = 'one_way';
-        this.isPinned = false;    // Always-on-top state (default false)
-        this._closing = false;    // Guard so the exit flush runs exactly once
-        this._selectedSessionIds = new Set();
+        this.currentSessionId = null;
+        this.sessionTimer = null;
+        this.totalDurationSec = 0;
+        this.lastFinalText = '';
+        this.lastInterimText = '';
+        this._lastFinalizedId = 0;
+        this._lastFinalizedOriginal = '';
+        this._lastFinalizedTranslation = '';
         this.isPaused = false;
-        this._liveNotesEditor = null;
-        this._sessionViewerEditor = null;
-        this._sessionMinutesEditor = null;
-        this._sessionNotesEditor = null;
-        this._sessionLogsEditor = null;
-        this._activeSessionTab = 'minutes';
-        this._activeMinutesLang = 'ja';
-        this._loadedMinutes = { ja: '', vi: '' };
+        this._pausedAt = null;
+        this._totalPausedMs = 0;
+        this._lastLiveNoteContent = '';
         this._isMinutesEditing = false;
         this._isNotesEditing = false;
         this._hasUnsavedMeetingData = false;
@@ -135,10 +341,12 @@ class App {
         this._isStopConfirmationOpen = false;
         this._isStoppingSession = false;
         this._projectRegistry = null;
+        this._activeLogsScopeFilter = 'work'; // 'work' | 'personal' | 'all'
         this._activeCustomerFilter = [];
         this._activeProjectFilter = [];
         this._activeCategoryFilter = [];
         this._activeTagFilter = [];
+        this._projScopeFilter = '';
         this._activeMinutesGeneration = null;
         this._lastCompletedMinutes = null;
         this._minutesDismissTimeout = null;
@@ -156,9 +364,17 @@ class App {
         this._projSort = { field: 'name', dir: 'asc' };
         this._catSort = { field: 'name', dir: 'asc' };
         this._tagSort = { field: 'name', dir: 'asc' };
+        this._projScopeFilter = 'work';
+        this._catScopeFilter = 'work';
+        this._tagScopeFilter = 'work';
         this._templateEditor = null;
-        this._activeTemplateTab = 'notes';
+        this._activeTemplatePreset = 'standard';
+        this._activeTemplateLang = 'vi';
         this._templateDrafts = {};
+        this._notesTemplateEditor = null;
+        this._selectedSessionIds = new Set();
+        this._cachedSessions = [];
+        this._filteredSessions = [];
         this._geminiReconnectTimer = null;
         this._liveEngineRestart = Promise.resolve();
         this._liveEngineGeneration = 0;
@@ -352,13 +568,31 @@ class App {
             this._sessionPage = 1;
             this._renderFilteredSessions();
         });
+
+        // Scope tabs in logs list view (Work / Personal / All)
+        document.querySelectorAll('.logs-scope-tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const scope = btn.dataset.scope;
+                if (scope && scope !== this._activeLogsScopeFilter) {
+                    this._activeLogsScopeFilter = scope;
+                    this._sessionPage = 1;
+                    if (scope === 'personal') {
+                        this._activeCustomerFilter = [];
+                    }
+                    this._renderFilteredSessions();
+                }
+            });
+        });
+
         // Settings Sidebar 2-Column Navigation
         document.querySelectorAll('.settings-nav-item').forEach(btn => {
             btn.addEventListener('click', () => {
                 this._showSettingsScreen(btn.dataset.screen);
             });
         });
+        this._initSettingsScopeTabs();
         this._initSettingsTemplatesTab();
+        this._initSettingsNotesTemplateTab();
 
         // Add Customer Modal Triggers
         document.getElementById('btn-open-add-customer')?.addEventListener('click', () => {
@@ -388,6 +622,55 @@ class App {
             await this._handleSaveProjectFromModal();
         });
 
+        // Add Project Modal Scope radios
+        const onModalProjScopeChange = () => {
+            const chosen = document.querySelector('input[name="modal-proj-scope"]:checked')?.value || 'work';
+            document.querySelectorAll('#modal-proj-scope-group .scope-radio-btn').forEach(btn => {
+                const r = btn.querySelector('input[type="radio"]');
+                btn.classList.toggle('active', r && r.checked);
+            });
+            const custWrap = document.getElementById('modal-proj-customer-wrap');
+            if (custWrap) {
+                custWrap.style.display = chosen === 'personal' ? 'none' : '';
+            }
+        };
+
+        document.querySelectorAll('input[name="modal-proj-scope"]').forEach(radio => {
+            radio.addEventListener('change', onModalProjScopeChange);
+        });
+
+        document.querySelectorAll('#modal-proj-scope-group .scope-radio-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const rad = btn.querySelector('input[type="radio"]');
+                if (rad && !rad.checked) {
+                    rad.checked = true;
+                    onModalProjScopeChange();
+                }
+            });
+        });
+
+        // Edit Category Modal Triggers
+        document.getElementById('btn-close-edit-category')?.addEventListener('click', () => {
+            this._closeEditCategoryModal();
+        });
+        document.getElementById('btn-cancel-edit-category')?.addEventListener('click', () => {
+            this._closeEditCategoryModal();
+        });
+        document.getElementById('btn-save-edit-category')?.addEventListener('click', async () => {
+            await this._handleSaveCategoryFromModal();
+        });
+
+        // Edit Tag Modal Triggers
+        document.getElementById('btn-close-edit-tag')?.addEventListener('click', () => {
+            this._closeEditTagModal();
+        });
+        document.getElementById('btn-cancel-edit-tag')?.addEventListener('click', () => {
+            this._closeEditTagModal();
+        });
+        document.getElementById('btn-save-edit-tag')?.addEventListener('click', async () => {
+            await this._handleSaveTagFromModal();
+        });
+
         // Customer Search & Project Filter
         document.getElementById('input-search-customers')?.addEventListener('input', (e) => {
             this._renderSettingsCustomersTab(e.target.value);
@@ -399,6 +682,12 @@ class App {
         document.getElementById('select-settings-proj-cust-filter')?.addEventListener('change', (e) => {
             const searchVal = document.getElementById('input-search-projects')?.value;
             this._renderSettingsProjectsTab(e.target.value, searchVal);
+        });
+        document.getElementById('select-settings-proj-scope-filter')?.addEventListener('change', (e) => {
+            this._projScopeFilter = e.target.value;
+            const custFilter = document.getElementById('select-settings-proj-cust-filter')?.value;
+            const searchVal = document.getElementById('input-search-projects')?.value;
+            this._renderSettingsProjectsTab(custFilter, searchVal);
         });
 
         // Quick create Category button
@@ -438,7 +727,7 @@ class App {
         document.getElementById('btn-session-add-metadata')?.addEventListener('click', handleOpenViewerMetadataEdit);
         document.getElementById('session-viewer-title')?.addEventListener('click', handleOpenViewerMetadataEdit);
         document.getElementById('session-viewer-badges')?.addEventListener('click', (e) => {
-            if (e.target.closest('.session-customer-badge, .session-project-badge, .session-category-badge, .session-tag-badge')) {
+            if (e.target.closest('.session-customer-badge, .session-project-badge, .session-category-badge, .session-tag-badge, .scope-badge-work, .scope-badge-personal')) {
                 handleOpenViewerMetadataEdit();
             }
         });
@@ -1008,6 +1297,10 @@ class App {
             this._autoSaveSettingsFromForm();
         });
 
+        document.getElementById('select-default-logs-scope')?.addEventListener('change', () => {
+            this._autoSaveSettingsFromForm();
+        });
+
         document.getElementById('range-endpoint-delay')?.addEventListener('input', (e) => {
             const valEl = document.getElementById('endpoint-delay-value');
             if (valEl) valEl.textContent = `${(e.target.value / 1000).toFixed(1)}s`;
@@ -1327,20 +1620,60 @@ class App {
             this._renderSettingsStorageTab();
         } else if (id === 'tab-templates') {
             this._renderSettingsTemplatesTab();
+        } else if (id === 'tab-notes-template') {
+            this._renderSettingsNotesTemplateTab();
         }
 
         this._updateSidebarBadges();
         document.querySelector('.settings-content-panel')?.scrollTo(0, 0);
     }
 
+    // ─── Settings: Scope Tabs (Projects, Categories, Tags) ───
+
+    _initSettingsScopeTabs() {
+        // Projects scope tabs
+        document.querySelectorAll('#projects-scope-tabs .folder-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._projScopeFilter = btn.dataset.scope || '';
+                const custFilter = document.getElementById('select-settings-proj-cust-filter')?.value;
+                const searchVal = document.getElementById('input-search-projects')?.value;
+                this._renderSettingsProjectsTab(custFilter, searchVal);
+            });
+        });
+
+        // Categories scope tabs
+        document.querySelectorAll('#categories-scope-tabs .folder-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._catScopeFilter = btn.dataset.scope || '';
+                this._renderSettingsCategoriesTab();
+            });
+        });
+
+        // Tags scope tabs
+        document.querySelectorAll('#tags-scope-tabs .folder-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._tagScopeFilter = btn.dataset.scope || '';
+                this._renderSettingsTagsTab();
+            });
+        });
+    }
+
     // ─── Settings: Templates Manager ─────────────────────────
 
     _initSettingsTemplatesTab() {
-        const subtabs = ['notes', 'minutes-ja', 'minutes-vi'];
-        subtabs.forEach(tabKey => {
-            const btn = document.getElementById(`subtab-template-${tabKey}`);
-            btn?.addEventListener('click', () => {
-                this._switchSettingsTemplateTab(tabKey);
+        // Presets selector buttons
+        document.querySelectorAll('#templates-preset-bar .templates-preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const preset = btn.dataset.preset;
+                if (preset) this._switchSettingsTemplatePreset(preset);
+            });
+        });
+
+        // Language subtabs (VI / JA)
+        document.querySelectorAll('#templates-lang-subtabs .templates-subtab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const lang = btn.dataset.lang;
+                if (lang) this._switchSettingsTemplateLang(lang);
             });
         });
 
@@ -1353,24 +1686,34 @@ class App {
         });
     }
 
+    _getCurrentTemplateKey() {
+        return `${this._activeTemplatePreset}_${this._activeTemplateLang}`;
+    }
+
     _renderSettingsTemplatesTab() {
         const s = settingsManager.get();
-        if (this._templateDrafts.notes === undefined) {
+        if (this._templateDrafts.standard_vi === undefined) {
             this._templateDrafts = {
-                notes: (s.template_notes !== undefined && s.template_notes !== null && s.template_notes !== '') ? s.template_notes : DEFAULT_TEMPLATE_NOTES,
-                'minutes-ja': (s.template_minutes_ja !== undefined && s.template_minutes_ja !== null && s.template_minutes_ja !== '') ? s.template_minutes_ja : DEFAULT_TEMPLATE_MINUTES_JA,
-                'minutes-vi': (s.template_minutes_vi !== undefined && s.template_minutes_vi !== null && s.template_minutes_vi !== '') ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI,
+                standard_vi: (s.template_minutes_vi !== undefined && s.template_minutes_vi !== null && s.template_minutes_vi !== '') ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI,
+                standard_ja: (s.template_minutes_ja !== undefined && s.template_minutes_ja !== null && s.template_minutes_ja !== '') ? s.template_minutes_ja : DEFAULT_TEMPLATE_MINUTES_JA,
+                tech_vi: (s.template_minutes_tech_vi !== undefined && s.template_minutes_tech_vi !== null && s.template_minutes_tech_vi !== '') ? s.template_minutes_tech_vi : PRESET_TEMPLATE_TECH_VI,
+                tech_ja: (s.template_minutes_tech_ja !== undefined && s.template_minutes_tech_ja !== null && s.template_minutes_tech_ja !== '') ? s.template_minutes_tech_ja : PRESET_TEMPLATE_TECH_JA,
+                one_on_one_vi: (s.template_minutes_1on1_vi !== undefined && s.template_minutes_1on1_vi !== null && s.template_minutes_1on1_vi !== '') ? s.template_minutes_1on1_vi : PRESET_TEMPLATE_1ON1_VI,
+                one_on_one_ja: (s.template_minutes_1on1_ja !== undefined && s.template_minutes_1on1_ja !== null && s.template_minutes_1on1_ja !== '') ? s.template_minutes_1on1_ja : PRESET_TEMPLATE_1ON1_JA,
+                personal_vi: (s.template_minutes_personal_vi !== undefined && s.template_minutes_personal_vi !== null && s.template_minutes_personal_vi !== '') ? s.template_minutes_personal_vi : PRESET_TEMPLATE_PERSONAL_VI,
+                personal_ja: (s.template_minutes_personal_ja !== undefined && s.template_minutes_personal_ja !== null && s.template_minutes_personal_ja !== '') ? s.template_minutes_personal_ja : PRESET_TEMPLATE_PERSONAL_JA,
             };
         }
 
+        const currentKey = this._getCurrentTemplateKey();
         const container = document.getElementById('template-codemirror-container');
         if (container && !this._templateEditor) {
             this._templateEditor = new NotesEditor();
             this._templateEditor.mount(container, {
-                initialContent: this._templateDrafts[this._activeTemplateTab] || '',
+                initialContent: this._templateDrafts[currentKey] || '',
                 placeholderText: 'Nhập cấu trúc mẫu markdown...',
                 onChange: (content) => {
-                    this._templateDrafts[this._activeTemplateTab] = content;
+                    this._templateDrafts[this._getCurrentTemplateKey()] = content;
                 },
                 onSave: () => {
                     this._saveSettingsTemplates();
@@ -1378,42 +1721,63 @@ class App {
             });
         }
 
-        this._switchSettingsTemplateTab(this._activeTemplateTab);
+        this._updateSettingsTemplateUI();
     }
 
-    _switchSettingsTemplateTab(tabKey) {
+    _switchSettingsTemplatePreset(presetKey) {
         if (this._templateEditor) {
-            this._templateDrafts[this._activeTemplateTab] = this._templateEditor.getContent();
+            this._templateDrafts[this._getCurrentTemplateKey()] = this._templateEditor.getContent();
         }
-        this._activeTemplateTab = tabKey;
+        this._activeTemplatePreset = presetKey;
+        this._updateSettingsTemplateUI();
+    }
 
-        const subtabs = ['notes', 'minutes-ja', 'minutes-vi'];
-        subtabs.forEach(k => {
-            const btn = document.getElementById(`subtab-template-${k}`);
-            if (btn) btn.classList.toggle('active', k === tabKey);
+    _switchSettingsTemplateLang(lang) {
+        if (this._templateEditor) {
+            this._templateDrafts[this._getCurrentTemplateKey()] = this._templateEditor.getContent();
+        }
+        this._activeTemplateLang = lang;
+        this._updateSettingsTemplateUI();
+    }
+
+    _updateSettingsTemplateUI() {
+        const currentKey = this._getCurrentTemplateKey();
+
+        // Update preset button active states
+        document.querySelectorAll('#templates-preset-bar .templates-preset-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.preset === this._activeTemplatePreset);
         });
 
+        // Update language subtab active states
+        document.querySelectorAll('#templates-lang-subtabs .templates-subtab').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.lang === this._activeTemplateLang);
+        });
+
+        // Update hint text
         const hintEl = document.getElementById('template-editor-hint');
         if (hintEl) {
-            if (tabKey === 'notes') {
-                hintEl.innerHTML = 'Biến tự động: <code>{{date}}</code>, <code>{{time}}</code>, <code>{{title}}</code>';
-            } else {
-                hintEl.innerHTML = 'Biến tự động: <code>{{title}}</code>, <code>{{date}}</code>, <code>{{duration}}</code>, <code>{{participants}}</code>';
-            }
+            hintEl.innerHTML = 'Biến tự động: <code>{{title}}</code>, <code>{{date}}</code>, <code>{{duration}}</code>, <code>{{participants}}</code>';
         }
 
+        // Update editor content
         if (this._templateEditor) {
-            this._templateEditor.setContent(this._templateDrafts[tabKey] || '');
+            this._templateEditor.setContent(this._templateDrafts[currentKey] || '');
         }
     }
 
     _resetCurrentSettingsTemplate() {
+        const key = this._getCurrentTemplateKey();
         let def = '';
-        if (this._activeTemplateTab === 'notes') def = DEFAULT_TEMPLATE_NOTES;
-        else if (this._activeTemplateTab === 'minutes-ja') def = DEFAULT_TEMPLATE_MINUTES_JA;
-        else if (this._activeTemplateTab === 'minutes-vi') def = DEFAULT_TEMPLATE_MINUTES_VI;
+        if (key === 'standard_vi') def = DEFAULT_TEMPLATE_MINUTES_VI;
+        else if (key === 'standard_ja') def = DEFAULT_TEMPLATE_MINUTES_JA;
+        else if (key === 'tech_vi') def = PRESET_TEMPLATE_TECH_VI;
+        else if (key === 'tech_ja') def = PRESET_TEMPLATE_TECH_JA;
+        else if (key === 'one_on_one_vi') def = PRESET_TEMPLATE_1ON1_VI;
+        else if (key === 'one_on_one_ja') def = PRESET_TEMPLATE_1ON1_JA;
+        else if (key === 'personal_vi') def = PRESET_TEMPLATE_PERSONAL_VI;
+        else if (key === 'personal_ja') def = PRESET_TEMPLATE_PERSONAL_JA;
 
-        this._templateDrafts[this._activeTemplateTab] = def;
+        this._templateDrafts[key] = def;
         if (this._templateEditor) {
             this._templateEditor.setContent(def);
         }
@@ -1422,17 +1786,71 @@ class App {
 
     async _saveSettingsTemplates() {
         if (this._templateEditor) {
-            this._templateDrafts[this._activeTemplateTab] = this._templateEditor.getContent();
+            this._templateDrafts[this._getCurrentTemplateKey()] = this._templateEditor.getContent();
         }
         try {
             await settingsManager.save({
-                template_notes: this._templateDrafts.notes,
-                template_minutes_ja: this._templateDrafts['minutes-ja'],
-                template_minutes_vi: this._templateDrafts['minutes-vi'],
+                template_minutes_vi: this._templateDrafts.standard_vi,
+                template_minutes_ja: this._templateDrafts.standard_ja,
+                template_minutes_tech_vi: this._templateDrafts.tech_vi,
+                template_minutes_tech_ja: this._templateDrafts.tech_ja,
+                template_minutes_1on1_vi: this._templateDrafts.one_on_one_vi,
+                template_minutes_1on1_ja: this._templateDrafts.one_on_one_ja,
+                template_minutes_personal_vi: this._templateDrafts.personal_vi,
+                template_minutes_personal_ja: this._templateDrafts.personal_ja,
             });
             this._showToast('Đã lưu mẫu văn bản ✓', 'success');
         } catch (err) {
             this._showToast(`Lỗi lưu mẫu: ${err}`, 'error');
+        }
+    }
+
+    // ─── Settings: Note Template (standalone tab) ──────────
+
+    _initSettingsNotesTemplateTab() {
+        document.getElementById('btn-notes-template-reset')?.addEventListener('click', () => {
+            this._resetNotesTemplate();
+        });
+
+        document.getElementById('btn-notes-template-save')?.addEventListener('click', async () => {
+            await this._saveSettingsNotesTemplate();
+        });
+    }
+
+    _renderSettingsNotesTemplateTab() {
+        const container = document.getElementById('notes-template-codemirror-container');
+        if (container && !this._notesTemplateEditor) {
+            const s = settingsManager.get();
+            const initial = (s.template_notes !== undefined && s.template_notes !== null && s.template_notes !== '')
+                ? s.template_notes
+                : DEFAULT_TEMPLATE_NOTES;
+            this._notesTemplateEditor = new NotesEditor();
+            this._notesTemplateEditor.mount(container, {
+                initialContent: initial,
+                placeholderText: 'Nhập cấu trúc mẫu ghi chú markdown...',
+                onSave: () => {
+                    this._saveSettingsNotesTemplate();
+                },
+            });
+        }
+    }
+
+    _resetNotesTemplate() {
+        if (this._notesTemplateEditor) {
+            this._notesTemplateEditor.setContent(DEFAULT_TEMPLATE_NOTES);
+        }
+        this._showToast('Đã khôi phục mẫu ghi chú mặc định ✓', 'info');
+    }
+
+    async _saveSettingsNotesTemplate() {
+        try {
+            const content = this._notesTemplateEditor
+                ? this._notesTemplateEditor.getContent()
+                : DEFAULT_TEMPLATE_NOTES;
+            await settingsManager.save({ template_notes: content });
+            this._showToast('Đã lưu mẫu ghi chú ✓', 'success');
+        } catch (err) {
+            this._showToast(`Lỗi lưu mẫu ghi chú: ${err}`, 'error');
         }
     }
 
@@ -1539,6 +1957,9 @@ class App {
 
         document.getElementById('check-show-original').checked = s.show_original !== false;
 
+        const defLogsScopeSelect = document.getElementById('select-default-logs-scope');
+        if (defLogsScopeSelect) defLogsScopeSelect.value = s.default_logs_scope || 'work';
+
         // Custom context (rich format)
         const ctx = s.custom_context;
         // General context rows
@@ -1611,6 +2032,7 @@ class App {
             font_family: document.getElementById('select-font-family')?.value || 'system',
             max_lines: parseInt(document.getElementById('input-max-lines')?.value || 5),
             show_original: document.getElementById('check-show-original')?.checked !== false,
+            default_logs_scope: document.getElementById('select-default-logs-scope')?.value || 'work',
             custom_context: null,
         };
 
@@ -1778,9 +2200,9 @@ class App {
         this.currentSource = settings.audio_source || 'system';
         this._updateSourceButtons();
 
-        // Update current source button states
-        this.currentSource = settings.audio_source || 'system';
-        this._updateSourceButtons();
+        if (settings.default_logs_scope) {
+            this._activeLogsScopeFilter = settings.default_logs_scope;
+        }
     }
 
     _addTermRow(source = '', target = '') {
@@ -3521,12 +3943,41 @@ class App {
             selectCust.value = sessionStore.customerId || '';
         }
 
-        // Helper to populate projects filtered by selected customer
-        const updateProjectsDropdown = (selectedCustomerId) => {
+        const stopScope = sessionStore.scope || 'work';
+        const workRadio = document.querySelector('input[name="stop-meeting-scope"][value="work"]');
+        const personalRadio = document.querySelector('input[name="stop-meeting-scope"][value="personal"]');
+        const custWrap = document.getElementById('stop-customer-field-wrap');
+
+        if (stopScope === 'personal') {
+            if (personalRadio) personalRadio.checked = true;
+            if (workRadio) workRadio.checked = false;
+            if (custWrap) custWrap.style.display = 'none';
+        } else {
+            if (workRadio) workRadio.checked = true;
+            if (personalRadio) personalRadio.checked = false;
+            if (custWrap) custWrap.style.display = '';
+        }
+        document.querySelectorAll('#stop-meeting-scope-group .scope-radio-btn').forEach(btn => {
+            const rad = btn.querySelector('input[type="radio"]');
+            btn.classList.toggle('active', rad && rad.checked);
+        });
+
+        const getCurrentChosenScope = () => {
+            return document.querySelector('input[name="stop-meeting-scope"]:checked')?.value || 'work';
+        };
+
+        // Helper to populate projects filtered by selected scope & customer
+        const updateProjectsDropdown = (selectedCustomerId, scope) => {
             if (!selectProj) return;
-            const filteredProjs = selectedCustomerId
-                ? activeProjects.filter(p => p.customer_id === selectedCustomerId)
-                : activeProjects;
+            let filteredProjs = activeProjects;
+            if (scope === 'personal') {
+                filteredProjs = activeProjects.filter(p => p.scope === 'personal');
+            } else {
+                filteredProjs = activeProjects.filter(p => (p.scope || 'work') === 'work');
+                if (selectedCustomerId) {
+                    filteredProjs = filteredProjs.filter(p => p.customer_id === selectedCustomerId);
+                }
+            }
             let projHtml = '<option value="">(Không gán dự án)</option>';
             for (const p of filteredProjs) {
                 projHtml += `<option value="${this._escAttr(p.id)}">📁 ${this._esc(p.name)}</option>`;
@@ -3539,10 +3990,42 @@ class App {
             }
         };
 
-        updateProjectsDropdown(selectCust?.value || sessionStore.customerId);
+        updateProjectsDropdown(selectCust?.value || sessionStore.customerId, getCurrentChosenScope());
+
+        const onScopeChange = () => {
+            const curScope = getCurrentChosenScope();
+            document.querySelectorAll('#stop-meeting-scope-group .scope-radio-btn').forEach(btn => {
+                const rad = btn.querySelector('input[type="radio"]');
+                btn.classList.toggle('active', rad && rad.checked);
+            });
+            if (custWrap) {
+                custWrap.style.display = curScope === 'personal' ? 'none' : '';
+            }
+            if (curScope === 'personal' && selectCust) {
+                selectCust.value = '';
+            }
+            updateProjectsDropdown(selectCust?.value, curScope);
+        };
+
+        const onScopeBtnClick = (e) => {
+            const label = e.currentTarget;
+            const rad = label.querySelector('input[type="radio"]');
+            if (rad && !rad.checked) {
+                rad.checked = true;
+                onScopeChange();
+            }
+        };
+
+        document.querySelectorAll('#stop-meeting-scope-group .scope-radio-btn').forEach(btn => {
+            btn.addEventListener('click', onScopeBtnClick);
+        });
+
+        document.querySelectorAll('input[name="stop-meeting-scope"]').forEach(r => {
+            r.addEventListener('change', onScopeChange);
+        });
 
         const onCustChange = () => {
-            updateProjectsDropdown(selectCust?.value);
+            updateProjectsDropdown(selectCust?.value, getCurrentChosenScope());
         };
         const onProjChange = () => {
             const pId = selectProj?.value;
@@ -3605,6 +4088,9 @@ class App {
             chkAutoMinutesHint.textContent = 'Tóm tắt theo template có sẵn';
         }
 
+        const currentSettings = settingsManager.get();
+        const autoMinutesLang = currentSettings.meeting_minutes_lang || 'vi';
+
         if (!modal) {
             const entered = prompt('Nhập tên cuộc họp để kết thúc & lưu:', defaultTitle);
             return entered !== null ? {
@@ -3613,6 +4099,7 @@ class App {
                 customerId: sessionStore.customerId,
                 projectId: sessionStore.projectId,
                 category: sessionStore.category,
+                scope: sessionStore.scope || 'work',
                 autoRetranscript: chkAutoRetranscript ? chkAutoRetranscript.checked : (savedAutoRetranscript !== 'false'),
                 autoGenerateMinutes: chkAutoMinutes ? chkAutoMinutes.checked : false,
                 minutesLang: autoMinutesLang,
@@ -3636,29 +4123,38 @@ class App {
 
         return new Promise((resolve) => {
             const onConfirm = () => {
-                cleanup();
-                const chosenTitle = (input ? input.value.trim() : '') || defaultTitle;
-                const chosenTags = (inputTags ? inputTags.value : '')
-                    .split(',')
-                    .map(t => t.trim().replace(/^#/, '').toLowerCase())
-                    .filter(Boolean);
-                const chosenCustomerId = selectCust?.value || null;
-                const chosenProjectId = selectProj?.value || null;
-                const chosenCategory = selectCat?.value || null;
-                const autoRetranscript = chkAutoRetranscript ? chkAutoRetranscript.checked : false;
-                const autoGenerateMinutes = chkAutoMinutes ? chkAutoMinutes.checked : false;
-                modal.style.display = 'none';
-                resolve({
-                    title: chosenTitle,
-                    tags: chosenTags,
-                    customerId: chosenCustomerId,
-                    projectId: chosenProjectId,
-                    category: chosenCategory,
-                    autoRetranscript,
-                    autoGenerateMinutes,
-                    minutesLang: autoMinutesLang,
-                    discard: false,
-                });
+                try {
+                    cleanup();
+                    const chosenTitle = (input ? input.value.trim() : '') || defaultTitle;
+                    const chosenTags = (inputTags ? inputTags.value : '')
+                        .split(',')
+                        .map(t => t.trim().replace(/^#/, '').toLowerCase())
+                        .filter(Boolean);
+                    const chosenScope = getCurrentChosenScope();
+                    const chosenCustomerId = chosenScope === 'personal' ? null : (selectCust?.value || null);
+                    const chosenProjectId = selectProj?.value || null;
+                    const chosenCategory = selectCat?.value || null;
+                    const autoRetranscript = chkAutoRetranscript ? chkAutoRetranscript.checked : false;
+                    const autoGenerateMinutes = chkAutoMinutes ? chkAutoMinutes.checked : false;
+                    modal.style.display = 'none';
+                    resolve({
+                        title: chosenTitle,
+                        tags: chosenTags,
+                        customerId: chosenCustomerId,
+                        projectId: chosenProjectId,
+                        category: chosenCategory,
+                        scope: chosenScope,
+                        autoRetranscript,
+                        autoGenerateMinutes,
+                        minutesLang: autoMinutesLang,
+                        discard: false,
+                    });
+                } catch (err) {
+                    console.error('[App] onConfirm error:', err);
+                    cleanup();
+                    modal.style.display = 'none';
+                    resolve(null);
+                }
             };
             const onDiscard = () => {
                 cleanup();
@@ -3682,6 +4178,12 @@ class App {
             const cleanup = () => {
                 this._isStopConfirmationOpen = false;
                 cleanupTags?.();
+                document.querySelectorAll('#stop-meeting-scope-group .scope-radio-btn').forEach(btn => {
+                    btn.removeEventListener('click', onScopeBtnClick);
+                });
+                document.querySelectorAll('input[name="stop-meeting-scope"]').forEach(r => {
+                    r.removeEventListener('change', onScopeChange);
+                });
                 selectCust?.removeEventListener('change', onCustChange);
                 selectProj?.removeEventListener('change', onProjChange);
                 chkAutoRetranscript?.removeEventListener('change', onAutoRetranscriptChange);
@@ -3697,18 +4199,20 @@ class App {
 
             document.getElementById('btn-agree-confirm-stop')?.addEventListener('click', onConfirm);
             document.getElementById('btn-discard-confirm-stop')?.addEventListener('click', onDiscard);
-            document.getElementById('btn-cancel-confirm-stop')?.addEventListener('click', onCancel);
-            document.getElementById('btn-close-confirm-stop')?.addEventListener('click', onCancel);
+            document.getElementById('btn-cancel-confirm-stop')?.removeEventListener('click', onCancel);
+            document.getElementById('btn-close-confirm-stop')?.removeEventListener('click', onCancel);
             input?.addEventListener('keydown', onKeyDown);
             inputTags?.addEventListener('keydown', onKeyDown);
             window.addEventListener('keydown', onKeyDown);
         });
     }
 
-    async stopSession(chosenTitle = null, chosenTags = null, chosenCustomerId = null, chosenProjectId = null, chosenCategory = null) {
+    async stopSession(chosenTitle = null, chosenTags = null, chosenCustomerId = null, chosenProjectId = null, chosenCategory = null, chosenScope = null) {
         if (this.isRunning) await this.pause();
 
-        const hadData = !sessionStore.isEmpty() && sessionStore.totalSegmentCount() > 0;
+        const hasSegments = !sessionStore.isEmpty() && sessionStore.totalSegmentCount() > 0;
+        const hasNotes = Boolean(sessionStore.notes && sessionStore.notes.trim());
+        const hadData = hasSegments || hasNotes;
         const savedSessionId = sessionStore.id;
 
         if (chosenTitle) {
@@ -3725,6 +4229,9 @@ class App {
         }
         if (chosenCategory !== undefined) {
             sessionStore.category = chosenCategory;
+        }
+        if (chosenScope !== undefined && chosenScope !== null) {
+            sessionStore.scope = chosenScope || 'work';
         }
 
         if (!hadData) {
@@ -3746,6 +4253,7 @@ class App {
         this.recordingStartTime = null;
         this._stopLiveDurationTimer();
         this._clearInactivityTimer();
+        this._updateLiveDurationDisplay();
 
         // Clear transcript UI back to fresh empty placeholder screen
         if (this.transcriptUI) {
@@ -3792,7 +4300,8 @@ class App {
                     stopAction.tags,
                     stopAction.customerId,
                     stopAction.projectId,
-                    stopAction.category
+                    stopAction.category,
+                    stopAction.scope
                 );
 
                 if (savedId) {
@@ -4010,7 +4519,7 @@ class App {
                 btnStop.className = 'action-btn btn-stop-action';
                 if (iconStopSq) iconStopSq.style.display = 'block';
                 if (iconSaveFloppy) iconSaveFloppy.style.display = 'none';
-                if (labelStop) labelStop.innerHTML = 'S<u>t</u>op';
+                if (labelStop) labelStop.innerHTML = 'Save & S<u>t</u>op';
                 btnStop.title = 'Kết thúc cuộc họp & Lưu (⌘T)';
             }
         } else if (this.isPaused) {
@@ -4026,7 +4535,7 @@ class App {
                 btnStop.className = 'action-btn btn-stop-action';
                 if (iconStopSq) iconStopSq.style.display = 'block';
                 if (iconSaveFloppy) iconSaveFloppy.style.display = 'none';
-                if (labelStop) labelStop.innerHTML = 'S<u>t</u>op';
+                if (labelStop) labelStop.innerHTML = 'Save & S<u>t</u>op';
                 btnStop.title = 'Kết thúc cuộc họp & Lưu (⌘T)';
             }
         } else if (this._hasUnsavedMeetingData) {
@@ -4421,6 +4930,7 @@ class App {
     // ─── Session History / Meeting Logs ───────────────────
 
     _updateBatchSelectionUI() {
+        if (!this._selectedSessionIds) this._selectedSessionIds = new Set();
         const count = this._selectedSessionIds.size;
         const listEl = document.getElementById('sessions-list');
         if (!listEl) return;
@@ -4852,15 +5362,41 @@ class App {
     _renderFilteredSessions() {
         const listEl = document.getElementById('sessions-list');
         if (!listEl) return;
+        if (!this._selectedSessionIds) this._selectedSessionIds = new Set();
+
+        const workCount = (this._cachedSessions || []).filter(s => (s.scope || 'work') === 'work').length;
+        const personalCount = (this._cachedSessions || []).filter(s => s.scope === 'personal').length;
+        const allCount = (this._cachedSessions || []).length;
+        const countWorkEl = document.getElementById('scope-count-work');
+        if (countWorkEl) countWorkEl.textContent = workCount;
+        const countPersonalEl = document.getElementById('scope-count-personal');
+        if (countPersonalEl) countPersonalEl.textContent = personalCount;
+        const countAllEl = document.getElementById('scope-count-all');
+        if (countAllEl) countAllEl.textContent = allCount;
+
+        const activeScope = this._activeLogsScopeFilter || 'work';
+        const isPersonalScope = activeScope === 'personal';
+        const isAllScope = activeScope === 'all';
+
+        document.querySelectorAll('.logs-scope-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.scope === activeScope);
+        });
+
+        const custSelect = document.getElementById('select-session-customer-filter');
+        if (custSelect) {
+            custSelect.style.display = isPersonalScope ? 'none' : '';
+        }
 
         const nameQuery = this._sessionNameQuery.trim().toLocaleLowerCase();
         let filtered = (this._cachedSessions || []).filter(session => {
+            const sessScope = session.scope || 'work';
+            const scopeMatches = isAllScope || sessScope === activeScope;
             const titleMatches = !nameQuery || (session.title || '').toLocaleLowerCase().includes(nameQuery);
-            const customerMatches = !this._activeCustomerFilter.length || this._activeCustomerFilter.includes(session.customer_id);
+            const customerMatches = isPersonalScope || !this._activeCustomerFilter.length || this._activeCustomerFilter.includes(session.customer_id);
             const projectMatches = !this._activeProjectFilter.length || this._activeProjectFilter.includes(session.project_id);
             const categoryMatches = !this._activeCategoryFilter.length || this._activeCategoryFilter.includes(session.category);
             const tagMatches = !this._activeTagFilter.length || (session.tags || []).some(tag => this._activeTagFilter.includes(tag));
-            return titleMatches && customerMatches && projectMatches && categoryMatches && tagMatches;
+            return scopeMatches && titleMatches && customerMatches && projectMatches && categoryMatches && tagMatches;
         });
         this._filteredSessions = filtered;
 
@@ -4887,11 +5423,11 @@ class App {
             : '↕';
 
         const rows = pageItems.length
-            ? pageItems.map((session, index) => this._renderSessionTableRow(session, pageStart + index + 1)).join('')
-            : '<tr><td class="logs-table-empty" colspan="8">Không tìm thấy log nào phù hợp bộ lọc.</td></tr>';
+            ? pageItems.map((session, index) => this._renderSessionTableRow(session, pageStart + index + 1, isPersonalScope, isAllScope)).join('')
+            : `<tr><td class="logs-table-empty" colspan="${isPersonalScope ? 7 : 8}">Không tìm thấy log nào phù hợp bộ lọc.</td></tr>`;
 
         const existingTable = listEl.querySelector('.logs-table');
-        if (existingTable) {
+        if (existingTable && existingTable.dataset.scope === activeScope) {
             // Update table body rows without destroying filter inputs (preserves input focus!)
             const tbody = existingTable.querySelector('tbody');
             if (tbody) tbody.innerHTML = rows;
@@ -4947,14 +5483,21 @@ class App {
 
         const projectMap = new Map();
         (this._projectRegistry?.projects || []).forEach(p => {
-            if (p.id) projectMap.set(p.id, { id: p.id, name: p.name || p.id, customer_id: p.customer_id });
+            if (p.id) projectMap.set(p.id, { id: p.id, name: p.name || p.id, customer_id: p.customer_id, scope: p.scope || 'work' });
         });
         (this._cachedSessions || []).forEach(s => {
             if (s.project_id && !projectMap.has(s.project_id)) {
-                projectMap.set(s.project_id, { id: s.project_id, name: s.project_name || s.project_id, customer_id: s.customer_id });
+                projectMap.set(s.project_id, { id: s.project_id, name: s.project_name || s.project_id, customer_id: s.customer_id, scope: s.scope || 'work' });
             }
         });
         const projects = Array.from(projectMap.values());
+
+        let relevantProjects = projects;
+        if (isPersonalScope) {
+            relevantProjects = projects.filter(p => p.scope === 'personal');
+        } else if (!isAllScope) {
+            relevantProjects = projects.filter(p => (p.scope || 'work') === 'work');
+        }
 
         const categorySet = new Set();
         (this._projectRegistry?.categories || []).forEach(c => { if (c.name) categorySet.add(c.name); });
@@ -4982,12 +5525,16 @@ class App {
         const activeCategory = this._activeCategoryFilter[0] || '';
         const activeTag = this._activeTagFilter[0] || '';
 
+        const customerHeader = isPersonalScope ? '' : `<th class="sortable" data-sort="customer_name">Khách hàng <span>${sortIcon('customer_name')}</span></th>`;
+        const projectHeaderTitle = isPersonalScope ? 'Dự án cá nhân' : 'Dự án';
+        const customerFilterCell = isPersonalScope ? '' : `<td><select class="logs-filter-select" data-filter-select="customer">${renderSelectOptions(customers, activeCustomer, 'khách hàng', c => (c.status === 'active' ? '🟢 ' : (c.status === 'archived' ? '⚪ ' : '')) + c.name)}</select></td>`;
+
         const header = `<tr class="logs-column-header">
                 <th class="logs-check-column"><input id="chk-select-all-sessions" type="checkbox" title="Chọn tất cả log đang lọc"></th>
                 <th class="sortable" data-sort="created_at"># <span>${sortIcon('created_at')}</span></th>
                 <th class="sortable" data-sort="title">Tên log <span>${sortIcon('title')}</span></th>
-                <th class="sortable" data-sort="customer_name">Khách hàng <span>${sortIcon('customer_name')}</span></th>
-                <th class="sortable" data-sort="project_name">Dự án <span>${sortIcon('project_name')}</span></th>
+                ${customerHeader}
+                <th class="sortable" data-sort="project_name">${projectHeaderTitle} <span>${sortIcon('project_name')}</span></th>
                 <th class="sortable" data-sort="category">Category <span>${sortIcon('category')}</span></th>
                 <th class="sortable" data-sort="tags">Tag <span>${sortIcon('tags')}</span></th>
                 <th class="logs-col-actions-header">Actions</th>
@@ -4997,8 +5544,8 @@ class App {
                     <button type="button" class="btn-danger-small logs-delete-selected ${selectedCount ? 'is-visible' : ''}" data-batch-delete ${selectedCount ? '' : 'disabled'} title="Xóa các log đã chọn">🗑 Xoá (${selectedCount})</button>
                 </td>
                 <td><input type="search" class="logs-filter-input" data-filter-name value="${this._escAttr(this._sessionNameQuery)}" placeholder="Lọc tên log"></td>
-                <td><select class="logs-filter-select" data-filter-select="customer">${renderSelectOptions(customers, activeCustomer, 'khách hàng', c => (c.status === 'active' ? '🟢 ' : (c.status === 'archived' ? '⚪ ' : '')) + c.name)}</select></td>
-                <td><select class="logs-filter-select" data-filter-select="project">${renderSelectOptions(projects, activeProject, 'dự án')}</select></td>
+                ${customerFilterCell}
+                <td><select class="logs-filter-select" data-filter-select="project">${renderSelectOptions(relevantProjects, activeProject, isPersonalScope ? 'dự án cá nhân' : 'dự án')}</select></td>
                 <td><select class="logs-filter-select" data-filter-select="category">${renderSelectOptions(categories, activeCategory, 'category')}</select></td>
                 <td><select class="logs-filter-select" data-filter-select="tag">${renderSelectOptions(tags, activeTag, 'tag', t => {
                     const count = (this._cachedSessions || []).filter(s => (s.tags || []).includes(t)).length;
@@ -5007,14 +5554,18 @@ class App {
                 <td><button type="button" class="logs-reset-filters" data-clear-filters title="Xoá toàn bộ điều kiện lọc">↺ Reset</button></td>
             </tr>`;
 
-        listEl.innerHTML = `<div class="logs-table-container"><table class="logs-table"><colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-customer"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup><thead>${header}</thead><tbody>${rows}</tbody></table></div>
+        const colGroup = isPersonalScope
+            ? `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`
+            : `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-customer"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`;
+
+        listEl.innerHTML = `<div class="logs-table-container"><table class="logs-table" data-scope="${activeScope}">${colGroup}<thead>${header}</thead><tbody>${rows}</tbody></table></div>
             <div class="session-pagination">
                 <span class="session-pagination-count">${filtered.length} log</span>
                 <label>Hiển thị <select data-page-size><option value="10" ${this._sessionPageSize === 10 ? 'selected' : ''}>10</option><option value="20" ${this._sessionPageSize === 20 ? 'selected' : ''}>20</option><option value="50" ${this._sessionPageSize === 50 ? 'selected' : ''}>50</option></select> / trang</label>
                 <div class="session-pagination-actions"><button type="button" data-page-prev ${this._sessionPage === 1 ? 'disabled' : ''}>‹</button><span class="session-pagination-page-text">${this._sessionPage} / ${totalPages}</span><button type="button" data-page-next ${this._sessionPage === totalPages ? 'disabled' : ''}>›</button></div>
             </div>`;
 
-        this._bindLogsTableEvents(listEl, filtered, totalPages, { customers, projects, categories, tags, renderSelectOptions });
+        this._bindLogsTableEvents(listEl, filtered, totalPages, { customers, projects, categories, tags, renderSelectOptions, isPersonalScope, isAllScope });
         const selectAllCheckbox = listEl.querySelector('#chk-select-all-sessions');
         if (selectAllCheckbox) {
             selectAllCheckbox.checked = allFilteredSelected;
@@ -5022,18 +5573,27 @@ class App {
         }
     }
 
-    _renderSessionTableRow(session, number) {
+    _renderSessionTableRow(session, number, isPersonalScope = false, isAllScope = false) {
         const tags = (session.tags || []).map(tag => `<span class="session-tag-badge">#${this._esc(tag)}</span>`).join('') || '<span class="logs-empty-value">—</span>';
         const customer = session.customer_name ? `<span class="session-customer-badge">${this._esc(session.customer_name)}</span>` : '<span class="logs-empty-value">—</span>';
         const project = session.project_name ? `<span class="session-project-badge">${this._esc(session.project_name)}</span>` : '<span class="logs-empty-value">—</span>';
         const category = session.category ? `<span class="session-category-badge">${this._esc(session.category)}</span>` : '<span class="logs-empty-value">—</span>';
         const retranscriptButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-retranscript-session="${this._escAttr(session.id)}" title="Dùng file ghi âm để Gemini tạo lại Logs">🔄</button>`;
         const editButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-edit-session="${this._escAttr(session.id)}" title="Sửa thông tin">${PENCIL_YELLOW_ICON}</button>`;
+
+        const scopeBadge = isAllScope
+            ? (session.scope === 'personal'
+                ? '<span class="scope-badge-personal" style="margin-right:6px; font-size:10px;">👤 Cá nhân</span>'
+                : '<span class="scope-badge-work" style="margin-right:6px; font-size:10px;">💼 Công việc</span>')
+            : '';
+
+        const customerTd = isPersonalScope ? '' : `<td>${customer}</td>`;
+
         return `<tr data-session-id="${this._escAttr(session.id)}" data-legacy="${session.has_legacy_only ? '1' : '0'}">
             <td class="logs-check-column"><input type="checkbox" data-session-check="${this._escAttr(session.id)}" ${this._selectedSessionIds.has(session.id) ? 'checked' : ''}></td>
             <td class="logs-index">${number}</td>
-            <td class="logs-title-cell"><button type="button" class="logs-title-link" data-open-session="${this._escAttr(session.id)}">${this._esc(session.title || 'Cuộc họp chưa đặt tên')}</button></td>
-            <td>${customer}</td><td>${project}</td><td>${category}</td><td><div class="logs-tags">${tags}</div></td>
+            <td class="logs-title-cell"><button type="button" class="logs-title-link" data-open-session="${this._escAttr(session.id)}">${scopeBadge}${this._esc(session.title || 'Cuộc họp chưa đặt tên')}</button></td>
+            ${customerTd}<td>${project}</td><td>${category}</td><td><div class="logs-tags">${tags}</div></td>
             <td><div class="logs-actions">${retranscriptButton}${editButton}<button type="button" class="session-btn-action" data-copy-session="${this._escAttr(session.id)}" title="Copy nội dung">⧉</button><button type="button" class="session-delete-btn" data-delete-session="${this._escAttr(session.id)}" title="Xoá log">×</button></div></td>
         </tr>`;
     }
@@ -5048,10 +5608,18 @@ class App {
             if (!optionsContext) return;
             const projectSelect = listEl.querySelector('[data-filter-select="project"]');
             if (!projectSelect) return;
-            const availableProjects = custId
-                ? optionsContext.projects.filter(p => !p.customer_id || p.customer_id === custId)
-                : optionsContext.projects;
-            projectSelect.innerHTML = optionsContext.renderSelectOptions(availableProjects, this._activeProjectFilter[0] || '', 'dự án');
+            let availableProjects = optionsContext.projects;
+            if (optionsContext.isPersonalScope) {
+                availableProjects = availableProjects.filter(p => p.scope === 'personal');
+            } else if (!optionsContext.isAllScope) {
+                availableProjects = availableProjects.filter(p => (p.scope || 'work') === 'work');
+                if (custId) {
+                    availableProjects = availableProjects.filter(p => !p.customer_id || p.customer_id === custId);
+                }
+            } else if (custId) {
+                availableProjects = availableProjects.filter(p => !p.customer_id || p.customer_id === custId);
+            }
+            projectSelect.innerHTML = optionsContext.renderSelectOptions(availableProjects, this._activeProjectFilter[0] || '', optionsContext.isPersonalScope ? 'dự án cá nhân' : 'dự án');
         };
 
         const applyFilter = (kind, select) => {
@@ -5149,6 +5717,7 @@ class App {
     }
 
     _bindSessionRowEvents(tableContainer) {
+        if (!this._selectedSessionIds) this._selectedSessionIds = new Set();
         tableContainer.querySelectorAll('[data-session-check]').forEach(check => {
             check.addEventListener('change', () => {
                 check.checked ? this._selectedSessionIds.add(check.dataset.sessionCheck) : this._selectedSessionIds.delete(check.dataset.sessionCheck);
@@ -5505,12 +6074,41 @@ class App {
             selectCust.value = currentCustomerId;
         }
 
+        const currentScope = sess.scope || 'work';
+        const workRadio = document.querySelector('input[name="edit-session-scope"][value="work"]');
+        const personalRadio = document.querySelector('input[name="edit-session-scope"][value="personal"]');
+        const custWrap = document.getElementById('edit-customer-field-wrap');
+
+        if (currentScope === 'personal') {
+            if (personalRadio) personalRadio.checked = true;
+            if (workRadio) workRadio.checked = false;
+            if (custWrap) custWrap.style.display = 'none';
+        } else {
+            if (workRadio) workRadio.checked = true;
+            if (personalRadio) personalRadio.checked = false;
+            if (custWrap) custWrap.style.display = '';
+        }
+        document.querySelectorAll('#edit-session-scope-group .scope-radio-btn').forEach(btn => {
+            const rad = btn.querySelector('input[type="radio"]');
+            btn.classList.toggle('active', rad && rad.checked);
+        });
+
+        const getCurrentChosenEditScope = () => {
+            return document.querySelector('input[name="edit-session-scope"]:checked')?.value || 'work';
+        };
+
         // Helper to populate projects
-        const updateProjectsDropdown = (selectedCustomerId) => {
+        const updateProjectsDropdown = (selectedCustomerId, scope) => {
             if (!selectProj) return;
-            const filteredProjs = selectedCustomerId
-                ? allProjects.filter(p => p.customer_id === selectedCustomerId || p.id === currentProjectId)
-                : allProjects;
+            let filteredProjs = allProjects;
+            if (scope === 'personal') {
+                filteredProjs = allProjects.filter(p => p.scope === 'personal' || p.id === currentProjectId);
+            } else {
+                filteredProjs = allProjects.filter(p => (p.scope || 'work') === 'work' || p.id === currentProjectId);
+                if (selectedCustomerId) {
+                    filteredProjs = filteredProjs.filter(p => p.customer_id === selectedCustomerId || p.id === currentProjectId);
+                }
+            }
             let projHtml = '<option value="">(Không gán dự án)</option>';
             for (const p of filteredProjs) {
                 const statusSuffix = p.status === 'archived' ? ' (Đã dừng)' : '';
@@ -5524,10 +6122,42 @@ class App {
             }
         };
 
-        updateProjectsDropdown(currentCustomerId);
+        updateProjectsDropdown(currentCustomerId, getCurrentChosenEditScope());
+
+        const onScopeChange = () => {
+            const curScope = getCurrentChosenEditScope();
+            document.querySelectorAll('#edit-session-scope-group .scope-radio-btn').forEach(btn => {
+                const rad = btn.querySelector('input[type="radio"]');
+                btn.classList.toggle('active', rad && rad.checked);
+            });
+            if (custWrap) {
+                custWrap.style.display = curScope === 'personal' ? 'none' : '';
+            }
+            if (curScope === 'personal' && selectCust) {
+                selectCust.value = '';
+            }
+            updateProjectsDropdown(selectCust?.value, curScope);
+        };
+
+        const onScopeBtnClick = (e) => {
+            const label = e.currentTarget;
+            const rad = label.querySelector('input[type="radio"]');
+            if (rad && !rad.checked) {
+                rad.checked = true;
+                onScopeChange();
+            }
+        };
+
+        document.querySelectorAll('#edit-session-scope-group .scope-radio-btn').forEach(btn => {
+            btn.addEventListener('click', onScopeBtnClick);
+        });
+
+        document.querySelectorAll('input[name="edit-session-scope"]').forEach(r => {
+            r.addEventListener('change', onScopeChange);
+        });
 
         const onCustChange = () => {
-            updateProjectsDropdown(selectCust?.value);
+            updateProjectsDropdown(selectCust?.value, getCurrentChosenEditScope());
         };
         const onProjChange = () => {
             const pId = selectProj?.value;
@@ -5559,7 +6189,8 @@ class App {
                 cleanup();
                 modal.style.display = 'none';
                 const newTitle = inputTitle?.value.trim() || currentTitle;
-                const newCustomerId = selectCust?.value || null;
+                const newScope = getCurrentChosenEditScope();
+                const newCustomerId = newScope === 'personal' ? null : (selectCust?.value || null);
                 const newProjectId = selectProj?.value || null;
                 const newCategory = selectCat?.value || null;
                 const cleanTags = (inputTags?.value || '')
@@ -5574,13 +6205,16 @@ class App {
                         projectId: newProjectId,
                         category: newCategory,
                         tags: cleanTags,
+                        scope: newScope,
                     });
+                    sess.scope = newScope;
                     if (sessionStore.id === id) {
                         sessionStore.title = newTitle;
                         sessionStore.customerId = newCustomerId;
                         sessionStore.projectId = newProjectId;
                         sessionStore.category = newCategory;
                         sessionStore.tags = cleanTags;
+                        sessionStore.scope = newScope;
                     }
                     if (this._currentViewedSession && this._currentViewedSession.id === id) {
                         try {
@@ -5616,6 +6250,12 @@ class App {
             };
             const cleanup = () => {
                 cleanupTags?.();
+                document.querySelectorAll('#edit-session-scope-group .scope-radio-btn').forEach(btn => {
+                    btn.removeEventListener('click', onScopeBtnClick);
+                });
+                document.querySelectorAll('input[name="edit-session-scope"]').forEach(r => {
+                    r.removeEventListener('change', onScopeChange);
+                });
                 selectCust?.removeEventListener('change', onCustChange);
                 selectProj?.removeEventListener('change', onProjChange);
                 document.getElementById('btn-confirm-edit-tags')?.removeEventListener('click', onConfirm);
@@ -5828,9 +6468,35 @@ class App {
         const reg = await this._loadProjectRegistry();
         const customers = (reg.customers || []).filter(c => c.status === 'active');
         const custSelect = document.getElementById('select-modal-proj-customer');
+        const idInput = document.getElementById('input-modal-proj-id');
         const nameInput = document.getElementById('input-modal-proj-name');
         const colorInput = document.getElementById('input-modal-proj-color');
         const descInput = document.getElementById('input-modal-proj-desc');
+        const titleEl = document.getElementById('modal-proj-title');
+        const saveBtn = document.getElementById('btn-save-add-project');
+
+        if (titleEl) titleEl.textContent = '📁 Thêm Dự án mới';
+        if (saveBtn) saveBtn.textContent = '+ Tạo Dự án';
+        if (idInput) idInput.value = '';
+
+        const defaultScope = this._projScopeFilter === 'personal' ? 'personal' : 'work';
+        const workRadio = document.querySelector('input[name="modal-proj-scope"][value="work"]');
+        const personalRadio = document.querySelector('input[name="modal-proj-scope"][value="personal"]');
+        const custWrap = document.getElementById('modal-proj-customer-wrap');
+
+        if (defaultScope === 'personal') {
+            if (personalRadio) personalRadio.checked = true;
+            if (workRadio) workRadio.checked = false;
+            if (custWrap) custWrap.style.display = 'none';
+        } else {
+            if (workRadio) workRadio.checked = true;
+            if (personalRadio) personalRadio.checked = false;
+            if (custWrap) custWrap.style.display = '';
+        }
+        document.querySelectorAll('#modal-proj-scope-group .scope-radio-btn').forEach(btn => {
+            const rad = btn.querySelector('input[type="radio"]');
+            btn.classList.toggle('active', rad && rad.checked);
+        });
 
         if (custSelect) {
             let html = '<option value="">(Không chọn KH / Dự án nội bộ)</option>';
@@ -5849,6 +6515,59 @@ class App {
         setTimeout(() => nameInput?.focus(), 50);
     }
 
+    async _openEditProjectModal(project) {
+        if (!project) return;
+        const modal = document.getElementById('modal-add-project');
+        if (!modal) return;
+        const reg = await this._loadProjectRegistry();
+        const customers = (reg.customers || []).filter(c => c.status === 'active' || c.id === project.customer_id);
+        const custSelect = document.getElementById('select-modal-proj-customer');
+        const idInput = document.getElementById('input-modal-proj-id');
+        const nameInput = document.getElementById('input-modal-proj-name');
+        const colorInput = document.getElementById('input-modal-proj-color');
+        const descInput = document.getElementById('input-modal-proj-desc');
+        const titleEl = document.getElementById('modal-proj-title');
+        const saveBtn = document.getElementById('btn-save-add-project');
+
+        if (titleEl) titleEl.textContent = `📁 Chỉnh sửa: ${project.name}`;
+        if (saveBtn) saveBtn.textContent = 'Lưu thay đổi';
+        if (idInput) idInput.value = project.id || '';
+        if (nameInput) nameInput.value = project.name || '';
+        if (colorInput) colorInput.value = project.color || '#431A46';
+        if (descInput) descInput.value = project.description || '';
+
+        const pScope = project.scope || 'work';
+        const workRadio = document.querySelector('input[name="modal-proj-scope"][value="work"]');
+        const personalRadio = document.querySelector('input[name="modal-proj-scope"][value="personal"]');
+        const custWrap = document.getElementById('modal-proj-customer-wrap');
+
+        if (pScope === 'personal') {
+            if (personalRadio) personalRadio.checked = true;
+            if (workRadio) workRadio.checked = false;
+            if (custWrap) custWrap.style.display = 'none';
+        } else {
+            if (workRadio) workRadio.checked = true;
+            if (personalRadio) personalRadio.checked = false;
+            if (custWrap) custWrap.style.display = '';
+        }
+        document.querySelectorAll('#modal-proj-scope-group .scope-radio-btn').forEach(btn => {
+            const rad = btn.querySelector('input[type="radio"]');
+            btn.classList.toggle('active', rad && rad.checked);
+        });
+
+        if (custSelect) {
+            let html = '<option value="">(Không chọn KH / Dự án nội bộ)</option>';
+            for (const c of customers) {
+                const sel = project.customer_id === c.id ? 'selected' : '';
+                html += `<option value="${this._escAttr(c.id)}" ${sel}>🏢 ${this._esc(c.name)}</option>`;
+            }
+            custSelect.innerHTML = html;
+        }
+
+        modal.style.display = 'flex';
+        setTimeout(() => nameInput?.focus(), 50);
+    }
+
     _closeAddProjectModal() {
         const modal = document.getElementById('modal-add-project');
         if (modal) modal.style.display = 'none';
@@ -5856,6 +6575,7 @@ class App {
 
     async _handleSaveProjectFromModal() {
         const custSelect = document.getElementById('select-modal-proj-customer');
+        const idInput = document.getElementById('input-modal-proj-id');
         const nameInput = document.getElementById('input-modal-proj-name');
         const colorInput = document.getElementById('input-modal-proj-color');
         const descInput = document.getElementById('input-modal-proj-desc');
@@ -5864,13 +6584,15 @@ class App {
             this._showToast('Vui lòng nhập tên dự án', 'error');
             return;
         }
-        const customer_id = custSelect?.value || null;
+        const id = idInput?.value.trim() || '';
+        const scope = document.querySelector('input[name="modal-proj-scope"]:checked')?.value || 'work';
+        const customer_id = scope === 'personal' ? null : (custSelect?.value || null);
         const color = colorInput?.value || '#431A46';
         const description = descInput?.value.trim() || '';
         try {
             await invoke('save_project', {
                 project: {
-                    id: '',
+                    id,
                     name,
                     customer_id,
                     description,
@@ -5878,17 +6600,18 @@ class App {
                     status: 'active',
                     created_at: '',
                     updated_at: '',
+                    scope,
                 }
             });
             this._closeAddProjectModal();
-            this._showToast(`Đã tạo dự án "${name}" ✓`, 'success');
+            this._showToast(id ? `Đã cập nhật dự án "${name}" ✓` : `Đã tạo dự án "${name}" ✓`, 'success');
             await this._loadProjectRegistry();
             this._renderSettingsProjectsTab(document.getElementById('select-settings-proj-cust-filter')?.value || '');
             this._renderProjectFilterBar();
             this._updateSidebarBadges();
             await this._showSessions();
         } catch (err) {
-            this._showToast(`Tạo dự án thất bại: ${err}`, 'error');
+            this._showToast(`Lưu dự án thất bại: ${err}`, 'error');
         }
     }
 
@@ -5975,10 +6698,11 @@ class App {
         const reg = await this._loadProjectRegistry();
         let customers = reg.customers || [];
         const projects = reg.projects || [];
+        const sessions = this._cachedSessions || [];
 
         const q = (searchFilter || '').trim().toLowerCase();
         if (q) {
-            customers = customers.filter(c => (c.name || '').toLowerCase().includes(q) || (c.code || '').toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q));
+            customers = customers.filter(c => (c.name || '').toLowerCase().includes(q) || (c.contact_name || '').toLowerCase().includes(q) || (c.contact_email || '').toLowerCase().includes(q));
         }
 
         if (customers.length === 0) {
@@ -5988,11 +6712,12 @@ class App {
 
         // Sort items
         const sortedCustomers = this._sortItems(customers, this._custSort, (c, field) => {
-            if (field === 'code') return c.code || '';
             if (field === 'name') return c.name || '';
-            if (field === 'description') return c.description || '';
+            if (field === 'contact') return c.contact_name || '';
+            if (field === 'email') return c.contact_email || '';
             if (field === 'status') return c.status || 'active';
             if (field === 'projects') return projects.filter(p => p.customer_id === c.id).length;
+            if (field === 'sessions') return sessions.filter(s => s.customer_id === c.id).length;
             return 0;
         });
 
@@ -6003,12 +6728,13 @@ class App {
             <thead>
               <tr>
                 <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
-                <th class="sortable ${sort.field === 'code' ? 'active-sort' : ''}" data-sort="code" style="width: 95px;">Mã KH ${this._getSortIcon(sort, 'code')}</th>
                 <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên khách hàng ${this._getSortIcon(sort, 'name')}</th>
-                <th class="sortable ${sort.field === 'description' ? 'active-sort' : ''}" data-sort="description">Mô tả ${this._getSortIcon(sort, 'description')}</th>
-                <th class="sortable ${sort.field === 'status' ? 'active-sort' : ''}" data-sort="status" style="width: 120px;">Trạng thái ${this._getSortIcon(sort, 'status')}</th>
-                <th class="sortable ${sort.field === 'projects' ? 'active-sort' : ''}" data-sort="projects" style="width: 220px;">Dự án đang làm ${this._getSortIcon(sort, 'projects')}</th>
-                <th style="width: 90px; text-align: center;">Thao tác</th>
+                <th class="sortable ${sort.field === 'contact' ? 'active-sort' : ''}" data-sort="contact">Người liên hệ ${this._getSortIcon(sort, 'contact')}</th>
+                <th class="sortable ${sort.field === 'email' ? 'active-sort' : ''}" data-sort="email">Email ${this._getSortIcon(sort, 'email')}</th>
+                <th class="sortable ${sort.field === 'status' ? 'active-sort' : ''}" data-sort="status" style="width: 110px;">Trạng thái ${this._getSortIcon(sort, 'status')}</th>
+                <th class="sortable ${sort.field === 'projects' ? 'active-sort' : ''}" data-sort="projects" style="width: 100px; text-align: center;">Số dự án ${this._getSortIcon(sort, 'projects')}</th>
+                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 100px; text-align: center;">Số cuộc họp ${this._getSortIcon(sort, 'sessions')}</th>
+                <th style="width: 100px; text-align: center;">Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -6016,51 +6742,34 @@ class App {
 
         sortedCustomers.forEach((c, idx) => {
             const isActive = c.status === 'active';
-            const custProjects = projects.filter(p => p.customer_id === c.id);
-            const activeProjects = custProjects.filter(p => p.status === 'active');
-            const targetProjects = activeProjects.length > 0 ? activeProjects : custProjects;
-
-            const maxChips = 3;
-            const visibleProjects = targetProjects.slice(0, maxChips);
-            const remaining = targetProjects.length - maxChips;
-
-            let projChipsHtml = '';
-            if (targetProjects.length === 0) {
-                projChipsHtml = '<span style="opacity:0.4; font-size:11px;">(Chưa có dự án)</span>';
-            } else {
-                projChipsHtml = `<div class="table-proj-chips">` +
-                    visibleProjects.map(p => `
-                        <span class="table-proj-chip btn-view-cust-projs" data-id="${this._escAttr(c.id)}" title="${this._escAttr(p.name)}">
-                            <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${this._escAttr(p.color || '#431A46')};"></span>
-                            ${this._esc(p.name)}
-                        </span>
-                    `).join('') +
-                    (remaining > 0 ? `<span class="table-proj-more btn-view-cust-projs" data-id="${this._escAttr(c.id)}" title="Xem tất cả ${targetProjects.length} dự án">+${remaining} khác</span>` : '') +
-                    `</div>`;
-            }
-
-            const codeBadge = c.code ? `<span class="mgr-customer-code">${this._esc(c.code)}</span>` : '<span style="opacity:0.3;">-</span>';
-
+            const projCount = projects.filter(p => p.customer_id === c.id).length;
+            const sessCount = sessions.filter(s => s.customer_id === c.id).length;
             html += `
-              <tr class="cust-row" data-id="${this._escAttr(c.id)}">
+              <tr>
                 <td style="text-align: center; color: var(--md-sys-color-on-surface-variant); font-size: 11px;">${idx + 1}</td>
-                <td class="btn-open-cust-details" data-id="${this._escAttr(c.id)}" style="cursor: pointer;">${codeBadge}</td>
-                <td class="btn-open-cust-details" data-id="${this._escAttr(c.id)}" style="cursor: pointer;">
+                <td>
                   <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
                     <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(c.color || '#431A46')}; flex-shrink:0;"></span>
-                    <span style="color: var(--md-sys-color-primary); text-decoration: underline; text-underline-offset: 2px;">${this._esc(c.name)}</span>
+                    <span class="btn-jump-to-cust-projects" data-id="${this._escAttr(c.id)}" style="cursor:pointer; color:var(--md-sys-color-primary);" title="Xem các dự án của khách hàng này">${this._esc(c.name)}</span>
                   </div>
                 </td>
-                <td class="btn-open-cust-details" data-id="${this._escAttr(c.id)}" style="cursor: pointer; color: var(--md-sys-color-on-surface-variant); font-size:11px; max-width: 200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${this._escAttr(c.description || '')}">
-                  ${c.description ? this._esc(c.description) : '<span style="opacity:0.3;">-</span>'}
+                <td style="color: var(--md-sys-color-on-surface-variant); font-size:12px;">${c.contact_name ? this._esc(c.contact_name) : '<span style="opacity:0.3;">-</span>'}</td>
+                <td style="color: var(--md-sys-color-on-surface-variant); font-size:11px; font-family:monospace;">${c.contact_email ? this._esc(c.contact_email) : '<span style="opacity:0.3;">-</span>'}</td>
+                <td>
+                  <span class="status-pill ${isActive ? 'active' : 'archived'}">${isActive ? '🟢 Đang chạy' : '⚪ Đã dừng'}</span>
                 </td>
-                <td class="btn-open-cust-details" data-id="${this._escAttr(c.id)}" style="cursor: pointer;">
-                  <span class="status-pill ${isActive ? 'active' : 'archived'}">${isActive ? '🟢 Đang hợp tác' : '⚪ Đã dừng'}</span>
+                <td style="text-align: center; font-weight:600;">
+                  ${projCount > 0 ? `<button type="button" class="btn-jump-to-cust-projects" data-id="${this._escAttr(c.id)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;">${projCount} dự án</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
                 </td>
-                <td>${projChipsHtml}</td>
+                <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
+                  ${sessCount > 0 ? `${sessCount} cuộc họp` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                </td>
                 <td style="text-align: center;">
                   <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
-                    <button type="button" class="btn-secondary-small btn-toggle-cust" data-id="${this._escAttr(c.id)}" title="${isActive ? 'Tạm dừng hợp tác' : 'Kích hoạt hợp tác'}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                    <button type="button" class="btn-secondary-small btn-edit-cust" data-id="${this._escAttr(c.id)}" title="Sửa thông tin khách hàng" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      ✏️
+                    </button>
+                    <button type="button" class="btn-secondary-small btn-toggle-cust" data-id="${this._escAttr(c.id)}" title="${isActive ? 'Tạm dừng khách hàng' : 'Kích hoạt khách hàng'}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                       ${isActive ? '⏸' : '▶'}
                     </button>
                     <button type="button" class="btn-danger-small btn-del-cust" data-id="${this._escAttr(c.id)}" data-name="${this._escAttr(c.name)}" title="Xoá khách hàng" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
@@ -6094,39 +6803,35 @@ class App {
             });
         });
 
-        // Click customer name / info opens Details Modal
-        listEl.querySelectorAll('.btn-open-cust-details').forEach(cell => {
-            cell.addEventListener('click', () => {
-                const cid = cell.dataset.id;
-                const cust = customers.find(c => c.id === cid);
-                if (cust) {
-                    this._openEditCustomerModal(cust);
-                }
+        // Edit customer button
+        listEl.querySelectorAll('.btn-edit-cust').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.id;
+                const cust = customers.find(c => c.id === id);
+                if (cust) this._openEditCustomerModal(cust);
             });
         });
 
-        // Click project chip jumps to Projects tab
-        listEl.querySelectorAll('.btn-view-cust-projs').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const cid = btn.dataset.id;
+        // Jump to customer's projects in Tab Projects
+        listEl.querySelectorAll('.btn-jump-to-cust-projects').forEach(el => {
+            el.addEventListener('click', () => {
+                const cid = el.dataset.id;
                 this._showSettingsScreen('tab-projects');
-                const filterSelect = document.getElementById('select-settings-proj-cust-filter');
-                if (filterSelect) {
-                    filterSelect.value = cid;
+                const filter = document.getElementById('select-settings-proj-cust-filter');
+                if (filter) {
+                    filter.value = cid;
                     this._renderSettingsProjectsTab(cid);
                 }
             });
         });
 
-        // Toggle status (icon only)
+        // Toggle customer status (icon only)
         listEl.querySelectorAll('.btn-toggle-cust').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                e.stopPropagation();
+            btn.addEventListener('click', async () => {
                 const id = btn.dataset.id;
                 try {
                     const newStatus = await invoke('toggle_customer_status', { id });
-                    this._showToast(`Đã chuyển trạng thái KH: ${newStatus === 'active' ? 'Đang hợp tác' : 'Đã dừng'}`, 'success');
+                    this._showToast(`Đã chuyển khách hàng sang: ${newStatus === 'active' ? 'Đang chạy' : 'Đã dừng'}`, 'success');
                     await this._loadProjectRegistry();
                     this._renderSettingsCustomersTab(document.getElementById('input-search-customers')?.value);
                     this._renderCustomerFilterBar();
@@ -6140,13 +6845,12 @@ class App {
 
         // Delete customer
         listEl.querySelectorAll('.btn-del-cust').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                e.stopPropagation();
+            btn.addEventListener('click', async () => {
                 const id = btn.dataset.id;
                 const name = btn.dataset.name || 'khách hàng';
                 const agreed = await this._promptConfirmDelete({
                     title: 'Xoá khách hàng',
-                    message: `Bạn có chắc muốn xoá khách hàng "${name}"?\nCác dự án liên kết sẽ được huỷ gán nhưng không bị xoá, toàn bộ meeting log cũ vẫn an toàn.`,
+                    message: `Bạn có chắc muốn xoá khách hàng "${name}"?\nCác dự án liên kết sẽ được huỷ gán khách hàng này. Meeting log đã ghi được giữ nguyên.`,
                     confirmText: 'Xoá khách hàng'
                 });
                 if (!agreed) return;
@@ -6168,12 +6872,36 @@ class App {
     async _renderSettingsProjectsTab(customerFilter = '', searchFilter = '') {
         const listEl = document.getElementById('settings-projects-list');
         const selectFilterCust = document.getElementById('select-settings-proj-cust-filter');
+        const selectFilterScope = document.getElementById('select-settings-proj-scope-filter');
         if (!listEl) return;
 
         const reg = await this._loadProjectRegistry();
         const customers = reg.customers || [];
-        let projects = reg.projects || [];
+        const allProjects = reg.projects || [];
+        let projects = allProjects;
         const sessions = this._cachedSessions || [];
+
+        // Update scope counts
+        const workCount = allProjects.filter(p => (p.scope || 'work') === 'work').length;
+        const personalCount = allProjects.filter(p => p.scope === 'personal').length;
+        const allCount = allProjects.length;
+
+        const countWorkEl = document.getElementById('proj-scope-count-work');
+        if (countWorkEl) countWorkEl.textContent = workCount;
+        const countPersonalEl = document.getElementById('proj-scope-count-personal');
+        if (countPersonalEl) countPersonalEl.textContent = personalCount;
+        const countAllEl = document.getElementById('proj-scope-count-all');
+        if (countAllEl) countAllEl.textContent = allCount;
+
+        // Update active tab state
+        document.querySelectorAll('#projects-scope-tabs .folder-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', (btn.dataset.scope || '') === (this._projScopeFilter || ''));
+        });
+
+        // Hide customer filter dropdown when personal scope is selected
+        if (selectFilterCust) {
+            selectFilterCust.style.display = this._projScopeFilter === 'personal' ? 'none' : '';
+        }
 
         // Populate project list filter dropdown
         if (selectFilterCust) {
@@ -6190,6 +6918,13 @@ class App {
         const effectiveFilter = customerFilter || selectFilterCust?.value || '';
         if (effectiveFilter) {
             projects = projects.filter(p => p.customer_id === effectiveFilter);
+        }
+
+        const scopeFilter = this._projScopeFilter || selectFilterScope?.value || '';
+        if (scopeFilter === 'work') {
+            projects = projects.filter(p => (p.scope || 'work') === 'work');
+        } else if (scopeFilter === 'personal') {
+            projects = projects.filter(p => p.scope === 'personal');
         }
 
         const q = (searchFilter || '').trim().toLowerCase();
@@ -6235,12 +6970,22 @@ class App {
 
         sortedProjects.forEach((p, idx) => {
             const isActive = p.status === 'active';
+            const pScope = p.scope || 'work';
             const cust = customers.find(c => c.id === p.customer_id);
             const sessCount = sessions.filter(s => s.project_id === p.id).length;
 
-            const custBadge = cust
-                ? `<span class="session-customer-badge btn-jump-to-customer" data-cust-id="${this._escAttr(cust.id)}" style="border-color:${this._escAttr(cust.color || '#431A46')}44; color:${this._escAttr(cust.color || '#D9B0DE')}; background:${this._escAttr(cust.color || '#431A46')}1a; cursor:pointer;" title="Mở thông tin khách hàng ${this._escAttr(cust.name)}">🏢 ${this._esc(cust.name)} ↗</span>`
-                : `<span style="font-size:11px; opacity:0.4;">(Chưa gán KH)</span>`;
+            const showScopeBadge = !this._projScopeFilter; // Only show in 'Tất cả' tab
+            const scopeBadge = showScopeBadge
+                ? (pScope === 'personal'
+                    ? '<span class="scope-badge-personal" style="font-size:10px; margin-left:6px;">👤 Cá nhân</span>'
+                    : '<span class="scope-badge-work" style="font-size:10px; margin-left:6px;">💼 Công việc</span>')
+                : '';
+
+            const custBadge = pScope === 'personal'
+                ? '<span style="font-size:11px; opacity:0.3;">—</span>'
+                : (cust
+                    ? `<span class="session-customer-badge btn-jump-to-customer" data-cust-id="${this._escAttr(cust.id)}" style="border-color:${this._escAttr(cust.color || '#431A46')}44; color:${this._escAttr(cust.color || '#D9B0DE')}; background:${this._escAttr(cust.color || '#431A46')}1a; cursor:pointer;" title="Mở thông tin khách hàng ${this._escAttr(cust.name)}">🏢 ${this._esc(cust.name)} ↗</span>`
+                    : `<span style="font-size:11px; opacity:0.4;">(Chưa gán KH)</span>`);
 
             html += `
               <tr>
@@ -6249,6 +6994,7 @@ class App {
                   <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
                     <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(p.color || '#431A46')}; flex-shrink:0;"></span>
                     <span>${this._esc(p.name)}</span>
+                    ${scopeBadge}
                   </div>
                 </td>
                 <td>${custBadge}</td>
@@ -6263,6 +7009,9 @@ class App {
                 </td>
                 <td style="text-align: center;">
                   <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
+                    <button type="button" class="btn-secondary-small btn-edit-proj" data-id="${this._escAttr(p.id)}" title="Chỉnh sửa dự án" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      ✏️
+                    </button>
                     <button type="button" class="btn-secondary-small btn-toggle-proj" data-id="${this._escAttr(p.id)}" title="${isActive ? 'Tạm dừng dự án' : 'Kích hoạt dự án'}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                       ${isActive ? '⏸' : '▶'}
                     </button>
@@ -6282,6 +7031,18 @@ class App {
         `;
 
         listEl.innerHTML = html;
+
+        // Edit project
+        listEl.querySelectorAll('.btn-edit-proj').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = btn.dataset.id;
+                const reg = await this._loadProjectRegistry();
+                const targetProj = (reg.projects || []).find(p => p.id === id);
+                if (targetProj) {
+                    this._openEditProjectModal(targetProj);
+                }
+            });
+        });
 
         // Sort header listeners
         listEl.querySelectorAll('th.sortable').forEach(th => {
@@ -6358,11 +7119,47 @@ class App {
         const listEl = document.getElementById('settings-categories-list');
         if (!listEl) return;
         const reg = await this._loadProjectRegistry();
-        const categories = reg.categories || [];
+        const allCategories = reg.categories || [];
         const sessions = this._cachedSessions || [];
 
+        // Update scope counts
+        const workCount = allCategories.filter(c => (c.scope || 'work') === 'work' || c.scope === 'all').length;
+        const personalCount = allCategories.filter(c => c.scope === 'personal' || c.scope === 'all').length;
+        const allCount = allCategories.length;
+
+        const countWorkEl = document.getElementById('cat-scope-count-work');
+        if (countWorkEl) countWorkEl.textContent = workCount;
+        const countPersonalEl = document.getElementById('cat-scope-count-personal');
+        if (countPersonalEl) countPersonalEl.textContent = personalCount;
+        const countAllEl = document.getElementById('cat-scope-count-all');
+        if (countAllEl) countAllEl.textContent = allCount;
+
+        // Update active tab state
+        document.querySelectorAll('#categories-scope-tabs .folder-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', (btn.dataset.scope || '') === (this._catScopeFilter || ''));
+        });
+
+        const isAllCatTab = !this._catScopeFilter;
+
+        // Pre-select & toggle visibility of scope select in quick add
+        const scopeSelect = document.getElementById('select-new-cat-scope');
+        if (scopeSelect) {
+            scopeSelect.style.display = isAllCatTab ? '' : 'none';
+            if (this._catScopeFilter) {
+                scopeSelect.value = this._catScopeFilter;
+            }
+        }
+
+        // Filter categories according to active tab
+        let categories = allCategories;
+        if (this._catScopeFilter === 'work') {
+            categories = allCategories.filter(c => (c.scope || 'work') === 'work' || c.scope === 'all');
+        } else if (this._catScopeFilter === 'personal') {
+            categories = allCategories.filter(c => c.scope === 'personal' || c.scope === 'all');
+        }
+
         if (categories.length === 0) {
-            listEl.innerHTML = '<div class="sessions-empty" style="padding: 24px;">Chưa có phân loại nào. Hãy thêm phân loại ở ô trên.</div>';
+            listEl.innerHTML = '<div class="sessions-empty" style="padding: 24px;">Chưa có phân loại nào trong mục này. Hãy thêm phân loại ở ô trên.</div>';
             return;
         }
 
@@ -6381,15 +7178,31 @@ class App {
               <tr>
                 <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
                 <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên phân loại cuộc họp ${this._getSortIcon(sort, 'name')}</th>
-                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 140px; text-align: center;">Số cuộc họp gắn ${this._getSortIcon(sort, 'sessions')}</th>
-                <th style="width: 80px; text-align: center;">Thao tác</th>
+                ${isAllCatTab ? '<th style="width: 120px; text-align: center;">Phạm vi</th>' : ''}
+                <th style="width: 160px; text-align: center;">Mẫu biên bản (Template)</th>
+                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 120px; text-align: center;">Số cuộc họp gắn ${this._getSortIcon(sort, 'sessions')}</th>
+                <th style="width: 90px; text-align: center;">Thao tác</th>
               </tr>
             </thead>
             <tbody>
         `;
 
+        const templateLabels = {
+            standard: '🏢 Tiêu chuẩn',
+            tech: '💻 Kỹ thuật',
+            one_on_one: '👥 1-on-1',
+            personal: '👤 Cá nhân',
+        };
+
         sortedCategories.forEach((c, idx) => {
             const sessCount = sessions.filter(s => s.category === c.name || s.category === c.id).length;
+            const scopeBadge = c.scope === 'personal'
+                ? '<span class="scope-badge-personal">👤 Cá nhân</span>'
+                : (c.scope === 'work' ? '<span class="scope-badge-work">💼 Công việc</span>' : '<span style="font-size:11px; opacity:0.6;">🌐 Cả hai</span>');
+            const tmplBadge = c.template_id && templateLabels[c.template_id]
+                ? `<span class="template-badge-pill">${templateLabels[c.template_id]}</span>`
+                : '<span style="font-size:11px; opacity:0.4;">(Mặc định)</span>';
+
             html += `
               <tr>
                 <td style="text-align: center; color: var(--md-sys-color-on-surface-variant); font-size: 11px;">${idx + 1}</td>
@@ -6399,13 +7212,20 @@ class App {
                     <span>${this._esc(c.name)}</span>
                   </div>
                 </td>
+                ${isAllCatTab ? `<td style="text-align: center;">${scopeBadge}</td>` : ''}
+                <td style="text-align: center;">${tmplBadge}</td>
                 <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
                   ${sessCount > 0 ? `${sessCount} cuộc họp` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
                 </td>
                 <td style="text-align: center;">
-                  <button type="button" class="btn-danger-small btn-del-cat" data-id="${this._escAttr(c.id)}" data-name="${this._escAttr(c.name)}" title="Xoá phân loại">
-                    🗑
-                  </button>
+                  <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
+                    <button type="button" class="btn-secondary-small btn-edit-cat" data-id="${this._escAttr(c.id)}" title="Chỉnh sửa phân loại" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      ✏️
+                    </button>
+                    <button type="button" class="btn-danger-small btn-del-cat" data-id="${this._escAttr(c.id)}" data-name="${this._escAttr(c.name)}" title="Xoá phân loại" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      🗑
+                    </button>
+                  </div>
                 </td>
               </tr>
             `;
@@ -6418,6 +7238,18 @@ class App {
         `;
 
         listEl.innerHTML = html;
+
+        // Edit category
+        listEl.querySelectorAll('.btn-edit-cat').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = btn.dataset.id;
+                const reg = await this._loadProjectRegistry();
+                const targetCat = (reg.categories || []).find(c => c.id === id);
+                if (targetCat) {
+                    this._openEditCategoryModal(targetCat);
+                }
+            });
+        });
 
         // Sort header listeners
         listEl.querySelectorAll('th.sortable').forEach(th => {
@@ -6449,7 +7281,7 @@ class App {
                     this._showToast('Đã xóa phân loại', 'success');
                     await this._loadProjectRegistry();
                     this._renderSettingsCategoriesTab();
-                    this._renderCategoryFilterBar();
+                    this._renderCategoryFilterSelect();
                     this._updateSidebarBadges();
                     await this._showSessions();
                 } catch (err) {
@@ -6457,6 +7289,71 @@ class App {
                 }
             });
         });
+    }
+
+    _openEditCategoryModal(category) {
+        if (!category) return;
+        const modal = document.getElementById('modal-edit-category');
+        if (!modal) return;
+        const idInput = document.getElementById('input-modal-cat-id');
+        const nameInput = document.getElementById('input-modal-cat-name');
+        const colorInput = document.getElementById('input-modal-cat-color');
+        const scopeSelect = document.getElementById('select-modal-cat-scope');
+        const tmplSelect = document.getElementById('select-modal-cat-template');
+        const titleEl = document.getElementById('modal-cat-title');
+
+        if (titleEl) titleEl.textContent = `📅 Chỉnh sửa: ${category.name}`;
+        if (idInput) idInput.value = category.id || '';
+        if (nameInput) nameInput.value = category.name || '';
+        if (colorInput) colorInput.value = category.color || '#10b981';
+        if (scopeSelect) scopeSelect.value = category.scope || 'work';
+        if (tmplSelect) tmplSelect.value = category.template_id || 'standard';
+
+        modal.style.display = 'flex';
+        setTimeout(() => nameInput?.focus(), 50);
+    }
+
+    _closeEditCategoryModal() {
+        const modal = document.getElementById('modal-edit-category');
+        if (modal) modal.style.display = 'none';
+    }
+
+    async _handleSaveCategoryFromModal() {
+        const idInput = document.getElementById('input-modal-cat-id');
+        const nameInput = document.getElementById('input-modal-cat-name');
+        const colorInput = document.getElementById('input-modal-cat-color');
+        const scopeSelect = document.getElementById('select-modal-cat-scope');
+        const tmplSelect = document.getElementById('select-modal-cat-template');
+        const name = nameInput?.value.trim();
+        if (!name) {
+            this._showToast('Vui lòng nhập tên phân loại', 'error');
+            return;
+        }
+        const id = idInput?.value.trim() || '';
+        const color = colorInput?.value || '#10b981';
+        const scope = scopeSelect?.value || 'work';
+        const template_id = tmplSelect?.value || null;
+
+        try {
+            await invoke('save_category', {
+                category: {
+                    id,
+                    name,
+                    color,
+                    scope,
+                    template_id,
+                }
+            });
+            this._closeEditCategoryModal();
+            this._showToast(`Đã cập nhật phân loại "${name}" ✓`, 'success');
+            await this._loadProjectRegistry();
+            this._renderSettingsCategoriesTab();
+            this._renderCategoryFilterSelect();
+            this._updateSidebarBadges();
+            await this._showSessions();
+        } catch (err) {
+            this._showToast(`Cập nhật phân loại thất bại: ${err}`, 'error');
+        }
     }
 
     async _renderSettingsTagsTab() {
@@ -6467,17 +7364,72 @@ class App {
         const allTags = Array.from(new Set([...(reg.tags || []), ...sessionTags])).filter(Boolean);
         const sessions = this._cachedSessions || [];
 
-        if (allTags.length === 0) {
-            listEl.innerHTML = '<div class="sessions-empty" style="padding: 24px;">Chưa có thẻ nào trong hệ thống. Hãy thêm thẻ mới ở ô trên.</div>';
+        const tagScopes = reg.tag_scopes || {};
+        const getTagScope = (t) => {
+            const key = t.toLowerCase();
+            if (tagScopes[key]) return tagScopes[key];
+            if (tagScopes[t]) return tagScopes[t];
+            const matchingSessions = sessions.filter(s => (s.tags || []).map(x => x.toLowerCase()).includes(key));
+            if (matchingSessions.length === 0) return 'work';
+            const hasWork = matchingSessions.some(s => (s.scope || 'work') === 'work');
+            const hasPersonal = matchingSessions.some(s => s.scope === 'personal');
+            if (hasWork && hasPersonal) return 'all';
+            if (hasPersonal) return 'personal';
+            return 'work';
+        };
+
+        const allTagObjects = allTags.map(t => {
+            const sc = getTagScope(t);
+            const count = sessions.filter(s => (s.tags || []).map(x => x.toLowerCase()).includes(t.toLowerCase())).length;
+            return {
+                name: t,
+                scope: sc,
+                count
+            };
+        });
+
+        // Update badge counts on folder tabs
+        const workCount = allTagObjects.filter(t => t.scope === 'work' || t.scope === 'all').length;
+        const personalCount = allTagObjects.filter(t => t.scope === 'personal' || t.scope === 'all').length;
+        const allCount = allTagObjects.length;
+
+        const countWorkEl = document.getElementById('tag-scope-count-work');
+        const countPersEl = document.getElementById('tag-scope-count-personal');
+        const countAllEl = document.getElementById('tag-scope-count-all');
+        if (countWorkEl) countWorkEl.textContent = workCount;
+        if (countPersEl) countPersEl.textContent = personalCount;
+        if (countAllEl) countAllEl.textContent = allCount;
+
+        // Toggle active folder tab
+        document.querySelectorAll('#tags-scope-tabs .folder-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', (btn.dataset.scope || '') === (this._tagScopeFilter || ''));
+        });
+
+        const isAllTagTab = !this._tagScopeFilter;
+
+        // Pre-select & toggle visibility of scope select in quick add
+        const scopeSelect = document.getElementById('select-new-tag-scope');
+        if (scopeSelect) {
+            scopeSelect.style.display = isAllTagTab ? '' : 'none';
+            if (this._tagScopeFilter) {
+                scopeSelect.value = this._tagScopeFilter;
+            }
+        }
+
+        // Filter tags according to active tab
+        let filteredTags = allTagObjects;
+        if (this._tagScopeFilter === 'work') {
+            filteredTags = allTagObjects.filter(t => t.scope === 'work' || t.scope === 'all');
+        } else if (this._tagScopeFilter === 'personal') {
+            filteredTags = allTagObjects.filter(t => t.scope === 'personal' || t.scope === 'all');
+        }
+
+        if (filteredTags.length === 0) {
+            listEl.innerHTML = '<div class="sessions-empty" style="padding: 24px;">Chưa có thẻ nào trong mục này. Hãy thêm thẻ mới ở ô trên.</div>';
             return;
         }
 
-        const tagObjects = allTags.map(t => ({
-            name: t,
-            count: sessions.filter(s => (s.tags || []).includes(t)).length
-        }));
-
-        const sortedTags = this._sortItems(tagObjects, this._tagSort, (t, field) => {
+        const sortedTags = this._sortItems(filteredTags, this._tagSort, (t, field) => {
             if (field === 'name') return t.name || '';
             if (field === 'sessions') return t.count;
             return 0;
@@ -6491,27 +7443,38 @@ class App {
               <tr>
                 <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
                 <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên thẻ (Tag) ${this._getSortIcon(sort, 'name')}</th>
+                ${isAllTagTab ? '<th style="width: 130px; text-align: center;">Phạm vi</th>' : ''}
                 <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 140px; text-align: center;">Số cuộc họp gắn ${this._getSortIcon(sort, 'sessions')}</th>
-                <th style="width: 80px; text-align: center;">Thao tác</th>
+                <th style="width: 90px; text-align: center;">Thao tác</th>
               </tr>
             </thead>
             <tbody>
         `;
 
         sortedTags.forEach((t, idx) => {
+            const scopeBadge = t.scope === 'personal'
+                ? '<span class="scope-badge-personal">👤 Cá nhân</span>'
+                : (t.scope === 'work' ? '<span class="scope-badge-work">💼 Công việc</span>' : '<span style="font-size:11px; opacity:0.6;">🌐 Cả hai</span>');
+
             html += `
               <tr>
                 <td style="text-align: center; color: var(--md-sys-color-on-surface-variant); font-size: 11px;">${idx + 1}</td>
                 <td>
                   <span class="mgr-tag-chip" style="font-size:12px; font-weight:600;">#${this._esc(t.name)}</span>
                 </td>
+                ${isAllTagTab ? `<td style="text-align: center;">${scopeBadge}</td>` : ''}
                 <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
                   ${t.count > 0 ? `${t.count} cuộc họp` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
                 </td>
                 <td style="text-align: center;">
-                  <button type="button" class="btn-danger-small btn-del-tag-tbl" data-tag="${this._escAttr(t.name)}" title="Xoá thẻ">
-                    🗑
-                  </button>
+                  <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
+                    <button type="button" class="btn-secondary-small btn-edit-tag" data-tag="${this._escAttr(t.name)}" data-scope="${this._escAttr(t.scope || 'work')}" title="Chỉnh sửa thẻ" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      ✏️
+                    </button>
+                    <button type="button" class="btn-danger-small btn-del-tag-tbl" data-tag="${this._escAttr(t.name)}" title="Xoá thẻ" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                      🗑
+                    </button>
+                  </div>
                 </td>
               </tr>
             `;
@@ -6524,6 +7487,15 @@ class App {
         `;
 
         listEl.innerHTML = html;
+
+        // Edit tag
+        listEl.querySelectorAll('.btn-edit-tag').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tag = btn.dataset.tag;
+                const scope = btn.dataset.scope || 'work';
+                this._openEditTagModal(tag, scope);
+            });
+        });
 
         // Sort header listeners
         listEl.querySelectorAll('th.sortable').forEach(th => {
@@ -6554,7 +7526,7 @@ class App {
                     this._showToast(`Đã xóa thẻ #${tag}`, 'success');
                     await this._loadProjectRegistry();
                     this._renderSettingsTagsTab();
-                    this._renderTagFilterBar();
+                    this._renderTagFilterSelect();
                     this._updateSidebarBadges();
                     await this._showSessions();
                 } catch (err) {
@@ -6564,28 +7536,88 @@ class App {
         });
     }
 
+    _openEditTagModal(tag, scope) {
+        const modal = document.getElementById('modal-edit-tag');
+        if (!modal) return;
+        const oldNameInput = document.getElementById('input-modal-tag-old-name');
+        const nameInput = document.getElementById('input-modal-tag-name');
+        const scopeSelect = document.getElementById('select-modal-tag-scope');
+        const titleEl = document.getElementById('modal-tag-title');
+
+        if (titleEl) titleEl.textContent = `#️⃣ Chỉnh sửa thẻ: #${tag}`;
+        if (oldNameInput) oldNameInput.value = tag;
+        if (nameInput) nameInput.value = tag;
+        if (scopeSelect) scopeSelect.value = scope || 'work';
+
+        modal.style.display = 'flex';
+        setTimeout(() => nameInput?.focus(), 50);
+    }
+
+    _closeEditTagModal() {
+        const modal = document.getElementById('modal-edit-tag');
+        if (modal) modal.style.display = 'none';
+    }
+
+    async _handleSaveTagFromModal() {
+        const oldNameInput = document.getElementById('input-modal-tag-old-name');
+        const nameInput = document.getElementById('input-modal-tag-name');
+        const scopeSelect = document.getElementById('select-modal-tag-scope');
+        const oldTag = oldNameInput?.value.trim().replace(/^#+/, '');
+        const newTag = nameInput?.value.trim().replace(/^#+/, '');
+        const scope = scopeSelect?.value || 'work';
+
+        if (!newTag) {
+            this._showToast('Vui lòng nhập tên thẻ', 'error');
+            return;
+        }
+
+        try {
+            if (oldTag && oldTag.toLowerCase() !== newTag.toLowerCase()) {
+                await invoke('delete_tag', { tag: oldTag });
+            }
+            await invoke('save_tag', { tag: newTag, scope });
+            this._closeEditTagModal();
+            this._showToast(`Đã cập nhật thẻ #${newTag} ✓`, 'success');
+            await this._loadProjectRegistry();
+            this._renderSettingsTagsTab();
+            this._renderTagFilterSelect();
+            this._updateSidebarBadges();
+            await this._showSessions();
+        } catch (err) {
+            this._showToast(`Cập nhật thẻ thất bại: ${err}`, 'error');
+        }
+    }
+
     async _handleCreateCategory() {
         const nameInput = document.getElementById('input-new-cat-name');
         const colorInput = document.getElementById('input-new-cat-color');
+        const scopeSelect = document.getElementById('select-new-cat-scope');
+        const templateSelect = document.getElementById('select-new-cat-template');
         const name = nameInput?.value.trim();
         if (!name) {
             this._showToast('Vui lòng nhập tên phân loại', 'error');
             return;
         }
         const color = colorInput?.value || '#10b981';
+        const scope = scopeSelect?.value || null;
+        const template_id = templateSelect?.value || null;
         try {
             await invoke('save_category', {
                 category: {
                     id: '',
                     name,
                     color,
+                    scope,
+                    template_id,
                 }
             });
             if (nameInput) nameInput.value = '';
+            if (scopeSelect) scopeSelect.value = '';
+            if (templateSelect) templateSelect.value = '';
             this._showToast(`Đã thêm phân loại "${name}" ✓`, 'success');
             await this._loadProjectRegistry();
             this._renderSettingsCategoriesTab();
-            this._renderCategoryFilterBar();
+            this._renderCategoryFilterSelect();
             this._updateSidebarBadges();
             await this._showSessions();
         } catch (err) {
@@ -6595,18 +7627,20 @@ class App {
 
     async _handleCreateTag() {
         const tagInput = document.getElementById('input-new-tag-name');
+        const scopeSelect = document.getElementById('select-new-tag-scope');
         const tag = tagInput?.value.trim().replace(/^#+/, '');
         if (!tag) {
             this._showToast('Vui lòng nhập tên thẻ', 'error');
             return;
         }
+        const scope = scopeSelect?.value || this._tagScopeFilter || 'work';
         try {
-            await invoke('save_tag', { tag });
+            await invoke('save_tag', { tag, scope });
             if (tagInput) tagInput.value = '';
             this._showToast(`Đã thêm thẻ #${tag} ✓`, 'success');
             await this._loadProjectRegistry();
             this._renderSettingsTagsTab();
-            this._renderTagFilterBar();
+            this._renderTagFilterSelect();
             this._updateSidebarBadges();
             await this._showSessions();
         } catch (err) {
@@ -8191,6 +9225,39 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">${html}</div>`;
     }
 
+    _resolveTemplateForSession(sessionData) {
+        if (sessionData.category && this._projectRegistry?.categories) {
+            const cat = this._projectRegistry.categories.find(c => c.name === sessionData.category || c.id === sessionData.category);
+            if (cat && cat.template_id) {
+                return cat.template_id;
+            }
+        }
+        const scope = sessionData.scope || 'work';
+        if (scope === 'personal') {
+            return 'personal';
+        }
+        return 'standard';
+    }
+
+    _getPresetMinutesTemplate(templateId, lang = 'vi') {
+        const s = settingsManager.get();
+        if (templateId === 'tech') {
+            if (lang === 'ja') return (s.template_minutes_tech_ja && s.template_minutes_tech_ja.trim()) ? s.template_minutes_tech_ja : PRESET_TEMPLATE_TECH_JA;
+            return (s.template_minutes_tech_vi && s.template_minutes_tech_vi.trim()) ? s.template_minutes_tech_vi : PRESET_TEMPLATE_TECH_VI;
+        }
+        if (templateId === 'one_on_one') {
+            if (lang === 'ja') return (s.template_minutes_1on1_ja && s.template_minutes_1on1_ja.trim()) ? s.template_minutes_1on1_ja : PRESET_TEMPLATE_1ON1_JA;
+            return (s.template_minutes_1on1_vi && s.template_minutes_1on1_vi.trim()) ? s.template_minutes_1on1_vi : PRESET_TEMPLATE_1ON1_VI;
+        }
+        if (templateId === 'personal') {
+            if (lang === 'ja') return (s.template_minutes_personal_ja && s.template_minutes_personal_ja.trim()) ? s.template_minutes_personal_ja : PRESET_TEMPLATE_PERSONAL_JA;
+            return (s.template_minutes_personal_vi && s.template_minutes_personal_vi.trim()) ? s.template_minutes_personal_vi : PRESET_TEMPLATE_PERSONAL_VI;
+        }
+        // default / 'standard'
+        if (lang === 'ja') return (s.template_minutes_ja && s.template_minutes_ja.trim()) ? s.template_minutes_ja : DEFAULT_TEMPLATE_MINUTES_JA;
+        return (s.template_minutes_vi && s.template_minutes_vi.trim()) ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI;
+    }
+
     _buildMeetingMinutesPrompt(sessionData, targetLang = 'vi') {
         const title = sessionData.title || sessionData.id;
         const createdAt = sessionData.created_at || '';
@@ -8213,17 +9280,26 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
         const transcriptText = logLines.join('\n');
 
-        const s = settingsManager.get();
+        const templateId = this._resolveTemplateForSession(sessionData);
+        let template = this._getPresetMinutesTemplate(templateId, targetLang);
+
         if (targetLang === 'ja') {
-            let jaTemplate = (s.template_minutes_ja && s.template_minutes_ja.trim()) ? s.template_minutes_ja : DEFAULT_TEMPLATE_MINUTES_JA;
-            jaTemplate = jaTemplate
+            template = template
                 .replace(/\{\{title\}\}/g, title)
                 .replace(/\{\{date\}\}/g, createdAt)
                 .replace(/\{\{duration\}\}/g, String(durationMin))
                 .replace(/\{\{participants\}\}/g, '(発言ログやメモから判明する参加者・発言者、または想定される担当者)');
 
-            return `あなたはプロフェッショナルな議事録作成アシスタントです。
-以下の会議情報、ユーザーの手書きメモ、および会議のリアルタイム発言ログをもとに、クライアントや関係者にそのまま共有・送信できる高品質で正式な「会議議事録（Meeting Minutes）」を日本語のMarkdown形式で作成してください。
+            let personaJa = 'あなたはプロフェッショナルな議事録作成アシスタントです。\n以下の会議情報、ユーザーの手書きメモ、および会議のリアルタイム発言ログをもとに、クライアントや関係者にそのまま共有・送信できる高品質で正式な「会議議事録（Meeting Minutes）」を日本語のMarkdown形式で作成してください。';
+            if (templateId === 'tech') {
+                personaJa = 'あなたはシニアITアーキテクト／テクニカルリードのアシスタントです。\n以下の会議情報、エンジニアの手書きメモ、および技術討議の発言ログをもとに、開発チームや関係者にそのまま共有・実装できる高精度な「技術議事録・アーキテクチャ設計メモ（Technical Sync Minutes）」を日本語のMarkdown形式で作成してください。';
+            } else if (templateId === 'one_on_one') {
+                personaJa = 'あなたはプロフェッショナルなメンター／人事コーチ・マネージャーです。\n以下の面談情報、手書きメモ、および面談の発言ログをもとに、信頼関係を築きメンバーの成長とアクションを促す客観的で温かみのある「1on1面談記録（1-on-1 Notes）」を日本語のMarkdown形式で作成してください。';
+            } else if (templateId === 'personal') {
+                personaJa = 'あなたは思慮深い自己啓発パートナー兼学習ノート整理アシスタントです。\n以下のセッション情報、個人のメモ、および対話・音声ログをもとに、今後の自己研鑽や行動に活かせる整理された「個人メモ・学習まとめ（Personal Notes）」を日本語のMarkdown形式で作成してください。';
+            }
+
+            return `${personaJa}
 
 【会議基本情報】
 - 会議名: ${title}
@@ -8240,21 +9316,33 @@ ${transcriptText}
 
 【出力フォーマット（必ず以下のテンプレート構造・見出しに厳格に従って記述してください）】
 
-${jaTemplate}
+${template}
 
 ※客観的かつ簡潔・明瞭なビジネス日本語（「です・ます」調）で作成してください。`;
         }
 
         // Default: Vietnamese
-        let viTemplate = (s.template_minutes_vi && s.template_minutes_vi.trim()) ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI;
-        viTemplate = viTemplate
+        template = template
             .replace(/\{\{title\}\}/g, title)
             .replace(/\{\{date\}\}/g, createdAt)
             .replace(/\{\{duration\}\}/g, String(durationMin))
             .replace(/\{\{participants\}\}/g, '(Tổng hợp tên người nói hoặc các bên tham gia dựa theo hội thoại/ghi chú)');
 
-        return `Bạn là một trợ lý thư ký cuộc họp chuyên nghiệp và sắc bén.
-Dưới đây là thông tin cuộc họp, ghi chú viết tay của người tham gia và toàn bộ dữ liệu đối thoại/bản dịch ghi nhận được trong cuộc họp:
+        let personaVi = 'Bạn là một trợ lý thư ký cuộc họp chuyên nghiệp và sắc bén.\nDưới đây là thông tin cuộc họp, ghi chú viết tay của người tham gia và toàn bộ dữ liệu đối thoại/bản dịch ghi nhận được trong cuộc họp:';
+        let actionVi = 'Hãy phân tích toàn diện và soạn thảo một BẢN BIÊN BẢN CUỘC HỌP (MEETING MINUTES) chuẩn chỉnh, trang trọng và súc tích bằng Tiếng Việt theo ĐÚNG CẤU TRÚC MẪU (TEMPLATE) DƯỚI ĐÂY:';
+
+        if (templateId === 'tech') {
+            personaVi = 'Bạn là một trợ lý kỹ thuật / Tech Lead chuyên nghiệp và giàu kinh nghiệm.\nDưới đây là thông tin cuộc họp kỹ thuật, ghi chú viết tay của kỹ sư và toàn bộ đối thoại/bản dịch thảo luận kiến trúc/công nghệ trong cuộc họp:';
+            actionVi = 'Hãy phân tích sâu sắc các giải pháp và soạn thảo một BIÊN BẢN HỌP KỸ THUẬT & KIẾN TRÚC (TECHNICAL SYNC) chuẩn chỉnh bằng Tiếng Việt theo ĐÚNG CẤU TRÚC MẪU (TEMPLATE) DƯỚI ĐÂY:';
+        } else if (templateId === 'one_on_one') {
+            personaVi = 'Bạn là một chuyên gia quản lý nhân sự, mentor và huấn luyện nội bộ giàu thấu cảm.\nDưới đây là thông tin buổi trao đổi 1-on-1, ghi chú viết tay và toàn bộ đối thoại trong buổi gặp:';
+            actionVi = 'Hãy tổng hợp khách quan, mang tính xây dựng và soạn thảo một BIÊN BẢN TRAO ĐỔI 1-ON-1 & ĐÁNH GIÁ bằng Tiếng Việt theo ĐÚNG CẤU TRÚC MẪU (TEMPLATE) DƯỚI ĐÂY:';
+        } else if (templateId === 'personal') {
+            personaVi = 'Bạn là một người bạn đồng hành hỗ trợ phát triển bản thân và hệ thống hóa tri thức cá nhân.\nDưới đây là thông tin cuộc trao đổi/buổi học cá nhân, ghi chú và toàn bộ nội dung đối thoại:';
+            actionVi = 'Hãy đúc kết các bài học cốt lõi và soạn thảo một BẢN GHI CHÉP & TÓM TẮT CÁ NHÂN súc tích, thực tế bằng Tiếng Việt theo ĐÚNG CẤU TRÚC MẪU (TEMPLATE) DƯỚI ĐÂY:';
+        }
+
+        return `${personaVi}
 
 【THÔNG TIN CUỘC HỌP】
 - Tiêu đề: ${title}
@@ -8269,9 +9357,9 @@ ${transcriptText}
 
 ---
 
-Hãy phân tích toàn diện và soạn thảo một BẢN BIÊN BẢN CUỘC HỌP (MEETING MINUTES) chuẩn chỉnh, trang trọng và súc tích bằng Tiếng Việt theo ĐÚNG CẤU TRÚC MẪU (TEMPLATE) DƯỚI ĐÂY:
+${actionVi}
 
-${viTemplate}
+${template}
 
 Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy gọn.`;
     }
@@ -8779,6 +9867,14 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
         let badgesHtml = '';
 
+        const scope = json.scope || (project && project.scope) || 'work';
+        const isPersonal = scope === 'personal';
+        const scopeBadge = isPersonal
+            ? `<span class="scope-badge-personal" title="Cá nhân (Nhấp để sửa)">👤 Cá nhân</span>`
+            : `<span class="scope-badge-work" title="Công việc (Nhấp để sửa)">💼 Công việc</span>`;
+
+        badgesHtml += scopeBadge;
+
         if (customerName) {
             badgesHtml += `<span class="session-customer-badge" title="Khách hàng: ${this._escAttr(customerName)} (Nhấp để sửa)">🏢 ${this._esc(customerName)}</span>`;
         }
@@ -9264,6 +10360,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const selectProj = document.getElementById('select-note-project');
         const selectCat = document.getElementById('select-note-category');
         const inputTags = document.getElementById('input-note-tags');
+        const selectScope = document.getElementById('select-note-scope');
 
         if (!this._projectRegistry) {
             await this._loadProjectRegistry();
@@ -9271,11 +10368,26 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._populateNoteMetadataSelectors();
         }
 
+        selectScope?.addEventListener('change', () => {
+            sessionStore.scope = selectScope.value || 'work';
+            sessionStore._mutations++;
+            // Personal sessions have no customer: clear it (same as stop-meeting modal),
+            // then re-filter projects by scope, keeping the project if it matches.
+            if (sessionStore.scope === 'personal' && selectCust) {
+                selectCust.value = '';
+                sessionStore.customerId = null;
+            }
+            this._updateNoteProjectsDropdown(selectCust?.value || null, sessionStore.projectId, sessionStore.scope);
+            if (selectProj && !selectProj.value) {
+                sessionStore.projectId = null;
+            }
+        });
+
         selectCust?.addEventListener('change', () => {
             const custId = selectCust.value || null;
             sessionStore.customerId = custId;
             sessionStore._mutations++;
-            this._updateNoteProjectsDropdown(custId);
+            this._updateNoteProjectsDropdown(custId, null, sessionStore.scope || 'work');
             const curProjId = selectProj?.value || null;
             const regProjs = (this._projectRegistry?.projects || []).filter(p => p.status === 'active');
             if (curProjId) {
@@ -9297,7 +10409,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 if (foundProj && foundProj.customer_id) {
                     selectCust.value = foundProj.customer_id;
                     sessionStore.customerId = foundProj.customer_id;
-                    this._updateNoteProjectsDropdown(foundProj.customer_id, projId);
+                    this._updateNoteProjectsDropdown(foundProj.customer_id, projId, sessionStore.scope || 'work');
                 }
             }
         });
@@ -9323,9 +10435,14 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const selectCat = document.getElementById('select-note-category');
         const datalistTags = document.getElementById('datalist-note-tags');
         const inputTags = document.getElementById('input-note-tags');
+        const selectScope = document.getElementById('select-note-scope');
 
         const reg = this._projectRegistry || { customers: [], projects: [], categories: [], tags: [] };
         const activeCustomers = (reg.customers || []).filter(c => c.status === 'active');
+
+        if (selectScope) {
+            selectScope.value = sessionStore.scope || 'work';
+        }
 
         if (selectCust) {
             const curVal = selectCust.value || sessionStore.customerId || '';
@@ -9362,14 +10479,20 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         }
     }
 
-    _updateNoteProjectsDropdown(selectedCustomerId = null, targetProjectId = null) {
+    _updateNoteProjectsDropdown(selectedCustomerId = null, targetProjectId = null, scope = null) {
         const selectProj = document.getElementById('select-note-project');
         if (!selectProj) return;
         const reg = this._projectRegistry || { projects: [] };
         const activeProjects = (reg.projects || []).filter(p => p.status === 'active');
-        const filteredProjs = selectedCustomerId
-            ? activeProjects.filter(p => p.customer_id === selectedCustomerId)
-            : activeProjects;
+        // Filter by scope first (same rule as stop-meeting modal):
+        // personal → only personal projects; work → only work projects + customer.
+        const effectiveScope = scope || sessionStore.scope || 'work';
+        const scopedProjs = effectiveScope === 'personal'
+            ? activeProjects.filter(p => p.scope === 'personal')
+            : activeProjects.filter(p => (p.scope || 'work') === 'work');
+        const filteredProjs = (effectiveScope === 'work' && selectedCustomerId)
+            ? scopedProjs.filter(p => p.customer_id === selectedCustomerId)
+            : scopedProjs;
 
         let projHtml = '<option value="">📁 Dự án...</option>';
         for (const p of filteredProjs) {
@@ -9390,10 +10513,12 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const selectProj = document.getElementById('select-note-project');
         const selectCat = document.getElementById('select-note-category');
         const inputTags = document.getElementById('input-note-tags');
+        const selectScope = document.getElementById('select-note-scope');
 
+        if (selectScope) selectScope.value = 'work';
         if (selectCust) selectCust.value = '';
         if (selectProj) {
-            this._updateNoteProjectsDropdown(null);
+            this._updateNoteProjectsDropdown(null, null, 'work');
             selectProj.value = '';
         }
         if (selectCat) selectCat.value = '';
