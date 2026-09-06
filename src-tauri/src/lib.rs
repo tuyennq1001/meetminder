@@ -124,6 +124,7 @@ pub fn run() {
             commands::session_store::update_session_metadata,
             commands::session_store::update_session_content,
             commands::session_store::update_session_meeting_minutes,
+            commands::session_store::update_session_langs,
             commands::session_store::update_session_notes,
             commands::session_store::get_project_registry,
             commands::session_store::save_customer,

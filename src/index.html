@@ -334,6 +334,10 @@
                   <span>🇻🇳 Tiếng Việt</span>
                   <span class="subtab-badge" id="subtab-badge-minutes-vi" style="display:none">✓ Đã có</span>
                 </button>
+                <button type="button" class="minutes-subtab" id="subtab-btn-minutes-en" data-lang="en" title="Meeting Minutes in English">
+                  <span>🇬🇧 English</span>
+                  <span class="subtab-badge" id="subtab-badge-minutes-en" style="display:none">✓ Đã có</span>
+                </button>
               </div>
             </div>
             <div class="minutes-actions-group">
@@ -383,6 +387,7 @@
           <div class="session-tab-subbar">
             <div class="session-tab-subbar-left">
               <button type="button" id="btn-session-retranscript" class="btn-primary small" title="Dùng file ghi âm để Gemini tạo lại toàn bộ Logs">🔄 Re-transcript</button>
+              <button type="button" id="btn-session-edit-langs" class="btn-secondary small" title="Sửa cặp ngôn ngữ nguồn → đích của Logs (mặc định: Nhật/Anh/Việt)">🌐 Ngôn ngữ</button>
               <span id="session-retranscript-status" class="subbar-info" style="display:none"></span>
             </div>
             <div class="session-tab-subbar-right">
@@ -1497,6 +1502,41 @@
       <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
         <button type="button" id="btn-cancel-confirm-delete" class="secondary-btn">Huỷ</button>
         <button type="button" id="btn-agree-confirm-delete" class="danger-btn modal-action-btn">Xoá</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ EDIT SESSION LOGS LANGUAGES MODAL ═══════════════════ -->
+  <div id="modal-edit-session-langs" class="modal-overlay" style="display:none">
+    <div class="modal-card" style="max-width: 420px;">
+      <div class="modal-header">
+        <h3>🌐 Ngôn ngữ của Logs</h3>
+        <button type="button" id="btn-close-edit-session-langs" class="icon-btn close-btn">×</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+        <p style="font-size: 12px; line-height: 1.5; color: var(--md-sys-color-on-surface-variant); margin: 0;">Chạy lại Re-transcript từ file ghi âm theo cặp ngôn ngữ mới (mặc định: Nhật / Việt / Anh). Logs sẽ được transcript + dịch lại toàn bộ, Minutes tự tạo lại theo. Hủy/lỗi giữa chừng thì dữ liệu cũ còn nguyên.</p>
+        <p id="edit-session-langs-current" style="font-size: 12px; color: var(--md-sys-color-on-surface-variant); margin: 0;"></p>
+        <div>
+          <label class="field-label" for="select-edit-session-source-lang" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Ngôn ngữ nguồn:</label>
+          <select id="select-edit-session-source-lang" class="modal-input modal-select">
+            <option value="ja">🇯🇵 Tiếng Nhật (日本語)</option>
+            <option value="vi">🇻🇳 Tiếng Việt</option>
+            <option value="en">🇬🇧 English</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="select-edit-session-target-lang" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Ngôn ngữ đích:</label>
+          <select id="select-edit-session-target-lang" class="modal-input modal-select">
+            <option value="ja">🇯🇵 Tiếng Nhật (日本語)</option>
+            <option value="vi">🇻🇳 Tiếng Việt</option>
+            <option value="en">🇬🇧 English</option>
+            <option value="none">🚫 Không dịch</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button type="button" id="btn-cancel-edit-session-langs" class="secondary-btn">Huỷ</button>
+        <button type="button" id="btn-save-edit-session-langs" class="primary-action-btn">Re-transcript theo ngôn ngữ mới</button>
       </div>
     </div>
   </div>

@@ -164,6 +164,8 @@ pub struct SessionData {
     #[serde(default)]
     pub meeting_minutes_vi: Option<String>,
     #[serde(default)]
+    pub meeting_minutes_en: Option<String>,
+    #[serde(default)]
     pub retranscribed_at: Option<String>,
 }
 
@@ -715,6 +717,11 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
                 .map(|m| !m.trim().is_empty())
                 .unwrap_or(false)
             || data
+                .meeting_minutes_en
+                .as_ref()
+                .map(|m| !m.trim().is_empty())
+                .unwrap_or(false)
+            || data
                 .meeting_minutes
                 .as_ref()
                 .map(|m| !m.trim().is_empty())
@@ -1029,6 +1036,11 @@ pub fn rebuild_session_markdown(data: &SessionData) -> String {
         .as_ref()
         .map(|m| !m.trim().is_empty())
         .unwrap_or(false);
+    let has_en = data
+        .meeting_minutes_en
+        .as_ref()
+        .map(|m| !m.trim().is_empty())
+        .unwrap_or(false);
 
     if has_ja {
         if let Some(ref mm_ja) = data.meeting_minutes_ja {
@@ -1062,6 +1074,26 @@ pub fn rebuild_session_markdown(data: &SessionData) -> String {
     } else if let Some(ref mm) = data.meeting_minutes {
         if !mm.trim().is_empty() && data.meeting_minutes_lang.as_deref() != Some("ja") {
             lines.push("## 📋 Biên bản cuộc họp (Tiếng Việt)".to_string());
+            lines.push(String::new());
+            lines.push(mm.trim().to_string());
+            lines.push(String::new());
+            lines.push("---".to_string());
+            lines.push(String::new());
+        }
+    }
+
+    if has_en {
+        if let Some(ref mm_en) = data.meeting_minutes_en {
+            lines.push("## 📋 Meeting Minutes (English)".to_string());
+            lines.push(String::new());
+            lines.push(mm_en.trim().to_string());
+            lines.push(String::new());
+            lines.push("---".to_string());
+            lines.push(String::new());
+        }
+    } else if let Some(ref mm) = data.meeting_minutes {
+        if !mm.trim().is_empty() && data.meeting_minutes_lang.as_deref() == Some("en") {
+            lines.push("## 📋 Meeting Minutes (English)".to_string());
             lines.push(String::new());
             lines.push(mm.trim().to_string());
             lines.push(String::new());
@@ -1147,6 +1179,8 @@ pub fn update_session_meeting_minutes(
         data.meeting_minutes_ja = Some(minutes.clone());
     } else if chosen_lang == "vi" {
         data.meeting_minutes_vi = Some(minutes.clone());
+    } else if chosen_lang == "en" {
+        data.meeting_minutes_en = Some(minutes.clone());
     }
     data.meeting_minutes = Some(minutes);
     data.meeting_minutes_lang = Some(chosen_lang.to_string());
@@ -1184,6 +1218,51 @@ pub fn update_session_notes(
         serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
 
     data.notes = Some(notes);
+
+    let json_bytes =
+        serde_json::to_vec_pretty(&data).map_err(|e| format!("Serialize failed: {}", e))?;
+    write_atomic(&json_path, &json_bytes)?;
+
+    let md_content = rebuild_session_markdown(&data);
+    write_atomic(&md_path, md_content.as_bytes())?;
+
+    Ok(SessionReadResult {
+        md: md_content,
+        json: data,
+    })
+}
+
+#[tauri::command]
+pub fn update_session_langs(
+    app: AppHandle,
+    id: String,
+    source_lang: String,
+    target_lang: String,
+) -> Result<SessionReadResult, String> {
+    validate_id(&id)?;
+    let dir = sessions_dir(&app)?;
+    let (md_path, json_path) = session_paths(&dir, &id);
+
+    if !json_path.exists() {
+        return Err("Session json does not exist".into());
+    }
+
+    let src = source_lang.trim().to_lowercase();
+    let tgt = target_lang.trim().to_lowercase();
+    if src.is_empty() || src.len() > 12 {
+        return Err("Mã ngôn ngữ nguồn không hợp lệ".into());
+    }
+    if tgt.is_empty() || tgt.len() > 12 {
+        return Err("Mã ngôn ngữ đích không hợp lệ".into());
+    }
+
+    let json_str =
+        fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
+    let mut data: SessionData =
+        serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
+
+    data.source_lang = src;
+    data.target_lang = tgt;
 
     let json_bytes =
         serde_json::to_vec_pretty(&data).map_err(|e| format!("Serialize failed: {}", e))?;
@@ -1739,6 +1818,8 @@ pub async fn retranscribe_session_with_gemini(
     app: AppHandle,
     id: String,
     api_key: String,
+    source_lang: Option<String>,
+    target_lang: Option<String>,
 ) -> Result<SessionReadResult, String> {
     validate_id(&id)?;
     if api_key.trim().is_empty() {
@@ -1756,6 +1837,23 @@ pub async fn retranscribe_session_with_gemini(
         fs::read_to_string(&json_path).map_err(|e| format!("Read session failed: {}", e))?;
     let mut data: SessionData =
         serde_json::from_str(&json_str).map_err(|e| format!("Parse session failed: {}", e))?;
+
+    // Optional language override (e.g. user fixed a wrong pair before re-transcribing).
+    // Applied to the in-memory data BEFORE the prompt is built, so the transcript
+    // and translation come out in the new pair. Persisted to disk only together
+    // with the new segments at the end — a failed/cancelled run leaves old data intact.
+    if let Some(src) = source_lang {
+        let src = src.trim().to_lowercase();
+        if !src.is_empty() && src.len() <= 12 {
+            data.source_lang = src;
+        }
+    }
+    if let Some(tgt) = target_lang {
+        let tgt = tgt.trim().to_lowercase();
+        if !tgt.is_empty() && tgt.len() <= 12 {
+            data.target_lang = tgt;
+        }
+    }
 
     let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     {
@@ -2422,6 +2520,7 @@ start_sec must be the approximate offset in seconds.";
         meeting_minutes_lang: None,
         meeting_minutes_ja: None,
         meeting_minutes_vi: None,
+        meeting_minutes_en: None,
         retranscribed_at: Some(now),
     };
 
@@ -2662,6 +2761,7 @@ mod tests {
             meeting_minutes_lang: Some("vi".to_string()),
             meeting_minutes_ja: None,
             meeting_minutes_vi: Some("1. Báo cáo tiến độ\n2. Phân công task".to_string()),
+            meeting_minutes_en: None,
             retranscribed_at: None,
         };
 
@@ -2750,6 +2850,7 @@ mod tests {
             meeting_minutes_lang: None,
             meeting_minutes_ja: None,
             meeting_minutes_vi: None,
+            meeting_minutes_en: None,
             retranscribed_at: None,
         };
 
@@ -2798,6 +2899,7 @@ mod tests {
             meeting_minutes_lang: None,
             meeting_minutes_ja: None,
             meeting_minutes_vi: None,
+            meeting_minutes_en: None,
             retranscribed_at: None,
         };
 
