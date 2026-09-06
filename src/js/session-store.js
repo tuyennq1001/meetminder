@@ -54,6 +54,7 @@ export class SessionStore {
         this.meetingMinutesLang = 'ja';
         this.meetingMinutesJa = '';
         this.meetingMinutesVi = '';
+        this.meetingMinutesEn = '';
         this.tags = Array.isArray(tags) ? tags : [];
         this.customerId = customerId || null;
         this.projectId = projectId || null;
@@ -225,6 +226,7 @@ export class SessionStore {
         this.meetingMinutesLang = chosenLang;
         if (chosenLang === 'ja') this.meetingMinutesJa = minutes || '';
         if (chosenLang === 'vi') this.meetingMinutesVi = minutes || '';
+        if (chosenLang === 'en') this.meetingMinutesEn = minutes || '';
         this._mutations++;
         if (this.id) {
             try {
@@ -365,6 +367,7 @@ export class SessionStore {
             meeting_minutes_lang: this.meetingMinutesLang || null,
             meeting_minutes_ja: this.meetingMinutesJa || null,
             meeting_minutes_vi: this.meetingMinutesVi || null,
+            meeting_minutes_en: this.meetingMinutesEn || null,
             tags: this.tags || [],
             customer_id: this.customerId || null,
             project_id: this.projectId || null,

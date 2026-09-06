@@ -378,6 +378,7 @@ class App {
         this._catScopeFilter = 'work';
         this._tagScopeFilter = 'work';
         this._templateEditor = null;
+        this._activeTemplatesMainTab = 'minutes';
         this._activeTemplatePreset = 'standard';
         this._activeTemplateLang = 'vi';
         this._templateDrafts = {};
@@ -1910,36 +1911,39 @@ class App {
 
     /** Show one settings screen (sidebar item selected) inside the 2-column settings view. */
     async _showSettingsScreen(id) {
-        if (!id || !document.getElementById(id)) id = 'tab-customers';
-        this._currentSettingsScreen = id;
+        if (!id || (!document.getElementById(id) && id !== 'tab-notes-template')) id = 'tab-customers';
+        const targetScreen = id === 'tab-notes-template' ? 'tab-templates' : id;
+        this._currentSettingsScreen = targetScreen;
 
         // Highlight sidebar nav item
         document.querySelectorAll('.settings-nav-item').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.screen === id);
+            btn.classList.toggle('active', btn.dataset.screen === targetScreen);
         });
 
         // Show active content tab
         document.querySelectorAll('.settings-tab-content').forEach(c => {
-            c.classList.toggle('active', c.id === id);
+            c.classList.toggle('active', c.id === targetScreen);
         });
 
-        if (id === 'tab-customers') {
+        if (targetScreen === 'tab-customers') {
             this._renderSettingsCustomersTab(document.getElementById('input-search-customers')?.value || '');
-        } else if (id === 'tab-projects') {
+        } else if (targetScreen === 'tab-projects') {
             const custFilter = document.getElementById('select-settings-proj-cust-filter')?.value || '';
             const searchVal = document.getElementById('input-search-projects')?.value || '';
             this._renderSettingsProjectsTab(custFilter, searchVal);
-        } else if (id === 'tab-categories') {
+        } else if (targetScreen === 'tab-categories') {
             this._renderSettingsCategoriesTab();
-        } else if (id === 'tab-tags') {
+        } else if (targetScreen === 'tab-tags') {
             this._renderSettingsTagsTab();
-        } else if (id === 'tab-storage') {
+        } else if (targetScreen === 'tab-storage') {
             this._renderSettingsStorageTab();
-        } else if (id === 'tab-templates') {
-            this._renderSettingsTemplatesTab();
-        } else if (id === 'tab-notes-template') {
-            this._renderSettingsNotesTemplateTab();
-        } else if (id === 'tab-translation') {
+        } else if (targetScreen === 'tab-templates') {
+            if (id === 'tab-notes-template') {
+                this._switchTemplatesMainTab('notes');
+            } else {
+                this._switchTemplatesMainTab(this._activeTemplatesMainTab || 'minutes');
+            }
+        } else if (targetScreen === 'tab-translation') {
             await this._checkMlxReadiness();
         }
 
@@ -1982,6 +1986,7 @@ class App {
     _jumpToTemplateSetting(templateId) {
         if (!templateId) return;
         this._showSettingsScreen('tab-templates');
+        this._switchTemplatesMainTab('minutes');
         this._switchSettingsTemplatePreset(templateId);
     }
 
@@ -2018,6 +2023,14 @@ class App {
     // ─── Settings: Templates Manager ─────────────────────────
 
     _initSettingsTemplatesTab() {
+        // Main tabs (Meeting Minutes vs Note Template)
+        document.querySelectorAll('#templates-main-tabs .folder-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.tmplTab;
+                if (tab) this._switchTemplatesMainTab(tab);
+            });
+        });
+
         // Presets selector buttons
         document.querySelectorAll('#templates-preset-bar .templates-preset-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -2041,6 +2054,24 @@ class App {
         document.getElementById('btn-template-save')?.addEventListener('click', async () => {
             await this._saveSettingsTemplates();
         });
+    }
+
+    _switchTemplatesMainTab(tab) {
+        this._activeTemplatesMainTab = tab || 'minutes';
+        document.querySelectorAll('#templates-main-tabs .folder-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tmplTab === this._activeTemplatesMainTab);
+        });
+
+        const paneMinutes = document.getElementById('pane-template-minutes');
+        const paneNotes = document.getElementById('pane-template-notes');
+        if (paneMinutes) paneMinutes.style.display = this._activeTemplatesMainTab === 'minutes' ? '' : 'none';
+        if (paneNotes) paneNotes.style.display = this._activeTemplatesMainTab === 'notes' ? '' : 'none';
+
+        if (this._activeTemplatesMainTab === 'minutes') {
+            this._renderSettingsTemplatesTab();
+        } else {
+            this._renderSettingsNotesTemplateTab();
+        }
     }
 
     _getCurrentTemplateKey() {
@@ -8512,6 +8543,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         // Minutes Sub-tab buttons
         document.getElementById('subtab-btn-minutes-ja')?.addEventListener('click', () => this._switchMinutesSubtab('ja'));
         document.getElementById('subtab-btn-minutes-vi')?.addEventListener('click', () => this._switchMinutesSubtab('vi'));
+        document.getElementById('subtab-btn-minutes-en')?.addEventListener('click', () => this._switchMinutesSubtab('en'));
+        document.getElementById('btn-session-edit-langs')?.addEventListener('click', () => this._handleEditSessionLangs());
 
         // Tab Minutes actions
         document.getElementById('btn-minutes-edit')?.addEventListener('click', () => this._enterMinutesEditMode());
@@ -8579,9 +8612,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         });
     }
 
+    _minutesLangName(lang) {
+        return lang === 'ja' ? 'Tiếng Nhật' : (lang === 'en' ? 'English' : 'Tiếng Việt');
+    }
+
     _switchMinutesSubtab(lang) {
         this._activeMinutesLang = lang || 'ja';
-        const subtabs = ['ja', 'vi'];
+        const subtabs = ['ja', 'vi', 'en'];
         subtabs.forEach(l => {
             const btn = document.getElementById(`subtab-btn-minutes-${l}`);
             if (btn) btn.classList.toggle('active', l === this._activeMinutesLang);
@@ -8628,12 +8665,16 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (emptyTitle) {
                 emptyTitle.textContent = lang === 'ja'
                     ? 'Chưa có Meeting Minutes tiếng Nhật cho cuộc họp này'
-                    : 'Chưa có Meeting Minutes tiếng Việt cho cuộc họp này';
+                    : (lang === 'en'
+                        ? 'No English Meeting Minutes for this meeting yet'
+                        : 'Chưa có Meeting Minutes tiếng Việt cho cuộc họp này');
             }
             if (emptyBtn) {
                 emptyBtn.textContent = lang === 'ja'
                     ? '✨ Tạo Meeting Minutes (Tiếng Nhật 🇯🇵)'
-                    : '✨ Tạo Meeting Minutes (Tiếng Việt 🇻🇳)';
+                    : (lang === 'en'
+                        ? '✨ Create Meeting Minutes (English 🇬🇧)'
+                        : '✨ Tạo Meeting Minutes (Tiếng Việt 🇻🇳)');
             }
             if (this._sessionMinutesEditor) {
                 this._sessionMinutesEditor.setContent('');
@@ -8645,6 +8686,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     _updateMinutesBadges() {
         const hasJa = !!(this._loadedMinutes && this._loadedMinutes.ja && this._loadedMinutes.ja.trim());
         const hasVi = !!(this._loadedMinutes && this._loadedMinutes.vi && this._loadedMinutes.vi.trim());
+        const hasEn = !!(this._loadedMinutes && this._loadedMinutes.en && this._loadedMinutes.en.trim());
 
         const badgeJa = document.getElementById('subtab-badge-minutes-ja');
         if (badgeJa) badgeJa.style.display = hasJa ? 'inline-block' : 'none';
@@ -8652,8 +8694,11 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const badgeVi = document.getElementById('subtab-badge-minutes-vi');
         if (badgeVi) badgeVi.style.display = hasVi ? 'inline-block' : 'none';
 
+        const badgeEn = document.getElementById('subtab-badge-minutes-en');
+        if (badgeEn) badgeEn.style.display = hasEn ? 'inline-block' : 'none';
+
         const badgeMain = document.getElementById('tab-badge-minutes');
-        if (badgeMain) badgeMain.style.display = (hasJa || hasVi) ? 'inline-block' : 'none';
+        if (badgeMain) badgeMain.style.display = (hasJa || hasVi || hasEn) ? 'inline-block' : 'none';
     }
 
     _ensureSessionViewerEditorsMounted() {
@@ -8872,6 +8917,112 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (cur) await this._retranscribeSession(cur.id, cur.isLegacy);
     }
 
+    // Sửa cặp ngôn ngữ nguồn → đích của Logs đang xem.
+    // Chỉ đổi metadata (giữ nguyên segments), sau đó tự tạo lại Minutes
+    // cho các ngôn ngữ trong bộ Nhật/Việt/Anh. Ngôn ngữ ngoài bộ 3 cứ để đó.
+    // Dùng modal riêng vì window.prompt() không hoạt động trong Tauri webview.
+    _promptSessionLangs(curSrc, curTgt) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('modal-edit-session-langs');
+            const selectSrc = document.getElementById('select-edit-session-source-lang');
+            const selectTgt = document.getElementById('select-edit-session-target-lang');
+            const currentEl = document.getElementById('edit-session-langs-current');
+            const saveBtn = document.getElementById('btn-save-edit-session-langs');
+            const cancelBtn = document.getElementById('btn-cancel-edit-session-langs');
+            const closeBtn = document.getElementById('btn-close-edit-session-langs');
+            if (!modal || !selectSrc || !selectTgt) {
+                resolve(null);
+                return;
+            }
+
+            const validSrc = ['ja', 'vi', 'en'];
+            const validTgt = ['ja', 'vi', 'en', 'none'];
+            selectSrc.value = validSrc.includes(curSrc) ? curSrc : 'ja';
+            selectTgt.value = validTgt.includes(curTgt) ? curTgt : 'vi';
+            if (currentEl) currentEl.textContent = `Hiện tại: ${curSrc} → ${curTgt}`;
+
+            const cleanup = () => {
+                modal.style.display = 'none';
+                saveBtn?.removeEventListener('click', onSave);
+                cancelBtn?.removeEventListener('click', onCancel);
+                closeBtn?.removeEventListener('click', onCancel);
+                modal.removeEventListener('click', onBackdrop);
+                window.removeEventListener('keydown', onKeyDown);
+            };
+            const onSave = () => {
+                const src = selectSrc.value;
+                const tgt = selectTgt.value;
+                cleanup();
+                resolve({ src, tgt });
+            };
+            const onCancel = () => {
+                cleanup();
+                resolve(null);
+            };
+            const onBackdrop = (e) => {
+                if (e.target === modal) onCancel();
+            };
+            const onKeyDown = (e) => {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onCancel();
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onSave();
+                }
+            };
+
+            saveBtn?.addEventListener('click', onSave);
+            cancelBtn?.addEventListener('click', onCancel);
+            closeBtn?.addEventListener('click', onCancel);
+            modal.addEventListener('click', onBackdrop);
+            window.addEventListener('keydown', onKeyDown);
+            modal.style.display = 'flex';
+        });
+    }
+
+    async _handleEditSessionLangs() {
+        const cur = this._currentViewedSession;
+        if (!cur || cur.isLegacy) {
+            this._showToast('Log định dạng cũ không sửa được ngôn ngữ', 'info');
+            return;
+        }
+        const json = this._currentSessionJson;
+        if (!json) return;
+        const curSrc = (json.source_lang || 'ja').toLowerCase();
+        const curTgt = (json.target_lang || 'vi').toLowerCase();
+
+        const picked = await this._promptSessionLangs(curSrc, curTgt);
+        if (!picked) return;
+        const { src, tgt } = picked;
+        if (src === curSrc && tgt === curTgt) {
+            this._showToast('Cặp ngôn ngữ không thay đổi', 'info');
+            return;
+        }
+
+        const btn = document.getElementById('btn-session-edit-langs');
+        const origBtn = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="retranscript-spinner-inline"></span> Đang xử lý...';
+        }
+        try {
+            // Chạy Re-transcript từ file ghi âm theo cặp ngôn ngữ mới.
+            // Backend transcript/dịch theo cặp mới và lưu ngôn ngữ + segments + Minutes
+            // trong một lần — hủy/lỗi giữa chừng thì dữ liệu cũ còn nguyên.
+            await this._retranscribeSession(cur.id, cur.isLegacy, {
+                sourceLang: src,
+                targetLang: tgt,
+                customTitle: 'Đổi ngôn ngữ & Re-transcript',
+            });
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = origBtn;
+            }
+        }
+    }
+
     _getSessionLogsPlainText(json) {
         const lines = [];
         for (const chunk of (json?.chunks || [])) {
@@ -9055,7 +9206,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (floatingSpinner) floatingSpinner.style.display = '';
         if (floatingCheck) floatingCheck.style.display = 'none';
 
-        const langName = lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt';
+        const langName = this._minutesLangName(lang);
         if (floatingTitle) floatingTitle.textContent = `Tạo Meeting Minutes (${langName})`;
         if (floatingStatus) floatingStatus.textContent = text;
         if (floatingFill) floatingFill.style.width = `${percent}%`;
@@ -9088,7 +9239,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (floatingSpinner) floatingSpinner.style.display = 'none';
         if (floatingCheck) floatingCheck.style.display = 'flex';
 
-        const langName = lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt';
+        const langName = this._minutesLangName(lang);
         if (floatingTitle) floatingTitle.textContent = `Hoàn tất Meeting Minutes (${langName}) ✓`;
         if (floatingStatus) floatingStatus.textContent = 'Nhấp để xem chi tiết biên bản ➔';
         if (floatingFill) floatingFill.style.width = '100%';
@@ -9171,7 +9322,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (hasTranslation) {
             // Có bản dịch: tạo lại cho cả ngôn ngữ gốc và ngôn ngữ dịch
             const langs = [];
-            const mapCode = (c) => (c === 'ja' ? 'ja' : (c === 'vi' ? 'vi' : null));
+            const mapCode = (c) => (c === 'ja' ? 'ja' : (c === 'vi' ? 'vi' : (c === 'en' ? 'en' : null)));
             const sMapped = mapCode(src);
             const tMapped = mapCode(tgt);
             if (sMapped) langs.push(sMapped);
@@ -9180,7 +9331,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             return langs;
         } else {
             // Không có bản dịch: tạo cho ngôn ngữ gốc
-            return src === 'ja' ? ['ja'] : ['vi'];
+            if (src === 'ja' || src === 'en') return [src];
+            return ['vi'];
         }
     }
 
@@ -9264,7 +9416,14 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         this._activeRetranscribe.progressInterval = progressInterval;
 
         try {
-            const result = await invoke('retranscribe_session_with_gemini', { id, apiKey });
+            // options.sourceLang/targetLang: cặp ngôn ngữ mới (từ modal sửa ngôn ngữ).
+            // Backend áp dụng trước khi build prompt và chỉ lưu khi thành công.
+            const result = await invoke('retranscribe_session_with_gemini', {
+                id,
+                apiKey,
+                sourceLang: options.sourceLang || null,
+                targetLang: options.targetLang || null,
+            });
             clearInterval(progressInterval);
             if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
 
@@ -9285,7 +9444,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 for (let i = 0; i < totalLangs; i++) {
                     if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
                     const mLang = minutesLangs[i];
-                    const langName = mLang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt';
+                    const langName = this._minutesLangName(mLang);
                     const stepPct = totalLangs === 1 ? 94 : (i === 0 ? 92 : 96);
                     const stepLabel = totalLangs > 1
                         ? `Đang tạo lại Meeting Minutes (${langName})... (${i + 1}/${totalLangs})`
@@ -9321,9 +9480,11 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 this._currentSessionJson = refreshed.json;
                 const mmJa = refreshed.json.meeting_minutes_ja || (refreshed.json.meeting_minutes_lang === 'ja' ? refreshed.json.meeting_minutes : '') || '';
                 const mmVi = refreshed.json.meeting_minutes_vi || (refreshed.json.meeting_minutes_lang === 'vi' ? refreshed.json.meeting_minutes : '') || '';
+                const mmEn = refreshed.json.meeting_minutes_en || (refreshed.json.meeting_minutes_lang === 'en' ? refreshed.json.meeting_minutes : '') || '';
                 this._loadedMinutes = {
                     ja: mmJa.trim(),
                     vi: mmVi.trim(),
+                    en: mmEn.trim(),
                 };
                 this._updateRetranscriptStatus(refreshed.json);
                 this._updateMinutesBadges();
@@ -9589,7 +9750,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 for (let i = 0; i < totalLangs; i++) {
                     if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
                     const mLang = minutesLangs[i];
-                    const langName = mLang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt';
+                    const langName = this._minutesLangName(mLang);
                     const stepPct = totalLangs === 1 ? 95 : (i === 0 ? 93 : 97);
                     const stepLabel = totalLangs > 1
                         ? `Đang tạo Meeting Minutes (${langName})... (${i + 1}/${totalLangs})`
@@ -9826,6 +9987,51 @@ ${template}
 ※客観的かつ簡潔・明瞭なビジネス日本語（「です・ます」調）で作成してください。`;
         }
 
+        if (targetLang === 'en') {
+            // English: reuse the Vietnamese template structure, instruct the model
+            // to write professional English minutes with translated headings.
+            template = template
+                .replace(/\{\{title\}\}/g, title)
+                .replace(/\{\{date\}\}/g, createdAt)
+                .replace(/\{\{duration\}\}/g, String(durationMin))
+                .replace(/\{\{participants\}\}/g, '(Participants/speakers identified from the logs or notes)');
+
+            let personaEn = 'You are a professional meeting-minutes assistant.\nBelow is the meeting info, the participant\'s handwritten notes, and the full dialogue/translation log recorded during the meeting:';
+            let actionEn = 'Analyze everything thoroughly and draft FORMAL, CONCISE MEETING MINUTES in professional English Markdown, following the STRUCTURE of the TEMPLATE BELOW (translate its headings into natural English):';
+
+            if (templateId === 'tech') {
+                personaEn = 'You are a senior IT architect / tech-lead assistant.\nBelow is the technical meeting info, the engineer\'s handwritten notes, and the full architecture/technology discussion log:';
+                actionEn = 'Analyze the solutions in depth and draft a formal TECHNICAL SYNC / ARCHITECTURE MINUTES document in professional English Markdown, following the STRUCTURE of the TEMPLATE BELOW (translate its headings into natural English):';
+            } else if (templateId === 'one_on_one') {
+                personaEn = 'You are an empathetic people manager, mentor and internal coach.\nBelow is the 1-on-1 session info, handwritten notes, and the full dialogue of the meeting:';
+                actionEn = 'Summarize objectively and constructively, and draft 1-ON-1 MEETING NOTES in professional English Markdown, following the STRUCTURE of the TEMPLATE BELOW (translate its headings into natural English):';
+            } else if (templateId === 'personal') {
+                personaEn = 'You are a thoughtful self-development companion and personal knowledge assistant.\nBelow is the personal session info, notes, and the full dialogue content:';
+                actionEn = 'Distill the core lessons and draft a concise, practical PERSONAL NOTES & SUMMARY in professional English Markdown, following the STRUCTURE of the TEMPLATE BELOW (translate its headings into natural English):';
+            }
+
+            return `${personaEn}
+
+【MEETING INFO】
+- Title: ${title}
+- Started at: ${createdAt}
+- Duration: about ${durationMin} minutes
+
+【HANDWRITTEN NOTES】
+${notes}
+
+【DIALOGUE & TRANSLATION LOG】
+${transcriptText}
+
+---
+
+${actionEn}
+
+${template}
+
+Note: use a formal, clear, professional business tone.`;
+        }
+
         // Default: Vietnamese
         template = template
             .replace(/\{\{title\}\}/g, title)
@@ -9935,7 +10141,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (loadingEl) loadingEl.style.display = 'flex';
             if (emptyEl) emptyEl.style.display = 'none';
             if (editorContainer) editorContainer.style.display = 'none';
-            if (loadingText) loadingText.textContent = `Đang phân tích & soạn thảo Meeting Minutes (${lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt'})...`;
+            if (loadingText) loadingText.textContent = `Đang phân tích & soạn thảo Meeting Minutes (${this._minutesLangName(lang)})...`;
             if (regenBtn) {
                 regenBtn.disabled = true;
                 regenBtn.innerHTML = '<span class="retranscript-spinner-inline"></span> Đang tạo...';
@@ -9996,7 +10202,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (this._currentViewedSession?.id === sessionId) {
                 this._switchMinutesSubtab(lang);
             }
-            this._showToast(`Đã tạo Meeting Minutes (${lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt'}) thành công ✓`, 'success');
+            this._showToast(`Đã tạo Meeting Minutes (${this._minutesLangName(lang)}) thành công ✓`, 'success');
         } catch (err) {
             clearInterval(progressTimer);
             this._hideMinutesProgress();
@@ -10074,7 +10280,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._loadedMinutes[lang] = newMinutes;
             this._updateMinutesBadges();
             this._exitMinutesEditMode();
-            this._showToast(`Đã lưu Meeting Minutes (${lang === 'ja' ? 'Tiếng Nhật' : 'Tiếng Việt'}) ✓`, 'success');
+            this._showToast(`Đã lưu Meeting Minutes (${this._minutesLangName(lang)}) ✓`, 'success');
         } catch (err) {
             this._showToast(`Lỗi lưu Meeting Minutes: ${err}`, 'error');
         }
@@ -10251,6 +10457,8 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 const editBtn = document.getElementById('btn-session-edit-metadata');
                 if (editBtn) editBtn.style.display = 'none';
                 document.getElementById('btn-session-retranscript').style.display = 'none';
+                const editLangsBtnLegacy = document.getElementById('btn-session-edit-langs');
+                if (editLangsBtnLegacy) editLangsBtnLegacy.style.display = 'none';
                 const status = document.getElementById('session-retranscript-status');
                 if (status) {
                     status.textContent = '';
@@ -10265,6 +10473,8 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 const editBtn = document.getElementById('btn-session-edit-metadata');
                 if (editBtn) editBtn.style.display = '';
                 document.getElementById('btn-session-retranscript').style.display = '';
+                const editLangsBtn = document.getElementById('btn-session-edit-langs');
+                if (editLangsBtn) editLangsBtn.style.display = '';
 
                 const result = await invoke('read_session', { id });
                 const json = result.json;
@@ -10281,42 +10491,26 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                     }
                 }
 
-                // 1. Minutes Tab (JA & VI Sub-tabs)
+                // 1. Minutes Tab (JA / VI / EN Sub-tabs — luôn hiện cả 3)
                 const mmJa = json.meeting_minutes_ja || (json.meeting_minutes_lang === 'ja' ? json.meeting_minutes : '') || '';
                 const mmVi = json.meeting_minutes_vi || (json.meeting_minutes_lang === 'vi' ? json.meeting_minutes : '') || '';
+                const mmEn = json.meeting_minutes_en || (json.meeting_minutes_lang === 'en' ? json.meeting_minutes : '') || '';
                 this._loadedMinutes = {
                     ja: mmJa.trim(),
                     vi: mmVi.trim(),
+                    en: mmEn.trim(),
                 };
 
                 this._updateMinutesBadges();
 
-                // If single-language session (no translation requested or same language)
-                const isNoTranslation = !json.target_lang || json.target_lang === 'none' || json.target_lang === json.source_lang;
                 const subtabJa = document.getElementById('subtab-btn-minutes-ja');
                 const subtabVi = document.getElementById('subtab-btn-minutes-vi');
-
-                if (isNoTranslation) {
-                    const sessionLang = json.source_lang || 'vi';
-                    if (sessionLang === 'vi') {
-                        if (subtabJa) subtabJa.style.display = 'none';
-                        if (subtabVi) subtabVi.style.display = '';
-                        this._switchMinutesSubtab('vi');
-                    } else if (sessionLang === 'ja') {
-                        if (subtabJa) subtabJa.style.display = '';
-                        if (subtabVi) subtabVi.style.display = 'none';
-                        this._switchMinutesSubtab('ja');
-                    } else {
-                        if (subtabJa) subtabJa.style.display = 'none';
-                        if (subtabVi) subtabVi.style.display = '';
-                        this._switchMinutesSubtab('vi');
-                    }
-                } else {
-                    if (subtabJa) subtabJa.style.display = '';
-                    if (subtabVi) subtabVi.style.display = '';
-                    const preferredSubtab = this._loadedMinutes.ja ? 'ja' : (this._loadedMinutes.vi ? 'vi' : 'ja');
-                    this._switchMinutesSubtab(preferredSubtab);
-                }
+                const subtabEn = document.getElementById('subtab-btn-minutes-en');
+                if (subtabJa) subtabJa.style.display = '';
+                if (subtabVi) subtabVi.style.display = '';
+                if (subtabEn) subtabEn.style.display = '';
+                const preferredSubtab = this._loadedMinutes.ja ? 'ja' : (this._loadedMinutes.vi ? 'vi' : (this._loadedMinutes.en ? 'en' : 'ja'));
+                this._switchMinutesSubtab(preferredSubtab);
 
                 // 2. Notes Tab
                 const notesText = json.notes || '';
@@ -10329,7 +10523,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 this._renderSessionLogs(json);
 
                 // Default Tab: if has any minutes -> 'minutes', otherwise -> 'logs'
-                if (this._loadedMinutes.ja || this._loadedMinutes.vi) {
+                if (this._loadedMinutes.ja || this._loadedMinutes.vi || this._loadedMinutes.en) {
                     this._switchSessionTab('minutes');
                 } else {
                     this._switchSessionTab('logs');
