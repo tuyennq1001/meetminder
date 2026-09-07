@@ -5556,7 +5556,17 @@ body.resizing-vertical * {
   background: var(--md-sys-color-surface-container-low);
 }
 .session-logs-dual { gap: 0; }
-.session-logs-single { display: block; }
+.session-logs-single {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+.session-logs-single .session-log-column {
+  width: 100%;
+  height: 100%;
+  flex: 1 1 0;
+}
 .session-log-column {
   display: flex;
   width: 0;
@@ -6748,9 +6758,11 @@ body.expanded #library-panel { padding: 8px 6%; }
 
 .session-tab-subbar-left {
   display: flex;
+  flex: 1;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .session-tab-subbar-right {

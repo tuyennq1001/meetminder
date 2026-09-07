@@ -9044,6 +9044,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (panel) {
                 panel.classList.toggle('active', t === tab);
                 panel.style.display = (t === tab) ? 'flex' : 'none';
+                // Force layout recalculation in WebKit/Tauri after display change
+                if (t === tab) panel.getBoundingClientRect();
             }
         });
     }
