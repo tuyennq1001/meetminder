@@ -73,6 +73,8 @@ git push origin v0.9.2
   - macOS Intel (x86_64)
   - Windows (x86_64)
 - Tự động ký chữ ký số Tauri (`TAURI_SIGNING_PRIVATE_KEY`).
+- Dùng thêm `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` nếu private key được tạo có mật khẩu; để trống secret này nếu key không có mật khẩu.
+- Workflow bật updater artifacts qua `src-tauri/tauri.release.conf.json`, nên build Dev vẫn giữ `createUpdaterArtifacts: false` và không cần signing key updater.
 - Tự động tạo các gói update nén `.app.tar.gz`, chữ ký `.sig` và file định tuyến `latest.json`.
 - Tự động trích xuất release notes từ `docs/project-changelog.md`.
 - Tạo một bản Release (Draft) trên GitHub.

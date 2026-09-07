@@ -7,6 +7,15 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## v0.9.5 - 2026-09-07
+
+### Fixed
+
+- **Sửa pipeline Release**: Đưa cấu hình tạo updater artifacts vào file Tauri release riêng và dùng cấu hình này nhất quán cho macOS Apple Silicon, macOS Intel và Windows.
+- **Kiểm tra artifact và secret rõ ràng hơn**: Workflow dùng `npm ci`, kiểm tra signing key/chứng chỉ trước khi build, và dừng rõ ràng nếu thiếu gói hoặc chữ ký updater.
+
+---
+
 ## v0.9.4 - 2026-09-07
 
 ### Improved

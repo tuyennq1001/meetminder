@@ -11,8 +11,19 @@ permissions:
 jobs:
   build-macos:
     runs-on: macos-14  # Apple Silicon runner
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Validate updater signing key
+        shell: bash
+        run: |
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not configured in repository secrets."
+            exit 1
+          fi
 
       - name: Install Apple Certificate
         env:
@@ -21,6 +32,11 @@ jobs:
         run: |
           CERT_PATH=$RUNNER_TEMP/certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          if [ -z "${CERTIFICATE:-}" ]; then
+            echo "::error::APPLE_CERTIFICATE is not configured in repository secrets."
+            exit 1
+          fi
 
           echo -n "$CERTIFICATE" | base64 --decode -o $CERT_PATH
 
@@ -32,7 +48,7 @@ jobs:
           security list-keychains -d user -s $KEYCHAIN_PATH login.keychain
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
 
@@ -45,7 +61,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build Tauri app (signed + notarized)
         env:
@@ -53,10 +69,8 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: |
-          npm run tauri build -- --config '{"bundle": {"createUpdaterArtifacts": true}}'
+          npm run tauri build -- --config src-tauri/tauri.release.conf.json
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -67,11 +81,23 @@ jobs:
             src-tauri/target/release/bundle/macos/*.app.tar.gz
             src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
             src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
 
   build-macos-intel:
     runs-on: macos-14  # Cross-compile to Intel
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Validate updater signing key
+        shell: bash
+        run: |
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not configured in repository secrets."
+            exit 1
+          fi
 
       - name: Install Apple Certificate
         env:
@@ -80,6 +106,11 @@ jobs:
         run: |
           CERT_PATH=$RUNNER_TEMP/certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          if [ -z "${CERTIFICATE:-}" ]; then
+            echo "::error::APPLE_CERTIFICATE is not configured in repository secrets."
+            exit 1
+          fi
 
           echo -n "$CERTIFICATE" | base64 --decode -o $CERT_PATH
 
@@ -91,7 +122,7 @@ jobs:
           security list-keychains -d user -s $KEYCHAIN_PATH login.keychain
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
 
@@ -106,7 +137,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build Tauri app (Intel, signed + notarized)
         env:
@@ -114,10 +145,8 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: |
-          npm run tauri build -- --target x86_64-apple-darwin --config '{"bundle": {"createUpdaterArtifacts": true}}'
+          npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json
 
       - name: Upload macOS Intel artifacts
         uses: actions/upload-artifact@v4
@@ -127,14 +156,26 @@ jobs:
             src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
             src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
             src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
 
   build-windows:
     runs-on: windows-latest
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Validate updater signing key
+        shell: bash
+        run: |
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not configured in repository secrets."
+            exit 1
+          fi
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
 
@@ -147,14 +188,11 @@ jobs:
           workspaces: src-tauri
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build Tauri app
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: |
-          npm run tauri build -- --config '{"bundle": {"createUpdaterArtifacts": true}}'
+          npm run tauri build -- --config src-tauri/tauri.release.conf.json
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -165,12 +203,13 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe.sig
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/msi/*.msi.sig
+          if-no-files-found: error
 
   release:
     needs: [build-macos, build-macos-intel, build-windows]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Get version from tag
         id: version
@@ -199,61 +238,80 @@ jobs:
 
       - name: Rename macOS artifacts to include arch
         run: |
-          # Rename aarch64 tar.gz to include arch
-          for f in artifacts/macos/macos/*.app.tar.gz; do
-            [ -f "$f" ] && mv "$f" "${f%.app.tar.gz}_aarch64.app.tar.gz"
-          done
-          for f in artifacts/macos/macos/*.app.tar.gz.sig; do
-            [ -f "$f" ] && mv "$f" "${f%.app.tar.gz.sig}_aarch64.app.tar.gz.sig"
-          done
-          # Rename x86_64 tar.gz to include arch
-          for f in artifacts/macos-intel/macos/*.app.tar.gz; do
-            [ -f "$f" ] && mv "$f" "${f%.app.tar.gz}_x64.app.tar.gz"
-          done
-          for f in artifacts/macos-intel/macos/*.app.tar.gz.sig; do
-            [ -f "$f" ] && mv "$f" "${f%.app.tar.gz.sig}_x64.app.tar.gz.sig"
-          done
+          set -euo pipefail
+
+          rename_macos_artifacts() {
+            local root="$1"
+            local arch="$2"
+
+            while IFS= read -r -d '' file; do
+              mv "$file" "${file%.app.tar.gz}_${arch}.app.tar.gz"
+            done < <(find "$root" -type f -name '*.app.tar.gz' -print0)
+
+            while IFS= read -r -d '' file; do
+              mv "$file" "${file%.app.tar.gz.sig}_${arch}.app.tar.gz.sig"
+            done < <(find "$root" -type f -name '*.app.tar.gz.sig' -print0)
+          }
+
+          rename_macos_artifacts artifacts/macos aarch64
+          rename_macos_artifacts artifacts/macos-intel x64
+
           echo "Renamed artifacts:"
           find artifacts -name "*.tar.gz*" -type f
 
       - name: Generate latest.json for updater
         run: |
+          set -euo pipefail
+
           VERSION="${{ steps.version.outputs.VERSION }}"
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-          # Read signatures
-          DARWIN_AARCH64_SIG=$(cat artifacts/macos/macos/*_aarch64.app.tar.gz.sig 2>/dev/null || echo "")
-          DARWIN_X86_64_SIG=$(cat artifacts/macos-intel/macos/*_x64.app.tar.gz.sig 2>/dev/null || echo "")
-          WINDOWS_X86_64_SIG=$(cat artifacts/windows/nsis/*.exe.sig 2>/dev/null || echo "")
-
           REPO="https://github.com/${{ github.repository }}/releases/download/v${VERSION}"
 
-          # Find actual filenames
-          DARWIN_AARCH64_FILE=$(ls artifacts/macos/macos/*_aarch64.app.tar.gz 2>/dev/null | head -1 | xargs basename || echo "")
-          DARWIN_X86_64_FILE=$(ls artifacts/macos-intel/macos/*_x64.app.tar.gz 2>/dev/null | head -1 | xargs basename || echo "")
-          WINDOWS_X86_64_FILE=$(ls artifacts/windows/nsis/*.exe 2>/dev/null | head -1 | xargs basename || echo "")
-
-          cat > artifacts/latest.json << EOF
-          {
-            "version": "${VERSION}",
-            "notes": "See release notes at https://github.com/${{ github.repository }}/releases/tag/v${VERSION}",
-            "pub_date": "${DATE}",
-            "platforms": {
-              "darwin-aarch64": {
-                "signature": "${DARWIN_AARCH64_SIG}",
-                "url": "${REPO}/${DARWIN_AARCH64_FILE}"
-              },
-              "darwin-x86_64": {
-                "signature": "${DARWIN_X86_64_SIG}",
-                "url": "${REPO}/${DARWIN_X86_64_FILE}"
-              },
-              "windows-x86_64": {
-                "signature": "${WINDOWS_X86_64_SIG}",
-                "url": "${REPO}/${WINDOWS_X86_64_FILE}"
-              }
-            }
+          find_artifact() {
+            find "$1" -type f -name "$2" -print -quit
           }
-          EOF
+
+          DARWIN_AARCH64_FILE=$(find_artifact artifacts/macos '*_aarch64.app.tar.gz')
+          DARWIN_X86_64_FILE=$(find_artifact artifacts/macos-intel '*_x64.app.tar.gz')
+          WINDOWS_X86_64_FILE=$(find_artifact artifacts/windows '*.exe')
+
+          for file in "$DARWIN_AARCH64_FILE" "$DARWIN_X86_64_FILE" "$WINDOWS_X86_64_FILE"; do
+            if [ -z "$file" ] || [ ! -f "$file" ]; then
+              echo "::error::Missing updater artifact: $file"
+              exit 1
+            fi
+            if [ ! -s "$file.sig" ]; then
+              echo "::error::Missing updater signature: $file.sig"
+              exit 1
+            fi
+          done
+
+          DARWIN_AARCH64_NAME=$(basename "$DARWIN_AARCH64_FILE")
+          DARWIN_X86_64_NAME=$(basename "$DARWIN_X86_64_FILE")
+          WINDOWS_X86_64_NAME=$(basename "$WINDOWS_X86_64_FILE")
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "See release notes at https://github.com/${{ github.repository }}/releases/tag/v${VERSION}" \
+            --arg pub_date "$DATE" \
+            --arg repo "$REPO" \
+            --arg darwin_aarch64_sig "$(cat "$DARWIN_AARCH64_FILE.sig")" \
+            --arg darwin_x86_64_sig "$(cat "$DARWIN_X86_64_FILE.sig")" \
+            --arg windows_x86_64_sig "$(cat "$WINDOWS_X86_64_FILE.sig")" \
+            --arg darwin_aarch64_file "$DARWIN_AARCH64_NAME" \
+            --arg darwin_x86_64_file "$DARWIN_X86_64_NAME" \
+            --arg windows_x86_64_file "$WINDOWS_X86_64_NAME" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: {
+                "darwin-aarch64": {signature: $darwin_aarch64_sig, url: ($repo + "/" + $darwin_aarch64_file)},
+                "darwin-x86_64": {signature: $darwin_x86_64_sig, url: ($repo + "/" + $darwin_x86_64_file)},
+                "windows-x86_64": {signature: $windows_x86_64_sig, url: ($repo + "/" + $windows_x86_64_file)}
+              }
+            }' > artifacts/latest.json
 
           echo "Generated latest.json:"
           cat artifacts/latest.json
