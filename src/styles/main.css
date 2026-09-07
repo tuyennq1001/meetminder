@@ -6492,6 +6492,60 @@ body.expanded #library-panel { padding: 8px 6%; }
   border-color: rgba(126, 62, 135, 0.5);
 }
 
+.logs-table button.session-customer-badge,
+.logs-table button.session-project-badge,
+.logs-table button.session-category-badge,
+.logs-table button.session-tag-badge {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+}
+
+.logs-table button.session-customer-badge:focus-visible,
+.logs-table button.session-project-badge:focus-visible,
+.logs-table button.session-category-badge:focus-visible,
+.logs-table button.session-tag-badge:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
+.mgr-table button.session-customer-badge {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+}
+
+.mgr-table button.session-customer-badge:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
+/* Names in Settings tables are deep links to the matching Logs filter. */
+.settings-metadata-link {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--md-sys-color-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-metadata-link:hover,
+.settings-metadata-link:focus-visible {
+  text-decoration: underline;
+}
+
+.settings-metadata-link:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 .mgr-customer-code {
   font-size: 10px;
   font-weight: 700;

@@ -2017,9 +2017,9 @@ class App {
 
     /**
      * Jump from a Settings row to Logs (library) with a single fresh filter.
-     * Clears all previous log conditions. Scope defaults to 'all'; pass
-     * scopeOverride ('work' | 'personal') to open Logs in a matching scope tab
-     * (e.g. a personal tag opens personal logs, never work logs).
+     * Clears all previous log conditions. Scope is inferred from the linked
+     * metadata when possible; pass scopeOverride ('work' | 'personal' | 'all')
+     * when the source row already knows the correct scope.
      * kind: 'customer' (id) | 'project' (id) | 'category' (name) | 'tag' (name)
      */
     async _jumpToLogsWithFilter(kind, value, scopeOverride) {
@@ -2035,7 +2035,26 @@ class App {
         else if (kind === 'project' && value) this._activeProjectFilter = [value];
         else if (kind === 'category' && value) this._activeCategoryFilter = [value];
         else if (kind === 'tag' && value) this._activeTagFilter = [value];
-        this._activeLogsScopeFilter = (scopeOverride === 'work' || scopeOverride === 'personal') ? scopeOverride : 'all';
+
+        let logsScope = scopeOverride;
+        if (!['work', 'personal', 'all'].includes(logsScope)) {
+            const registry = this._projectRegistry || {};
+            if (kind === 'project') {
+                logsScope = (registry.projects || []).find(project => project.id === value)?.scope;
+            } else if (kind === 'category') {
+                logsScope = (registry.categories || []).find(category => category.name === value || category.id === value)?.scope;
+            } else if (kind === 'tag') {
+                const matchingSessions = (this._cachedSessions || []).filter(session =>
+                    (session.tags || []).some(tag => (tag || '').toLowerCase() === String(value || '').toLowerCase()));
+                const hasWork = matchingSessions.some(session => (session.scope || 'work') === 'work');
+                const hasPersonal = matchingSessions.some(session => session.scope === 'personal');
+                logsScope = hasWork && hasPersonal ? 'all' : (hasPersonal ? 'personal' : 'work');
+            } else if (kind === 'customer') {
+                // Customers are a work-only concept in the metadata model.
+                logsScope = 'work';
+            }
+        }
+        this._activeLogsScopeFilter = ['work', 'personal', 'all'].includes(logsScope) ? logsScope : 'all';
         setActivity('library');
         this._showView('overlay');
         await this._showSessions();
@@ -4067,7 +4086,7 @@ class App {
         // lives across many Start/Pause cycles. stopSession() resets it.
     }
 
-    async _getAllKnownTags() {
+    async _getAllKnownTags(scope = null) {
         try {
             const reg = await this._loadProjectRegistry();
             const regTags = reg.tags || [];
@@ -4089,6 +4108,9 @@ class App {
                     tagSet.add(t.trim().replace(/^#+/, '').toLowerCase());
                 }
             }
+            if (scope === 'work' || scope === 'personal') {
+                return this._getKnownTagsForScope(scope, false);
+            }
             return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
         } catch (err) {
             console.error('Failed to get known tags:', err);
@@ -4096,7 +4118,9 @@ class App {
         }
     }
 
-    _getKnownTagsForScope(scope = 'work') {
+    // Shared tags remain available in the live note editor; edit-session
+    // metadata passes includeShared=false to keep the selected scope isolated.
+    _getKnownTagsForScope(scope = 'work', includeShared = true) {
         const reg = this._projectRegistry || { tags: [], tag_scopes: {} };
         const sessions = this._cachedSessions || [];
         const tagScopes = reg.tag_scopes || {};
@@ -4117,7 +4141,7 @@ class App {
         return Array.from(allTagNames)
             .filter((tag) => {
                 const declaredScope = tagScopes[tag] || tagScopes[`#${tag}`];
-                if (declaredScope === 'all') return true;
+                if (declaredScope === 'all') return includeShared;
                 if (declaredScope === 'work' || declaredScope === 'personal') {
                     return declaredScope === scope;
                 }
@@ -6225,10 +6249,10 @@ class App {
     }
 
     _renderSessionTableRow(session, number, isPersonalScope = false, isAllScope = false) {
-        const tags = (session.tags || []).map(tag => `<span class="session-tag-badge">#${this._esc(tag)}</span>`).join('') || '<span class="logs-empty-value">—</span>';
-        const customer = session.customer_name ? `<span class="session-customer-badge">${this._esc(session.customer_name)}</span>` : '<span class="logs-empty-value">—</span>';
-        const project = session.project_name ? `<span class="session-project-badge">${this._esc(session.project_name)}</span>` : '<span class="logs-empty-value">—</span>';
-        const category = session.category ? `<span class="session-category-badge">${this._esc(session.category)}</span>` : '<span class="logs-empty-value">—</span>';
+        const tags = (session.tags || []).map(tag => `<button type="button" class="session-tag-badge" data-tag="${this._escAttr(tag)}" title="Lọc Logs theo #${this._escAttr(tag)}">#${this._esc(tag)}</button>`).join('') || '<span class="logs-empty-value">—</span>';
+        const customer = session.customer_name ? `<button type="button" class="session-customer-badge" data-customer-id="${this._escAttr(session.customer_id || '')}" title="Lọc Logs theo khách hàng ${this._escAttr(session.customer_name)}">${this._esc(session.customer_name)}</button>` : '<span class="logs-empty-value">—</span>';
+        const project = session.project_name ? `<button type="button" class="session-project-badge" data-project-id="${this._escAttr(session.project_id || '')}" title="Lọc Logs theo dự án ${this._escAttr(session.project_name)}">${this._esc(session.project_name)}</button>` : '<span class="logs-empty-value">—</span>';
+        const category = session.category ? `<button type="button" class="session-category-badge" data-category="${this._escAttr(session.category)}" title="Lọc Logs theo category ${this._escAttr(session.category)}">${this._esc(session.category)}</button>` : '<span class="logs-empty-value">—</span>';
         const retranscriptButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-retranscript-session="${this._escAttr(session.id)}" title="Dùng file ghi âm để Gemini tạo lại Logs">🔄</button>`;
         const editButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-edit-session="${this._escAttr(session.id)}" title="Sửa thông tin">${PENCIL_YELLOW_ICON}</button>`;
 
@@ -6371,6 +6395,37 @@ class App {
 
     _bindSessionRowEvents(tableContainer) {
         if (!this._selectedSessionIds) this._selectedSessionIds = new Set();
+
+        const sessionScopeForBadge = (badge) => {
+            const sessionId = badge.closest('[data-session-id]')?.dataset.sessionId;
+            const session = (this._cachedSessions || []).find(item => item.id === sessionId);
+            return session?.scope === 'personal' ? 'personal' : 'work';
+        };
+        tableContainer.querySelectorAll('.session-customer-badge[data-customer-id]').forEach(badge => {
+            badge.addEventListener('click', (event) => {
+                event.stopPropagation();
+                if (badge.dataset.customerId) this._jumpToLogsWithFilter('customer', badge.dataset.customerId, sessionScopeForBadge(badge));
+            });
+        });
+        tableContainer.querySelectorAll('.session-project-badge[data-project-id]').forEach(badge => {
+            badge.addEventListener('click', (event) => {
+                event.stopPropagation();
+                if (badge.dataset.projectId) this._jumpToLogsWithFilter('project', badge.dataset.projectId, sessionScopeForBadge(badge));
+            });
+        });
+        tableContainer.querySelectorAll('.session-category-badge[data-category]').forEach(badge => {
+            badge.addEventListener('click', (event) => {
+                event.stopPropagation();
+                if (badge.dataset.category) this._jumpToLogsWithFilter('category', badge.dataset.category, sessionScopeForBadge(badge));
+            });
+        });
+        tableContainer.querySelectorAll('.session-tag-badge[data-tag]').forEach(badge => {
+            badge.addEventListener('click', (event) => {
+                event.stopPropagation();
+                if (badge.dataset.tag) this._jumpToLogsWithFilter('tag', badge.dataset.tag, sessionScopeForBadge(badge));
+            });
+        });
+
         tableContainer.querySelectorAll('[data-session-check]').forEach(check => {
             check.addEventListener('change', () => {
                 check.checked ? this._selectedSessionIds.add(check.dataset.sessionCheck) : this._selectedSessionIds.delete(check.dataset.sessionCheck);
@@ -6698,20 +6753,22 @@ class App {
         const suggestionsBox = document.getElementById('edit-session-tags-suggestions');
         if (!modal) return;
 
-        const [reg, knownTags] = await Promise.all([
-            this._loadProjectRegistry(),
-            this._getAllKnownTags(),
-        ]);
         const id = sess.id;
         const currentTitle = sess.title || '';
         const currentCustomerId = sess.customer_id || '';
         const currentProjectId = sess.project_id || '';
         const currentCategory = sess.category || '';
         const currentTags = Array.isArray(sess.tags) ? sess.tags : [];
+        const currentScope = sess.scope || 'work';
+
+        const [reg, knownTags] = await Promise.all([
+            this._loadProjectRegistry(),
+            this._getAllKnownTags(currentScope),
+        ]);
 
         if (inputTitle) inputTitle.value = currentTitle;
         if (inputTags) inputTags.value = currentTags.map(t => `#${t}`).join(', ');
-        const cleanupTags = this._setupTagAutocomplete(inputTags, suggestionsBox, knownTags);
+        let cleanupTags = this._setupTagAutocomplete(inputTags, suggestionsBox, knownTags);
 
         const allCustomers = reg.customers || [];
         const allProjects = reg.projects || [];
@@ -6727,7 +6784,6 @@ class App {
             selectCust.value = currentCustomerId;
         }
 
-        const currentScope = sess.scope || 'work';
         const workRadio = document.querySelector('input[name="edit-session-scope"][value="work"]');
         const personalRadio = document.querySelector('input[name="edit-session-scope"][value="personal"]');
         const custWrap = document.getElementById('edit-customer-field-wrap');
@@ -6748,6 +6804,26 @@ class App {
 
         const getCurrentChosenEditScope = () => {
             return document.querySelector('input[name="edit-session-scope"]:checked')?.value || 'work';
+        };
+
+        const updateCategoriesDropdown = (scope, selectedValue = selectCat?.value || '') => {
+            if (!selectCat) return;
+            const availableCategories = (reg.categories || []).filter(category => {
+                const categoryScope = category.scope || 'work';
+                return categoryScope === scope;
+            });
+            let catHtml = '<option value="">(Không chọn category)</option>';
+            for (const category of availableCategories) {
+                catHtml += `<option value="${this._escAttr(category.name)}">🗂️ ${this._esc(category.name)}</option>`;
+            }
+            selectCat.innerHTML = catHtml;
+            selectCat.value = availableCategories.some(category => category.name === selectedValue) ? selectedValue : '';
+        };
+
+        const refreshTagAutocomplete = (scope) => {
+            if (!inputTags) return;
+            cleanupTags?.();
+            cleanupTags = this._setupTagAutocomplete(inputTags, suggestionsBox, this._getKnownTagsForScope(scope, false));
         };
 
         // Helper to populate projects
@@ -6790,6 +6866,8 @@ class App {
                 selectCust.value = '';
             }
             updateProjectsDropdown(selectCust?.value, curScope);
+            updateCategoriesDropdown(curScope);
+            refreshTagAutocomplete(curScope);
         };
 
         const onScopeBtnClick = (e) => {
@@ -6825,14 +6903,7 @@ class App {
         selectCust?.addEventListener('change', onCustChange);
         selectProj?.addEventListener('change', onProjChange);
 
-        if (selectCat) {
-            let catHtml = '<option value="">(Không chọn category)</option>';
-            for (const c of (reg.categories || [])) {
-                catHtml += `<option value="${this._escAttr(c.name)}">🗂️ ${this._esc(c.name)}</option>`;
-            }
-            selectCat.innerHTML = catHtml;
-            selectCat.value = currentCategory;
-        }
+        updateCategoriesDropdown(currentScope, currentCategory);
 
         modal.style.display = 'flex';
         inputTitle?.focus();
@@ -7396,7 +7467,7 @@ class App {
                     <td>
                       <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
                         <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(c.color || '#431A46')}; flex-shrink:0;"></span>
-                        <span class="btn-jump-to-cust-projects" data-id="${this._escAttr(c.id)}" style="cursor:pointer; color:var(--md-sys-color-primary);" title="Xem các dự án của khách hàng này">${this._esc(c.name)}</span>
+                        <button type="button" class="settings-metadata-link btn-jump-to-cust-logs" data-id="${this._escAttr(c.id)}" title="Mở Logs lọc theo khách hàng ${this._escAttr(c.name)}">${this._esc(c.name)}</button>
                       </div>
                     </td>
                     <td style="color: var(--md-sys-color-on-surface-variant); font-size:11px; max-width: 220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${this._escAttr(c.description || '')}">
@@ -7694,7 +7765,7 @@ class App {
                 const custBadge = pScope === 'personal'
                     ? '<span style="font-size:11px; opacity:0.3;">—</span>'
                     : (cust
-                        ? `<span class="session-customer-badge btn-jump-to-customer" data-cust-id="${this._escAttr(cust.id)}" style="border-color:${this._escAttr(cust.color || '#431A46')}44; color:${this._escAttr(cust.color || '#D9B0DE')}; background:${this._escAttr(cust.color || '#431A46')}1a; cursor:pointer;" title="Mở thông tin khách hàng ${this._escAttr(cust.name)}">🤝 ${this._esc(cust.name)} ↗</span>`
+                        ? `<button type="button" class="session-customer-badge btn-jump-to-customer" data-cust-id="${this._escAttr(cust.id)}" style="border-color:${this._escAttr(cust.color || '#431A46')}44; color:${this._escAttr(cust.color || '#D9B0DE')}; background:${this._escAttr(cust.color || '#431A46')}1a; cursor:pointer;" title="Mở Logs lọc theo khách hàng ${this._escAttr(cust.name)}">🤝 ${this._esc(cust.name)} ↗</button>`
                         : `<span style="font-size:11px; opacity:0.4;">(Chưa gán KH)</span>`);
 
                 rowsHtml += `
@@ -7703,7 +7774,7 @@ class App {
                     <td>
                       <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
                         <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(p.color || '#431A46')}; flex-shrink:0;"></span>
-                        <span>${this._esc(p.name)}</span>
+                        <button type="button" class="settings-metadata-link btn-jump-to-proj-logs" data-id="${this._escAttr(p.id)}" data-scope="${this._escAttr(pScope)}" title="Mở Logs lọc theo dự án ${this._escAttr(p.name)}">${this._esc(p.name)}</button>
                       </div>
                     </td>
                     ${isAllScopeTab ? `<td style="text-align: center;">${scopeBadge}</td>` : ''}
@@ -7870,16 +7941,11 @@ class App {
             });
         });
 
-        // Click customer badge in project table opens Customer Details
+        // Click customer badge in project table opens Logs filtered by customer.
         listEl.querySelectorAll('.btn-jump-to-customer').forEach(badge => {
-            badge.addEventListener('click', async () => {
+            badge.addEventListener('click', () => {
                 const custId = badge.dataset.custId;
-                const reg = await this._loadProjectRegistry();
-                const targetCust = (reg.customers || []).find(c => c.id === custId);
-                this._showSettingsScreen('tab-customers');
-                if (targetCust) {
-                    this._openEditCustomerModal(targetCust);
-                }
+                if (custId) this._jumpToLogsWithFilter('customer', custId, 'work');
             });
         });
 
@@ -8104,7 +8170,7 @@ class App {
                     <td>
                       <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
                         <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(c.color || '#431A46')}; flex-shrink:0;"></span>
-                        <span>${this._esc(c.name)}</span>
+                        <button type="button" class="settings-metadata-link btn-jump-to-cat-logs" data-cat="${this._escAttr(c.name)}" data-scope="${this._escAttr(c.scope || 'work')}" title="Mở Logs lọc theo category ${this._escAttr(c.name)}">${this._esc(c.name)}</button>
                       </div>
                     </td>
                     ${isAllCatTab ? `<td style="text-align: center;">${scopeBadge}</td>` : ''}
@@ -8263,7 +8329,7 @@ class App {
         // Jump to Logs filtered by this category
         listEl.querySelectorAll('.btn-jump-to-cat-logs').forEach(btn => {
             btn.addEventListener('click', () => {
-                this._jumpToLogsWithFilter('category', btn.dataset.cat);
+                this._jumpToLogsWithFilter('category', btn.dataset.cat, btn.dataset.scope);
             });
         });
 
@@ -8384,7 +8450,7 @@ class App {
                   <tr>
                     <td style="text-align: center; color: var(--md-sys-color-on-surface-variant); font-size: 11px;">${idx + 1}</td>
                     <td>
-                      <span class="mgr-tag-chip" style="font-size:12px; font-weight:600;">#${this._esc(t.name)}</span>
+                      <button type="button" class="mgr-tag-chip settings-metadata-link btn-jump-to-tag-logs" data-tag="${this._escAttr(t.name)}" data-scope="${this._escAttr(t.scope || 'work')}" style="font-size:12px; font-weight:600;" title="Mở Logs lọc theo tag #${this._escAttr(t.name)}">#${this._esc(t.name)}</button>
                     </td>
                     ${isAllTagTab ? `<td style="text-align: center;">${scopeBadge}</td>` : ''}
                     <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
