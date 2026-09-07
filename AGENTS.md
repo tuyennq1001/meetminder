@@ -7,6 +7,36 @@
 - Khi phát triển và sửa code, build và kiểm tra trên bản dev (`npm run build:dev` hoặc `npm run dev`) để kiểm tra `Meet Minder Dev`, giữ nguyên `/Applications/Meet Minder.app` cho bản Release chính thức dùng khi họp.
 - Dùng tiền tố `codex/` cho nhánh phụ do Codex tạo, trừ khi người dùng chỉ định tên khác.
 
+## Release & Auto-Update workflow
+
+Mô hình 2 phiên bản độc lập và luồng phát hành chuẩn của dự án:
+- **Bản Dev (`Meet Minder Dev`)**:
+  - Dùng để code, debug, thử nghiệm (`npm run dev` hoặc `npm run build:dev`).
+  - Bundle ID: `com.meetminder.desktop.dev` (được override từ `.env`).
+  - DevTools: Bật (F12). Auto-updater: Tắt.
+  - Quyền Screen Recording riêng biệt, không bị mất quyền hay ảnh hưởng bản chính khi rebuild.
+- **Bản Release (`Meet Minder`)**:
+  - Dùng để họp chính thức hàng ngày, nằm tại `/Applications/Meet Minder.app`.
+  - Bundle ID: `com.meetminder.desktop`. DevTools: Tắt. Auto-updater: Bật.
+
+### Quy trình 4 bước khi ra bản Release chính thức:
+1. **Phát triển & Kiểm thử:** Toàn bộ code/bug fix phải được kiểm tra chạy ổn định trên bản Dev trước khi merge.
+2. **Nâng số Version (Version Bump):** Đồng bộ phiên bản mới ở 3 file:
+   - `package.json` (`"version": "X.Y.Z"`)
+   - `src-tauri/tauri.conf.json` (`"version": "X.Y.Z"`)
+   - `src-tauri/Cargo.toml` (`version = "X.Y.Z"`)
+   - Cập nhật ghi chú phát hành trong `docs/project-changelog.md` dưới mục `## vX.Y.Z`.
+3. **Commit & Push Git Tag:**
+   - Commit thay đổi: `git commit -am "chore: release vX.Y.Z"`
+   - Merge vào `main` và push: `git push origin main`
+   - Tạo tag và push: `git tag vX.Y.Z && git push origin vX.Y.Z`
+   - GitHub Actions (`.github/workflows/release.yml`) sẽ tự động build đa nền tảng (macOS Silicon, macOS Intel, Windows), ký số, tạo gói update và tạo bản Release trên GitHub.
+4. **Cơ chế Auto Background Update:**
+   - Các máy người dùng (và bản `/Applications/Meet Minder.app`) tự động tải ngầm bản mới khi mở app.
+   - Khi tải xong, app hiển thị banner sẵn sàng cài đặt kèm nút `[Khởi động lại]` và `[Để sau]` / `[✕]`.
+   - Nếu người dùng đang trong cuộc họp (`Start`), thông báo sẽ hoãn lại cho tới khi kết thúc cuộc họp.
+   - Chi tiết hướng dẫn kỹ thuật xem tại `docs/release-guide.md`.
+
 ## UX conventions
 
 - Khi thiết kế, sửa hoặc review UI/UX, phải đọc và áp dụng
