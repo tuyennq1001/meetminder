@@ -55,7 +55,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        run: npm run tauri build
+        run: npm run tauri build -- --config '{"bundle": {"createUpdaterArtifacts": true}}'
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -115,7 +115,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        run: npm run tauri build -- --target x86_64-apple-darwin
+        run: npm run tauri build -- --target x86_64-apple-darwin --config '{"bundle": {"createUpdaterArtifacts": true}}'
 
       - name: Upload macOS Intel artifacts
         uses: actions/upload-artifact@v4
@@ -151,7 +151,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        run: npm run tauri build
+        run: npm run tauri build -- --config '{"bundle": {"createUpdaterArtifacts": true}}'
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -223,7 +223,7 @@ jobs:
           DARWIN_X86_64_SIG=$(cat artifacts/macos-intel/macos/*_x64.app.tar.gz.sig 2>/dev/null || echo "")
           WINDOWS_X86_64_SIG=$(cat artifacts/windows/nsis/*.exe.sig 2>/dev/null || echo "")
 
-          REPO="https://github.com/phuc-nt/my-translator/releases/download/v${VERSION}"
+          REPO="https://github.com/${{ github.repository }}/releases/download/v${VERSION}"
 
           # Find actual filenames
           DARWIN_AARCH64_FILE=$(ls artifacts/macos/macos/*_aarch64.app.tar.gz 2>/dev/null | head -1 | xargs basename || echo "")
@@ -233,7 +233,7 @@ jobs:
           cat > artifacts/latest.json << EOF
           {
             "version": "${VERSION}",
-            "notes": "See release notes at https://github.com/phuc-nt/my-translator/releases/tag/v${VERSION}",
+            "notes": "See release notes at https://github.com/${{ github.repository }}/releases/tag/v${VERSION}",
             "pub_date": "${DATE}",
             "platforms": {
               "darwin-aarch64": {
@@ -273,12 +273,12 @@ jobs:
           if [ ! -s "$OUT" ]; then
             echo "Release v${VERSION}" > "$OUT"
             echo "" >> "$OUT"
-            echo "See commits: https://github.com/phuc-nt/my-translator/compare/...v${VERSION}" >> "$OUT"
+            echo "See commits: https://github.com/${{ github.repository }}/compare/...v${VERSION}" >> "$OUT"
           fi
 
           # Append auto-generated full changelog link
           echo "" >> "$OUT"
-          echo "**Full Changelog**: https://github.com/phuc-nt/my-translator/compare/...v${VERSION}" >> "$OUT"
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/...v${VERSION}" >> "$OUT"
 
           echo "--- Release notes preview ---"
           cat "$OUT"

@@ -340,6 +340,11 @@ class App {
         this._captureHealthTimer = null;
         this._isStopConfirmationOpen = false;
         this._isStoppingSession = false;
+        this._pendingUpdateVersion = null;
+        this._updateReadyVersion = null;
+        this._isDownloadingUpdate = false;
+        this._pendingUpdateReadyBanner = null;
+        this._updateEscapeBound = false;
         this._projectRegistry = null;
         this._activeLogsScopeFilter = 'work'; // 'work' | 'personal' | 'all'
         this._activeCustomerFilter = [];
@@ -4880,6 +4885,11 @@ class App {
                 btnStop.style.pointerEvents = '';
                 btnStop.style.opacity = '';
             }
+            if (this._pendingUpdateReadyBanner) {
+                const pendingVer = this._pendingUpdateReadyBanner;
+                this._pendingUpdateReadyBanner = null;
+                setTimeout(() => this._showUpdateReadyBanner(pendingVer), 1200);
+            }
         }
     }
 
@@ -4930,6 +4940,11 @@ class App {
         });
         this._updateStatus('idle');
         this._updateStartButton();
+        if (this._pendingUpdateReadyBanner) {
+            const pendingVer = this._pendingUpdateReadyBanner;
+            this._pendingUpdateReadyBanner = null;
+            setTimeout(() => this._showUpdateReadyBanner(pendingVer), 1200);
+        }
     }
 
     _sleep(ms) {
@@ -11066,7 +11081,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         updater.onCheckComplete = (hasUpdate) => {
             const checkBtn = document.getElementById('btn-check-update');
             if (checkBtn) checkBtn.classList.remove('spinning');
-            if (!hasUpdate && !this._pendingUpdateVersion) {
+            if (!hasUpdate && !this._pendingUpdateVersion && !this._updateReadyVersion) {
                 const statusText = document.getElementById('update-status-text');
                 if (statusText) statusText.textContent = '✅ App is up to date';
             }
@@ -11075,8 +11090,12 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         setTimeout(() => {
             const statusText = document.getElementById('update-status-text');
             const checkBtn = document.getElementById('btn-check-update');
-            if (statusText) statusText.textContent = 'Checking for updates...';
-            if (checkBtn) checkBtn.classList.add('spinning');
+            if (statusText && !this._updateReadyVersion && !this._isDownloadingUpdate) {
+                statusText.textContent = 'Checking for updates...';
+            }
+            if (checkBtn && !this._updateReadyVersion && !this._isDownloadingUpdate) {
+                checkBtn.classList.add('spinning');
+            }
             updater.checkForUpdates();
         }, 3000);
     }
@@ -11101,24 +11120,179 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const statusText = document.getElementById('update-status-text');
         const actions = document.getElementById('update-actions');
         if (statusEl) statusEl.classList.add('has-update');
-        if (statusText) statusText.textContent = `🆕 Update v${version} available`;
+        if (statusText) statusText.textContent = `🆕 Có bản cập nhật v${version}`;
         if (actions) actions.style.display = '';
 
-        // 3. Show subtle hint on main screen
-        const existing = document.querySelector('.update-hint');
-        if (existing) existing.remove();
-        const hint = document.createElement('div');
-        hint.className = 'update-hint';
-        hint.textContent = `Update v${version} available — go to Settings → About`;
-        hint.addEventListener('click', () => {
-            this._showView('settings');
-            this._showSettingsScreen('tab-about');
-            hint.remove();
-        });
-        document.body.appendChild(hint);
+        // 3. Tự động tải ngầm bản cập nhật (Phương án 3)
+        if (this._updateReadyVersion === version) {
+            this._onUpdateReady(version, notes);
+        } else if (!this._isDownloadingUpdate) {
+            this._startBackgroundUpdateDownload(version, notes);
+        }
+    }
 
-        // Auto-hide hint after 8 seconds
-        setTimeout(() => { if (hint.parentNode) hint.remove(); }, 8000);
+    async _startBackgroundUpdateDownload(version, notes) {
+        if (this._isDownloadingUpdate || this._updateReadyVersion === version) return;
+        this._isDownloadingUpdate = true;
+
+        const btnText = document.getElementById('update-btn-text');
+        const btn = document.getElementById('btn-do-update');
+        const progressDiv = document.getElementById('update-progress');
+        const progressFill = document.getElementById('update-progress-fill');
+        const progressPct = document.getElementById('update-progress-pct');
+        const statusText = document.getElementById('update-status-text');
+
+        if (btn) btn.disabled = true;
+        if (btnText) btnText.textContent = 'Đang tải ngầm...';
+        if (progressDiv) progressDiv.style.display = '';
+        if (statusText) statusText.textContent = `⏳ Đang tải ngầm bản v${version}...`;
+
+        try {
+            console.log(`[Updater] Downloading v${version} in background...`);
+            await updater.downloadAndInstall((downloaded, total) => {
+                if (total > 0) {
+                    const pct = Math.round((downloaded / total) * 100);
+                    if (progressFill) progressFill.style.width = `${pct}%`;
+                    if (progressPct) progressPct.textContent = `${pct}%`;
+                    if (btnText && this._isDownloadingUpdate) {
+                        btnText.textContent = `Đang tải ${pct}%...`;
+                    }
+                }
+            });
+
+            this._isDownloadingUpdate = false;
+            this._updateReadyVersion = version;
+            console.log(`[Updater] Update v${version} downloaded and installed successfully!`);
+            this._onUpdateReady(version, notes);
+        } catch (err) {
+            this._isDownloadingUpdate = false;
+            console.warn('[Updater] Background download failed:', err);
+            if (btn) btn.disabled = false;
+            if (btnText) btnText.textContent = 'Tải & Cài đặt lại';
+            if (statusText) statusText.textContent = `⚠️ Tải bản cập nhật thất bại: ${err?.message || err}`;
+        }
+    }
+
+    _onUpdateReady(version, notes) {
+        // Cập nhật About tab
+        const btnText = document.getElementById('update-btn-text');
+        const btn = document.getElementById('btn-do-update');
+        const progressDiv = document.getElementById('update-progress');
+        const statusText = document.getElementById('update-status-text');
+
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.add('btn-ready-relaunch');
+        }
+        if (btnText) btnText.textContent = '🚀 Khởi động lại app';
+        if (progressDiv) progressDiv.style.display = 'none';
+        if (statusText) statusText.textContent = `✅ Đã tải xong bản v${version} — Khởi động lại để áp dụng`;
+
+        // Nếu người dùng đang họp, hoãn hiển thị banner cho đến khi kết thúc họp
+        if (this.isRunning) {
+            this._pendingUpdateReadyBanner = version;
+            console.log(`[Updater] Session is running, postponing update banner for v${version}`);
+            return;
+        }
+
+        this._showUpdateReadyBanner(version);
+    }
+
+    _showUpdateReadyBanner(version) {
+        // Không hiển thị lại nếu người dùng đã đóng thông báo trong phiên này
+        if (sessionStorage.getItem(`update_banner_dismissed_${version}`) === 'true') {
+            return;
+        }
+
+        const existing = document.getElementById('update-ready-banner');
+        if (existing) existing.remove();
+
+        const banner = document.createElement('div');
+        banner.id = 'update-ready-banner';
+        banner.className = 'update-ready-banner';
+        banner.setAttribute('role', 'status');
+        banner.setAttribute('aria-live', 'polite');
+
+        banner.innerHTML = `
+          <div class="update-banner-icon">🚀</div>
+          <div class="update-banner-content">
+            <div class="update-banner-title">Meet Minder v${version} đã sẵn sàng</div>
+            <div class="update-banner-subtitle">Khởi động lại app để áp dụng bản cập nhật mới</div>
+          </div>
+          <div class="update-banner-actions">
+            <button id="btn-banner-relaunch" class="btn-update-relaunch" type="button">Khởi động lại</button>
+            <button id="btn-banner-later" class="btn-update-later" type="button">Để sau</button>
+            <button id="btn-banner-close" class="btn-update-close" title="Đóng thông báo (Esc)" type="button" aria-label="Đóng thông báo">
+              <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2l8 8m0-8l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+        `;
+
+        document.body.appendChild(banner);
+
+        document.getElementById('btn-banner-relaunch')?.addEventListener('click', () => {
+            this._relaunchApp();
+        });
+
+        document.getElementById('btn-banner-later')?.addEventListener('click', () => {
+            this._dismissUpdateBanner(version);
+        });
+
+        document.getElementById('btn-banner-close')?.addEventListener('click', () => {
+            this._dismissUpdateBanner(version);
+        });
+
+        // Phím Escape đóng banner theo chuẩn UX Playbook
+        if (!this._updateEscapeBound) {
+            this._updateEscapeBound = true;
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    const currentBanner = document.getElementById('update-ready-banner');
+                    if (currentBanner && !currentBanner.classList.contains('is-closing')) {
+                        this._dismissUpdateBanner(this._updateReadyVersion || version);
+                    }
+                }
+            });
+        }
+    }
+
+    _dismissUpdateBanner(version) {
+        if (version) {
+            try {
+                sessionStorage.setItem(`update_banner_dismissed_${version}`, 'true');
+            } catch (_) {}
+        }
+        const banner = document.getElementById('update-ready-banner');
+        if (banner) {
+            banner.classList.add('is-closing');
+            setTimeout(() => banner.remove(), 250);
+        }
+    }
+
+    async _relaunchApp() {
+        if (this.isRunning) {
+            const ok = confirm('Cuộc họp đang diễn ra. Bạn có chắc chắn muốn kết thúc và khởi động lại Meet Minder ngay bây giờ?');
+            if (!ok) return;
+        }
+
+        const btnText = document.getElementById('update-btn-text');
+        if (btnText) btnText.textContent = 'Restarting...';
+
+        try {
+            const relaunch = window.__TAURI__?.process?.relaunch;
+            if (relaunch) {
+                await relaunch();
+            } else {
+                const invoke = window.__TAURI__?.core?.invoke;
+                if (invoke) await invoke('plugin:process|restart');
+            }
+        } catch (restartErr) {
+            console.warn('[Update] Restart failed, update is installed:', restartErr);
+            if (btnText) btnText.textContent = '✅ Đã cập nhật! Hãy mở lại app';
+            const statusText = document.getElementById('update-status-text');
+            if (statusText) statusText.textContent = '✅ Bản cập nhật đã sẵn sàng — hãy đóng và mở lại ứng dụng';
+            this._showToast('✅ Cập nhật hoàn tất. Vui lòng khởi động lại Meet Minder.', 'success');
+        }
     }
 
     _initAboutTab() {
@@ -11137,52 +11311,16 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._triggerUpdateCheck();
         });
 
-        // Download & Install button
+        // Download & Install / Relaunch button
         document.getElementById('btn-do-update')?.addEventListener('click', async () => {
-            const btnText = document.getElementById('update-btn-text');
-            const btn = document.getElementById('btn-do-update');
-            const progressDiv = document.getElementById('update-progress');
-            const progressFill = document.getElementById('update-progress-fill');
-            const progressPct = document.getElementById('update-progress-pct');
-
-            if (btn) btn.disabled = true;
-            if (btnText) btnText.textContent = 'Downloading...';
-            if (progressDiv) progressDiv.style.display = '';
-
-            try {
-                await updater.downloadAndInstall((downloaded, total) => {
-                    if (total > 0) {
-                        const pct = Math.round((downloaded / total) * 100);
-                        if (progressFill) progressFill.style.width = `${pct}%`;
-                        if (progressPct) progressPct.textContent = `${pct}%`;
-                        if (btnText) btnText.textContent = `Downloading ${pct}%...`;
-                    }
-                });
-                // Install succeeded! Try to restart
-                if (btnText) btnText.textContent = 'Restarting...';
-                try {
-                    const relaunch = window.__TAURI__?.process?.relaunch;
-                    if (relaunch) {
-                        await relaunch();
-                    } else {
-                        const invoke = window.__TAURI__?.core?.invoke;
-                        if (invoke) await invoke('plugin:process|restart');
-                    }
-                } catch (restartErr) {
-                    // Restart failed (e.g. process plugin not available) but update IS installed
-                    console.warn('[Update] Restart failed, update is installed:', restartErr);
-                    if (btnText) btnText.textContent = '✅ Updated! Restart app';
-                    const statusText = document.getElementById('update-status-text');
-                    if (statusText) statusText.textContent = '✅ Update installed — close and reopen the app';
-                    if (btn) btn.disabled = true;
-                }
-            } catch (err) {
-                const errMsg = err?.message || String(err);
-                if (btnText) btnText.textContent = 'Failed — try again';
-                const statusText = document.getElementById('update-status-text');
-                if (statusText) statusText.textContent = `⚠️ Install error: ${errMsg}`;
-                if (btn) btn.disabled = false;
-                console.error('[Update]', err);
+            if (this._updateReadyVersion) {
+                await this._relaunchApp();
+                return;
+            }
+            if (this._pendingUpdateVersion) {
+                await this._startBackgroundUpdateDownload(this._pendingUpdateVersion);
+            } else {
+                this._triggerUpdateCheck();
             }
         });
     }

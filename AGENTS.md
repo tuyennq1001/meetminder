@@ -4,7 +4,7 @@
 - Sau khi kiểm tra/build/test phù hợp, phải xác nhận với người dùng rằng mọi thứ đã sửa xong và không còn vấn đề cần xử lý.
 - Chỉ sau xác nhận đó mới được commit thay đổi và merge nhánh phụ vào `main`.
 - Sau khi merge thành công vào `main`, được phép push `main` lên remote.
-- Sau mỗi lần sửa code, bắt buộc phải build lại app macOS, thay bản build mới vào `/Applications/Meet Minder.app`, rồi khởi động lại app từ vị trí đó để kiểm tra bản đang chạy.
+- Khi phát triển và sửa code, build và kiểm tra trên bản dev (`npm run build:dev` hoặc `npm run dev`) để kiểm tra `Meet Minder Dev`, giữ nguyên `/Applications/Meet Minder.app` cho bản Release chính thức dùng khi họp.
 - Dùng tiền tố `codex/` cho nhánh phụ do Codex tạo, trừ khi người dùng chỉ định tên khác.
 
 ## UX conventions
