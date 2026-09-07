@@ -9276,9 +9276,23 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             return;
         }
 
+        const jumpBottomButton = `<button type="button" class="live-jump-bottom-btn session-log-scroll-bottom" aria-label="Cuộn xuống đoạn mới nhất" title="Cuộn xuống đoạn mới nhất"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="4" x2="12" y2="19"></line><polyline points="19 13 12 20 5 13"></polyline></svg><span>Mới nhất</span></button>`;
+
         if (!hasTranslation) {
-            container.innerHTML = `<div class="session-logs-live session-logs-single"><section class="session-log-column"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', 'Copy toàn bộ bản gốc', 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map(segment => singleRow(segment, segment.src)).join('')}</div></section></div>`;
+            container.innerHTML = `<div class="session-logs-live session-logs-single"><section class="session-log-column"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', 'Copy toàn bộ bản gốc', 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map(segment => singleRow(segment, segment.src)).join('')}</div></section>${jumpBottomButton}</div>`;
+            const singleScroll = container.querySelector('.session-log-scroll');
+            const scrollBottom = container.querySelector('.session-log-scroll-bottom');
+            const updateScrollButton = () => {
+                if (!singleScroll || !scrollBottom) return;
+                const isAwayFromBottom = singleScroll.scrollHeight - singleScroll.scrollTop - singleScroll.clientHeight > 120;
+                scrollBottom.classList.toggle('is-visible', isAwayFromBottom);
+            };
+            singleScroll?.addEventListener('scroll', updateScrollButton, { passive: true });
+            scrollBottom?.addEventListener('click', () => {
+                singleScroll?.scrollTo({ top: singleScroll.scrollHeight, behavior: 'smooth' });
+            });
             this._bindSessionLogCopy(container, segments, false);
+            updateScrollButton();
             return;
         }
 
@@ -9286,9 +9300,9 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             <section class="session-log-column" data-log-panel="source"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', 'Copy toàn bộ bản gốc', 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.src)).join('')}</div></section>
             <div class="session-log-timeline-wrap">
               <div class="session-log-timeline" data-log-panel="timeline"><header class="panel-column-header panel-time-header"><span class="panel-header-title">Timeline</span></header>${segments.map((segment, index) => timelineRow(index, segment)).join('')}</div>
-              <button type="button" class="session-log-scroll-bottom" aria-label="Cuộn xuống đoạn mới nhất" title="Cuộn xuống đoạn mới nhất">↓</button>
             </div>
             <section class="session-log-column" data-log-panel="translation"><header class="panel-column-header"><span class="panel-header-title">🌐 ${esc(targetName)}</span>${copyButton('translation', 'Copy toàn bộ bản dịch', 'btn-copy-translation')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.tgt || '—')).join('')}</div></section>
+            ${jumpBottomButton}
         </div>`;
 
         const sourceScroll = container.querySelector('[data-log-panel="source"] .session-log-scroll');
@@ -9318,11 +9332,15 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (item) scrollToSegment(item.dataset.segmentIndex);
         });
         const updateScrollButton = () => {
-            if (!timeline || !scrollBottom) return;
-            const isAwayFromBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight > 120;
+            if (!scrollBottom) return;
+            const ref = timeline || sourceScroll;
+            if (!ref) return;
+            const isAwayFromBottom = ref.scrollHeight - ref.scrollTop - ref.clientHeight > 120;
             scrollBottom.classList.toggle('is-visible', isAwayFromBottom);
         };
-        timeline?.addEventListener('scroll', updateScrollButton, { passive: true });
+        [sourceScroll, timeline, targetScroll].forEach(panel => {
+            panel?.addEventListener('scroll', updateScrollButton, { passive: true });
+        });
         scrollBottom?.addEventListener('click', () => {
             [sourceScroll, timeline, targetScroll].forEach(panel => panel?.scrollTo({ top: panel.scrollHeight, behavior: 'smooth' }));
         });

@@ -5549,6 +5549,7 @@ body.resizing-vertical * {
    panes when the meeting has a target language, otherwise the original fills
    the available area. */
 .session-logs-live {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
@@ -5660,23 +5661,6 @@ body.resizing-vertical * {
   background: rgba(168, 85, 247, 0.14);
   border-radius: 4px;
 }
-.session-log-scroll-bottom {
-  position: absolute;
-  right: 7px;
-  bottom: 10px;
-  display: none;
-  width: 28px;
-  height: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 50%;
-  background: var(--md-sys-color-surface-container-high);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
-}
-.session-log-scroll-bottom.is-visible { display: block; }
 .session-log-line {
   display: grid;
   grid-template-columns: 62px minmax(0, 1fr);
