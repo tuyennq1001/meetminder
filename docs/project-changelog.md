@@ -7,6 +7,16 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## v0.9.2 - 2026-09-07
+
+### Fixed
+
+- **Khắc phục lỗi layout hiển thị Logs đơn cột**: Sửa lỗi cột transcript bị co hẹp ngang (width 0px) và lỗi không cuộn được khi xem cuộc họp chỉ có bản gốc (không có bản dịch).
+- **Cân đối thanh điều hướng Subbar**: Thêm co dãn linh hoạt (`flex: 1; overflow: hidden`) cho phần bên trái của thanh subbar (`.session-tab-subbar-left`), tránh tràn giao diện các nút thao tác bên phải trên màn hình hẹp.
+- **Buộc reflow layout khi chuyển tab**: Kích hoạt tính toán lại layout đồng bộ (`getBoundingClientRect`) trên WebKit/Tauri khi chuyển tab Minutes/Notes/Logs, tránh lỗi vỡ hoặc mất kích thước khung xem.
+
+---
+
 ## v0.9.1 - 2026-07-11
 
 ### Fixed — engine picker no longer traps users
