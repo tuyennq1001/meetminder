@@ -10,6 +10,7 @@
 const { invoke } = window.__TAURI__.core;
 
 const AUTOSAVE_MS = 15000;
+const NOTE_AUTOSAVE_MS = 1500;
 
 export class SessionStore {
     constructor() {
@@ -18,6 +19,7 @@ export class SessionStore {
         this.endedAt = null;
         this.title = '';
         this.notes = '';
+        this.noteImages = [];
         this.meetingMinutes = '';
         this.meetingMinutesLang = 'vi';
         this.tags = [];
@@ -41,6 +43,7 @@ export class SessionStore {
         this._persistChain = Promise.resolve();
         this._lastPersistAt = 0;
         this._autosaveTimer = null;
+        this._noteAutosaveTimer = null;
     }
 
     init({ engine, sourceLang, targetLang, tags, customerId, projectId, category, scope } = {}) {
@@ -50,6 +53,7 @@ export class SessionStore {
         this.endedAt = null;
         this.title = '';
         this.notes = '';
+        this.noteImages = [];
         this.meetingMinutes = '';
         this.meetingMinutesLang = 'ja';
         this.meetingMinutesJa = '';
@@ -78,6 +82,9 @@ export class SessionStore {
         this.currentChunk = {
             started_at: new Date().toISOString(),
             ended_at: null,
+            engine: engine || this.engine || 'unknown',
+            source_lang: sourceLang || this.sourceLang || '',
+            target_lang: targetLang || this.targetLang || '',
             segments: [],
         };
     }
@@ -256,6 +263,23 @@ export class SessionStore {
         }
     }
 
+    // Update the live note draft without invoking a backend write for every
+    // keystroke. The short debounce makes note-only meetings recoverable even
+    // when no transcript segment has arrived yet.
+    updateNotesDraft(notes) {
+        this.notes = notes || '';
+        this._mutations++;
+        this._scheduleNotesAutosave();
+    }
+
+    updateTitleDraft(title) {
+        const clean = (title || '').trim().slice(0, 200);
+        if (clean === this.title) return;
+        this.title = clean;
+        this._mutations++;
+        this._scheduleNotesAutosave();
+    }
+
     isEmpty() {
         const chunkSegs = this.chunks.reduce((n, c) => n + c.segments.length, 0);
         const liveSegs = this.currentChunk?.segments.length || 0;
@@ -301,6 +325,18 @@ export class SessionStore {
             clearTimeout(this._autosaveTimer);
             this._autosaveTimer = null;
         }
+        if (this._noteAutosaveTimer) {
+            clearTimeout(this._noteAutosaveTimer);
+            this._noteAutosaveTimer = null;
+        }
+    }
+
+    _scheduleNotesAutosave() {
+        if (this._noteAutosaveTimer) clearTimeout(this._noteAutosaveTimer);
+        this._noteAutosaveTimer = setTimeout(() => {
+            this._noteAutosaveTimer = null;
+            this.persist();
+        }, NOTE_AUTOSAVE_MS);
     }
 
     _generateId() {
@@ -363,6 +399,7 @@ export class SessionStore {
             ended_at: this.endedAt,
             title: this.title || this._autoTitle(),
             notes: this.notes || '',
+            note_images: this.noteImages || [],
             meeting_minutes: this.meetingMinutes || null,
             meeting_minutes_lang: this.meetingMinutesLang || null,
             meeting_minutes_ja: this.meetingMinutesJa || null,

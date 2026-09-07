@@ -11,12 +11,21 @@ use commands::local_tts::LocalTtsState;
 use commands::openai_realtime::OpenAiState;
 use commands::qwen_realtime::QwenState;
 use settings::{Settings, SettingsState};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 // Set once the frontend has flushed the session (or the exit deadline elapsed),
 // so the ExitRequested handler stops preventing exit and the app can quit.
 static EXIT_ALLOWED: AtomicBool = AtomicBool::new(false);
+static LAST_QUIT_REQUEST_MS: AtomicU64 = AtomicU64::new(0);
+const QUIT_CONFIRM_WINDOW_MS: u64 = 2_000;
+
+fn current_time_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
 
 #[tauri::command]
 fn get_platform_info() -> String {
@@ -76,15 +85,8 @@ pub fn run() {
                     .plugin(tauri_plugin_updater::Builder::new().build())?;
                 app.handle().plugin(tauri_plugin_process::init())?;
             }
-            // Dev builds (compiled with the `devtools` feature): auto-open the WebView
-            // inspector so JS/console errors are visible. Never compiled into release.
-            #[cfg(feature = "devtools")]
-            {
-                use tauri::Manager;
-                if let Some(win) = app.get_webview_window("main") {
-                    win.open_devtools();
-                }
-            }
+            // Dev builds keep the WebView inspector available (F12), but do not
+            // open it automatically because it takes over most of the window.
             Ok(())
         })
         .manage(SettingsState(Mutex::new(initial_settings)))
@@ -189,15 +191,23 @@ pub fn run() {
                 if !EXIT_ALLOWED.load(Ordering::SeqCst) {
                     use tauri::{Emitter, Manager};
                     api.prevent_exit();
+                    let now = current_time_ms();
+                    let previous = LAST_QUIT_REQUEST_MS.swap(now, Ordering::SeqCst);
+                    let confirmed = previous > 0 && now.saturating_sub(previous) <= QUIT_CONFIRM_WINDOW_MS;
+
                     if let Some(win) = app_handle.get_webview_window("main") {
-                        let _ = win.emit("app-exit-requested", ());
+                        if confirmed {
+                            let _ = win.emit("app-exit-requested", ());
+                            let handle = app_handle.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_secs(3));
+                                EXIT_ALLOWED.store(true, Ordering::SeqCst);
+                                handle.exit(0);
+                            });
+                        } else {
+                            let _ = win.emit("app-quit-confirmation-needed", ());
+                        }
                     }
-                    let handle = app_handle.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_secs(3));
-                        EXIT_ALLOWED.store(true, Ordering::SeqCst);
-                        handle.exit(0);
-                    });
                 }
             }
         });

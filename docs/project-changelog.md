@@ -7,6 +7,21 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## v0.9.4 - 2026-09-07
+
+### Improved
+
+- **Take Note gọn và dễ thao tác hơn**: Tách thanh metadata và thanh định dạng, đưa nút Copy note xuống thanh định dạng, giữ lại thanh metadata khi thu gọn ghi chú, đồng thời tối ưu kích thước input tên cuộc họp và tag.
+- **Soạn thảo Markdown**: Bổ sung liên kết có thể bấm mở, xử lý Cmd + ← dừng trước dấu đầu dòng, và lưu ảnh paste dưới dạng attachment riêng thay vì chèn chuỗi Base64 dài vào nội dung.
+- **An toàn dữ liệu và phiên bản Dev**: Ghi nhớ ảnh ghi chú trong dữ liệu phiên họp, giữ nội dung transcript khi đổi ngôn ngữ, yêu cầu nhấn Cmd + Q hai lần để thoát, và không tự mở DevTools trong bản Dev.
+
+### Fixed
+
+- Sửa lỗi Enter tạo dòng đôi, lỗi căn lề và vùng click bên phải của input tên cuộc họp.
+- Tách hai pill Cửa sổ và Nguồn trên thanh toolbar Live.
+
+---
+
 ## v0.9.3 - 2026-09-07
 
 ### Improved

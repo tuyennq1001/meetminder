@@ -1167,6 +1167,7 @@ class App {
 
         // macOS Traffic Light Window Controls
         document.getElementById('btn-win-close')?.addEventListener('click', async () => {
+            this._immediateCloseRequested = true;
             await this._saveWindowPosition();
             await this.appWindow.close();
         });
@@ -1179,6 +1180,7 @@ class App {
 
         // Close button (overlay / legacy)
         document.getElementById('btn-close')?.addEventListener('click', async () => {
+            this._immediateCloseRequested = true;
             await this._saveWindowPosition();
             await this.appWindow.close();
         });
@@ -1202,6 +1204,14 @@ class App {
         });
         document.getElementById('btn-quick-swap-lang')?.addEventListener('click', async () => {
             await this._handleQuickLangSwap();
+        });
+
+        // Meeting title is editable directly from the Take Note bar. Keep it
+        // in the live session store and let the short note autosave debounce
+        // persist it without blocking typing.
+        const liveTitleInput = document.getElementById('input-live-meeting-title');
+        liveTitleInput?.addEventListener('input', () => {
+            sessionStore.updateTitleDraft(liveTitleInput.value);
         });
 
         // Font size quick controls
@@ -4221,9 +4231,7 @@ class App {
                 chipsWrap.appendChild(chip);
             }
 
-            inlineInput.placeholder = selectedTags.length === 0
-                ? '#frontend, #api, #sprint-12...'
-                : 'Thêm thẻ...';
+            inlineInput.placeholder = 'Tag';
         };
 
         const highlightMatch = (text, query) => {
@@ -4796,7 +4804,9 @@ class App {
         // Reset live notes to template and clear metadata selectors (keep drawer open by default)
         if (this._liveNotesEditor) {
             const template = this._getNoteTemplate();
+            this._suppressLiveNoteDraft = true;
             this._liveNotesEditor.setContent(template);
+            this._suppressLiveNoteDraft = false;
             sessionStore.notes = template;
         }
         this._resetNoteMetadataSelectors();
@@ -4807,6 +4817,7 @@ class App {
             sourceLang: settings.source_language || 'ja',
             targetLang: settings.target_language || 'vi',
         });
+        this._syncLiveMeetingTitleInput();
         this._updateStartButton();
 
         return hadData ? savedSessionId : null;
@@ -4927,7 +4938,9 @@ class App {
         }
         if (this._liveNotesEditor) {
             const template = this._getNoteTemplate();
+            this._suppressLiveNoteDraft = true;
             this._liveNotesEditor.setContent(template);
+            this._suppressLiveNoteDraft = false;
             sessionStore.notes = template;
         }
         this._resetNoteMetadataSelectors();
@@ -4938,6 +4951,7 @@ class App {
             sourceLang: settings.source_language || 'ja',
             targetLang: settings.target_language || 'vi',
         });
+        this._syncLiveMeetingTitleInput();
         this._updateStatus('idle');
         this._updateStartButton();
         if (this._pendingUpdateReadyBanner) {
@@ -4965,8 +4979,50 @@ class App {
     // Both flush (raced against a 3s deadline so a hung engine can't wedge the
     // app) then exit_app, which force-exits the process cleanly in Rust.
     async _bindCloseHooks() {
+        // macOS normally consumes Cmd+Q before WebView receives it, but keep a
+        // capture-phase guard for environments where the shortcut is delivered
+        // to the frontend (including the Dev app's WebView inspector).
+        window.addEventListener('keydown', async (event) => {
+            if (!event.metaKey || event.key.toLowerCase() !== 'q') return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (this._closing) return;
+
+            const now = Date.now();
+            const confirmed = this._lastQuitShortcutAt
+                && now - this._lastQuitShortcutAt <= 2000;
+            this._lastQuitShortcutAt = now;
+            if (!confirmed) {
+                this._showToast('Nhấn ⌘Q lần nữa trong 2 giây để thoát', 'warning');
+                return;
+            }
+
+            this._closing = true;
+            await Promise.race([this._flushOnExit(), this._sleep(3000)]);
+            try { await invoke('exit_app'); } catch {}
+        }, true);
+
         await this.appWindow.onCloseRequested(async (event) => {
             if (this._closing) return;
+
+            // Cmd+Q can arrive as a window close request on macOS. Mirror the
+            // native ExitRequested guard here as well so that route cannot
+            // bypass the double-press protection.
+            if (!this._immediateCloseRequested) {
+                const now = Date.now();
+                const confirmed = this._lastCloseRequestAt
+                    && now - this._lastCloseRequestAt <= 2000;
+                this._lastCloseRequestAt = now;
+                if (!confirmed) {
+                    event.preventDefault();
+                    this._showToast('Nhấn ⌘Q lần nữa trong 2 giây để thoát', 'warning');
+                    return;
+                }
+            } else {
+                this._immediateCloseRequested = false;
+            }
+
             this._closing = true;
             event.preventDefault();
             await Promise.race([this._flushOnExit(), this._sleep(3000)]);
@@ -4975,6 +5031,10 @@ class App {
             } catch {
                 try { await this.appWindow.destroy(); } catch {}
             }
+        });
+
+        await this.appWindow.listen('app-quit-confirmation-needed', () => {
+            this._showToast('Nhấn ⌘Q lần nữa trong 2 giây để thoát', 'warning');
         });
 
         await this.appWindow.listen('app-exit-requested', async () => {
@@ -5353,6 +5413,18 @@ class App {
             .catch(() => {})
             .then(async () => {
                 if (!this.isRunning || generation !== this._liveEngineGeneration) return;
+                const settings = settingsManager.get();
+
+                // A language change starts a new persisted chunk. This keeps
+                // the old transcript visible and prevents its language from
+                // being misrepresented by the new session-level setting.
+                sessionStore.endChunk();
+                await sessionStore.persist();
+                sessionStore.beginChunk({
+                    engine: this.translationMode,
+                    sourceLang: settings.source_language || this.sessionSourceLang || 'auto',
+                    targetLang: settings.target_language || this.sessionTargetLang || 'none',
+                });
                 if (this.translationMode === 'local') {
                     // Local MLX needs Python process and its audio capture restarted
                     await this._stopTranslationEngine();
@@ -5365,7 +5437,7 @@ class App {
                     await this._disconnectLiveEngine();
                 }
                 if (!this.isRunning || generation !== this._liveEngineGeneration) return;
-                await this._startTranslationEngine(settingsManager.get());
+                await this._startTranslationEngine(settings);
             });
         return this._liveEngineRestart;
     }
@@ -9161,6 +9233,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             this._sessionNotesEditor = new NotesEditor();
             this._sessionNotesEditor.mount(notesCont, {
                 initialContent: '',
+                imageAssets: [],
                 readOnly: true,
                 placeholderText: 'Ghi chú cuộc họp...',
                 onSave: () => {
@@ -10971,6 +11044,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 // 2. Notes Tab
                 const notesText = json.notes || '';
                 if (this._sessionNotesEditor) {
+                    this._sessionNotesEditor.setImageAssets(json.note_images || []);
                     this._sessionNotesEditor.setContent(notesText);
                     this._sessionNotesEditor.setReadOnly(true);
                 }
@@ -11613,15 +11687,38 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         });
 
         if (editorContainer && !this._liveNotesEditor) {
-            this._liveNotesEditor = new NotesEditor();
+            this._liveNotesEditor = new NotesEditor({
+                onImagePasteError: (message) => this._showToast(message, 'warning'),
+                onImagePaste: (asset) => {
+                    sessionStore.noteImages = [
+                        ...(sessionStore.noteImages || []).filter((item) => item.id !== asset.id),
+                        asset,
+                    ];
+                    sessionStore._mutations++;
+                    sessionStore._scheduleNotesAutosave();
+                },
+            });
             this._liveNotesEditor.mount(editorContainer, {
                 initialContent: sessionStore.notes || '',
+                imageAssets: sessionStore.noteImages || [],
                 placeholderText: 'Nhập ghi chú cuộc họp dạng Markdown (Live Preview)...',
+                allowImagePaste: true,
                 onChange: (val) => {
-                    sessionStore.notes = val;
+                    if (this._suppressLiveNoteDraft) {
+                        sessionStore.notes = val;
+                    } else {
+                        sessionStore.updateNotesDraft(val);
+                    }
+                    const usedImageIds = new Set(
+                        Array.from(val.matchAll(/attachment:([a-z0-9_-]+)/gi), (match) => match[1])
+                    );
+                    sessionStore.noteImages = (sessionStore.noteImages || [])
+                        .filter((asset) => usedImageIds.has(asset.id));
                 },
             });
         }
+
+        this._syncLiveMeetingTitleInput();
 
         this._initNotesResize();
         this._initNoteMetadataSelectors();
@@ -11927,7 +12024,13 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         return raw
             .replace(/\{\{date\}\}/g, dateStr)
             .replace(/\{\{time\}\}/g, timeStr)
-            .replace(/\{\{title\}\}/g, sessionStore.sessionTitle || 'MTG Title');
+            .replace(/\{\{title\}\}/g, sessionStore.title || 'MTG Title');
+    }
+
+    _syncLiveMeetingTitleInput() {
+        const input = document.getElementById('input-live-meeting-title');
+        if (!input) return;
+        input.value = sessionStore.title || '';
     }
 
     _toggleNotesDrawer(forceOpen = null, shouldFocus = true) {
@@ -11956,7 +12059,12 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 const content = this._liveNotesEditor.getContent();
                 if (!content || !content.trim()) {
                     const template = this._getNoteTemplate();
-                    this._liveNotesEditor.setContent(template);
+                    this._suppressLiveNoteDraft = true;
+                    try {
+                        this._liveNotesEditor.setContent(template);
+                    } finally {
+                        this._suppressLiveNoteDraft = false;
+                    }
                     sessionStore.notes = template;
                 }
                 if (shouldFocus) {

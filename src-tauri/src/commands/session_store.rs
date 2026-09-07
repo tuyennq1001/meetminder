@@ -62,6 +62,12 @@ pub struct Segment {
 pub struct Chunk {
     pub started_at: String,       // ISO8601
     pub ended_at: Option<String>, // None until chunk closes
+    #[serde(default)]
+    pub engine: String,
+    #[serde(default)]
+    pub source_lang: String,
+    #[serde(default)]
+    pub target_lang: String,
     pub segments: Vec<Segment>,
 }
 
@@ -146,6 +152,8 @@ pub struct SessionData {
     #[serde(default)]
     pub notes: Option<String>,
     #[serde(default)]
+    pub note_images: Vec<NoteImage>,
+    #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
     pub customer_id: Option<String>,
@@ -167,6 +175,13 @@ pub struct SessionData {
     pub meeting_minutes_en: Option<String>,
     #[serde(default)]
     pub retranscribed_at: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct NoteImage {
+    pub id: String,
+    pub alt: String,
+    pub data_url: String,
 }
 
 #[derive(Serialize, Debug)]
@@ -2087,6 +2102,9 @@ pub async fn retranscribe_session_with_gemini(
     data.chunks = vec![Chunk {
         started_at: data.created_at.clone(),
         ended_at: data.ended_at.clone(),
+        engine: "gemini".to_string(),
+        source_lang: data.source_lang.clone(),
+        target_lang: data.target_lang.clone(),
         segments,
     }];
     data.engine = "gemini".to_string();
@@ -2502,15 +2520,19 @@ start_sec must be the approximate offset in seconds.";
         ended_at: Some(now.clone()),
         title: sanitize_title(&final_title),
         engine: "gemini".to_string(),
-        source_lang,
-        target_lang,
+        source_lang: source_lang.clone(),
+        target_lang: target_lang.clone(),
         duration_sec,
         chunks: vec![Chunk {
             started_at: now.clone(),
             ended_at: Some(now.clone()),
+            engine: "gemini".to_string(),
+            source_lang: source_lang.clone(),
+            target_lang: target_lang.clone(),
             segments,
         }],
         notes: None,
+        note_images: Vec::new(),
         tags,
         customer_id,
         project_id,
@@ -2744,6 +2766,9 @@ mod tests {
             chunks: vec![Chunk {
                 started_at: "2026-09-04T12:00:00Z".to_string(),
                 ended_at: Some("2026-09-04T12:05:00Z".to_string()),
+                engine: "gemini".to_string(),
+                source_lang: "ja".to_string(),
+                target_lang: "vi".to_string(),
                 segments: vec![Segment {
                     ts: "00:00:05".to_string(),
                     src: "はじめましょう".to_string(),
@@ -2752,6 +2777,7 @@ mod tests {
                 }],
             }],
             notes: Some("Ghi chú nội bộ".to_string()),
+            note_images: Vec::new(),
             tags: vec!["sprint".to_string(), "planning".to_string()],
             customer_id: None,
             project_id: None,
@@ -2825,6 +2851,9 @@ mod tests {
             chunks: vec![Chunk {
                 started_at: "2026-09-05T00:00:00Z".to_string(),
                 ended_at: None,
+                engine: "gemini".to_string(),
+                source_lang: "ja".to_string(),
+                target_lang: "vi".to_string(),
                 segments: vec![
                     Segment {
                         ts: "00:00:01".to_string(),
@@ -2841,6 +2870,7 @@ mod tests {
                 ],
             }],
             notes: None,
+            note_images: Vec::new(),
             tags: vec![],
             customer_id: None,
             project_id: None,
@@ -2874,6 +2904,9 @@ mod tests {
             chunks: vec![Chunk {
                 started_at: "2026-09-05T00:00:00Z".to_string(),
                 ended_at: None,
+                engine: "gemini".to_string(),
+                source_lang: "ja".to_string(),
+                target_lang: "vi".to_string(),
                 segments: vec![
                     Segment {
                         ts: "00:00:01".to_string(),
@@ -2890,6 +2923,7 @@ mod tests {
                 ],
             }],
             notes: None,
+            note_images: Vec::new(),
             tags: vec![],
             customer_id: None,
             project_id: None,

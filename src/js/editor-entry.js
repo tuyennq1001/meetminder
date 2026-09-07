@@ -126,6 +126,89 @@ class BulletWidget extends WidgetType {
   }
 }
 
+class ImageWidget extends WidgetType {
+  constructor(src, alt) {
+    super();
+    this.src = src;
+    this.alt = alt;
+  }
+
+  eq(other) {
+    return other.src === this.src && other.alt === this.alt;
+  }
+
+  toDOM() {
+    const img = document.createElement('img');
+    img.className = 'cm-md-image';
+    img.src = this.src;
+    img.alt = this.alt || 'Pasted image';
+    img.loading = 'lazy';
+    img.draggable = false;
+    return img;
+  }
+
+  ignoreEvent() {
+    return false;
+  }
+}
+
+function normaliseExternalUrl(rawUrl) {
+  const value = String(rawUrl || '').trim();
+  if (!value || /^attachment:/i.test(value)) return null;
+  if (/^(?:https?:\/\/|mailto:|tel:|#)/i.test(value)) return value;
+  return `https://${value}`;
+}
+
+function openExternalUrl(rawUrl) {
+  const url = normaliseExternalUrl(rawUrl);
+  if (!url || url.startsWith('#')) return;
+
+  try {
+    const opener = window.__TAURI__?.opener;
+    if (opener?.openUrl) {
+      void opener.openUrl(url);
+      return;
+    }
+  } catch (error) {
+    console.warn('[NotesEditor] Failed to open link with Tauri opener:', error);
+  }
+
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+class LinkWidget extends WidgetType {
+  constructor(label, url) {
+    super();
+    this.label = label;
+    this.url = url;
+  }
+
+  eq(other) {
+    return other.label === this.label && other.url === this.url;
+  }
+
+  toDOM() {
+    const link = document.createElement('a');
+    link.className = 'cm-md-link';
+    link.textContent = this.label;
+    link.href = normaliseExternalUrl(this.url) || '#';
+    link.title = this.url;
+    link.rel = 'noopener noreferrer';
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openExternalUrl(this.url);
+    });
+    return link;
+  }
+
+  ignoreEvent(event) {
+    return event.type === 'click' || event.type === 'mousedown';
+  }
+}
+
+const refreshImageAssetsEffect = StateEffect.define();
+
 function escapeTableHtml(text) {
   return text
     .replace(/&/g, '&amp;')
@@ -281,14 +364,18 @@ function isLineSelected(selection, line) {
   return false;
 }
 
-const livePreviewPlugin = ViewPlugin.fromClass(
-  class {
+function createLivePreviewPlugin(resolveImageAsset = () => null) {
+  return ViewPlugin.fromClass(
+    class {
     constructor(view) {
       this.decorations = this.buildDecorations(view);
     }
 
     update(update) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
+      const imageAssetsChanged = update.transactions.some((transaction) =>
+        transaction.effects.some((effect) => effect.is(refreshImageAssetsEffect))
+      );
+      if (update.docChanged || update.selectionSet || update.viewportChanged || imageAssetsChanged) {
         this.decorations = this.buildDecorations(update.view);
       }
     }
@@ -520,6 +607,44 @@ const livePreviewPlugin = ViewPlugin.fromClass(
               return false;
             }
 
+            // Render links as clickable labels while the line is not being edited.
+            if (nodeName === 'Link') {
+              const line = doc.lineAt(nodeFrom);
+              const isFocused = !isReadOnly && isLineSelected(selection, line);
+              if (!isFocused) {
+                const raw = doc.sliceString(nodeFrom, nodeTo);
+                const match = raw.match(/^\[([\s\S]*?)\]\(([^)\s]+)(?:\s+["'][\s\S]*?["'])?\)$/);
+                if (match) {
+                  decos.push({
+                    from: nodeFrom,
+                    to: nodeTo,
+                    deco: Decoration.replace({ widget: new LinkWidget(match[1], match[2]) }),
+                  });
+                }
+              }
+              return false;
+            }
+
+            // Render pasted images while the line is not being edited. New
+            // images use a short attachment token; legacy notes may still use
+            // an inline data URI.
+            if (nodeName === 'Image' && !isSelectionOverlapping(selection, nodeFrom, nodeTo)) {
+              const raw = doc.sliceString(nodeFrom, nodeTo);
+              const legacyMatch = raw.match(/^!\[([^\]]*)\]\((data:image\/[a-z0-9.+-]+;base64,[^)]+)\)$/i);
+              const attachmentMatch = raw.match(/^!\[([^\]]*)\]\(attachment:([a-z0-9_-]+)\)$/i);
+              const asset = attachmentMatch ? resolveImageAsset(attachmentMatch[2]) : null;
+              const src = legacyMatch?.[2] || asset?.data_url || asset?.dataUrl;
+              const alt = legacyMatch?.[1] || attachmentMatch?.[1];
+              if (src && alt !== undefined) {
+                decos.push({
+                  from: nodeFrom,
+                  to: nodeTo,
+                  deco: Decoration.replace({ widget: new ImageWidget(src, alt) }),
+                });
+              }
+              return false;
+            }
+
             // ─── 8. Horizontal Rules (---) ───
             if (nodeName === 'HorizontalRule') {
               const line = doc.lineAt(nodeFrom);
@@ -588,7 +713,8 @@ const livePreviewPlugin = ViewPlugin.fromClass(
   {
     decorations: (v) => v.decorations,
   }
-);
+  );
+}
 
 // ─── Smart List Keymaps (Enter, Tab, Shift-Tab) ────────────────
 
@@ -718,6 +844,23 @@ const smartListKeymap = [
     },
   },
   {
+    // On list items, Cmd/Ctrl+Left should land before the list marker rather
+    // than at the absolute start of the line (inside the indentation).
+    key: 'Mod-ArrowLeft',
+    run: (view) => {
+      const { state, dispatch } = view;
+      const { main } = state.selection;
+      if (!main.empty) return false;
+      const line = state.doc.lineAt(main.head);
+      const match = line.text.match(/^(\s*)([-*+]|\d+\.)\s+/);
+      if (!match) return false;
+      const markerStart = line.from + match[1].length;
+      if (main.head <= markerStart) return false;
+      dispatch({ selection: { anchor: markerStart } });
+      return true;
+    },
+  },
+  {
     key: 'Mod-b',
     run: (view) => {
       wrapSelection(view, '**', '**');
@@ -738,17 +881,36 @@ const smartListKeymap = [
       const { main } = state.selection;
       const selText = state.sliceDoc(main.from, main.to);
       if (selText) {
-        wrapSelection(view, '[', '](https://)');
+        const insert = `[${selText}](https://)`;
+        const urlStart = main.from + selText.length + 3;
+        view.dispatch({
+          changes: { from: main.from, to: main.to, insert },
+          selection: { anchor: urlStart, head: urlStart + 8 },
+        });
       } else {
         view.dispatch({
-          changes: { from: main.from, to: main.to, insert: '[tiêu đề](url)' },
-          selection: { anchor: main.from + 1, head: main.from + 8 },
+          changes: { from: main.from, to: main.to, insert: '[tiêu đề](https://)' },
+          selection: { anchor: main.from + 11, head: main.from + 19 },
         });
       }
       return true;
     },
   },
 ];
+
+function findMarkdownLinkAt(state, position) {
+  const line = state.doc.lineAt(position);
+  const pattern = /\[([^\]]+)\]\(([^)\s]+)(?:\s+["'][^)]*["'])?\)/g;
+  let match;
+  while ((match = pattern.exec(line.text))) {
+    const from = line.from + match.index;
+    const to = from + match[0].length;
+    if (position >= from && position <= to) {
+      return { from, to, url: match[2] };
+    }
+  }
+  return null;
+}
 
 function wrapSelection(view, before, after) {
   const { state, dispatch } = view;
@@ -848,13 +1010,19 @@ export class NotesEditor {
     this.readOnlyCompartment = new Compartment();
     this.placeholderCompartment = new Compartment();
     this.lineWrappingCompartment = new Compartment();
+    this.imageAssets = new Map();
   }
 
-  mount(container, { initialContent = '', readOnly = false, placeholderText = 'Nhập ghi chú...', lineWrapping = true, onChange = null, onSave = null, onCancel = null } = {}) {
+  mount(container, { initialContent = '', imageAssets = [], readOnly = false, placeholderText = 'Nhập ghi chú...', lineWrapping = true, onChange = null, onSave = null, onCancel = null, allowImagePaste = false } = {}) {
     this.container = container;
     this.onChange = onChange;
     this.onSave = onSave;
     this.onCancel = onCancel;
+    this.imageAssets = new Map(
+      (Array.isArray(imageAssets) ? imageAssets : [])
+        .filter((asset) => asset && asset.id)
+        .map((asset) => [asset.id, asset])
+    );
 
     const actionKeymap = [];
     if (this.onSave) {
@@ -884,11 +1052,59 @@ export class NotesEditor {
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(markdownHighlightStyle),
         tableDecorationsField,
-        livePreviewPlugin,
-        keymap.of([...actionKeymap, ...smartListKeymap, ...defaultKeymap, ...historyKeymap]),
+        createLivePreviewPlugin((id) => this.imageAssets.get(id)),
+        Prec.highest(keymap.of(smartListKeymap)),
+        keymap.of([...actionKeymap, ...defaultKeymap, ...historyKeymap]),
         history(),
         drawSelection(),
         dropCursor(),
+        EditorView.domEventHandlers({
+          click: (event, view) => {
+            if (!event.metaKey && !event.ctrlKey) return false;
+            const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+            const link = pos === null ? null : findMarkdownLinkAt(view.state, pos);
+            if (!link) return false;
+            event.preventDefault();
+            event.stopPropagation();
+            openExternalUrl(link.url);
+            return true;
+          },
+        }),
+        ...(allowImagePaste ? [EditorView.domEventHandlers({
+          paste: (event, view) => {
+            const items = Array.from(event.clipboardData?.items || []);
+            const imageItem = items.find(item => item.kind === 'file' && /^image\//i.test(item.type));
+            if (!imageItem) return false;
+            const file = imageItem.getAsFile();
+            if (!file) return false;
+            if (file.size > 2 * 1024 * 1024) {
+              this.options?.onImagePasteError?.('Ảnh quá lớn (tối đa 2 MB)');
+              return true;
+            }
+            event.preventDefault();
+            const reader = new FileReader();
+            reader.onload = () => {
+              const { main } = view.state.selection;
+              const alt = (file.name || 'Pasted image').replace(/[\[\]]/g, '').replace(/\r?\n/g, ' ').trim();
+              const id = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+              const asset = {
+                id,
+                alt: alt || 'Pasted image',
+                data_url: String(reader.result || ''),
+              };
+              this.imageAssets.set(id, asset);
+              this.options?.onImagePaste?.(asset);
+              const text = `![${asset.alt}](attachment:${id})`;
+              view.dispatch({
+                changes: { from: main.from, to: main.to, insert: text },
+                selection: { anchor: main.from + text.length },
+              });
+              view.focus();
+            };
+            reader.readAsDataURL(file);
+            return true;
+          },
+        })] : []),
         this.readOnlyCompartment.of(EditorState.readOnly.of(readOnly)),
         this.placeholderCompartment.of(placeholder(placeholderText)),
         EditorView.updateListener.of((update) => {
@@ -905,6 +1121,21 @@ export class NotesEditor {
     });
 
     return this;
+  }
+
+  setImageAssets(assets = []) {
+    this.imageAssets = new Map(
+      (Array.isArray(assets) ? assets : [])
+        .filter((asset) => asset && asset.id)
+        .map((asset) => [asset.id, asset])
+    );
+    if (this.view) {
+      this.view.dispatch({ effects: refreshImageAssetsEffect.of(null) });
+    }
+  }
+
+  getImageAssets() {
+    return Array.from(this.imageAssets.values());
   }
 
   setLineWrapping(enabled) {
@@ -1011,6 +1242,16 @@ export class NotesEditor {
           wrapSelection(view, '`', '`');
         }
         break;
+      case 'link': {
+        const label = selText || 'liên kết';
+        const insert = `[${label}](https://)`;
+        const urlStart = main.from + label.length + 3;
+        dispatch({
+          changes: { from: main.from, to: main.to, insert },
+          selection: { anchor: urlStart, head: urlStart + 8 },
+        });
+        break;
+      }
       default:
         break;
     }

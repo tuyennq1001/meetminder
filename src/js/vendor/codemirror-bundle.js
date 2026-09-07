@@ -25133,6 +25133,76 @@ var BulletWidget = class extends WidgetType {
     return false;
   }
 };
+var ImageWidget = class extends WidgetType {
+  constructor(src, alt) {
+    super();
+    this.src = src;
+    this.alt = alt;
+  }
+  eq(other) {
+    return other.src === this.src && other.alt === this.alt;
+  }
+  toDOM() {
+    const img = document.createElement("img");
+    img.className = "cm-md-image";
+    img.src = this.src;
+    img.alt = this.alt || "Pasted image";
+    img.loading = "lazy";
+    img.draggable = false;
+    return img;
+  }
+  ignoreEvent() {
+    return false;
+  }
+};
+function normaliseExternalUrl(rawUrl) {
+  const value = String(rawUrl || "").trim();
+  if (!value || /^attachment:/i.test(value)) return null;
+  if (/^(?:https?:\/\/|mailto:|tel:|#)/i.test(value)) return value;
+  return `https://${value}`;
+}
+function openExternalUrl(rawUrl) {
+  const url = normaliseExternalUrl(rawUrl);
+  if (!url || url.startsWith("#")) return;
+  try {
+    const opener = window.__TAURI__?.opener;
+    if (opener?.openUrl) {
+      void opener.openUrl(url);
+      return;
+    }
+  } catch (error) {
+    console.warn("[NotesEditor] Failed to open link with Tauri opener:", error);
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+var LinkWidget = class extends WidgetType {
+  constructor(label, url) {
+    super();
+    this.label = label;
+    this.url = url;
+  }
+  eq(other) {
+    return other.label === this.label && other.url === this.url;
+  }
+  toDOM() {
+    const link = document.createElement("a");
+    link.className = "cm-md-link";
+    link.textContent = this.label;
+    link.href = normaliseExternalUrl(this.url) || "#";
+    link.title = this.url;
+    link.rel = "noopener noreferrer";
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openExternalUrl(this.url);
+    });
+    return link;
+  }
+  ignoreEvent(event) {
+    return event.type === "click" || event.type === "mousedown";
+  }
+};
+var refreshImageAssetsEffect = StateEffect.define();
 function escapeTableHtml(text) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -25261,280 +25331,317 @@ function isLineSelected(selection, line) {
   }
   return false;
 }
-var livePreviewPlugin = ViewPlugin.fromClass(
-  class {
-    constructor(view) {
-      this.decorations = this.buildDecorations(view);
-    }
-    update(update) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
-        this.decorations = this.buildDecorations(update.view);
+function createLivePreviewPlugin(resolveImageAsset = () => null) {
+  return ViewPlugin.fromClass(
+    class {
+      constructor(view) {
+        this.decorations = this.buildDecorations(view);
       }
-    }
-    buildDecorations(view) {
-      const { doc: doc2, selection } = view.state;
-      const isReadOnly = Boolean(view.state.readOnly);
-      const tree = syntaxTree(view.state);
-      const decos = [];
-      const decoratedLines = /* @__PURE__ */ new Set();
-      for (const { from, to } of view.visibleRanges) {
-        tree.iterate({
-          from,
-          to,
-          enter: (node) => {
-            const nodeName = node.name;
-            const nodeFrom = node.from;
-            const nodeTo = node.to;
-            if (nodeName.startsWith("ATXHeading")) {
-              const levelStr = nodeName.replace("ATXHeading", "");
-              const level = parseInt(levelStr, 10) || 1;
-              const line = doc2.lineAt(nodeFrom);
-              const isFocused = !isReadOnly && isLineSelected(selection, line);
-              if (!decoratedLines.has(line.from)) {
-                decoratedLines.add(line.from);
-                decos.push({
-                  from: line.from,
-                  to: line.from,
-                  deco: Decoration.line({
-                    class: `cm-md-heading cm-md-heading-${level}${isFocused ? " cm-md-heading-active" : ""}`
-                  })
-                });
-              }
-              if (!isFocused) {
-                const lineText = line.text;
-                const match = lineText.match(/^(#{1,6}\s+)/);
-                if (match) {
-                  const markerLen = match[1].length;
+      update(update) {
+        const imageAssetsChanged = update.transactions.some(
+          (transaction) => transaction.effects.some((effect) => effect.is(refreshImageAssetsEffect))
+        );
+        if (update.docChanged || update.selectionSet || update.viewportChanged || imageAssetsChanged) {
+          this.decorations = this.buildDecorations(update.view);
+        }
+      }
+      buildDecorations(view) {
+        const { doc: doc2, selection } = view.state;
+        const isReadOnly = Boolean(view.state.readOnly);
+        const tree = syntaxTree(view.state);
+        const decos = [];
+        const decoratedLines = /* @__PURE__ */ new Set();
+        for (const { from, to } of view.visibleRanges) {
+          tree.iterate({
+            from,
+            to,
+            enter: (node) => {
+              const nodeName = node.name;
+              const nodeFrom = node.from;
+              const nodeTo = node.to;
+              if (nodeName.startsWith("ATXHeading")) {
+                const levelStr = nodeName.replace("ATXHeading", "");
+                const level = parseInt(levelStr, 10) || 1;
+                const line = doc2.lineAt(nodeFrom);
+                const isFocused = !isReadOnly && isLineSelected(selection, line);
+                if (!decoratedLines.has(line.from)) {
+                  decoratedLines.add(line.from);
                   decos.push({
                     from: line.from,
-                    to: line.from + markerLen,
-                    deco: Decoration.replace({ widget: new EmptyWidget() })
+                    to: line.from,
+                    deco: Decoration.line({
+                      class: `cm-md-heading cm-md-heading-${level}${isFocused ? " cm-md-heading-active" : ""}`
+                    })
                   });
                 }
-              }
-              return;
-            }
-            if (nodeName === "StrongEmphasis") {
-              const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
-              const markerLen = 2;
-              if (nodeTo - nodeFrom >= markerLen * 2) {
-                if (!isOverlapping) {
-                  decos.push({
-                    from: nodeFrom,
-                    to: nodeFrom + markerLen,
-                    deco: Decoration.replace({ widget: new EmptyWidget() })
-                  });
-                  decos.push({
-                    from: nodeFrom + markerLen,
-                    to: nodeTo - markerLen,
-                    deco: Decoration.mark({ class: "cm-md-bold" })
-                  });
-                  decos.push({
-                    from: nodeTo - markerLen,
-                    to: nodeTo,
-                    deco: Decoration.replace({ widget: new EmptyWidget() })
-                  });
-                } else {
-                  decos.push({
-                    from: nodeFrom,
-                    to: nodeTo,
-                    deco: Decoration.mark({ class: "cm-md-bold" })
-                  });
-                }
-              }
-              return false;
-            }
-            if (nodeName === "Emphasis") {
-              const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
-              const markerLen = 1;
-              if (nodeTo - nodeFrom >= markerLen * 2) {
-                if (!isOverlapping) {
-                  decos.push({
-                    from: nodeFrom,
-                    to: nodeFrom + markerLen,
-                    deco: Decoration.replace({ widget: new EmptyWidget() })
-                  });
-                  decos.push({
-                    from: nodeFrom + markerLen,
-                    to: nodeTo - markerLen,
-                    deco: Decoration.mark({ class: "cm-md-italic" })
-                  });
-                  decos.push({
-                    from: nodeTo - markerLen,
-                    to: nodeTo,
-                    deco: Decoration.replace({ widget: new EmptyWidget() })
-                  });
-                } else {
-                  decos.push({
-                    from: nodeFrom,
-                    to: nodeTo,
-                    deco: Decoration.mark({ class: "cm-md-italic" })
-                  });
-                }
-              }
-              return false;
-            }
-            if (nodeName === "Strikethrough") {
-              const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
-              const markerLen = 2;
-              if (nodeTo - nodeFrom >= markerLen * 2) {
-                if (!isOverlapping) {
-                  decos.push({
-                    from: nodeFrom,
-                    to: nodeFrom + markerLen,
-                    deco: Decoration.replace({ widget: new EmptyWidget() })
-                  });
-                  decos.push({
-                    from: nodeFrom + markerLen,
-                    to: nodeTo - markerLen,
-                    deco: Decoration.mark({ class: "cm-md-strikethrough" })
-                  });
-                  decos.push({
-                    from: nodeTo - markerLen,
-                    to: nodeTo,
-                    deco: Decoration.replace({ widget: new EmptyWidget() })
-                  });
-                } else {
-                  decos.push({
-                    from: nodeFrom,
-                    to: nodeTo,
-                    deco: Decoration.mark({ class: "cm-md-strikethrough" })
-                  });
-                }
-              }
-              return false;
-            }
-            if (nodeName === "InlineCode") {
-              const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
-              if (nodeTo - nodeFrom >= 2) {
-                if (!isOverlapping) {
-                  decos.push({
-                    from: nodeFrom,
-                    to: nodeFrom + 1,
-                    deco: Decoration.replace({ widget: new EmptyWidget() })
-                  });
-                  decos.push({
-                    from: nodeFrom + 1,
-                    to: nodeTo - 1,
-                    deco: Decoration.mark({ class: "cm-md-inline-code" })
-                  });
-                  decos.push({
-                    from: nodeTo - 1,
-                    to: nodeTo,
-                    deco: Decoration.replace({ widget: new EmptyWidget() })
-                  });
-                } else {
-                  decos.push({
-                    from: nodeFrom,
-                    to: nodeTo,
-                    deco: Decoration.mark({ class: "cm-md-inline-code" })
-                  });
-                }
-              }
-              return false;
-            }
-            if (nodeName === "TaskMarker") {
-              const text = doc2.sliceString(nodeFrom, nodeTo);
-              const checked = /\[[xX]\]/.test(text);
-              decos.push({
-                from: nodeFrom,
-                to: nodeTo,
-                deco: Decoration.replace({
-                  widget: new TaskCheckboxWidget(checked, nodeFrom, nodeTo, isReadOnly)
-                })
-              });
-              if (checked) {
-                const line = doc2.lineAt(nodeFrom);
-                decos.push({
-                  from: nodeTo,
-                  to: line.to,
-                  deco: Decoration.mark({ class: "cm-md-task-done" })
-                });
-              }
-              return false;
-            }
-            if (nodeName === "ListMark") {
-              const text = doc2.sliceString(nodeFrom, nodeTo);
-              if (/^[-*+]$/.test(text)) {
-                const line = doc2.lineAt(nodeFrom);
-                const afterMarker = doc2.sliceString(nodeTo, line.to);
-                const isTask = /^\s*\[[ xX]\]/.test(afterMarker);
-                if (!isTask) {
-                  const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
-                  if (!isOverlapping) {
-                    const leadingSpaces = (line.text.match(/^(\s*)/)?.[1] || "").length;
-                    const level = Math.floor(leadingSpaces / 4);
+                if (!isFocused) {
+                  const lineText = line.text;
+                  const match = lineText.match(/^(#{1,6}\s+)/);
+                  if (match) {
+                    const markerLen = match[1].length;
                     decos.push({
-                      from: nodeFrom,
-                      to: nodeTo,
-                      deco: Decoration.replace({
-                        widget: new BulletWidget(level)
-                      })
+                      from: line.from,
+                      to: line.from + markerLen,
+                      deco: Decoration.replace({ widget: new EmptyWidget() })
                     });
                   }
                 }
+                return;
               }
-              return false;
-            }
-            if (nodeName === "HorizontalRule") {
-              const line = doc2.lineAt(nodeFrom);
-              const isFocused = !isReadOnly && isLineSelected(selection, line);
-              if (!isFocused) {
+              if (nodeName === "StrongEmphasis") {
+                const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
+                const markerLen = 2;
+                if (nodeTo - nodeFrom >= markerLen * 2) {
+                  if (!isOverlapping) {
+                    decos.push({
+                      from: nodeFrom,
+                      to: nodeFrom + markerLen,
+                      deco: Decoration.replace({ widget: new EmptyWidget() })
+                    });
+                    decos.push({
+                      from: nodeFrom + markerLen,
+                      to: nodeTo - markerLen,
+                      deco: Decoration.mark({ class: "cm-md-bold" })
+                    });
+                    decos.push({
+                      from: nodeTo - markerLen,
+                      to: nodeTo,
+                      deco: Decoration.replace({ widget: new EmptyWidget() })
+                    });
+                  } else {
+                    decos.push({
+                      from: nodeFrom,
+                      to: nodeTo,
+                      deco: Decoration.mark({ class: "cm-md-bold" })
+                    });
+                  }
+                }
+                return false;
+              }
+              if (nodeName === "Emphasis") {
+                const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
+                const markerLen = 1;
+                if (nodeTo - nodeFrom >= markerLen * 2) {
+                  if (!isOverlapping) {
+                    decos.push({
+                      from: nodeFrom,
+                      to: nodeFrom + markerLen,
+                      deco: Decoration.replace({ widget: new EmptyWidget() })
+                    });
+                    decos.push({
+                      from: nodeFrom + markerLen,
+                      to: nodeTo - markerLen,
+                      deco: Decoration.mark({ class: "cm-md-italic" })
+                    });
+                    decos.push({
+                      from: nodeTo - markerLen,
+                      to: nodeTo,
+                      deco: Decoration.replace({ widget: new EmptyWidget() })
+                    });
+                  } else {
+                    decos.push({
+                      from: nodeFrom,
+                      to: nodeTo,
+                      deco: Decoration.mark({ class: "cm-md-italic" })
+                    });
+                  }
+                }
+                return false;
+              }
+              if (nodeName === "Strikethrough") {
+                const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
+                const markerLen = 2;
+                if (nodeTo - nodeFrom >= markerLen * 2) {
+                  if (!isOverlapping) {
+                    decos.push({
+                      from: nodeFrom,
+                      to: nodeFrom + markerLen,
+                      deco: Decoration.replace({ widget: new EmptyWidget() })
+                    });
+                    decos.push({
+                      from: nodeFrom + markerLen,
+                      to: nodeTo - markerLen,
+                      deco: Decoration.mark({ class: "cm-md-strikethrough" })
+                    });
+                    decos.push({
+                      from: nodeTo - markerLen,
+                      to: nodeTo,
+                      deco: Decoration.replace({ widget: new EmptyWidget() })
+                    });
+                  } else {
+                    decos.push({
+                      from: nodeFrom,
+                      to: nodeTo,
+                      deco: Decoration.mark({ class: "cm-md-strikethrough" })
+                    });
+                  }
+                }
+                return false;
+              }
+              if (nodeName === "InlineCode") {
+                const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
+                if (nodeTo - nodeFrom >= 2) {
+                  if (!isOverlapping) {
+                    decos.push({
+                      from: nodeFrom,
+                      to: nodeFrom + 1,
+                      deco: Decoration.replace({ widget: new EmptyWidget() })
+                    });
+                    decos.push({
+                      from: nodeFrom + 1,
+                      to: nodeTo - 1,
+                      deco: Decoration.mark({ class: "cm-md-inline-code" })
+                    });
+                    decos.push({
+                      from: nodeTo - 1,
+                      to: nodeTo,
+                      deco: Decoration.replace({ widget: new EmptyWidget() })
+                    });
+                  } else {
+                    decos.push({
+                      from: nodeFrom,
+                      to: nodeTo,
+                      deco: Decoration.mark({ class: "cm-md-inline-code" })
+                    });
+                  }
+                }
+                return false;
+              }
+              if (nodeName === "TaskMarker") {
+                const text = doc2.sliceString(nodeFrom, nodeTo);
+                const checked = /\[[xX]\]/.test(text);
                 decos.push({
                   from: nodeFrom,
                   to: nodeTo,
                   deco: Decoration.replace({
-                    widget: new HorizontalRuleWidget()
+                    widget: new TaskCheckboxWidget(checked, nodeFrom, nodeTo, isReadOnly)
                   })
                 });
-              }
-              return false;
-            }
-            if (nodeName === "Blockquote") {
-              const line = doc2.lineAt(nodeFrom);
-              if (!decoratedLines.has(line.from)) {
-                decoratedLines.add(line.from);
-                decos.push({
-                  from: line.from,
-                  to: line.from,
-                  deco: Decoration.line({ class: "cm-md-blockquote" })
-                });
-              }
-            }
-            if (nodeName === "FencedCode" || nodeName === "CodeBlock") {
-              const startLine = doc2.lineAt(nodeFrom).number;
-              const endLine = doc2.lineAt(nodeTo).number;
-              for (let l = startLine; l <= endLine; l++) {
-                const lineObj = doc2.line(l);
-                if (!decoratedLines.has(lineObj.from)) {
-                  decoratedLines.add(lineObj.from);
+                if (checked) {
+                  const line = doc2.lineAt(nodeFrom);
                   decos.push({
-                    from: lineObj.from,
-                    to: lineObj.from,
-                    deco: Decoration.line({ class: "cm-md-code-block-line" })
+                    from: nodeTo,
+                    to: line.to,
+                    deco: Decoration.mark({ class: "cm-md-task-done" })
+                  });
+                }
+                return false;
+              }
+              if (nodeName === "ListMark") {
+                const text = doc2.sliceString(nodeFrom, nodeTo);
+                if (/^[-*+]$/.test(text)) {
+                  const line = doc2.lineAt(nodeFrom);
+                  const afterMarker = doc2.sliceString(nodeTo, line.to);
+                  const isTask = /^\s*\[[ xX]\]/.test(afterMarker);
+                  if (!isTask) {
+                    const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
+                    if (!isOverlapping) {
+                      const leadingSpaces = (line.text.match(/^(\s*)/)?.[1] || "").length;
+                      const level = Math.floor(leadingSpaces / 4);
+                      decos.push({
+                        from: nodeFrom,
+                        to: nodeTo,
+                        deco: Decoration.replace({
+                          widget: new BulletWidget(level)
+                        })
+                      });
+                    }
+                  }
+                }
+                return false;
+              }
+              if (nodeName === "Link") {
+                const line = doc2.lineAt(nodeFrom);
+                const isFocused = !isReadOnly && isLineSelected(selection, line);
+                if (!isFocused) {
+                  const raw = doc2.sliceString(nodeFrom, nodeTo);
+                  const match = raw.match(/^\[([\s\S]*?)\]\(([^)\s]+)(?:\s+["'][\s\S]*?["'])?\)$/);
+                  if (match) {
+                    decos.push({
+                      from: nodeFrom,
+                      to: nodeTo,
+                      deco: Decoration.replace({ widget: new LinkWidget(match[1], match[2]) })
+                    });
+                  }
+                }
+                return false;
+              }
+              if (nodeName === "Image" && !isSelectionOverlapping(selection, nodeFrom, nodeTo)) {
+                const raw = doc2.sliceString(nodeFrom, nodeTo);
+                const legacyMatch = raw.match(/^!\[([^\]]*)\]\((data:image\/[a-z0-9.+-]+;base64,[^)]+)\)$/i);
+                const attachmentMatch = raw.match(/^!\[([^\]]*)\]\(attachment:([a-z0-9_-]+)\)$/i);
+                const asset = attachmentMatch ? resolveImageAsset(attachmentMatch[2]) : null;
+                const src = legacyMatch?.[2] || asset?.data_url || asset?.dataUrl;
+                const alt = legacyMatch?.[1] || attachmentMatch?.[1];
+                if (src && alt !== void 0) {
+                  decos.push({
+                    from: nodeFrom,
+                    to: nodeTo,
+                    deco: Decoration.replace({ widget: new ImageWidget(src, alt) })
+                  });
+                }
+                return false;
+              }
+              if (nodeName === "HorizontalRule") {
+                const line = doc2.lineAt(nodeFrom);
+                const isFocused = !isReadOnly && isLineSelected(selection, line);
+                if (!isFocused) {
+                  decos.push({
+                    from: nodeFrom,
+                    to: nodeTo,
+                    deco: Decoration.replace({
+                      widget: new HorizontalRuleWidget()
+                    })
+                  });
+                }
+                return false;
+              }
+              if (nodeName === "Blockquote") {
+                const line = doc2.lineAt(nodeFrom);
+                if (!decoratedLines.has(line.from)) {
+                  decoratedLines.add(line.from);
+                  decos.push({
+                    from: line.from,
+                    to: line.from,
+                    deco: Decoration.line({ class: "cm-md-blockquote" })
                   });
                 }
               }
+              if (nodeName === "FencedCode" || nodeName === "CodeBlock") {
+                const startLine = doc2.lineAt(nodeFrom).number;
+                const endLine = doc2.lineAt(nodeTo).number;
+                for (let l = startLine; l <= endLine; l++) {
+                  const lineObj = doc2.line(l);
+                  if (!decoratedLines.has(lineObj.from)) {
+                    decoratedLines.add(lineObj.from);
+                    decos.push({
+                      from: lineObj.from,
+                      to: lineObj.from,
+                      deco: Decoration.line({ class: "cm-md-code-block-line" })
+                    });
+                  }
+                }
+              }
             }
-          }
+          });
+        }
+        decos.sort((a, b) => {
+          if (a.from !== b.from) return a.from - b.from;
+          if (a.to !== b.to) return a.to - b.to;
+          return 0;
         });
+        const builder = new RangeSetBuilder();
+        for (const item of decos) {
+          builder.add(item.from, item.to, item.deco);
+        }
+        return builder.finish();
       }
-      decos.sort((a, b) => {
-        if (a.from !== b.from) return a.from - b.from;
-        if (a.to !== b.to) return a.to - b.to;
-        return 0;
-      });
-      const builder = new RangeSetBuilder();
-      for (const item of decos) {
-        builder.add(item.from, item.to, item.deco);
-      }
-      return builder.finish();
+    },
+    {
+      decorations: (v) => v.decorations
     }
-  },
-  {
-    decorations: (v) => v.decorations
-  }
-);
+  );
+}
 var smartListKeymap = [
   {
     key: "Enter",
@@ -25648,6 +25755,23 @@ ${nextPrefix}` },
     }
   },
   {
+    // On list items, Cmd/Ctrl+Left should land before the list marker rather
+    // than at the absolute start of the line (inside the indentation).
+    key: "Mod-ArrowLeft",
+    run: (view) => {
+      const { state, dispatch } = view;
+      const { main } = state.selection;
+      if (!main.empty) return false;
+      const line = state.doc.lineAt(main.head);
+      const match = line.text.match(/^(\s*)([-*+]|\d+\.)\s+/);
+      if (!match) return false;
+      const markerStart = line.from + match[1].length;
+      if (main.head <= markerStart) return false;
+      dispatch({ selection: { anchor: markerStart } });
+      return true;
+    }
+  },
+  {
     key: "Mod-b",
     run: (view) => {
       wrapSelection(view, "**", "**");
@@ -25668,17 +25792,35 @@ ${nextPrefix}` },
       const { main } = state.selection;
       const selText = state.sliceDoc(main.from, main.to);
       if (selText) {
-        wrapSelection(view, "[", "](https://)");
+        const insert2 = `[${selText}](https://)`;
+        const urlStart = main.from + selText.length + 3;
+        view.dispatch({
+          changes: { from: main.from, to: main.to, insert: insert2 },
+          selection: { anchor: urlStart, head: urlStart + 8 }
+        });
       } else {
         view.dispatch({
-          changes: { from: main.from, to: main.to, insert: "[ti\xEAu \u0111\u1EC1](url)" },
-          selection: { anchor: main.from + 1, head: main.from + 8 }
+          changes: { from: main.from, to: main.to, insert: "[ti\xEAu \u0111\u1EC1](https://)" },
+          selection: { anchor: main.from + 11, head: main.from + 19 }
         });
       }
       return true;
     }
   }
 ];
+function findMarkdownLinkAt(state, position) {
+  const line = state.doc.lineAt(position);
+  const pattern = /\[([^\]]+)\]\(([^)\s]+)(?:\s+["'][^)]*["'])?\)/g;
+  let match;
+  while (match = pattern.exec(line.text)) {
+    const from = line.from + match.index;
+    const to = from + match[0].length;
+    if (position >= from && position <= to) {
+      return { from, to, url: match[2] };
+    }
+  }
+  return null;
+}
 function wrapSelection(view, before, after) {
   const { state, dispatch } = view;
   const { main } = state.selection;
@@ -25769,12 +25911,16 @@ var NotesEditor = class {
     this.readOnlyCompartment = new Compartment();
     this.placeholderCompartment = new Compartment();
     this.lineWrappingCompartment = new Compartment();
+    this.imageAssets = /* @__PURE__ */ new Map();
   }
-  mount(container, { initialContent = "", readOnly: readOnly2 = false, placeholderText = "Nh\u1EADp ghi ch\xFA...", lineWrapping = true, onChange = null, onSave = null, onCancel = null } = {}) {
+  mount(container, { initialContent = "", imageAssets = [], readOnly: readOnly2 = false, placeholderText = "Nh\u1EADp ghi ch\xFA...", lineWrapping = true, onChange = null, onSave = null, onCancel = null, allowImagePaste = false } = {}) {
     this.container = container;
     this.onChange = onChange;
     this.onSave = onSave;
     this.onCancel = onCancel;
+    this.imageAssets = new Map(
+      (Array.isArray(imageAssets) ? imageAssets : []).filter((asset) => asset && asset.id).map((asset) => [asset.id, asset])
+    );
     const actionKeymap = [];
     if (this.onSave) {
       actionKeymap.push({
@@ -25802,11 +25948,59 @@ var NotesEditor = class {
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(markdownHighlightStyle),
         tableDecorationsField,
-        livePreviewPlugin,
-        keymap.of([...actionKeymap, ...smartListKeymap, ...defaultKeymap, ...historyKeymap]),
+        createLivePreviewPlugin((id2) => this.imageAssets.get(id2)),
+        Prec.highest(keymap.of(smartListKeymap)),
+        keymap.of([...actionKeymap, ...defaultKeymap, ...historyKeymap]),
         history(),
         drawSelection(),
         dropCursor(),
+        EditorView.domEventHandlers({
+          click: (event, view) => {
+            if (!event.metaKey && !event.ctrlKey) return false;
+            const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+            const link = pos === null ? null : findMarkdownLinkAt(view.state, pos);
+            if (!link) return false;
+            event.preventDefault();
+            event.stopPropagation();
+            openExternalUrl(link.url);
+            return true;
+          }
+        }),
+        ...allowImagePaste ? [EditorView.domEventHandlers({
+          paste: (event, view) => {
+            const items = Array.from(event.clipboardData?.items || []);
+            const imageItem = items.find((item) => item.kind === "file" && /^image\//i.test(item.type));
+            if (!imageItem) return false;
+            const file = imageItem.getAsFile();
+            if (!file) return false;
+            if (file.size > 2 * 1024 * 1024) {
+              this.options?.onImagePasteError?.("\u1EA2nh qu\xE1 l\u1EDBn (t\u1ED1i \u0111a 2 MB)");
+              return true;
+            }
+            event.preventDefault();
+            const reader = new FileReader();
+            reader.onload = () => {
+              const { main } = view.state.selection;
+              const alt = (file.name || "Pasted image").replace(/[\[\]]/g, "").replace(/\r?\n/g, " ").trim();
+              const id2 = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+              const asset = {
+                id: id2,
+                alt: alt || "Pasted image",
+                data_url: String(reader.result || "")
+              };
+              this.imageAssets.set(id2, asset);
+              this.options?.onImagePaste?.(asset);
+              const text = `![${asset.alt}](attachment:${id2})`;
+              view.dispatch({
+                changes: { from: main.from, to: main.to, insert: text },
+                selection: { anchor: main.from + text.length }
+              });
+              view.focus();
+            };
+            reader.readAsDataURL(file);
+            return true;
+          }
+        })] : [],
         this.readOnlyCompartment.of(EditorState.readOnly.of(readOnly2)),
         this.placeholderCompartment.of(placeholder(placeholderText)),
         EditorView.updateListener.of((update) => {
@@ -25821,6 +26015,17 @@ var NotesEditor = class {
       parent: container
     });
     return this;
+  }
+  setImageAssets(assets = []) {
+    this.imageAssets = new Map(
+      (Array.isArray(assets) ? assets : []).filter((asset) => asset && asset.id).map((asset) => [asset.id, asset])
+    );
+    if (this.view) {
+      this.view.dispatch({ effects: refreshImageAssetsEffect.of(null) });
+    }
+  }
+  getImageAssets() {
+    return Array.from(this.imageAssets.values());
   }
   setLineWrapping(enabled) {
     if (!this.view) return;
@@ -25920,6 +26125,16 @@ var NotesEditor = class {
           wrapSelection(view, "`", "`");
         }
         break;
+      case "link": {
+        const label = selText || "li\xEAn k\u1EBFt";
+        const insert2 = `[${label}](https://)`;
+        const urlStart = main.from + label.length + 3;
+        dispatch({
+          changes: { from: main.from, to: main.to, insert: insert2 },
+          selection: { anchor: urlStart, head: urlStart + 8 }
+        });
+        break;
+      }
       default:
         break;
     }
