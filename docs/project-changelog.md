@@ -7,6 +7,14 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## v0.9.6 - 2026-09-07
+
+### Fixed
+
+- **Đồng bộ khoá updater**: Cập nhật public key trong cấu hình ứng dụng để khớp với Tauri private key mới dùng cho chữ ký các bản cập nhật.
+
+---
+
 ## v0.9.5 - 2026-09-07
 
 ### Fixed
