@@ -55,7 +55,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        run: npm run tauri build -- --config '{"bundle": {"createUpdaterArtifacts": true}}'
+        run: |
+          npm run tauri build -- --config '{"bundle": {"createUpdaterArtifacts": true}}'
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -115,7 +116,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        run: npm run tauri build -- --target x86_64-apple-darwin --config '{"bundle": {"createUpdaterArtifacts": true}}'
+        run: |
+          npm run tauri build -- --target x86_64-apple-darwin --config '{"bundle": {"createUpdaterArtifacts": true}}'
 
       - name: Upload macOS Intel artifacts
         uses: actions/upload-artifact@v4
@@ -151,7 +153,8 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        run: npm run tauri build -- --config '{"bundle": {"createUpdaterArtifacts": true}}'
+        run: |
+          npm run tauri build -- --config '{"bundle": {"createUpdaterArtifacts": true}}'
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
