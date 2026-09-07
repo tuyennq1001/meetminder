@@ -7,6 +7,15 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## v0.9.3 - 2026-09-07
+
+### Improved
+
+- **Đồng bộ nút cuộn xuống mới nhất trong Logs**: Thống nhất thiết kế nút cuộn `[ ↓ Mới nhất ]` dạng pill gradient hiện đại tương tự màn hình Live transcript.
+- **Tối ưu vị trí nút cuộn**: Căn giữa nổi phía dưới khung xem log (`bottom: 20px`), giải quyết triệt để lỗi nút tròn cũ đè lên số timeline timestamp và hỗ trợ cuộn mượt cho cả chế độ xem đơn cột lẫn 2 cột.
+
+---
+
 ## v0.9.2 - 2026-09-07
 
 ### Fixed
