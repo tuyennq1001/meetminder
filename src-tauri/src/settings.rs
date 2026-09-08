@@ -178,6 +178,24 @@ pub struct Settings {
     /// Default logs scope filter on app open: "work" | "personal" | "all" | "last"
     #[serde(default = "default_logs_scope_setting")]
     pub default_logs_scope: String,
+    /// Enable optional Git backup for managed meeting data.
+    #[serde(default)]
+    pub git_backup_enabled: bool,
+    /// User-configured local Git repository path.
+    #[serde(default)]
+    pub git_backup_repo_path: String,
+    /// Automatically create local Git commits.
+    #[serde(default = "default_git_auto_commit")]
+    pub git_backup_auto_commit: bool,
+    /// Commit interval in minutes when automatic commit is enabled.
+    #[serde(default = "default_git_commit_interval")]
+    pub git_backup_commit_interval_min: u32,
+    /// Automatically push commits to the configured Git remote.
+    #[serde(default)]
+    pub git_backup_auto_push: bool,
+    /// Push interval in minutes when automatic push is enabled.
+    #[serde(default = "default_git_push_interval")]
+    pub git_backup_push_interval_min: u32,
 }
 
 impl Default for Settings {
@@ -243,12 +261,30 @@ impl Default for Settings {
             template_minutes_personal_vi: None,
             template_minutes_personal_ja: None,
             default_logs_scope: "work".to_string(),
+            git_backup_enabled: false,
+            git_backup_repo_path: String::new(),
+            git_backup_auto_commit: true,
+            git_backup_commit_interval_min: 30,
+            git_backup_auto_push: false,
+            git_backup_push_interval_min: 60,
         }
     }
 }
 
 fn default_logs_scope_setting() -> String {
     "work".to_string()
+}
+
+fn default_git_auto_commit() -> bool {
+    true
+}
+
+fn default_git_commit_interval() -> u32 {
+    30
+}
+
+fn default_git_push_interval() -> u32 {
+    60
 }
 
 fn default_translation_timing() -> String {

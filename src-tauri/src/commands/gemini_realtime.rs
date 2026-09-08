@@ -16,9 +16,12 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 const GEMINI_LIVE_WS_HOST: &str = "generativelanguage.googleapis.com";
 const DEFAULT_GEMINI_MODEL: &str = "models/gemini-3.5-transcribe-live";
-const TRANSLATION_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(1500);
+const TRANSLATION_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 const TRANSLATION_MAX_ATTEMPTS: usize = 5;
-const TRANSLATION_PACE_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
+// Gemini's free-tier generateContent limit is 15 requests/minute. Batches can
+// contain up to six utterances, so one request every four seconds keeps the
+// worker below that limit without imposing a per-utterance delay.
+const TRANSLATION_PACE_DELAY: std::time::Duration = std::time::Duration::from_secs(4);
 
 #[derive(Debug, Deserialize)]
 pub struct GeminiRealtimeConfig {
@@ -1655,4 +1658,3 @@ mod tests {
         assert_eq!(provisional, "元駐ウクライナ大使で");
     }
 }
-

@@ -12,7 +12,8 @@ use serde_json::Value;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager};
+use std::process::Command;
+use tauri::{AppHandle, Emitter, Manager};
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -47,6 +48,13 @@ pub struct AudioFileInfo {
     pub file_name: String,
     pub file_size: u64,
     pub extension: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct SessionAudioInfo {
+    pub file_path: String,
+    pub mime_type: String,
+    pub file_size: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -1430,28 +1438,53 @@ pub async fn select_audio_file(app: AppHandle) -> Result<Option<AudioFileInfo>, 
 
     let file = rx.await.map_err(|e| e.to_string())?;
     if let Some(file_path) = file {
-        let path_str = file_path.to_string();
-        let p = PathBuf::from(&path_str);
-        let file_name = p
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-        let extension = p
-            .extension()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_lowercase();
-        let file_size = p.metadata().map(|m| m.len()).unwrap_or(0);
-        Ok(Some(AudioFileInfo {
-            file_path: path_str,
-            file_name,
-            file_size,
-            extension,
-        }))
+        Ok(Some(audio_file_info_from_path(&file_path.to_string())?))
     } else {
         Ok(None)
     }
+}
+
+fn audio_file_info_from_path(path_str: &str) -> Result<AudioFileInfo, String> {
+    let p = PathBuf::from(path_str);
+    if !p.is_file() {
+        return Err("File ghi âm không tồn tại hoặc không phải file hợp lệ".into());
+    }
+    let extension = p
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_lowercase();
+    if !SUPPORTED_AUDIO_EXTS.contains(&extension.as_str()) {
+        return Err(format!(
+            "Định dạng .{} không được hỗ trợ. Hãy chọn WAV, MP3, M4A, AAC, OGG, FLAC hoặc WebM",
+            if extension.is_empty() { "(không có phần mở rộng)" } else { &extension }
+        ));
+    }
+    let file_size = p
+        .metadata()
+        .map_err(|e| format!("Không thể đọc thông tin file ghi âm: {}", e))?
+        .len();
+    if file_size == 0 {
+        return Err("File ghi âm đang trống".into());
+    }
+    let file_name = p
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    Ok(AudioFileInfo {
+        file_path: path_str.to_string(),
+        file_name,
+        file_size,
+        extension,
+    })
+}
+
+/// Inspect a path received from the native drag-and-drop event. The frontend
+/// uses this instead of reading the dropped file into WebView memory.
+#[tauri::command]
+pub fn inspect_audio_file(path: String) -> Result<AudioFileInfo, String> {
+    audio_file_info_from_path(path.trim())
 }
 
 #[tauri::command]
@@ -1478,6 +1511,29 @@ pub fn read_session_audio(app: AppHandle, id: String) -> Result<Option<String>, 
     } else {
         Ok(None)
     }
+}
+
+/// Return metadata and the validated path for direct playback from the
+/// Tauri asset protocol. Unlike read_session_audio, this never loads the
+/// complete recording into memory or encodes it as Base64.
+#[tauri::command]
+pub fn get_session_audio_info(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<SessionAudioInfo>, String> {
+    validate_id(&id)?;
+    let dir = sessions_dir(&app)?;
+    let Some((path, mime)) = find_session_audio(&dir, &id) else {
+        return Ok(None);
+    };
+    let file_size = fs::metadata(&path)
+        .map_err(|e| format!("Read audio metadata failed: {}", e))?
+        .len();
+    Ok(Some(SessionAudioInfo {
+        file_path: path.to_string_lossy().to_string(),
+        mime_type: mime.to_string(),
+        file_size,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -1517,6 +1573,402 @@ fn gemini_error(status: reqwest::StatusCode, body: String) -> String {
     )
 }
 
+fn gemini_transport_error(error: &reqwest::Error) -> String {
+    let kind = if error.is_timeout() {
+        "timeout kết nối hoặc phản hồi"
+    } else if error.is_connect() {
+        "không thể kết nối tới Gemini"
+    } else {
+        "lỗi mạng"
+    };
+    let mut detail = error.to_string();
+    let mut source = std::error::Error::source(error);
+    while let Some(err) = source {
+        let source_detail = err.to_string();
+        if !source_detail.is_empty() && !detail.contains(&source_detail) {
+            detail.push_str(": ");
+            detail.push_str(&source_detail);
+        }
+        source = std::error::Error::source(err);
+    }
+    // reqwest includes the full URL in some transport errors. Never surface the
+    // Gemini API key in the UI or logs, even when the request itself failed.
+    if let Some(query_start) = detail.find("?key=") {
+        let value_start = query_start + "?key=".len();
+        let value_end = detail[value_start..]
+            .find(|ch: char| matches!(ch, ')' | '&' | ' '))
+            .map(|offset| value_start + offset)
+            .unwrap_or(detail.len());
+        detail.replace_range(value_start..value_end, "[REDACTED]");
+    }
+    format!("{} ({})", kind, detail.chars().take(500).collect::<String>())
+}
+
+fn emit_audio_transcript_progress(
+    app: &AppHandle,
+    id: &str,
+    stage: &str,
+    message: &str,
+    percent: u8,
+) {
+    let _ = app.emit(
+        "audio-transcript-progress",
+        serde_json::json!({
+            "id": id,
+            "stage": stage,
+            "message": message,
+            "percent": percent,
+        }),
+    );
+}
+
+const AUDIO_CHUNK_SECONDS: u64 = 10 * 60;
+const AUDIO_CHUNK_THRESHOLD_SECONDS: u64 = 15 * 60;
+
+struct AudioChunkWorkspace(PathBuf);
+
+impl Drop for AudioChunkWorkspace {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn find_audio_tool(name: &str) -> Option<String> {
+    let candidates = match name {
+        "ffmpeg" => ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "ffmpeg"],
+        "ffprobe" => ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "ffprobe"],
+        _ => return None,
+    };
+    candidates
+        .iter()
+        .find(|candidate| candidate.starts_with('/') && Path::new(candidate).is_file())
+        .or_else(|| candidates.iter().find(|candidate| !candidate.starts_with('/')))
+        .map(|candidate| (*candidate).to_string())
+}
+
+fn probe_audio_duration(path: &Path) -> Option<f64> {
+    let ffprobe = find_audio_tool("ffprobe")?;
+    let output = Command::new(ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+        ])
+        .arg(path)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|duration| duration.is_finite() && *duration > 0.0)
+}
+
+fn create_audio_chunks(
+    source_path: &Path,
+    duration_sec: f64,
+    id: &str,
+) -> Result<(AudioChunkWorkspace, Vec<(PathBuf, u64, u64)>), String> {
+    let ffmpeg = find_audio_tool("ffmpeg").ok_or(
+        "File ghi âm dài cần ffmpeg để chia thành nhiều phần, nhưng máy chưa có ffmpeg",
+    )?;
+    let workspace_path = std::env::temp_dir().join(format!("meet-minder-audio-{}", id));
+    fs::create_dir_all(&workspace_path)
+        .map_err(|e| format!("Không thể tạo thư mục tạm để chia audio: {}", e))?;
+    let workspace = AudioChunkWorkspace(workspace_path.clone());
+    let duration = duration_sec.ceil() as u64;
+    let mut chunks = Vec::new();
+
+    for start_sec in (0..duration).step_by(AUDIO_CHUNK_SECONDS as usize) {
+        let length_sec = (duration - start_sec).min(AUDIO_CHUNK_SECONDS);
+        let chunk_path = workspace_path.join(format!("chunk-{:05}.wav", chunks.len() + 1));
+        let output = Command::new(&ffmpeg)
+            .args(["-hide_banner", "-loglevel", "error", "-y"])
+            .arg("-i")
+            .arg(source_path)
+            .args(["-ss", &start_sec.to_string(), "-t", &length_sec.to_string()])
+            .args(["-map", "0:a:0", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"])
+            .arg(&chunk_path)
+            .output()
+            .map_err(|e| format!("Không thể chạy ffmpeg để chia audio: {}", e))?;
+        if !output.status.success() {
+            let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(format!(
+                "Không thể chia file ghi âm thành các phần{}",
+                if detail.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {}", detail)
+                }
+            ));
+        }
+        let chunk_size = fs::metadata(&chunk_path)
+            .map_err(|e| format!("Không thể đọc phần audio đã chia: {}", e))?
+            .len();
+        if chunk_size <= 44 {
+            return Err(format!("Phần audio {} bị rỗng", chunks.len() + 1));
+        }
+        chunks.push((chunk_path, start_sec, length_sec));
+    }
+
+    Ok((workspace, chunks))
+}
+
+struct GeminiUploadedAudio {
+    file_name: String,
+    file_uri: String,
+}
+
+async fn upload_gemini_audio_file(
+    client: &reqwest::Client,
+    api_key: &str,
+    path: &Path,
+    mime_type: &str,
+    display_name: &str,
+) -> Result<GeminiUploadedAudio, String> {
+    let audio_size = fs::metadata(path)
+        .map_err(|e| format!("Read audio chunk metadata failed: {}", e))?
+        .len();
+    let upload_start = start_gemini_audio_upload(
+        client,
+        api_key,
+        audio_size,
+        mime_type,
+        display_name,
+    )
+    .await
+    .map_err(|error| format!("Start Gemini audio upload failed: {}", error))?;
+    if !upload_start.status().is_success() {
+        let status = upload_start.status();
+        return Err(gemini_error(
+            status,
+            upload_start.text().await.unwrap_or_default(),
+        ));
+    }
+    let upload_url = upload_start
+        .headers()
+        .get("x-goog-upload-url")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+        .ok_or("Gemini did not provide an upload URL")?;
+    let upload_file = tokio::fs::File::open(path)
+        .await
+        .map_err(|e| format!("Open audio chunk for upload failed: {}", e))?;
+    let upload_finish = client
+        .post(&upload_url)
+        .header("X-Goog-Upload-Offset", "0")
+        .header("X-Goog-Upload-Command", "upload, finalize")
+        .header("Content-Type", mime_type)
+        .header("Content-Length", audio_size.to_string())
+        .body(upload_file)
+        .send()
+        .await
+        .map_err(|e| format!("Upload audio to Gemini failed: {}", gemini_transport_error(&e)))?;
+    if !upload_finish.status().is_success() {
+        let status = upload_finish.status();
+        return Err(gemini_error(
+            status,
+            upload_finish.text().await.unwrap_or_default(),
+        ));
+    }
+    let mut file: Value = upload_finish
+        .json()
+        .await
+        .map_err(|e| format!("Read Gemini upload response failed: {}", e))?;
+    let file_name = file
+        .get("file")
+        .and_then(|f| f.get("name"))
+        .and_then(Value::as_str)
+        .ok_or("Gemini upload response has no file name")?
+        .to_string();
+
+    for _ in 0..120 {
+        let state = file
+            .get("file")
+            .and_then(|f| f.get("state"))
+            .and_then(Value::as_str)
+            .unwrap_or("ACTIVE");
+        if state == "ACTIVE" {
+            break;
+        }
+        if state == "FAILED" {
+            return Err("Gemini could not process this audio recording".into());
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        let poll = client
+            .get(format!(
+                "https://generativelanguage.googleapis.com/v1beta/{}",
+                file_name
+            ))
+            .query(&[("key", api_key.trim())])
+            .send()
+            .await
+            .map_err(|e| format!("Check Gemini audio upload failed: {}", gemini_transport_error(&e)))?;
+        if !poll.status().is_success() {
+            let status = poll.status();
+            return Err(gemini_error(status, poll.text().await.unwrap_or_default()));
+        }
+        file = poll
+            .json()
+            .await
+            .map_err(|e| format!("Read Gemini file status failed: {}", e))?;
+        if file.get("state").is_some() {
+            file = serde_json::json!({ "file": file });
+        }
+    }
+
+    let file_uri = file
+        .get("file")
+        .and_then(|f| f.get("uri"))
+        .and_then(Value::as_str)
+        .ok_or("Gemini upload response has no file URI")?
+        .to_string();
+    Ok(GeminiUploadedAudio { file_name, file_uri })
+}
+
+async fn generate_gemini_audio_transcript(
+    client: &reqwest::Client,
+    api_key: &str,
+    mime_type: &str,
+    file_uri: &str,
+    prompt: &str,
+    cancel_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<String, String> {
+    let mut last_error = None;
+    for model in [
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-flash-latest",
+    ] {
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("Quá trình xử lý audio đã bị hủy".into());
+        }
+        let response = client
+            .post(format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+                model
+            ))
+            .query(&[("key", api_key.trim())])
+            .json(&serde_json::json!({
+                "contents": [{ "parts": [
+                    { "text": prompt },
+                    { "fileData": { "mimeType": mime_type, "fileUri": file_uri } }
+                ] }],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "maxOutputTokens": 65536,
+                    "responseMimeType": "application/json"
+                }
+            }))
+            .send()
+            .await;
+        match response {
+            Ok(response) if response.status().is_success() => {
+                let body: Value = response
+                    .json()
+                    .await
+                    .map_err(|e| format!("Read Gemini transcript failed: {}", e))?;
+                let candidate = body
+                    .get("candidates")
+                    .and_then(Value::as_array)
+                    .and_then(|candidates| candidates.first());
+                if candidate
+                    .and_then(|value| value.get("finishReason"))
+                    .and_then(Value::as_str)
+                    == Some("MAX_TOKENS")
+                {
+                    last_error = Some(
+                        "Gemini đã cắt transcript vì vượt giới hạn output của một phần audio".to_string(),
+                    );
+                    continue;
+                }
+                let text = candidate
+                    .and_then(|candidate| candidate.get("content"))
+                    .and_then(|content| content.get("parts"))
+                    .and_then(Value::as_array)
+                    .map(|parts| {
+                        parts
+                            .iter()
+                            .filter_map(|part| part.get("text").and_then(Value::as_str))
+                            .collect::<String>()
+                    });
+                if let Some(text) = text.filter(|value| !value.trim().is_empty()) {
+                    return Ok(text);
+                }
+                last_error = Some("Gemini returned an empty transcript".to_string());
+            }
+            Ok(response) => {
+                let status = response.status();
+                last_error = Some(gemini_error(
+                    status,
+                    response.text().await.unwrap_or_default(),
+                ));
+            }
+            Err(error) => {
+                last_error = Some(format!(
+                    "Call Gemini transcription failed: {}",
+                    gemini_transport_error(&error)
+                ));
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "Gemini transcription failed".into()))
+}
+
+async fn start_gemini_audio_upload(
+    client: &reqwest::Client,
+    api_key: &str,
+    audio_size: u64,
+    mime_type: &str,
+    display_name: &str,
+) -> Result<reqwest::Response, String> {
+    let endpoint = "https://generativelanguage.googleapis.com/upload/v1beta/files";
+    let body = serde_json::json!({
+        "file": { "display_name": display_name }
+    })
+    .to_string();
+    let mut last_error = None;
+
+    for attempt in 0..3 {
+        let response = client
+            .post(endpoint)
+            .query(&[("key", api_key.trim())])
+            .header("X-Goog-Upload-Protocol", "resumable")
+            .header("X-Goog-Upload-Command", "start")
+            .header("X-Goog-Upload-Header-Content-Length", audio_size.to_string())
+            .header("X-Goog-Upload-Header-Content-Type", mime_type)
+            .header("Content-Type", "application/json")
+            .body(body.clone())
+            .send()
+            .await;
+
+        match response {
+            Ok(response) if !response.status().is_server_error() => return Ok(response),
+            Ok(response) => {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                last_error = Some(gemini_error(status, body));
+            }
+            Err(error) => {
+                last_error = Some(gemini_transport_error(&error));
+            }
+        }
+
+        if attempt < 2 {
+            tokio::time::sleep(std::time::Duration::from_secs(2_u64.pow(attempt))).await;
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| "Gemini không phản hồi".to_string()))
+}
+
 fn transcript_timestamp(seconds: f64) -> String {
     let total = seconds.max(0.0).round() as u64;
     format!(
@@ -1525,6 +1977,36 @@ fn transcript_timestamp(seconds: f64) -> String {
         (total % 3600) / 60,
         total % 60
     )
+}
+
+fn timestamp_seconds(timestamp: &str) -> Option<u64> {
+    let parts: Vec<&str> = timestamp.split(':').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    Some(
+        parts[0].parse::<u64>().ok()? * 3600
+            + parts[1].parse::<u64>().ok()? * 60
+            + parts[2].parse::<u64>().ok()?,
+    )
+}
+
+fn normalize_chunk_timestamps(segments: &mut [Segment], chunk_start_sec: u64) {
+    if chunk_start_sec == 0 || segments.is_empty() {
+        return;
+    }
+    let first_sec = segments
+        .first()
+        .and_then(|segment| timestamp_seconds(&segment.ts));
+    // The prompt asks for absolute timestamps. If the model still returned
+    // timestamps relative to the chunk, add the chunk offset before merging.
+    if first_sec.is_some_and(|seconds| seconds < chunk_start_sec / 2) {
+        for segment in segments {
+            if let Some(seconds) = timestamp_seconds(&segment.ts) {
+                segment.ts = transcript_timestamp((seconds + chunk_start_sec) as f64);
+            }
+        }
+    }
 }
 
 fn try_repair_truncated_json(text: &str) -> Option<String> {
@@ -1844,8 +2326,10 @@ pub async fn retranscribe_session_with_gemini(
     let (md_path, json_path) = session_paths(&dir, &id);
     let (audio_path, mime_type) = find_session_audio(&dir, &id)
         .ok_or_else(|| "This meeting does not have an audio recording".to_string())?;
-    let wav = fs::read(&audio_path).map_err(|e| format!("Read audio recording failed: {}", e))?;
-    if wav.len() <= 44 {
+    let audio_size = fs::metadata(&audio_path)
+        .map_err(|e| format!("Read audio recording metadata failed: {}", e))?
+        .len();
+    if audio_size <= 44 {
         return Err("The audio recording is empty".into());
     }
     let json_str =
@@ -1881,24 +2365,144 @@ pub async fn retranscribe_session_with_gemini(
         return Err("Quá trình Re-transcript đã bị hủy".into());
     }
 
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "upload",
+        "Đang khởi tạo phiên upload với Gemini...",
+        10,
+    );
+
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(600))
+        .connect_timeout(std::time::Duration::from_secs(45))
+        .timeout(std::time::Duration::from_secs(1800))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
-    let upload_start = client
-        .post(format!(
-            "https://generativelanguage.googleapis.com/upload/v1beta/files?key={}",
-            api_key.trim()
-        ))
-        .header("X-Goog-Upload-Protocol", "resumable")
-        .header("X-Goog-Upload-Command", "start")
-        .header("X-Goog-Upload-Header-Content-Length", wav.len().to_string())
-        .header("X-Goog-Upload-Header-Content-Type", mime_type)
-        .header("Content-Type", "application/json")
-        .body(r#"{"file":{"display_name":"Meet Minder recording"}}"#)
-        .send()
-        .await
-        .map_err(|e| format!("Start Gemini audio upload failed: {}", e))?;
+    let has_translation = !data.target_lang.trim().is_empty()
+        && data.target_lang != "none"
+        && data.target_lang != "off"
+        && data.target_lang != data.source_lang;
+    let translation_instruction = if has_translation {
+        format!(
+            " Also translate every segment into {} and set its translation field.",
+            data.target_lang
+        )
+    } else {
+        " Do not translate; set every translation field to an empty string.".to_string()
+    };
+
+    if let Some(duration_sec) = probe_audio_duration(&audio_path)
+        .map(|duration| duration.ceil() as u64)
+        .filter(|duration| *duration > AUDIO_CHUNK_THRESHOLD_SECONDS)
+    {
+        let (_workspace, chunks) = create_audio_chunks(&audio_path, duration_sec as f64, &id)?;
+        let total_chunks = chunks.len();
+        let mut all_segments = Vec::new();
+        for (index, (chunk_path, start_sec, length_sec)) in chunks.iter().enumerate() {
+            if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err("Quá trình Re-transcript đã bị hủy".into());
+            }
+            emit_audio_transcript_progress(
+                &app,
+                &id,
+                "transcribe",
+                &format!(
+                    "Đang xử lý phần {}/{} ({}–{})...",
+                    index + 1,
+                    total_chunks,
+                    format_duration_str(*start_sec),
+                    format_duration_str(*start_sec + *length_sec)
+                ),
+                20 + ((index as u64 * 65) / total_chunks as u64) as u8,
+            );
+            let uploaded = upload_gemini_audio_file(
+                &client,
+                &api_key,
+                chunk_path,
+                "audio/wav",
+                &format!("Meet Minder recording part {}/{}", index + 1, total_chunks),
+            )
+            .await?;
+            let prompt = format!(
+                "Transcribe only the audio in this chunk of a meeting recording. The spoken/source language is {}. This chunk covers absolute time {} through {} in the original recording. Split into short chronological segments and keep all meaningful speech. start_sec must be the absolute offset from the original recording, not the offset inside this chunk. Return JSON only with this exact schema: {{\"segments\":[{{\"start_sec\":0,\"text\":\"original speech\",\"translation\":\"\"}}]}}.{}",
+                data.source_lang,
+                format_duration_str(*start_sec),
+                format_duration_str(*start_sec + *length_sec),
+                translation_instruction
+            );
+            let generated = generate_gemini_audio_transcript(
+                &client,
+                &api_key,
+                "audio/wav",
+                &uploaded.file_uri,
+                &prompt,
+                &cancel_flag,
+            )
+            .await;
+            let _ = client
+                .delete(format!(
+                    "https://generativelanguage.googleapis.com/v1beta/{}",
+                    uploaded.file_name
+                ))
+                .query(&[("key", api_key.trim())])
+                .send()
+                .await;
+            let generated = generated?;
+            let mut part_segments = parse_gemini_transcript(&generated)?;
+            normalize_chunk_timestamps(&mut part_segments, *start_sec);
+            all_segments.append(&mut part_segments);
+            emit_audio_transcript_progress(
+                &app,
+                &id,
+                "transcribe",
+                &format!(
+                    "Đã nhận {} đoạn từ phần {}/{}.",
+                    all_segments.len(),
+                    index + 1,
+                    total_chunks
+                ),
+                20 + (((index + 1) as u64 * 65) / total_chunks as u64) as u8,
+            );
+        }
+        if all_segments.is_empty() {
+            return Err("Gemini không trả về đoạn transcript nào".into());
+        }
+        all_segments.sort_by(|left, right| left.ts.cmp(&right.ts));
+        data.duration_sec = data.duration_sec.max(duration_sec);
+        data.chunks = vec![Chunk {
+            started_at: data.created_at.clone(),
+            ended_at: data.ended_at.clone(),
+            engine: "gemini".to_string(),
+            source_lang: data.source_lang.clone(),
+            target_lang: data.target_lang.clone(),
+            segments: all_segments,
+        }];
+        data.engine = "gemini".to_string();
+        data.retranscribed_at = Some(chrono::Local::now().to_rfc3339());
+        emit_audio_transcript_progress(
+            &app,
+            &id,
+            "save",
+            "Đang ghi Logs mới vào ổ đĩa...",
+            95,
+        );
+        let md = rebuild_session_markdown(&data);
+        let json_bytes = serde_json::to_vec_pretty(&data)
+            .map_err(|e| format!("Serialize transcript failed: {}", e))?;
+        write_atomic(&json_path, &json_bytes)?;
+        write_atomic(&md_path, md.as_bytes())?;
+        return Ok(SessionReadResult { md, json: data });
+    }
+
+    let upload_start = start_gemini_audio_upload(
+        &client,
+        &api_key,
+        audio_size,
+        mime_type,
+        "Meet Minder recording",
+    )
+    .await
+    .map_err(|error| format!("Start Gemini audio upload failed: {}", error))?;
     if !upload_start.status().is_success() {
         let status = upload_start.status();
         return Err(gemini_error(
@@ -1906,6 +2510,13 @@ pub async fn retranscribe_session_with_gemini(
             upload_start.text().await.unwrap_or_default(),
         ));
     }
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "upload",
+        "Gemini đã sẵn sàng nhận file ghi âm...",
+        18,
+    );
     let upload_url = upload_start
         .headers()
         .get("x-goog-upload-url")
@@ -1917,15 +2528,19 @@ pub async fn retranscribe_session_with_gemini(
         return Err("Quá trình Re-transcript đã bị hủy".into());
     }
 
+    let upload_file = tokio::fs::File::open(&audio_path)
+        .await
+        .map_err(|e| format!("Open audio recording for upload failed: {}", e))?;
     let upload_finish = client
         .post(&upload_url)
         .header("X-Goog-Upload-Offset", "0")
         .header("X-Goog-Upload-Command", "upload, finalize")
         .header("Content-Type", mime_type)
-        .body(wav)
+        .header("Content-Length", audio_size.to_string())
+        .body(upload_file)
         .send()
         .await
-        .map_err(|e| format!("Upload audio to Gemini failed: {}", e))?;
+        .map_err(|e| format!("Upload audio to Gemini failed: {}", gemini_transport_error(&e)))?;
     if !upload_finish.status().is_success() {
         let status = upload_finish.status();
         return Err(gemini_error(
@@ -1933,6 +2548,13 @@ pub async fn retranscribe_session_with_gemini(
             upload_finish.text().await.unwrap_or_default(),
         ));
     }
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "transcribe",
+        "Đã upload file. Gemini đang xử lý nội dung audio...",
+        35,
+    );
     let mut file: Value = upload_finish
         .json()
         .await
@@ -1978,7 +2600,7 @@ pub async fn retranscribe_session_with_gemini(
             ))
             .send()
             .await
-            .map_err(|e| format!("Check Gemini audio upload failed: {}", e))?;
+            .map_err(|e| format!("Check Gemini audio upload failed: {}", gemini_transport_error(&e)))?;
         if !poll.status().is_success() {
             let status = poll.status();
             return Err(gemini_error(status, poll.text().await.unwrap_or_default()));
@@ -1997,18 +2619,13 @@ pub async fn retranscribe_session_with_gemini(
         .and_then(Value::as_str)
         .ok_or("Gemini upload response has no file URI")?
         .to_string();
-    let has_translation = !data.target_lang.trim().is_empty()
-        && data.target_lang != "none"
-        && data.target_lang != "off"
-        && data.target_lang != data.source_lang;
-    let translation_instruction = if has_translation {
-        format!(
-            " Also translate every segment into {} and set its translation field.",
-            data.target_lang
-        )
-    } else {
-        " Do not translate; set every translation field to an empty string.".to_string()
-    };
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "transcribe",
+        "Audio đã sẵn sàng. Gemini đang tạo transcript và bản dịch...",
+        48,
+    );
     let prompt = format!(
         "Transcribe this meeting recording accurately. The spoken/source language is {}. Split the transcript into short chronological segments, keeping all meaningful speech. Return JSON only, with this exact schema: {{\"segments\":[{{\"start_sec\":0,\"text\":\"original speech\",\"translation\":\"\"}}]}}. start_sec must be the approximate offset in seconds.{}",
         data.source_lang, translation_instruction
@@ -2016,6 +2633,13 @@ pub async fn retranscribe_session_with_gemini(
 
     let mut generated = None;
     let mut last_error = None;
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "transcribe",
+        "Gemini đang xử lý toàn bộ file; API chưa trả transcript từng đoạn...",
+        55,
+    );
     for model in [
         "gemini-3.5-flash",
         "gemini-3.1-flash-lite",
@@ -2048,10 +2672,29 @@ pub async fn retranscribe_session_with_gemini(
             .send().await;
         match response {
             Ok(response) if response.status().is_success() => {
+                emit_audio_transcript_progress(
+                    &app,
+                    &id,
+                    "transcribe",
+                    "Gemini đã trả kết quả. Đang phân tích các đoạn thoại...",
+                    82,
+                );
                 let body: Value = response
                     .json()
                     .await
                     .map_err(|e| format!("Read Gemini transcript failed: {}", e))?;
+                let finish_reason = body
+                    .get("candidates")
+                    .and_then(Value::as_array)
+                    .and_then(|candidates| candidates.first())
+                    .and_then(|candidate| candidate.get("finishReason"))
+                    .and_then(Value::as_str);
+                if finish_reason == Some("MAX_TOKENS") {
+                    last_error = Some(
+                        "Gemini đã cắt transcript vì vượt giới hạn output. File dài cần được chia thành nhiều phần trước khi xử lý.".to_string(),
+                    );
+                    continue;
+                }
                 let text = body
                     .get("candidates")
                     .and_then(Value::as_array)
@@ -2078,7 +2721,12 @@ pub async fn retranscribe_session_with_gemini(
                     response.text().await.unwrap_or_default(),
                 ));
             }
-            Err(error) => last_error = Some(format!("Call Gemini transcription failed: {}", error)),
+            Err(error) => {
+                last_error = Some(format!(
+                    "Call Gemini transcription failed: {}",
+                    gemini_transport_error(&error)
+                ))
+            }
         }
     }
     // Best-effort cleanup of the temporary file stored by Gemini.
@@ -2099,6 +2747,13 @@ pub async fn retranscribe_session_with_gemini(
         &generated
             .ok_or_else(|| last_error.unwrap_or_else(|| "Gemini transcription failed".into()))?,
     )?;
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "save",
+        &format!("Đã nhận {} đoạn thoại. Đang chuẩn bị lưu Logs...", segments.len()),
+        90,
+    );
     data.chunks = vec![Chunk {
         started_at: data.created_at.clone(),
         ended_at: data.ended_at.clone(),
@@ -2109,6 +2764,13 @@ pub async fn retranscribe_session_with_gemini(
     }];
     data.engine = "gemini".to_string();
     data.retranscribed_at = Some(chrono::Local::now().to_rfc3339());
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "save",
+        "Đang ghi Logs mới vào ổ đĩa...",
+        95,
+    );
     let md = rebuild_session_markdown(&data);
     let json_bytes = serde_json::to_vec_pretty(&data)
         .map_err(|e| format!("Serialize transcript failed: {}", e))?;
@@ -2226,9 +2888,16 @@ pub async fn import_audio_session(
         .to_lowercase();
     let mime_type = audio_mime_type(&ext);
 
-    let audio_bytes = fs::read(&src_path)
-        .map_err(|e| format!("Không thể đọc file ghi âm: {}", e))?;
-    if audio_bytes.len() <= 44 {
+    if !SUPPORTED_AUDIO_EXTS.contains(&ext.as_str()) {
+        return Err(format!(
+            "Định dạng .{} không được hỗ trợ",
+            if ext.is_empty() { "(không có phần mở rộng)" } else { &ext }
+        ));
+    }
+    let audio_size = fs::metadata(&src_path)
+        .map_err(|e| format!("Không thể đọc thông tin file ghi âm: {}", e))?
+        .len();
+    if audio_size <= 44 {
         return Err("File ghi âm trống hoặc không hợp lệ".into());
     }
 
@@ -2247,25 +2916,170 @@ pub async fn import_audio_session(
         return Err("Quá trình Import đã bị hủy".into());
     }
 
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "upload",
+        "Đang khởi tạo phiên upload với Gemini...",
+        10,
+    );
+
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(600))
+        .connect_timeout(std::time::Duration::from_secs(45))
+        .timeout(std::time::Duration::from_secs(1800))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
 
-    let upload_start = client
-        .post(format!(
-            "https://generativelanguage.googleapis.com/upload/v1beta/files?key={}",
-            api_key.trim()
-        ))
-        .header("X-Goog-Upload-Protocol", "resumable")
-        .header("X-Goog-Upload-Command", "start")
-        .header("X-Goog-Upload-Header-Content-Length", audio_bytes.len().to_string())
-        .header("X-Goog-Upload-Header-Content-Type", mime_type)
-        .header("Content-Type", "application/json")
-        .body(r#"{"file":{"display_name":"Meet Minder imported recording"}}"#)
-        .send()
-        .await
-        .map_err(|e| format!("Start Gemini audio upload failed: {}", e))?;
+    if let Some(duration_sec) = probe_audio_duration(&src_path)
+        .map(|duration| duration.ceil() as u64)
+        .filter(|duration| *duration > AUDIO_CHUNK_THRESHOLD_SECONDS)
+    {
+        let (_workspace, chunks) = create_audio_chunks(&src_path, duration_sec as f64, &id)?;
+        let total_chunks = chunks.len();
+        let mut all_segments = Vec::new();
+        let mut detected_source = None;
+        let mut detected_target = None;
+        for (index, (chunk_path, start_sec, length_sec)) in chunks.iter().enumerate() {
+            if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err("Quá trình Import đã bị hủy".into());
+            }
+            emit_audio_transcript_progress(
+                &app,
+                &id,
+                "transcribe",
+                &format!(
+                    "Đang xử lý phần {}/{} ({}–{})...",
+                    index + 1,
+                    total_chunks,
+                    format_duration_str(*start_sec),
+                    format_duration_str(*start_sec + *length_sec)
+                ),
+                20 + ((index as u64 * 65) / total_chunks as u64) as u8,
+            );
+            let uploaded = upload_gemini_audio_file(
+                &client,
+                &api_key,
+                chunk_path,
+                "audio/wav",
+                &format!("Meet Minder imported recording part {}/{}", index + 1, total_chunks),
+            )
+            .await?;
+            let prompt = format!(
+                "Transcribe only the audio in this chunk of a meeting recording. Automatically detect the primary spoken language. This chunk covers absolute time {} through {} in the original recording. Split into short chronological segments and keep all meaningful speech. start_sec must be the absolute offset from the original recording, not the offset inside this chunk. If the language is Vietnamese, set detected_language to vi and leave translation empty. Otherwise set detected_language to the language code and translate every segment accurately into Vietnamese. Return JSON only with this exact schema: {{\"detected_language\":\"vi|ja|en|...\",\"segments\":[{{\"start_sec\":0,\"text\":\"original speech\",\"translation\":\"Vietnamese translation\"}}]}}.",
+                format_duration_str(*start_sec),
+                format_duration_str(*start_sec + *length_sec),
+            );
+            let generated = generate_gemini_audio_transcript(
+                &client,
+                &api_key,
+                "audio/wav",
+                &uploaded.file_uri,
+                &prompt,
+                &cancel_flag,
+            )
+            .await;
+            let _ = client
+                .delete(format!(
+                    "https://generativelanguage.googleapis.com/v1beta/{}",
+                    uploaded.file_name
+                ))
+                .query(&[("key", api_key.trim())])
+                .send()
+                .await;
+            let generated = generated?;
+            let (source_lang, target_lang, mut part_segments) = parse_gemini_import(&generated)?;
+            normalize_chunk_timestamps(&mut part_segments, *start_sec);
+            if detected_source.is_none() {
+                detected_source = Some(source_lang);
+                detected_target = Some(target_lang);
+            }
+            all_segments.append(&mut part_segments);
+            emit_audio_transcript_progress(
+                &app,
+                &id,
+                "transcribe",
+                &format!(
+                    "Đã nhận {} đoạn từ phần {}/{}.",
+                    all_segments.len(),
+                    index + 1,
+                    total_chunks
+                ),
+                20 + (((index + 1) as u64 * 65) / total_chunks as u64) as u8,
+            );
+        }
+        if all_segments.is_empty() {
+            return Err("Gemini không trả về đoạn transcript nào".into());
+        }
+        all_segments.sort_by(|left, right| left.ts.cmp(&right.ts));
+        tokio::fs::copy(&src_path, &dest_audio_path)
+            .await
+            .map_err(|e| format!("Lưu file ghi âm thất bại: {}", e))?;
+        let now = chrono::Local::now().to_rfc3339();
+        let source_lang = detected_source.unwrap_or_else(|| "auto".to_string());
+        let target_lang = detected_target.unwrap_or_default();
+        let final_title = if title.trim().is_empty() {
+            src_path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Cuộc họp import".to_string())
+        } else {
+            title.clone()
+        };
+        let data = SessionData {
+            id: id.clone(),
+            created_at: now.clone(),
+            ended_at: Some(now.clone()),
+            title: sanitize_title(&final_title),
+            engine: "gemini".to_string(),
+            source_lang: source_lang.clone(),
+            target_lang: target_lang.clone(),
+            duration_sec,
+            chunks: vec![Chunk {
+                started_at: now.clone(),
+                ended_at: Some(now.clone()),
+                engine: "gemini".to_string(),
+                source_lang,
+                target_lang,
+                segments: all_segments,
+            }],
+            notes: None,
+            note_images: Vec::new(),
+            tags,
+            customer_id,
+            project_id,
+            category,
+            scope: None,
+            meeting_minutes: None,
+            meeting_minutes_lang: None,
+            meeting_minutes_ja: None,
+            meeting_minutes_vi: None,
+            meeting_minutes_en: None,
+            retranscribed_at: Some(now),
+        };
+        emit_audio_transcript_progress(
+            &app,
+            &id,
+            "save",
+            "Đang ghi Logs mới vào ổ đĩa...",
+            95,
+        );
+        let md = rebuild_session_markdown(&data);
+        let json_bytes = serde_json::to_vec_pretty(&data)
+            .map_err(|e| format!("Serialize transcript failed: {}", e))?;
+        write_atomic(&json_path, &json_bytes)?;
+        write_atomic(&md_path, md.as_bytes())?;
+        return Ok(SessionReadResult { md, json: data });
+    }
+
+    let upload_start = start_gemini_audio_upload(
+        &client,
+        &api_key,
+        audio_size,
+        mime_type,
+        "Meet Minder imported recording",
+    )
+    .await
+    .map_err(|error| format!("Start Gemini audio upload failed: {}", error))?;
 
     if !upload_start.status().is_success() {
         let status = upload_start.status();
@@ -2274,6 +3088,13 @@ pub async fn import_audio_session(
             upload_start.text().await.unwrap_or_default(),
         ));
     }
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "upload",
+        "Gemini đã sẵn sàng nhận file ghi âm...",
+        18,
+    );
 
     let upload_url = upload_start
         .headers()
@@ -2286,15 +3107,19 @@ pub async fn import_audio_session(
         return Err("Quá trình Import đã bị hủy".into());
     }
 
+    let upload_file = tokio::fs::File::open(&src_path)
+        .await
+        .map_err(|e| format!("Không thể mở file ghi âm để upload: {}", e))?;
     let upload_finish = client
         .post(&upload_url)
         .header("X-Goog-Upload-Offset", "0")
         .header("X-Goog-Upload-Command", "upload, finalize")
         .header("Content-Type", mime_type)
-        .body(audio_bytes.clone())
+        .header("Content-Length", audio_size.to_string())
+        .body(upload_file)
         .send()
         .await
-        .map_err(|e| format!("Upload audio to Gemini failed: {}", e))?;
+        .map_err(|e| format!("Upload audio to Gemini failed: {}", gemini_transport_error(&e)))?;
 
     if !upload_finish.status().is_success() {
         let status = upload_finish.status();
@@ -2303,6 +3128,13 @@ pub async fn import_audio_session(
             upload_finish.text().await.unwrap_or_default(),
         ));
     }
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "transcribe",
+        "Đã upload file. Gemini đang xử lý nội dung audio...",
+        35,
+    );
 
     let mut file: Value = upload_finish
         .json()
@@ -2348,7 +3180,7 @@ pub async fn import_audio_session(
             ))
             .send()
             .await
-            .map_err(|e| format!("Check Gemini audio upload failed: {}", e))?;
+            .map_err(|e| format!("Check Gemini audio upload failed: {}", gemini_transport_error(&e)))?;
         if !poll.status().is_success() {
             let status = poll.status();
             return Err(gemini_error(status, poll.text().await.unwrap_or_default()));
@@ -2368,6 +3200,13 @@ pub async fn import_audio_session(
         .and_then(Value::as_str)
         .ok_or("Gemini upload response has no file URI")?
         .to_string();
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "transcribe",
+        "Audio đã sẵn sàng. Gemini đang tạo transcript và bản dịch...",
+        48,
+    );
 
     let prompt = "Transcribe this meeting audio recording accurately.
 First, automatically detect the primary spoken language of the audio recording (e.g. 'vi', 'ja', 'en', 'zh', 'ko', etc.).
@@ -2391,6 +3230,13 @@ start_sec must be the approximate offset in seconds.";
 
     let mut generated = None;
     let mut last_error = None;
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "transcribe",
+        "Gemini đang xử lý toàn bộ file; API chưa trả transcript từng đoạn...",
+        55,
+    );
     for model in [
         "gemini-3.5-flash",
         "gemini-3.1-flash-lite",
@@ -2430,10 +3276,29 @@ start_sec must be the approximate offset in seconds.";
 
         match response {
             Ok(response) if response.status().is_success() => {
+                emit_audio_transcript_progress(
+                    &app,
+                    &id,
+                    "transcribe",
+                    "Gemini đã trả kết quả. Đang phân tích các đoạn thoại...",
+                    82,
+                );
                 let body: Value = response
                     .json()
                     .await
                     .map_err(|e| format!("Read Gemini transcript failed: {}", e))?;
+                let finish_reason = body
+                    .get("candidates")
+                    .and_then(Value::as_array)
+                    .and_then(|candidates| candidates.first())
+                    .and_then(|candidate| candidate.get("finishReason"))
+                    .and_then(Value::as_str);
+                if finish_reason == Some("MAX_TOKENS") {
+                    last_error = Some(
+                        "Gemini đã cắt transcript vì vượt giới hạn output. File dài cần được chia thành nhiều phần trước khi xử lý.".to_string(),
+                    );
+                    continue;
+                }
                 let text = body
                     .get("candidates")
                     .and_then(Value::as_array)
@@ -2460,7 +3325,12 @@ start_sec must be the approximate offset in seconds.";
                     response.text().await.unwrap_or_default(),
                 ));
             }
-            Err(error) => last_error = Some(format!("Call Gemini transcription failed: {}", error)),
+            Err(error) => {
+                last_error = Some(format!(
+                    "Call Gemini transcription failed: {}",
+                    gemini_transport_error(&error)
+                ))
+            }
         }
     }
 
@@ -2482,9 +3352,16 @@ start_sec must be the approximate offset in seconds.";
         .ok_or_else(|| last_error.unwrap_or_else(|| "Gemini transcription failed".into()))?;
 
     let (source_lang, target_lang, segments) = parse_gemini_import(&generated_text)?;
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "save",
+        &format!("Đã nhận {} đoạn thoại. Đang chuẩn bị lưu Logs...", segments.len()),
+        90,
+    );
 
     // Copy the local audio file into sessions directory
-    if let Err(e) = fs::write(&dest_audio_path, &audio_bytes) {
+    if let Err(e) = tokio::fs::copy(&src_path, &dest_audio_path).await {
         return Err(format!("Lưu file ghi âm thất bại: {}", e));
     }
 
@@ -2546,6 +3423,13 @@ start_sec must be the approximate offset in seconds.";
         retranscribed_at: Some(now),
     };
 
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "save",
+        "Đang ghi Logs mới vào ổ đĩa...",
+        95,
+    );
     let md = rebuild_session_markdown(&data);
     let json_bytes = serde_json::to_vec_pretty(&data)
         .map_err(|e| format!("Serialize transcript failed: {}", e))?;

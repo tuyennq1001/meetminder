@@ -1064,6 +1064,50 @@
               </button>
             </div>
           </div>
+          <div class="settings-section git-backup-section" style="margin-top: 14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:6px;">
+              <div>
+                <span class="field-label" style="margin:0;">💾 Backup qua Git</span>
+                <p class="hint" style="margin:4px 0 0;">Git do bạn tự cài đặt và cấu hình. Meet Minder chỉ commit dữ liệu meeting, ảnh và danh mục; audio và API key không được đưa vào repo.</p>
+              </div>
+              <label class="switch-control" title="Bật hoặc tắt backup qua Git">
+                <input type="checkbox" id="check-git-backup-enabled" aria-controls="git-backup-details" />
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+            <div id="git-backup-details" style="display:none; margin-top:14px;">
+              <div class="git-backup-repo-row" style="display:flex; gap:8px; align-items:stretch;">
+                <div style="flex:1; min-width:0;">
+                  <label class="field-label" for="input-git-backup-repo">Thư mục Git repository</label>
+                  <input id="input-git-backup-repo" class="text-input" type="text" placeholder="Chọn thư mục repository đã git init" autocomplete="off" />
+                </div>
+                <button type="button" id="btn-select-git-backup-repo" class="btn-secondary-small" style="align-self:end; white-space:nowrap;">📂 Chọn...</button>
+              </div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+                <label class="field-label" style="margin:0;"><span style="display:block;"><input type="checkbox" id="check-git-auto-commit" /> Tự động commit</span>
+                  <select id="select-git-commit-interval" class="select-input" style="display:block; width:100%; margin-top:5px;">
+                    <option value="15">Mỗi 15 phút</option>
+                    <option value="30">Mỗi 30 phút</option>
+                    <option value="60">Mỗi 1 giờ</option>
+                    <option value="1440">Mỗi ngày</option>
+                  </select>
+                </label>
+                <label class="field-label" style="margin:0;">Push tự động
+                  <select id="select-git-push-interval" class="select-input" style="display:block; width:100%; margin-top:5px;">
+                    <option value="15">Mỗi 15 phút</option>
+                    <option value="30">Mỗi 30 phút</option>
+                    <option value="60">Mỗi 1 giờ</option>
+                    <option value="1440">Mỗi ngày</option>
+                  </select>
+                </label>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:12px; flex-wrap:wrap;">
+                <label class="checkbox-label"><input type="checkbox" id="check-git-auto-push" /> <span>Tự động push lên remote</span></label>
+                <button type="button" id="btn-git-backup-now" class="btn-primary-small">💾 Backup ngay</button>
+              </div>
+              <div id="git-backup-status" class="git-backup-status" role="status" aria-live="polite" style="margin-top:12px;">Đang kiểm tra Git...</div>
+            </div>
+          </div>
           <div class="settings-section" style="margin-top: 14px;">
             <span class="field-label">Thống kê dữ liệu</span>
             <div id="storage-stats-info" style="font-size: 12px; color: var(--md-sys-color-on-surface-variant); line-height: 1.8;">
@@ -1223,7 +1267,12 @@
           <div class="setup-step" data-retranscript-step="save"><span class="step-icon">○</span><span class="step-text">Đang lưu Logs mới</span></div>
           <div class="setup-step" data-retranscript-step="minutes"><span class="step-icon">○</span><span class="step-text">Tự động tạo lại Meeting Minutes</span></div>
         </div>
-        <div class="setup-status"><span id="retranscript-progress-status">Quá trình có thể mất vài phút với file ghi âm dài.</span></div>
+        <div class="setup-status">
+          <span id="retranscript-progress-status" aria-live="assertive">Quá trình có thể mất vài phút với file ghi âm dài.</span>
+          <button type="button" id="btn-copy-retranscript-error" class="icon-btn small retranscript-error-copy" title="Copy lỗi" aria-label="Copy thông báo lỗi" style="display:none">
+            <svg class="icon-copy-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          </button>
+        </div>
         <div class="modal-actions retranscript-modal-actions">
           <button type="button" id="btn-retranscript-run-bg" class="btn-secondary small" title="Tiếp tục xử lý ngầm, cho phép bạn làm việc khác">⬇ Chạy ngầm</button>
           <button type="button" id="btn-retranscript-abort" class="btn-danger small" title="Hủy bỏ tiến trình Re-transcript này">✕ Hủy bỏ</button>
@@ -1385,7 +1434,12 @@
               <div id="import-file-meta" class="import-file-meta">—</div>
             </div>
           </div>
-          <button type="button" id="btn-import-browse-file" class="btn-secondary small" style="white-space:nowrap; flex-shrink:0;">Duyệt file khác</button>
+          <button type="button" id="btn-import-browse-file" class="btn-secondary small" style="white-space:nowrap; flex-shrink:0;">Chọn file local</button>
+        </div>
+
+        <div id="import-audio-dropzone" class="import-audio-dropzone" role="button" tabindex="0" aria-label="Kéo thả file ghi âm hoặc chọn file local">
+          <span class="import-audio-dropzone-icon">📂</span>
+          <span><strong>Kéo thả file ghi âm vào đây</strong><br><small>hoặc bấm để chọn file local</small></span>
         </div>
 
         <label for="input-import-meeting-title" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tên cuộc họp (*):</label>

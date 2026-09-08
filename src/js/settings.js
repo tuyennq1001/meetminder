@@ -42,6 +42,12 @@ const DEFAULT_SETTINGS = {
   template_minutes_personal_vi: '',
   template_minutes_personal_ja: '',
   default_logs_scope: 'work',
+  git_backup_enabled: false,
+  git_backup_repo_path: '',
+  git_backup_auto_commit: true,
+  git_backup_commit_interval_min: 30,
+  git_backup_auto_push: false,
+  git_backup_push_interval_min: 60,
 };
 
 class SettingsManager {

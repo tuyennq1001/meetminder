@@ -2141,6 +2141,74 @@ input[type="range"]::-webkit-slider-thumb:hover {
   font-weight: var(--menu-font-weight, 500);
 }
 
+/* Git backup settings toggle and actionable status feedback. */
+.switch-control {
+    position: relative;
+    display: inline-flex;
+    width: 42px;
+    height: 24px;
+    flex: 0 0 auto;
+    cursor: pointer;
+}
+
+.switch-control input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+}
+
+.switch-slider {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: var(--md-sys-color-surface-container-highest);
+    border: 1px solid var(--border-subtle);
+    transition: background .16s ease, border-color .16s ease;
+}
+
+.switch-slider::before {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    left: 2px;
+    top: 2px;
+    border-radius: 50%;
+    background: var(--md-sys-color-on-surface-variant);
+    transition: transform .16s ease, background .16s ease;
+}
+
+.switch-control input:checked + .switch-slider {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 28%, transparent);
+    border-color: var(--md-sys-color-primary);
+}
+
+.switch-control input:checked + .switch-slider::before {
+    transform: translateX(18px);
+    background: var(--md-sys-color-primary);
+}
+
+.switch-control input:focus-visible + .switch-slider {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+}
+
+.git-backup-status {
+    padding: 9px 11px;
+    border-radius: var(--radius-md);
+    background: var(--md-sys-color-surface-container);
+    border: 1px solid var(--border-subtle);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.git-backup-status.is-error {
+    color: var(--md-sys-color-error);
+    border-color: color-mix(in srgb, var(--md-sys-color-error) 45%, var(--border-subtle));
+}
+
 /* Checkbox */
 .checkbox-option {
   display: flex;
@@ -2289,6 +2357,23 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .toast-msg {
   flex: 1;
   word-break: break-word;
+}
+
+.toast-action-btn {
+  flex-shrink: 0;
+  padding: 4px 9px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toast-action-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .toast-copy-btn {
@@ -2550,8 +2635,23 @@ input[type="range"]::-webkit-slider-thumb:hover {
   display: flex;
   align-items: center;
 }
+.setup-status > span {
+  flex: 1;
+  min-width: 0;
+}
+.retranscript-error-copy {
+  flex-shrink: 0;
+  margin-left: 8px;
+}
 
 .retranscript-progress-card { max-width: 480px; }
+.retranscript-progress-card.is-error {
+  border-color: rgba(242, 184, 181, 0.65);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 0 18px rgba(242, 184, 181, 0.14);
+}
+.retranscript-progress-card.is-error .modal-header-retranscript h3 {
+  color: var(--md-sys-color-error, #f2b8b5);
+}
 .retranscript-spinner {
   width: 22px;
   height: 22px;
@@ -2561,6 +2661,19 @@ input[type="range"]::-webkit-slider-thumb:hover {
 #retranscript-progress-status {
   color: var(--text-muted);
   font-size: 0.8em;
+}
+#retranscript-progress-status.is-error {
+  color: var(--md-sys-color-error, #f2b8b5);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.setup-step.error .step-text {
+  color: var(--md-sys-color-error, #f2b8b5);
+  font-weight: 600;
 }
 .modal-header-retranscript {
   display: flex;
@@ -3355,6 +3468,47 @@ input[type="range"]::-webkit-slider-thumb:hover {
   margin-top: 2px;
 }
 
+.import-audio-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 64px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--md-sys-color-primary);
+  border-radius: var(--radius-md, 8px);
+  background: color-mix(in srgb, var(--md-sys-color-primary) 7%, transparent);
+  color: var(--md-sys-color-on-surface);
+  text-align: center;
+  cursor: pointer;
+  transition: background .16s ease, border-color .16s ease, transform .16s ease;
+}
+
+.import-audio-dropzone:hover,
+.import-audio-dropzone.is-dragover {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
+  border-color: var(--md-sys-color-primary);
+}
+
+.import-audio-dropzone.is-dragover {
+  transform: scale(1.01);
+}
+
+.import-audio-dropzone:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
+.import-audio-dropzone-icon {
+  font-size: 23px;
+  line-height: 1;
+}
+
+.import-audio-dropzone small {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
 .logs-table-container {
   width: 100%;
   overflow: auto;
@@ -3574,7 +3728,20 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .logs-tags {
-  flex-wrap: wrap;
+  display: -webkit-box;
+  min-width: 0;
+  max-width: 100%;
+  max-height: calc(2 * 1.6em);
+  overflow: hidden;
+  line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.logs-tags .session-tag-badge {
+  margin: 0 3px 3px 0;
+  vertical-align: top;
+  white-space: nowrap;
 }
 
 .logs-empty-value {
@@ -3890,6 +4057,10 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 .session-player-toggle:hover:not(:disabled) {
   filter: brightness(1.12);
+}
+
+.session-player.is-loading {
+  opacity: 0.75;
 }
 
 .session-player-toggle:disabled,
@@ -7307,6 +7478,13 @@ body.expanded #library-panel { padding: 8px 6%; }
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   z-index: 1050;
   padding: 4px 0;
+}
+
+.tag-tokenize-dropdown.is-portal {
+  position: fixed;
+  top: auto;
+  right: auto;
+  max-width: calc(100vw - 16px);
 }
 
 .tag-tokenize-item {

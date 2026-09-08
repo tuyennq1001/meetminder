@@ -44,3 +44,28 @@ dissent (if any), and a revisit trigger.
   warnings in `src/commands/transcript.rs`.
 - **Revisit when:** Visual feedback from the rebuilt app requires another color
   adjustment.
+
+## 2026-09-08 — Git backup is user-configured, app-automated
+
+- **Decision:** Let the user install and configure Git, repository, remote, and
+  credentials outside Meet Minder. Inside the app, provide an opt-in Git
+  backup feature with configurable commit and push schedules, a manual
+  “Backup now” action, and clear status for pending changes, offline state,
+  authentication errors, and conflicts.
+- **Alternatives considered:** Make Meet Minder create and authenticate a
+  hosted repository automatically; expose raw Git concepts such as branches,
+  staging, and rebasing as the primary UI.
+- **Why:** The user retains ownership of the repository and credentials while
+  the app removes repetitive Git work. Git remains an implementation detail in
+  the normal flow, but advanced users can keep using their existing Git tools.
+  Backup commits must stage only Meet Minder-managed records, images, and
+  catalog data; audio and settings remain excluded. A backup operation is
+  additive and must never delete or overwrite existing repository data without
+  an explicit restore action.
+- **Dissent:** A local commit alone does not protect against loss of the
+  machine; remote push or another external backup remains necessary. Automatic
+  push may fail when the remote has diverged, so the app must pause and ask for
+  user intervention rather than silently resolving conflicts.
+- **Revisit when:** Users report that setup is too technical, auto-push causes
+  unexpected remote changes, or multi-device conflict frequency requires a
+  dedicated merge workflow.

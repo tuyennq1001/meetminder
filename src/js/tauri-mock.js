@@ -75,6 +75,9 @@ if (!window.__TAURI__ && location.port === '3111') {
 
     window.__TAURI__ = {
         core: {
+            // The packaged app provides this through Tauri's global API. The
+            // browser mock intentionally leaves it undefined so playback uses
+            // its small-data fallback path during UI-only development.
             invoke: async (cmd, args) => {
                 console.log('[tauri-mock] invoke:', cmd, args);
                 switch (cmd) {

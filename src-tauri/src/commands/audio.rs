@@ -158,6 +158,7 @@ pub async fn start_capture(
 
         // Optional WAV file recording with 64KB buffer
         let mut total_pcm_bytes: u32 = 0;
+        let mut wav_error: Option<String> = None;
         let mut wav_writer: Option<BufWriter<std::fs::File>> =
             if let Some(ref path_str) = record_path_clone {
                 let path = std::path::Path::new(path_str);
@@ -178,12 +179,17 @@ pub async fn start_capture(
                             let _ = f.seek(std::io::SeekFrom::End(0));
                             Some(BufWriter::with_capacity(64 * 1024, f))
                         }
-                        Err(_) => None,
+                        Err(err) => {
+                            wav_error = Some(format!("open existing recording failed: {}", err));
+                            None
+                        }
                     }
                 } else {
                     // New session audio file
                     if let Some(parent) = path.parent() {
-                        let _ = std::fs::create_dir_all(parent);
+                        if let Err(err) = std::fs::create_dir_all(parent) {
+                            wav_error = Some(format!("create recording directory failed: {}", err));
+                        }
                     }
                     match std::fs::OpenOptions::new()
                         .create(true)
@@ -204,10 +210,18 @@ pub async fn start_capture(
                             header[32..34].copy_from_slice(&2u16.to_le_bytes()); // Block align
                             header[34..36].copy_from_slice(&16u16.to_le_bytes()); // 16 bits
                             header[36..40].copy_from_slice(b"data");
-                            let _ = f.write_all(&header);
-                            Some(BufWriter::with_capacity(64 * 1024, f))
+                            match f.write_all(&header) {
+                                Ok(()) => Some(BufWriter::with_capacity(64 * 1024, f)),
+                                Err(err) => {
+                                    wav_error = Some(format!("write WAV header failed: {}", err));
+                                    None
+                                }
+                            }
                         }
-                        Err(_) => None,
+                        Err(err) => {
+                            wav_error = Some(format!("create recording file failed: {}", err));
+                            None
+                        }
                     }
                 }
             } else {
@@ -243,8 +257,16 @@ pub async fn start_capture(
                         rms_milli_clone.store((rms * 1000.0).round() as u64, Ordering::Relaxed);
                     }
                     if let Some(ref mut writer) = wav_writer {
-                        let _ = writer.write_all(&data);
-                        total_pcm_bytes = total_pcm_bytes.saturating_add(data.len() as u32);
+                        match writer.write_all(&data) {
+                            Ok(()) => {
+                                total_pcm_bytes = total_pcm_bytes.saturating_add(data.len() as u32);
+                            }
+                            Err(err) => {
+                                if wav_error.is_none() {
+                                    wav_error = Some(format!("write PCM data failed: {}", err));
+                                }
+                            }
+                        }
                     }
                     buffer.extend_from_slice(&data);
                 }
@@ -281,16 +303,82 @@ pub async fn start_capture(
 
         // Finalize WAV file header
         if let Some(mut writer) = wav_writer {
-            let _ = writer.flush();
-            if let Ok(mut f) = writer.into_inner() {
-                if f.seek(std::io::SeekFrom::Start(4)).is_ok() {
-                    let _ = f.write_all(&(total_pcm_bytes.saturating_add(36)).to_le_bytes());
+            if let Err(err) = writer.flush() {
+                if wav_error.is_none() {
+                    wav_error = Some(format!("flush recording failed: {}", err));
                 }
-                if f.seek(std::io::SeekFrom::Start(40)).is_ok() {
-                    let _ = f.write_all(&total_pcm_bytes.to_le_bytes());
-                }
-                let _ = f.flush();
             }
+            match writer.into_inner() {
+                Ok(mut f) => {
+                    match f.seek(std::io::SeekFrom::Start(4)) {
+                        Ok(_) => {
+                            if let Err(err) =
+                                f.write_all(&(total_pcm_bytes.saturating_add(36)).to_le_bytes())
+                            {
+                                if wav_error.is_none() {
+                                    wav_error = Some(format!("write RIFF size failed: {}", err));
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            if wav_error.is_none() {
+                                wav_error = Some(format!("seek RIFF size failed: {}", err));
+                            }
+                        }
+                    }
+                    match f.seek(std::io::SeekFrom::Start(40)) {
+                        Ok(_) => {
+                            if let Err(err) = f.write_all(&total_pcm_bytes.to_le_bytes()) {
+                                if wav_error.is_none() {
+                                    wav_error =
+                                        Some(format!("write WAV data size failed: {}", err));
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            if wav_error.is_none() {
+                                wav_error = Some(format!("seek WAV data size failed: {}", err));
+                            }
+                        }
+                    }
+                    if let Err(err) = f.flush() {
+                        if wav_error.is_none() {
+                            wav_error = Some(format!("flush finalized recording failed: {}", err));
+                        }
+                    }
+                }
+                Err(err) => {
+                    if wav_error.is_none() {
+                        wav_error = Some(format!("finalize recording writer failed: {}", err));
+                    }
+                }
+            }
+        }
+
+        if wav_error.is_none() {
+            if let Some(path_str) = record_path_clone.as_deref() {
+                match std::fs::metadata(path_str) {
+                    Ok(metadata) => {
+                        let expected_size = 44u64 + u64::from(total_pcm_bytes);
+                        if metadata.len() != expected_size {
+                            wav_error = Some(format!(
+                                "recording size mismatch: actual={} expected={}",
+                                metadata.len(),
+                                expected_size
+                            ));
+                        }
+                    }
+                    Err(err) => {
+                        wav_error =
+                            Some(format!("read finalized recording metadata failed: {}", err));
+                    }
+                }
+            }
+        }
+
+        if let Some(err) = wav_error {
+            let path = record_path_clone.as_deref().unwrap_or("<none>");
+            eprintln!("[audio-recording] failed to finalize {}: {}", path, err);
         }
 
         let rec = received_samples_clone.load(Ordering::Relaxed);

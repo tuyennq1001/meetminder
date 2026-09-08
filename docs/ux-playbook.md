@@ -94,6 +94,10 @@ review.
   phải đoán icon.
 - Khi đóng bằng Escape, hãy chạy cùng cleanup path với Cancel để Promise,
   timer, suggestion list và dữ liệu tạm không bị bỏ lại.
+- Autocomplete hoặc popup nằm trong toolbar có `overflow` không nên render
+  trực tiếp bên trong vùng cuộn nếu nó cần mở ra ngoài vùng đó. Dùng một
+  portal ở cấp `body`, định vị theo control mở popup và cập nhật vị trí khi
+  viewport scroll/resize để suggestion không bị cắt khỏi màn hình.
 - Phân cấp thị giác giữa Primary Action (CTA chính như Start/Lưu) và Toggle/Utility Action (như Take Note):
   CTA chính dùng màu bão hòa cao, glow và elevation rõ nét để dẫn dắt hành động; nút toggle phụ dùng màu
   bão hòa thấp (tinted surface), bỏ glow chói, chỉ giữ viền và độ tương phản vừa đủ để thể hiện trạng thái
@@ -142,6 +146,8 @@ Các quy tắc đã chứng minh hữu ích trong Meet Minder:
   rõ kết quả.
 - Không dùng toast làm kênh duy nhất cho lỗi quan trọng; lỗi cần lưu lại trong
   ngữ cảnh thao tác hoặc cho phép retry.
+- Với tác vụ import/re-transcript dài, lỗi phải giữ nguyên trong progress dialog
+  cho đến khi người dùng chủ động đóng; không tự biến mất như toast.
 
 ## 6. Consistency: thuật ngữ, biểu tượng và thứ tự thông tin
 
@@ -202,4 +208,3 @@ Các pattern trên được đối chiếu từ những phần sau của codebas
 - Các thay đổi làm lộ bài học: commit `191b397` (Logs table), `bf5a453`
   (Date sort + lưu lựa chọn), `119c8b5` (giữ scroll), `76bf28e` (progress +
   confirm delete), `59c81ca` (unify filters/dialogs/sort arrows).
-
