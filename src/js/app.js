@@ -10990,93 +10990,232 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
     _markdownToRichHtml(md) {
         if (!md) return '';
-        const lines = md.split('\n');
+
+        const lines = String(md).replace(/\r\n?/g, '\n').split('\n');
+        const bodyFont = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;";
         let html = '';
-        let inList = false;
+        let listType = null;
         let inTable = false;
         let tableHeaderDone = false;
+        let inCodeBlock = false;
+        let codeLanguage = '';
 
-        const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const formatInline = (text) => {
-            return text
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;color:#0f172a;padding:2px 4px;border-radius:3px;font-size:12px;">$1</code>');
+        const escapeHtml = (str) => String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+
+        const safeUrl = (url) => {
+            const value = String(url || '').trim();
+            return /^(?:https?:|mailto:)/i.test(value) ? value : '';
+        };
+
+        // Format inline Markdown after escaping the source. Tokens keep code and links
+        // from being processed again by the emphasis expressions below.
+        const formatInline = (source) => {
+            const tokens = [];
+            const token = (value) => `\u0000${tokens.push(value) - 1}\u0000`;
+            let text = String(source || '').replace(/\\([\\`*_[\]{}()#+.!~-])/g, '$1');
+            text = escapeHtml(text);
+
+            text = text.replace(/!\[([^\]]*)\]\((https?:[^\s)]+)(?:\s+["']([^"']*)["'])?\)/gi, (_, alt, url, title) => {
+                const safe = safeUrl(url);
+                if (!safe) return `${alt}`;
+                const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
+                return token(`<img src="${escapeHtml(safe)}" alt="${escapeHtml(alt)}"${titleAttr} style="max-width:100%;height:auto;" />`);
+            });
+            text = text.replace(/\[([^\]]+)\]\((https?:[^\s)]+|mailto:[^\s)]+)(?:\s+["']([^"']*)["'])?\)/gi, (_, label, url, title) => {
+                const safe = safeUrl(url);
+                if (!safe) return label;
+                const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
+                return token(`<a href="${escapeHtml(safe)}"${titleAttr} style="color:#2563eb;text-decoration:underline;">${label}</a>`);
+            });
+            text = text.replace(/`([^`]+)`/g, (_, code) => token(`<code style="background:#f1f5f9;color:#0f172a;padding:2px 4px;border-radius:3px;font-size:12px;">${code}</code>`));
+            text = text
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/__(.+?)__/g, '<strong>$1</strong>')
+                .replace(/~~(.+?)~~/g, '<del>$1</del>')
+                .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
+                .replace(/(^|[^_])_([^_\n]+)_(?!_)/g, '$1<em>$2</em>');
+
+            return text.replace(/\u0000(\d+)\u0000/g, (_, index) => tokens[Number(index)] || '');
+        };
+
+        const closeList = () => {
+            if (listType) {
+                html += `</${listType}>\n`;
+                listType = null;
+            }
+        };
+        const closeTable = () => {
+            if (inTable) {
+                html += '</table>\n';
+                inTable = false;
+                tableHeaderDone = false;
+            }
+        };
+        const closeBlocks = () => {
+            closeList();
+            closeTable();
         };
 
         for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
+            const rawLine = lines[i];
+            const line = rawLine.trim();
 
-            // Table rows
+            if (inCodeBlock) {
+                if (/^\s*```/.test(line)) {
+                    html += '</code></pre>\n';
+                    inCodeBlock = false;
+                    codeLanguage = '';
+                } else {
+                    // Keep code literal; do not let Markdown syntax leak into rich copy.
+                    html += `${escapeHtml(rawLine)}\n`;
+                }
+                continue;
+            }
+
+            const fence = line.match(/^```\s*([\w-]*)\s*$/);
+            if (fence) {
+                closeBlocks();
+                inCodeBlock = true;
+                codeLanguage = fence[1] || '';
+                const languageClass = codeLanguage ? ` class="language-${escapeHtml(codeLanguage)}"` : '';
+                html += `<pre style="${bodyFont}background:#f8fafc;color:#0f172a;padding:10px 12px;border:1px solid #e2e8f0;border-radius:4px;white-space:pre-wrap;overflow-wrap:anywhere;"><code${languageClass}>`;
+                continue;
+            }
+
+            // GFM tables. The separator row is consumed instead of being copied.
             if (line.startsWith('|') && line.endsWith('|')) {
                 const cells = line.slice(1, -1).split('|').map(c => c.trim());
-                if (cells.every(c => /^:?-+:?$/.test(c))) {
+                if (cells.length && cells.every(c => /^:?-{3,}:?$/.test(c))) {
                     tableHeaderDone = true;
                     continue;
                 }
+                closeList();
                 if (!inTable) {
-                    if (inList) { html += '</ul>\n'; inList = false; }
                     inTable = true;
                     tableHeaderDone = false;
-                    html += '<table style="border-collapse:collapse;width:100%;margin:12px 0;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:13px;">\n';
+                    html += `<table style="border-collapse:collapse;width:100%;margin:12px 0;${bodyFont}font-size:13px;">\n`;
                 }
-                const tag = !tableHeaderDone ? 'th' : 'td';
-                const cellStyle = !tableHeaderDone
-                    ? 'border:1px solid #cbd5e1;padding:8px 12px;background:#f8fafc;font-weight:600;text-align:left;'
-                    : 'border:1px solid #cbd5e1;padding:8px 12px;text-align:left;';
-                html += '  <tr>' + cells.map(c => `<${tag} style="${cellStyle}">${formatInline(escapeHtml(c))}</${tag}>`).join('') + '</tr>\n';
+                const tag = tableHeaderDone ? 'td' : 'th';
+                const cellStyle = tableHeaderDone
+                    ? 'border:1px solid #cbd5e1;padding:8px 12px;text-align:left;'
+                    : 'border:1px solid #cbd5e1;padding:8px 12px;background:#f8fafc;font-weight:600;text-align:left;';
+                html += `  <tr>${cells.map(c => `<${tag} style="${cellStyle}">${formatInline(c)}</${tag}>`).join('')}</tr>\n`;
                 continue;
-            } else if (inTable) {
-                html += '</table>\n';
-                inTable = false;
+            }
+            closeTable();
+
+            if (!line) {
+                closeList();
+                continue;
             }
 
-            // Horizontal rule
-            if (line === '---' || line === '***') {
-                if (inList) { html += '</ul>\n'; inList = false; }
+            // Blockquotes can span multiple consecutive lines.
+            if (/^>\s?/.test(line)) {
+                closeList();
+                const quoteLines = [];
+                while (i < lines.length && /^\s*>/.test(lines[i])) {
+                    quoteLines.push(lines[i].replace(/^\s*>\s?/, '').trim());
+                    i++;
+                }
+                i--;
+                html += `<blockquote style="margin:8px 0;padding:4px 12px;border-left:3px solid #cbd5e1;color:#475569;${bodyFont}">${quoteLines.map(formatInline).join('<br>')}</blockquote>\n`;
+                continue;
+            }
+
+            if (/^(?:---+|\*\*\*+|___+)\s*$/.test(line)) {
+                closeList();
                 html += '<hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;" />\n';
                 continue;
             }
 
-            // Headings
-            if (line.startsWith('# ')) {
-                if (inList) { html += '</ul>\n'; inList = false; }
-                html += `<h1 style="color:#0f172a;font-size:18px;font-weight:700;margin:16px 0 8px 0;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;">${formatInline(escapeHtml(line.slice(2)))}</h1>\n`;
-                continue;
-            }
-            if (line.startsWith('## ')) {
-                if (inList) { html += '</ul>\n'; inList = false; }
-                html += `<h2 style="color:#1e293b;font-size:15px;font-weight:700;margin:14px 0 6px 0;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;">${formatInline(escapeHtml(line.slice(3)))}</h2>\n`;
-                continue;
-            }
-            if (line.startsWith('### ')) {
-                if (inList) { html += '</ul>\n'; inList = false; }
-                html += `<h3 style="color:#334155;font-size:13px;font-weight:600;margin:12px 0 4px 0;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;">${formatInline(escapeHtml(line.slice(4)))}</h3>\n`;
+            const heading = line.match(/^(#{1,6})\s+(.+?)\s*$/);
+            if (heading) {
+                closeList();
+                const level = heading[1].length;
+                const headingText = heading[2].replace(/\s+#+\s*$/, '');
+                const headingStyles = {
+                    1: 'color:#0f172a;font-size:18px;font-weight:700;margin:16px 0 8px 0;',
+                    2: 'color:#1e293b;font-size:15px;font-weight:700;margin:14px 0 6px 0;',
+                    3: 'color:#334155;font-size:13px;font-weight:600;margin:12px 0 4px 0;',
+                    4: 'color:#475569;font-size:13px;font-weight:600;margin:10px 0 4px 0;',
+                    5: 'color:#475569;font-size:12px;font-weight:600;margin:8px 0 4px 0;',
+                    6: 'color:#64748b;font-size:12px;font-weight:600;margin:8px 0 4px 0;',
+                };
+                html += `<h${level} style="${headingStyles[level]}${bodyFont}">${formatInline(headingText)}</h${level}>\n`;
                 continue;
             }
 
-            // Bullet lists
-            if (line.startsWith('- ') || line.startsWith('* ')) {
-                if (!inList) {
-                    html += '<ul style="margin:6px 0;padding-left:20px;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.6;">\n';
-                    inList = true;
+            const unordered = line.match(/^[-*+]\s+(.*)$/);
+            const ordered = line.match(/^\d+[.)]\s+(.*)$/);
+            if (unordered || ordered) {
+                const nextListType = ordered ? 'ol' : 'ul';
+                if (listType && listType !== nextListType) closeList();
+                if (!listType) {
+                    listType = nextListType;
+                    const listStyle = nextListType === 'ol' ? 'list-style-position:outside;' : '';
+                    html += `<${listType} style="margin:6px 0;padding-left:20px;${listStyle}${bodyFont}font-size:13px;line-height:1.6;">\n`;
                 }
-                html += `  <li>${formatInline(escapeHtml(line.slice(2)))}</li>\n`;
+                let item = (unordered || ordered)[1];
+                item = item.replace(/^\[[ xX]\]\s+/, '');
+                html += `  <li>${formatInline(item)}</li>\n`;
                 continue;
-            } else if (inList) {
-                html += '</ul>\n';
-                inList = false;
             }
+            closeList();
 
-            if (!line) continue;
-
-            html += `<p style="margin:6px 0;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.6;color:#1e293b;">${formatInline(escapeHtml(line))}</p>\n`;
+            html += `<p style="margin:6px 0;${bodyFont}font-size:13px;line-height:1.6;color:#1e293b;">${formatInline(line)}</p>\n`;
         }
 
-        if (inList) html += '</ul>\n';
-        if (inTable) html += '</table>\n';
+        closeBlocks();
+        if (inCodeBlock) html += '</code></pre>\n';
+        return `<div style="${bodyFont}">${html}</div>`;
+    }
 
-        return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">${html}</div>`;
+    _richHtmlToPlainText(html) {
+        const container = document.createElement('div');
+        container.innerHTML = html;
+        return (container.innerText || container.textContent || '').trim();
+    }
+
+    async _writeRichClipboard(html) {
+        const plainText = this._richHtmlToPlainText(html);
+        if (window.ClipboardItem && navigator.clipboard?.write) {
+            const textBlob = new Blob([plainText], { type: 'text/plain' });
+            const htmlBlob = new Blob([html], { type: 'text/html' });
+            await navigator.clipboard.write([
+                new ClipboardItem({
+                    'text/plain': textBlob,
+                    'text/html': htmlBlob,
+                })
+            ]);
+            return;
+        }
+
+        // Safari/Tauri versions without ClipboardItem can still copy rich HTML by
+        // copying a temporary contenteditable element instead of falling back to Markdown.
+        const helper = document.createElement('div');
+        helper.contentEditable = 'true';
+        helper.innerHTML = html;
+        helper.style.position = 'fixed';
+        helper.style.left = '-100000px';
+        helper.style.top = '0';
+        helper.style.opacity = '0';
+        document.body.appendChild(helper);
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(helper);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        try {
+            if (!document.execCommand('copy')) throw new Error('Rich clipboard copy is unavailable');
+        } finally {
+            selection?.removeAllRanges();
+            helper.remove();
+        }
     }
 
     _resolveTemplateForSession(sessionData) {
@@ -11532,24 +11671,13 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._showToast('Chưa có nội dung Meeting Minutes để copy', 'info');
             return;
         }
+        const html = this._markdownToRichHtml(md);
         try {
-            const html = this._markdownToRichHtml(md);
-            if (window.ClipboardItem && navigator.clipboard?.write) {
-                const textBlob = new Blob([md], { type: 'text/plain' });
-                const htmlBlob = new Blob([html], { type: 'text/html' });
-                await navigator.clipboard.write([
-                    new ClipboardItem({
-                        'text/plain': textBlob,
-                        'text/html': htmlBlob,
-                    })
-                ]);
-            } else {
-                await navigator.clipboard.writeText(md);
-            }
+            await this._writeRichClipboard(html);
             this._showToast('Đã copy HTML Meeting Minutes ✓', 'success');
         } catch (err) {
             console.error('[App] _copyRichMeetingMinutes failed:', err);
-            await navigator.clipboard.writeText(md);
+            await navigator.clipboard.writeText(this._richHtmlToPlainText(html));
             this._showToast('Đã copy Meeting Minutes (văn bản) ✓', 'success');
         }
     }
@@ -11561,24 +11689,13 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._showToast('Chưa có nội dung ghi chú để copy', 'info');
             return;
         }
+        const html = this._markdownToRichHtml(md);
         try {
-            const html = this._markdownToRichHtml(md);
-            if (window.ClipboardItem && navigator.clipboard?.write) {
-                const textBlob = new Blob([md], { type: 'text/plain' });
-                const htmlBlob = new Blob([html], { type: 'text/html' });
-                await navigator.clipboard.write([
-                    new ClipboardItem({
-                        'text/plain': textBlob,
-                        'text/html': htmlBlob,
-                    })
-                ]);
-            } else {
-                await navigator.clipboard.writeText(md);
-            }
+            await this._writeRichClipboard(html);
             this._showToast('Đã copy HTML ghi chú ✓', 'success');
         } catch (err) {
             console.error('[App] _copyRichNotes failed:', err);
-            await navigator.clipboard.writeText(md);
+            await navigator.clipboard.writeText(this._richHtmlToPlainText(html));
             this._showToast('Đã copy ghi chú (văn bản) ✓', 'success');
         }
     }
