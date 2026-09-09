@@ -2156,12 +2156,34 @@ class App {
     // ─── Settings: Templates Manager ─────────────────────────
 
     _initSettingsTemplatesTab() {
-        // Main tabs (Meeting Minutes vs Note Template)
+        // Main tabs (automatic Meeting Minutes vs handwritten notes)
         document.querySelectorAll('#templates-main-tabs .folder-tab-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const tab = btn.dataset.tmplTab;
                 if (tab) this._switchTemplatesMainTab(tab);
             });
+        });
+
+        document.getElementById('check-meeting-minutes-use-notes')?.addEventListener('change', async (event) => {
+            const checkbox = event.currentTarget;
+            const enabled = checkbox.checked;
+            const previous = settingsManager.get().meeting_minutes_use_notes !== false;
+            // Update the in-memory value immediately so any generation started now
+            // uses the same source the user just selected.
+            settingsManager.settings.meeting_minutes_use_notes = enabled;
+            try {
+                await settingsManager.save({ meeting_minutes_use_notes: enabled });
+                this._showToast(
+                    enabled
+                        ? 'Đã bật sử dụng Ghi chép bằng tay cho Meeting Minutes ✓'
+                        : 'Đã tắt sử dụng Ghi chép bằng tay cho Meeting Minutes ✓',
+                    'success'
+                );
+            } catch (err) {
+                settingsManager.settings.meeting_minutes_use_notes = previous;
+                checkbox.checked = previous;
+                this._showToast(`Lỗi lưu nguồn tạo Meeting Minutes: ${err}`, 'error');
+            }
         });
 
         // Presets selector buttons
@@ -2213,6 +2235,8 @@ class App {
 
     _renderSettingsTemplatesTab() {
         const s = settingsManager.get();
+        const useNotesCheckbox = document.getElementById('check-meeting-minutes-use-notes');
+        if (useNotesCheckbox) useNotesCheckbox.checked = s.meeting_minutes_use_notes !== false;
         if (this._templateDrafts.standard_vi === undefined) {
             this._templateDrafts = {
                 standard_vi: (s.template_minutes_vi !== undefined && s.template_minutes_vi !== null && s.template_minutes_vi !== '') ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI,
@@ -2319,6 +2343,7 @@ class App {
                 template_minutes_1on1_ja: this._templateDrafts.one_on_one_ja,
                 template_minutes_personal_vi: this._templateDrafts.personal_vi,
                 template_minutes_personal_ja: this._templateDrafts.personal_ja,
+                meeting_minutes_use_notes: document.getElementById('check-meeting-minutes-use-notes')?.checked !== false,
             });
             this._showToast('Đã lưu mẫu văn bản ✓', 'success');
         } catch (err) {
@@ -11255,7 +11280,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const title = sessionData.title || sessionData.id;
         const createdAt = sessionData.created_at || '';
         const durationMin = Math.round((sessionData.duration_sec || 0) / 60);
-        const notes = sessionData.notes?.trim() || '(Không có ghi chú riêng)';
+        const useNotes = settingsManager.get().meeting_minutes_use_notes !== false;
+        const notes = useNotes ? (sessionData.notes?.trim() || '(Không có ghi chú riêng)') : '';
 
         const logLines = [];
         for (const chunk of (sessionData.chunks || [])) {
@@ -11283,14 +11309,21 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 .replace(/\{\{duration\}\}/g, String(durationMin))
                 .replace(/\{\{participants\}\}/g, '(発言ログやメモから判明する参加者・発言者、または想定される担当者)');
 
-            let personaJa = 'あなたはプロフェッショナルな議事録作成アシスタントです。\n以下の会議情報、ユーザーの手書きメモ、および会議のリアルタイム発言ログをもとに、クライアントや関係者にそのまま共有・送信できる高品質で正式な「会議議事録（Meeting Minutes）」を日本語のMarkdown形式で作成してください。';
+            const sourceTextJa = useNotes
+                ? '会議情報、ユーザーの手書きメモ、および会議のリアルタイム発言ログ'
+                : '会議情報と会議のリアルタイム発言ログのみ（手書きメモは使用しない）';
+            let personaJa = `あなたはプロフェッショナルな議事録作成アシスタントです。\n以下の${sourceTextJa}をもとに、クライアントや関係者にそのまま共有・送信できる高品質で正式な「会議議事録（Meeting Minutes）」を日本語のMarkdown形式で作成してください。`;
             if (templateId === 'tech') {
-                personaJa = 'あなたはシニアITアーキテクト／テクニカルリードのアシスタントです。\n以下の会議情報、エンジニアの手書きメモ、および技術討議の発言ログをもとに、開発チームや関係者にそのまま共有・実装できる高精度な「技術議事録・アーキテクチャ設計メモ（Technical Sync Minutes）」を日本語のMarkdown形式で作成してください。';
+                personaJa = `あなたはシニアITアーキテクト／テクニカルリードのアシスタントです。\n以下の${sourceTextJa}をもとに、開発チームや関係者にそのまま共有・実装できる高精度な「技術議事録・アーキテクチャ設計メモ（Technical Sync Minutes）」を日本語のMarkdown形式で作成してください。`;
             } else if (templateId === 'one_on_one') {
-                personaJa = 'あなたはプロフェッショナルなメンター／人事コーチ・マネージャーです。\n以下の面談情報、手書きメモ、および面談の発言ログをもとに、信頼関係を築きメンバーの成長とアクションを促す客観的で温かみのある「1on1面談記録（1-on-1 Notes）」を日本語のMarkdown形式で作成してください。';
+                personaJa = `あなたはプロフェッショナルなメンター／人事コーチ・マネージャーです。\n以下の${sourceTextJa}をもとに、信頼関係を築きメンバーの成長とアクションを促す客観的で温かみのある「1on1面談記録（1-on-1 Notes）」を日本語のMarkdown形式で作成してください。`;
             } else if (templateId === 'personal') {
-                personaJa = 'あなたは思慮深い自己啓発パートナー兼学習ノート整理アシスタントです。\n以下のセッション情報、個人のメモ、および対話・音声ログをもとに、今後の自己研鑽や行動に活かせる整理された「個人メモ・学習まとめ（Personal Notes）」を日本語のMarkdown形式で作成してください。';
+                personaJa = `あなたは思慮深い自己啓発パートナー兼学習ノート整理アシスタントです。\n以下の${sourceTextJa}をもとに、今後の自己研鑽や行動に活かせる整理された「個人メモ・学習まとめ（Personal Notes）」を日本語のMarkdown形式で作成してください。`;
             }
+
+            const notesSectionJa = useNotes
+                ? `【参加者の手書きメモ】\n${notes}`
+                : '【手書きメモ】\n使用しない（Meeting Minutes は発言・翻訳ログのみを根拠とします）';
 
             return `${personaJa}
 
@@ -11299,8 +11332,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 - 日時: ${createdAt}
 - 所要時間: 約 ${durationMin} 分
 
-【参加者の手書きメモ】
-${notes}
+${notesSectionJa}
 
 【発言・翻訳ログ】
 ${transcriptText}
@@ -11323,19 +11355,26 @@ ${template}
                 .replace(/\{\{duration\}\}/g, String(durationMin))
                 .replace(/\{\{participants\}\}/g, '(Participants/speakers identified from the logs or notes)');
 
-            let personaEn = 'You are a professional meeting-minutes assistant.\nBelow is the meeting info, the participant\'s handwritten notes, and the full dialogue/translation log recorded during the meeting:';
+            const sourceTextEn = useNotes
+                ? "the meeting info, the participant's handwritten notes, and the full dialogue/translation log"
+                : 'the meeting info and the full dialogue/translation log only (do not use handwritten notes)';
+            let personaEn = `You are a professional meeting-minutes assistant.\nBelow is ${sourceTextEn} recorded during the meeting:`;
             let actionEn = 'Analyze everything thoroughly and draft FORMAL, CONCISE MEETING MINUTES in professional English Markdown, following the STRUCTURE of the TEMPLATE BELOW (translate its headings into natural English):';
 
             if (templateId === 'tech') {
-                personaEn = 'You are a senior IT architect / tech-lead assistant.\nBelow is the technical meeting info, the engineer\'s handwritten notes, and the full architecture/technology discussion log:';
+                personaEn = `You are a senior IT architect / tech-lead assistant.\nBelow is ${sourceTextEn} for the architecture/technology discussion:`;
                 actionEn = 'Analyze the solutions in depth and draft a formal TECHNICAL SYNC / ARCHITECTURE MINUTES document in professional English Markdown, following the STRUCTURE of the TEMPLATE BELOW (translate its headings into natural English):';
             } else if (templateId === 'one_on_one') {
-                personaEn = 'You are an empathetic people manager, mentor and internal coach.\nBelow is the 1-on-1 session info, handwritten notes, and the full dialogue of the meeting:';
+                personaEn = `You are an empathetic people manager, mentor and internal coach.\nBelow is ${sourceTextEn} for the 1-on-1 meeting:`;
                 actionEn = 'Summarize objectively and constructively, and draft 1-ON-1 MEETING NOTES in professional English Markdown, following the STRUCTURE of the TEMPLATE BELOW (translate its headings into natural English):';
             } else if (templateId === 'personal') {
-                personaEn = 'You are a thoughtful self-development companion and personal knowledge assistant.\nBelow is the personal session info, notes, and the full dialogue content:';
+                personaEn = `You are a thoughtful self-development companion and personal knowledge assistant.\nBelow is ${sourceTextEn} for the personal session:`;
                 actionEn = 'Distill the core lessons and draft a concise, practical PERSONAL NOTES & SUMMARY in professional English Markdown, following the STRUCTURE of the TEMPLATE BELOW (translate its headings into natural English):';
             }
+
+            const notesSectionEn = useNotes
+                ? `【HANDWRITTEN NOTES】\n${notes}`
+                : '【HANDWRITTEN NOTES】\nNot used (base the output only on the dialogue/translation log)';
 
             return `${personaEn}
 
@@ -11344,8 +11383,7 @@ ${template}
 - Started at: ${createdAt}
 - Duration: about ${durationMin} minutes
 
-【HANDWRITTEN NOTES】
-${notes}
+${notesSectionEn}
 
 【DIALOGUE & TRANSLATION LOG】
 ${transcriptText}
@@ -11366,19 +11404,26 @@ Note: use a formal, clear, professional business tone.`;
             .replace(/\{\{duration\}\}/g, String(durationMin))
             .replace(/\{\{participants\}\}/g, '(Tổng hợp tên người nói hoặc các bên tham gia dựa theo hội thoại/ghi chú)');
 
-        let personaVi = 'Bạn là một trợ lý thư ký cuộc họp chuyên nghiệp và sắc bén.\nDưới đây là thông tin cuộc họp, ghi chú viết tay của người tham gia và toàn bộ dữ liệu đối thoại/bản dịch ghi nhận được trong cuộc họp:';
+        const sourceTextVi = useNotes
+            ? 'thông tin cuộc họp, ghi chú viết tay của người tham gia và toàn bộ dữ liệu đối thoại/bản dịch'
+            : 'thông tin cuộc họp và toàn bộ dữ liệu đối thoại/bản dịch (không sử dụng ghi chú viết tay)';
+        let personaVi = `Bạn là một trợ lý thư ký cuộc họp chuyên nghiệp và sắc bén.\nDưới đây là ${sourceTextVi} ghi nhận được trong cuộc họp:`;
         let actionVi = 'Hãy phân tích toàn diện và soạn thảo một BẢN BIÊN BẢN CUỘC HỌP (MEETING MINUTES) chuẩn chỉnh, trang trọng và súc tích bằng Tiếng Việt theo ĐÚNG CẤU TRÚC MẪU (TEMPLATE) DƯỚI ĐÂY:';
 
         if (templateId === 'tech') {
-            personaVi = 'Bạn là một trợ lý kỹ thuật / Tech Lead chuyên nghiệp và giàu kinh nghiệm.\nDưới đây là thông tin cuộc họp kỹ thuật, ghi chú viết tay của kỹ sư và toàn bộ đối thoại/bản dịch thảo luận kiến trúc/công nghệ trong cuộc họp:';
+            personaVi = `Bạn là một trợ lý kỹ thuật / Tech Lead chuyên nghiệp và giàu kinh nghiệm.\nDưới đây là ${sourceTextVi} về thảo luận kiến trúc/công nghệ trong cuộc họp:`;
             actionVi = 'Hãy phân tích sâu sắc các giải pháp và soạn thảo một BIÊN BẢN HỌP KỸ THUẬT & KIẾN TRÚC (TECHNICAL SYNC) chuẩn chỉnh bằng Tiếng Việt theo ĐÚNG CẤU TRÚC MẪU (TEMPLATE) DƯỚI ĐÂY:';
         } else if (templateId === 'one_on_one') {
-            personaVi = 'Bạn là một chuyên gia quản lý nhân sự, mentor và huấn luyện nội bộ giàu thấu cảm.\nDưới đây là thông tin buổi trao đổi 1-on-1, ghi chú viết tay và toàn bộ đối thoại trong buổi gặp:';
+            personaVi = `Bạn là một chuyên gia quản lý nhân sự, mentor và huấn luyện nội bộ giàu thấu cảm.\nDưới đây là ${sourceTextVi} trong buổi trao đổi 1-on-1:`;
             actionVi = 'Hãy tổng hợp khách quan, mang tính xây dựng và soạn thảo một BIÊN BẢN TRAO ĐỔI 1-ON-1 & ĐÁNH GIÁ bằng Tiếng Việt theo ĐÚNG CẤU TRÚC MẪU (TEMPLATE) DƯỚI ĐÂY:';
         } else if (templateId === 'personal') {
-            personaVi = 'Bạn là một người bạn đồng hành hỗ trợ phát triển bản thân và hệ thống hóa tri thức cá nhân.\nDưới đây là thông tin cuộc trao đổi/buổi học cá nhân, ghi chú và toàn bộ nội dung đối thoại:';
+            personaVi = `Bạn là một người bạn đồng hành hỗ trợ phát triển bản thân và hệ thống hóa tri thức cá nhân.\nDưới đây là ${sourceTextVi} trong cuộc trao đổi/buổi học cá nhân:`;
             actionVi = 'Hãy đúc kết các bài học cốt lõi và soạn thảo một BẢN GHI CHÉP & TÓM TẮT CÁ NHÂN súc tích, thực tế bằng Tiếng Việt theo ĐÚNG CẤU TRÚC MẪU (TEMPLATE) DƯỚI ĐÂY:';
         }
+
+        const notesSectionVi = useNotes
+            ? `【GHI CHÚ VIẾT TAY (NOTES)】\n${notes}`
+            : '【GHI CHÚ VIẾT TAY (NOTES)】\nKhông sử dụng (chỉ dùng lịch sử thoại và bản dịch làm căn cứ)';
 
         return `${personaVi}
 
@@ -11387,8 +11432,7 @@ Note: use a formal, clear, professional business tone.`;
 - Thời gian bắt đầu: ${createdAt}
 - Thời lượng: khoảng ${durationMin} phút
 
-【GHI CHÚ VIẾT TAY (NOTES)】
-${notes}
+${notesSectionVi}
 
 【LỊCH SỬ THOẠI & BẢN DỊCH】
 ${transcriptText}

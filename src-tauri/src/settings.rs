@@ -151,6 +151,9 @@ pub struct Settings {
     /// Custom template for Notes (Markdown)
     #[serde(default)]
     pub template_notes: Option<String>,
+    /// Whether handwritten notes should be used as source material for Meeting Minutes
+    #[serde(default = "default_meeting_minutes_use_notes")]
+    pub meeting_minutes_use_notes: bool,
     /// Custom template for Meeting Minutes - Vietnamese (Markdown)
     #[serde(default)]
     pub template_minutes_vi: Option<String>,
@@ -252,6 +255,7 @@ impl Default for Settings {
             openai_audio_output: false,
             inactivity_timeout_min: 10,
             template_notes: None,
+            meeting_minutes_use_notes: true,
             template_minutes_vi: None,
             template_minutes_ja: None,
             template_minutes_tech_vi: None,
@@ -301,6 +305,10 @@ fn default_overlay_opacity() -> f64 {
 
 fn default_inactivity_timeout_min() -> u32 {
     10
+}
+
+fn default_meeting_minutes_use_notes() -> bool {
+    true
 }
 
 fn default_note_font_size() -> u32 {
@@ -427,6 +435,7 @@ mod tests {
         assert!(s.show_original);
         assert!(s.tts_auto_read);
         assert!(!s.tts_enabled);
+        assert!(s.meeting_minutes_use_notes);
     }
 
     #[test]
@@ -447,6 +456,7 @@ mod tests {
         assert_eq!(s.translation_timing, "on_pause");
         assert_eq!(s.endpoint_delay, 3000);
         assert_eq!(s.font_color, "#ffffff");
+        assert!(s.meeting_minutes_use_notes);
     }
 
     #[test]
@@ -480,6 +490,7 @@ mod tests {
         s.table_font_size = 14;
         s.table_font_weight = "semibold".to_string();
         s.font_color = "#33ccff".to_string();
+        s.meeting_minutes_use_notes = false;
         s.template_notes = Some("# Notes template".to_string());
 
         let json = serde_json::to_string(&s).expect("should serialize");
@@ -496,6 +507,7 @@ mod tests {
         assert_eq!(restored.table_font_size, 14);
         assert_eq!(restored.table_font_weight, "semibold");
         assert_eq!(restored.font_color, "#33ccff");
+        assert!(!restored.meeting_minutes_use_notes);
         assert_eq!(
             restored.template_notes,
             Some("# Notes template".to_string())

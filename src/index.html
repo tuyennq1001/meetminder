@@ -321,11 +321,11 @@
         <div class="session-nav-tabbar folder-tab-bar">
           <div class="session-nav-tab-group folder-tabs">
             <button type="button" class="session-nav-tab folder-tab-btn active" data-tab="minutes" id="tab-btn-minutes">
-              <span>📋</span> Minutes
+              <span>📋</span> Meeting Minutes tự động
               <span id="tab-badge-minutes" class="session-tab-badge" style="display:none">✓</span>
             </button>
             <button type="button" class="session-nav-tab folder-tab-btn" data-tab="notes" id="tab-btn-notes">
-              <span>📝</span> Notes
+              <span>📝</span> Ghi chép bằng tay
             </button>
             <button type="button" class="session-nav-tab folder-tab-btn" data-tab="logs" id="tab-btn-logs">
               <span>📜</span> Logs
@@ -970,10 +970,10 @@
 
           <div class="folder-tab-bar" id="templates-main-tabs" role="tablist">
             <button type="button" class="folder-tab-btn active" data-tmpl-tab="minutes" id="tab-btn-tmpl-minutes">
-              📋 Meeting Minutes
+              📋 Meeting Minutes tự động
             </button>
             <button type="button" class="folder-tab-btn" data-tmpl-tab="notes" id="tab-btn-tmpl-notes">
-              📝 Ghi chú (Note)
+              📝 Ghi chép bằng tay
             </button>
           </div>
 
@@ -982,6 +982,17 @@
             <div class="settings-section" style="padding-top: 12px; padding-bottom: 4px;">
               <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;">
                 Cung cấp 4 Mẫu Preset chuẩn mực cho từng ngữ cảnh cuộc họp. AI sẽ tự động áp dụng đúng mẫu theo Danh mục cuộc họp. Bạn có thể xem trước hoặc tuỳ biến cấu trúc mẫu bên dưới:
+              </p>
+
+              <div class="settings-grid-row template-source-setting">
+                <span class="field-label">Nguồn tạo biên bản</span>
+                <label class="checkbox-option" for="check-meeting-minutes-use-notes">
+                  <input type="checkbox" id="check-meeting-minutes-use-notes" checked />
+                  <span class="checkbox-label">Sử dụng Ghi chép bằng tay làm căn cứ tạo Meeting Minutes tự động</span>
+                </label>
+              </div>
+              <p class="hint template-source-hint">
+                Bật để AI kết hợp ghi chép bằng tay với transcript. Tắt để AI chỉ sử dụng nội dung transcript.
               </p>
 
               <div class="templates-preset-bar folder-tab-bar" id="templates-preset-bar" role="tablist">

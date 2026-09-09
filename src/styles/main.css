@@ -2135,6 +2135,22 @@ input[type="range"]::-webkit-slider-thumb:hover {
   font-weight: var(--menu-font-weight, 500);
 }
 
+.template-source-setting {
+  align-items: flex-start;
+  margin-top: 4px;
+}
+
+.template-source-setting .checkbox-option {
+  flex: 1;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.template-source-hint {
+  margin: 0 0 12px 156px;
+  line-height: 1.45;
+}
+
 .checkbox-label {
   font-family: var(--menu-font-family);
   font-size: var(--menu-font-size, 12px);

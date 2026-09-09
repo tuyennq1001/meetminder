@@ -33,6 +33,7 @@ const DEFAULT_SETTINGS = {
   endpoint_delay: 3000,
   inactivity_timeout_min: 10,
   template_notes: '',
+  meeting_minutes_use_notes: true,
   template_minutes_vi: '',
   template_minutes_ja: '',
   template_minutes_tech_vi: '',
