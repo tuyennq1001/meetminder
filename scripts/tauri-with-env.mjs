@@ -53,19 +53,21 @@ function readConfValue(key) {
 }
 
 if (identifier) {
-  // Dev override: distinct id + " Dev" product name + ad-hoc signing ("-"). Ad-hoc lets a
-  // local `build:dev` succeed without the production Developer ID cert in the keychain, and
-  // the " Dev" name makes the app distinct in Finder and the macOS permission lists. The
+  // Dev override: distinct id + " Dev" product name + a stable signing identity. The
   // release path (`npm run build` / `npm run tauri build`) does NOT use this wrapper, so it
   // keeps the real identifier, product name, and Developer ID identity from tauri.conf.json.
   const baseName = readConfValue('productName') || 'Meet Minder';
   const devName = baseName.endsWith(' Dev') ? baseName : `${baseName} Dev`;
-  // Signing identity: ad-hoc "-" by default. Ad-hoc changes on every rebuild, so macOS
-  // Screen-Recording permission does NOT persist across rebuilds. Set APP_SIGNING_IDENTITY
-  // in .env to a STABLE cert name (e.g. a self-signed "Meet Minder Dev" cert) to make the
-  // permission stick across rebuilds.
-  const signingIdentity =
-    process.env.APP_SIGNING_IDENTITY || readEnvValue('APP_SIGNING_IDENTITY') || '-';
+  // Ad-hoc signatures change on every rebuild, which makes macOS Screen-Recording and
+  // Microphone permissions expire. Require an explicit stable certificate instead of
+  // silently falling back to ad-hoc signing and creating a permission-reset trap.
+  const signingIdentity = process.env.APP_SIGNING_IDENTITY || readEnvValue('APP_SIGNING_IDENTITY');
+  if (!signingIdentity) {
+    throw new Error(
+      '[tauri-with-env] APP_SIGNING_IDENTITY is required for Dev builds. ' +
+      'Configure a stable macOS code-signing certificate in .env (for example: Meet Minder Dev).'
+    );
+  }
   const override = {
     identifier,
     productName: devName,
@@ -81,8 +83,7 @@ if (identifier) {
   if (args[0] === 'build' && !args.includes('--bundles')) {
     args.push('--bundles', 'app');
   }
-  const signLabel = signingIdentity === '-' ? 'ad-hoc ("-")' : `"${signingIdentity}"`;
-  console.log(`[tauri-with-env] override: identifier=${identifier}, productName="${devName}", signing=${signLabel}, devtools=on`);
+  console.log(`[tauri-with-env] override: identifier=${identifier}, productName="${devName}", signing="${signingIdentity}", devtools=on`);
 } else {
   console.log('[tauri-with-env] no APP_IDENTIFIER — using default identifier + name + signing from tauri.conf.json');
 }
