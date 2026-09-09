@@ -746,7 +746,7 @@ export class TranscriptUI {
                 </div>
                 <div class="panel-timestamps-wrap">
                     <div class="panel-timestamps-header panel-column-header panel-time-header">
-                        <span class="timeline-header-label">Thời gian</span>
+                        <span class="timeline-header-label">Timeline</span>
                     </div>
                     <div class="panel-timestamps">
                         <div class="panel-time-body">${timeHtml}</div>
