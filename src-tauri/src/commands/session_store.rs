@@ -1011,6 +1011,24 @@ fn format_duration_str(sec: u64) -> String {
     }
 }
 
+fn language_name(code: &str) -> String {
+    match code.trim().to_lowercase().as_str() {
+        "vi" => "Vietnamese (Tiếng Việt)".to_string(),
+        "en" => "English".to_string(),
+        "ja" => "Japanese (日本語)".to_string(),
+        "ko" => "Korean (한국어)".to_string(),
+        "zh" => "Chinese (中文)".to_string(),
+        "fr" => "French (Français)".to_string(),
+        "de" => "German (Deutsch)".to_string(),
+        "es" => "Spanish (Español)".to_string(),
+        "th" => "Thai".to_string(),
+        "id" => "Indonesian".to_string(),
+        "ru" => "Russian".to_string(),
+        "auto" | "" => "the detected target language".to_string(),
+        other => format!("the language with code '{}'", other),
+    }
+}
+
 pub fn rebuild_session_markdown(data: &SessionData) -> String {
     let mut lines = Vec::new();
     let title = if data.title.is_empty() {
@@ -2383,13 +2401,15 @@ pub async fn retranscribe_session_with_gemini(
         && data.target_lang != "off"
         && data.target_lang != data.source_lang;
     let translation_instruction = if has_translation {
+        let target_name = language_name(&data.target_lang);
         format!(
-            " Also translate every segment into {} and set its translation field.",
-            data.target_lang
+            " IMPORTANT: translate every segment into {target_name} (language code: {}). The `translation` field MUST contain only the natural translation in {target_name}. Never write the translation in English unless the target language is English. Never copy, echo, transliterate, or summarize the source text. Set `translation` to an empty string only when the source segment is empty.",
+            data.target_lang,
         )
     } else {
         " Do not translate; set every translation field to an empty string.".to_string()
     };
+    let source_name = language_name(&data.source_lang);
 
     if let Some(duration_sec) = probe_audio_duration(&audio_path)
         .map(|duration| duration.ceil() as u64)
@@ -2424,7 +2444,7 @@ pub async fn retranscribe_session_with_gemini(
             )
             .await?;
             let prompt = format!(
-                "Transcribe only the audio in this chunk of a meeting recording. The spoken/source language is {}. This chunk covers absolute time {} through {} in the original recording. Split into short chronological segments and keep all meaningful speech. start_sec must be the absolute offset from the original recording, not the offset inside this chunk. Return JSON only with this exact schema: {{\"segments\":[{{\"start_sec\":0,\"text\":\"original speech\",\"translation\":\"\"}}]}}.{}",
+                "Transcribe only the audio in this chunk of a meeting recording. The spoken/source language is {source_name} (language code: {}). This chunk covers absolute time {} through {} in the original recording. Split into short chronological segments and keep all meaningful speech. start_sec must be the absolute offset from the original recording, not the offset inside this chunk. Return JSON only with this exact schema: {{\"segments\":[{{\"start_sec\":0,\"text\":\"original speech\",\"translation\":\"\"}}]}}.{}",
                 data.source_lang,
                 format_duration_str(*start_sec),
                 format_duration_str(*start_sec + *length_sec),
@@ -2627,7 +2647,7 @@ pub async fn retranscribe_session_with_gemini(
         48,
     );
     let prompt = format!(
-        "Transcribe this meeting recording accurately. The spoken/source language is {}. Split the transcript into short chronological segments, keeping all meaningful speech. Return JSON only, with this exact schema: {{\"segments\":[{{\"start_sec\":0,\"text\":\"original speech\",\"translation\":\"\"}}]}}. start_sec must be the approximate offset in seconds.{}",
+        "Transcribe this meeting recording accurately. The spoken/source language is {source_name} (language code: {}). Split the transcript into short chronological segments, keeping all meaningful speech. Return JSON only, with this exact schema: {{\"segments\":[{{\"start_sec\":0,\"text\":\"original speech\",\"translation\":\"\"}}]}}. start_sec must be the approximate offset in seconds.{}",
         data.source_lang, translation_instruction
     );
 
@@ -3556,6 +3576,13 @@ mod tests {
         assert_eq!(format_duration_str(125), "2m 5s");
         assert_eq!(format_duration_str(3600), "1h 0m");
         assert_eq!(format_duration_str(3665), "1h 1m");
+    }
+
+    #[test]
+    fn test_language_name_uses_explicit_names_for_prompts() {
+        assert_eq!(language_name("vi"), "Vietnamese (Tiếng Việt)");
+        assert_eq!(language_name(" JA "), "Japanese (日本語)");
+        assert_eq!(language_name("en"), "English");
     }
 
     #[test]
