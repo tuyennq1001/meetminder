@@ -344,10 +344,10 @@
           <!-- Sub-tabs: JA & VI + Actions (Same row, right-aligned) -->
           <div class="minutes-subtab-bar">
             <div class="minutes-subtab-container">
-              <span class="minutes-subtab-label">🌐 Ngôn ngữ biên bản:</span>
-              <div class="minutes-subtab-group">
-                <button type="button" class="minutes-subtab active" id="subtab-btn-minutes-ja" data-lang="ja" title="Biên bản cuộc họp Tiếng Nhật">
-                  <span>🇯🇵 Tiếng Nhật (日本語)</span>
+                  <span class="minutes-subtab-label">🌐 Ngôn ngữ biên bản:</span>
+                  <div class="minutes-subtab-group">
+                    <button type="button" class="minutes-subtab active" id="subtab-btn-minutes-ja" data-lang="ja" title="Biên bản cuộc họp Tiếng Nhật">
+                      <span>🇯🇵 日本語</span>
                   <span class="subtab-badge" id="subtab-badge-minutes-ja" style="display:none">✓ Đã có</span>
                 </button>
                 <button type="button" class="minutes-subtab" id="subtab-btn-minutes-vi" data-lang="vi" title="Biên bản cuộc họp Tiếng Việt">
@@ -519,13 +519,13 @@
 
           <div class="folder-tab-bar" id="projects-scope-tabs" role="tablist">
             <button type="button" class="folder-tab-btn active" data-scope="work" id="proj-scope-tab-work">
-              💼 Công việc (<span id="proj-scope-count-work">0</span>)
+              <span data-i18n="scope.work">💼 Công việc</span> (<span id="proj-scope-count-work">0</span>)
             </button>
             <button type="button" class="folder-tab-btn" data-scope="personal" id="proj-scope-tab-personal">
-              👤 Cá nhân (<span id="proj-scope-count-personal">0</span>)
+              <span data-i18n="scope.personal">👤 Cá nhân</span> (<span id="proj-scope-count-personal">0</span>)
             </button>
             <button type="button" class="folder-tab-btn" data-scope="" id="proj-scope-tab-all">
-              📑 Tất cả (<span id="proj-scope-count-all">0</span>)
+              <span data-i18n="scope.all">📑 Tất cả</span> (<span id="proj-scope-count-all">0</span>)
             </button>
           </div>
 
@@ -545,13 +545,13 @@
 
           <div class="folder-tab-bar" id="categories-scope-tabs" role="tablist">
             <button type="button" class="folder-tab-btn active" data-scope="work" id="cat-scope-tab-work">
-              💼 Công việc (<span id="cat-scope-count-work">0</span>)
+              <span data-i18n="scope.work">💼 Công việc</span> (<span id="cat-scope-count-work">0</span>)
             </button>
             <button type="button" class="folder-tab-btn" data-scope="personal" id="cat-scope-tab-personal">
-              👤 Cá nhân (<span id="cat-scope-count-personal">0</span>)
+              <span data-i18n="scope.personal">👤 Cá nhân</span> (<span id="cat-scope-count-personal">0</span>)
             </button>
             <button type="button" class="folder-tab-btn" data-scope="" id="cat-scope-tab-all">
-              📑 Tất cả (<span id="cat-scope-count-all">0</span>)
+              <span data-i18n="scope.all">📑 Tất cả</span> (<span id="cat-scope-count-all">0</span>)
             </button>
           </div>
 
@@ -571,13 +571,13 @@
 
           <div class="folder-tab-bar" id="tags-scope-tabs" role="tablist">
             <button type="button" class="folder-tab-btn active" data-scope="work" id="tag-scope-tab-work">
-              💼 Công việc (<span id="tag-scope-count-work">0</span>)
+              <span data-i18n="scope.work">💼 Công việc</span> (<span id="tag-scope-count-work">0</span>)
             </button>
             <button type="button" class="folder-tab-btn" data-scope="personal" id="tag-scope-tab-personal">
-              👤 Cá nhân (<span id="tag-scope-count-personal">0</span>)
+              <span data-i18n="scope.personal">👤 Cá nhân</span> (<span id="tag-scope-count-personal">0</span>)
             </button>
             <button type="button" class="folder-tab-btn" data-scope="" id="tag-scope-tab-all">
-              📑 Tất cả (<span id="tag-scope-count-all">0</span>)
+              <span data-i18n="scope.all">📑 Tất cả</span> (<span id="tag-scope-count-all">0</span>)
             </button>
           </div>
 
@@ -592,13 +592,13 @@
             <h3 class="settings-panel-title" data-i18n="settings.translationTitle">🌐 Engine &amp; Dịch thuật</h3>
           </div>
           <div class="settings-section">
-            <span class="field-label">Engine Dịch</span>
+            <span class="field-label" data-i18n="settings.engine.label">Engine Dịch</span>
             <select id="select-translation-mode">
-              <option value="gemini" selected>✨ Google Gemini Live (Khuyên dùng)</option>
-              <option value="openai">⚡ OpenAI Realtime</option>
-              <option value="qwen">🌏 Qwen LiveTranslate Flash</option>
-              <option value="soniox">☁️ Soniox</option>
-              <option value="local">🖥️ Local MLX</option>
+              <option value="gemini" selected data-i18n="settings.engine.gemini">✨ Google Gemini Live (Khuyên dùng)</option>
+              <option value="openai" data-i18n="settings.engine.openai">⚡ OpenAI Realtime</option>
+              <option value="qwen" data-i18n="settings.engine.qwen">🌏 Qwen LiveTranslate Flash</option>
+              <option value="soniox" data-i18n="settings.engine.soniox">☁️ Soniox</option>
+              <option value="local" data-i18n="settings.engine.local">🖥️ Local MLX</option>
             </select>
             <p class="hint" id="hint-mode-gemini">Cloud · Gemini 2.0 Flash · free on Google AI Studio · 100+ languages</p>
             <p class="hint" id="hint-mode-soniox" style="display:none">Cloud · 70+ languages · ~$0.12/hr</p>
@@ -611,41 +611,41 @@
           </div>
 
           <div class="settings-section">
-            <span class="field-label">Kiểu dịch</span>
-        <select id="select-translation-timing" title="Chọn dịch khi hết câu hoặc dịch ngay lập tức">
-          <option value="on_pause" selected>⏳ Dịch khi hết câu</option>
-          <option value="realtime">⚡ Dịch ngay lập tức</option>
+            <span class="field-label" data-i18n="settings.engine.timingLabel">Kiểu dịch</span>
+        <select id="select-translation-timing" data-i18n-title="settings.engine.timingTitle" title="Chọn dịch khi hết câu hoặc dịch ngay lập tức">
+          <option value="on_pause" selected data-i18n="settings.engine.timingOnPause">⏳ Dịch khi hết câu</option>
+          <option value="realtime" data-i18n="settings.engine.timingRealtime">⚡ Dịch ngay lập tức</option>
         </select>
-        <p class="hint">Mặc định dịch khi người nói hết câu. Chọn dịch ngay lập tức nếu muốn thấy bản dịch sớm hơn trong lúc đang nói.</p>
+        <p class="hint" data-i18n="settings.engine.timingHint">Mặc định dịch khi người nói hết câu. Chọn dịch ngay lập tức nếu muốn thấy bản dịch sớm hơn trong lúc đang nói.</p>
           </div>
 
           <!-- Local MLX Offline Package Card -->
           <div class="settings-section" id="section-local-mlx-status">
-            <span class="field-label">🖥️ Gói Dịch Ngoại Tuyến (Local MLX)</span>
+            <span class="field-label" data-i18n="settings.engine.mlxTitle">🖥️ Gói Dịch Ngoại Tuyến (Local MLX)</span>
             <div class="local-mlx-card">
               <div class="local-mlx-status-row">
-                <span id="local-mlx-badge" class="local-mlx-badge is-checking">Đang kiểm tra...</span>
+                <span id="local-mlx-badge" class="local-mlx-badge is-checking" data-i18n="settings.engine.mlxChecking">Đang kiểm tra...</span>
                 <span id="local-mlx-info" class="local-mlx-info">Whisper Large v3 Turbo + Gemma-3-4B</span>
                 <span id="local-mlx-size" class="local-mlx-size" style="display:none;"></span>
               </div>
-              <p class="hint" id="local-mlx-desc" style="margin-bottom: 10px;">Dùng để tự động dịch ngoại tuyến khi mất mạng hoặc không có Wi-Fi (Hỗ trợ macOS Apple Silicon M1-M4).</p>
+              <p class="hint" id="local-mlx-desc" style="margin-bottom: 10px;" data-i18n="settings.engine.mlxDesc">Dùng để tự động dịch ngoại tuyến khi mất mạng hoặc không có Wi-Fi (Hỗ trợ macOS Apple Silicon M1-M4).</p>
               <div class="local-mlx-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button type="button" id="btn-install-mlx" class="btn-primary-small">⬇️ Cài đặt / Tải trước mô hình Local MLX</button>
-                <button type="button" id="btn-delete-mlx" class="btn-danger-small" style="display:none;">🗑️ Xoá mô hình Local (Giải phóng dung lượng)</button>
+                <button type="button" id="btn-install-mlx" class="btn-primary-small" data-i18n="settings.engine.mlxInstall">⬇️ Cài đặt / Tải trước mô hình Local MLX</button>
+                <button type="button" id="btn-delete-mlx" class="btn-danger-small" style="display:none;" data-i18n="settings.engine.mlxDelete">🗑️ Xoá mô hình Local (Giải phóng dung lượng)</button>
               </div>
             </div>
           </div>
 
         <div class="settings-section">
-          <span class="field-label">Auto-pause when silent</span>
+          <span class="field-label" data-i18n="settings.engine.inactivityLabel">Tự động tạm dừng khi im lặng</span>
           <select id="select-inactivity-timeout">
-            <option value="5">Sau 5 phút im lặng</option>
-            <option value="10" selected>Sau 10 phút im lặng (Mặc định)</option>
-            <option value="15">Sau 15 phút im lặng</option>
-            <option value="30">Sau 30 phút im lặng</option>
-            <option value="0">Off (No automatic pause)</option>
+            <option value="5" data-i18n="settings.engine.inactivity5">Sau 5 phút im lặng</option>
+            <option value="10" selected data-i18n="settings.engine.inactivity10">Sau 10 phút im lặng (Mặc định)</option>
+            <option value="15" data-i18n="settings.engine.inactivity15">Sau 15 phút im lặng</option>
+            <option value="30" data-i18n="settings.engine.inactivity30">Sau 30 phút im lặng</option>
+            <option value="0" data-i18n="settings.engine.inactivity0">Off (No automatic pause)</option>
           </select>
-          <p class="hint">Automatically switches to Pause when no sound or speech is detected for this period, saving resources and API costs.</p>
+          <p class="hint" data-i18n="settings.engine.inactivityHint">Automatically switches to Pause when no sound or speech is detected for this period, saving resources and API costs.</p>
         </div>
 
         <div class="settings-section" id="section-api-key">
@@ -698,12 +698,12 @@
           <p class="hint">Get free key at <a href="#" id="link-gemini">aistudio.google.com</a></p>
 
           <div style="margin-top: 10px;">
-            <span class="field-label">Gemini Model</span>
+            <span class="field-label" data-i18n="settings.engine.geminiModel">Gemini Model</span>
             <select id="select-gemini-model">
-              <option value="models/gemini-3.5-transcribe-live">🎙️ Gemini 3.5 Transcribe Live (Khuyên dùng)</option>
-              <option value="models/gemini-2.0-flash-exp">✨ Gemini 2.0 Flash Live</option>
-              <option value="models/gemini-2.0-flash-realtime-exp">⚡ Gemini Realtime Exp</option>
-              <option value="custom">✏️ Model tùy chỉnh (Nhập tay)...</option>
+              <option value="models/gemini-3.5-transcribe-live" data-i18n="settings.engine.gemini35">🎙️ Gemini 3.5 Transcribe Live (Khuyên dùng)</option>
+              <option value="models/gemini-2.0-flash-exp" data-i18n="settings.engine.gemini20">✨ Gemini 2.0 Flash Live</option>
+              <option value="models/gemini-2.0-flash-realtime-exp" data-i18n="settings.engine.gemini20Realtime">⚡ Gemini Realtime Exp</option>
+              <option value="custom" data-i18n="settings.engine.geminiCustom">✏️ Model tùy chỉnh (Nhập tay)...</option>
             </select>
           </div>
           <div id="section-gemini-custom-model" style="display:none; margin-top: 6px;">
@@ -730,24 +730,24 @@
 
 
         <div class="settings-section">
-          <span class="field-label">Audio Source</span>
+          <span class="field-label" data-i18n="settings.engine.audioSource">Nguồn âm thanh (Audio Source)</span>
           <div class="radio-group" id="audio-source-group">
-            <label class="radio-option"><input type="radio" name="audio-source" value="system" checked /><span class="radio-label">System</span></label>
-            <label class="radio-option"><input type="radio" name="audio-source" value="microphone" /><span class="radio-label">Mic</span></label>
-            <label class="radio-option"><input type="radio" name="audio-source" value="both" /><span class="radio-label">Both</span></label>
+            <label class="radio-option"><input type="radio" name="audio-source" value="system" checked /><span class="radio-label" data-i18n="settings.engine.audioSystem">System</span></label>
+            <label class="radio-option"><input type="radio" name="audio-source" value="microphone" /><span class="radio-label" data-i18n="settings.engine.audioMic">Mic</span></label>
+            <label class="radio-option"><input type="radio" name="audio-source" value="both" /><span class="radio-label" data-i18n="settings.engine.audioBoth">Both</span></label>
           </div>
 
           <!-- Audio Test / Diagnostics Widget -->
           <div class="audio-test-box">
             <div class="audio-test-header">
-              <span class="audio-test-title">🧪 Kiểm tra âm thanh (Mic & System)</span>
-              <span id="audio-test-status" class="audio-test-status">Sẵn sàng</span>
+              <span class="audio-test-title" data-i18n="settings.engine.audioTestTitle">🧪 Kiểm tra âm thanh (Mic & System)</span>
+              <span id="audio-test-status" class="audio-test-status" data-i18n="settings.engine.audioTestReady">Sẵn sàng</span>
             </div>
             
             <!-- Live VU Meter Bar -->
             <div class="audio-test-meter-wrap">
               <div class="audio-test-meter-labels">
-                <span>Mức âm lượng đầu vào</span>
+                <span data-i18n="settings.engine.audioTestVolume">Mức âm lượng đầu vào</span>
                 <span id="audio-test-level-text">0%</span>
               </div>
               <div class="audio-test-meter-track">
@@ -757,14 +757,14 @@
 
             <!-- Action buttons -->
             <div class="audio-test-actions">
-              <button type="button" id="btn-test-mic-rec" class="btn-audio-test">
+              <button type="button" id="btn-test-mic-rec" class="btn-audio-test" data-i18n="settings.engine.audioTestRec">
                 🎙️ Ghi âm thử 3s & Nghe lại
               </button>
-              <button type="button" id="btn-test-mic-live" class="btn-audio-test secondary">
+              <button type="button" id="btn-test-mic-live" class="btn-audio-test secondary" data-i18n="settings.engine.audioTestLive">
                 🔊 Bật Live Monitor
               </button>
             </div>
-            <p class="hint" style="margin-top: 6px; margin-bottom: 0;">Test trực tiếp âm thanh thu được từ Micro / System Audio mà không gửi lên Google/OpenAI.</p>
+            <p class="hint" style="margin-top: 6px; margin-bottom: 0;" data-i18n="settings.engine.audioTestHint">Test trực tiếp âm thanh thu được từ Micro / System Audio mà không gửi lên Google/OpenAI.</p>
           </div>
         </div>
 
@@ -822,12 +822,12 @@
 
           <!-- System Menu & Navigation Display Settings -->
           <div class="settings-group-card">
-            <div class="settings-group-header">🎛️ Menu hệ thống & Thanh điều hướng</div>
-            <p class="settings-group-hint">Áp dụng cho thanh menu chính, các nút chức năng, tab điều hướng, thanh điều khiển cuộc họp và toàn bộ cửa sổ Cài đặt này.</p>
+            <div class="settings-group-header" data-i18n="settings.display.systemTitle">🎛️ Menu hệ thống & Thanh điều hướng</div>
+            <p class="settings-group-hint" data-i18n="settings.display.systemHint">Áp dụng cho thanh menu chính, các nút chức năng, tab điều hướng, thanh điều khiển cuộc họp và toàn bộ cửa sổ Cài đặt này.</p>
             <div class="settings-grid-row">
-              <span class="field-label">Font Style</span>
+              <span class="field-label" data-i18n="settings.display.fontStyle">Kiểu chữ</span>
               <select id="select-menu-font-family" class="source-select">
-                <option value="system">System (SF Pro / Mặc định)</option>
+                <option value="system" data-i18n="settings.display.systemFont">System (SF Pro / Mặc định)</option>
                 <option value="inter">Inter</option>
                 <option value="roboto">Roboto / Google Sans</option>
                 <option value="segoe">Segoe UI</option>
@@ -836,32 +836,32 @@
               </select>
             </div>
             <div class="settings-grid-row">
-              <span class="field-label">Font Size</span>
+              <span class="field-label" data-i18n="settings.display.fontSize">Cỡ chữ</span>
               <div class="stepper-control-wrap">
-                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-menu-font-size" aria-label="Giảm font size">−</button>
+                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-menu-font-size" data-i18n-aria-label="settings.display.decreaseFontSize" aria-label="Giảm cỡ chữ">−</button>
                 <input type="number" id="input-menu-font-size" min="10" max="18" value="12" class="input-stepper" />
-                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-menu-font-size" aria-label="Tăng font size">+</button>
+                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-menu-font-size" data-i18n-aria-label="settings.display.increaseFontSize" aria-label="Tăng cỡ chữ">+</button>
                 <span class="stepper-unit">px</span>
               </div>
             </div>
             <div class="settings-grid-row" style="border-bottom: none;">
-              <span class="field-label">Font Weight</span>
+              <span class="field-label" data-i18n="settings.display.fontWeight">Độ đậm chữ</span>
               <select id="select-menu-font-weight" class="source-select">
-                <option value="normal">Bình thường (Regular 400)</option>
-                <option value="medium" selected>Vừa phải (Medium 500)</option>
-                <option value="semibold">Đậm rõ nét (Semi-Bold 700)</option>
+                <option value="normal" data-i18n="settings.display.regular">Bình thường (Regular 400)</option>
+                <option value="medium" selected data-i18n="settings.display.medium">Vừa phải (Medium 500)</option>
+                <option value="semibold" data-i18n="settings.display.semibold">Đậm rõ nét (Semi-Bold 700)</option>
               </select>
             </div>
           </div>
 
           <!-- Meeting Logs Content & Table Display Settings -->
           <div class="settings-group-card">
-            <div class="settings-group-header">📋 Danh sách & Bảng nội dung cuộc họp (Logs)</div>
-            <p class="settings-group-hint">Áp dụng cho bảng danh sách lịch sử cuộc họp, tiêu đề cột, nhãn thông tin, chi tiết phiên họp và các thẻ dữ liệu.</p>
+            <div class="settings-group-header" data-i18n="settings.display.logsTitle">📋 Danh sách & Bảng nội dung cuộc họp (Logs)</div>
+            <p class="settings-group-hint" data-i18n="settings.display.logsHint">Áp dụng cho bảng danh sách lịch sử cuộc họp, tiêu đề cột, nhãn thông tin, chi tiết phiên họp và các thẻ dữ liệu.</p>
             <div class="settings-grid-row">
-              <span class="field-label">Font Style</span>
+              <span class="field-label" data-i18n="settings.display.fontStyle">Kiểu chữ</span>
               <select id="select-table-font-family" class="source-select">
-                <option value="system">System (SF Pro / Mặc định)</option>
+                <option value="system" data-i18n="settings.display.systemFont">System (SF Pro / Mặc định)</option>
                 <option value="inter">Inter</option>
                 <option value="roboto">Roboto / Google Sans</option>
                 <option value="segoe">Segoe UI</option>
@@ -870,50 +870,50 @@
               </select>
             </div>
             <div class="settings-grid-row">
-              <span class="field-label">Font Size</span>
+              <span class="field-label" data-i18n="settings.display.fontSize">Cỡ chữ</span>
               <div class="stepper-control-wrap">
-                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-table-font-size" aria-label="Giảm font size">−</button>
+                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-table-font-size" data-i18n-aria-label="settings.display.decreaseFontSize" aria-label="Giảm cỡ chữ">−</button>
                 <input type="number" id="input-table-font-size" min="11" max="22" value="13" class="input-stepper" />
-                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-table-font-size" aria-label="Tăng font size">+</button>
+                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-table-font-size" data-i18n-aria-label="settings.display.increaseFontSize" aria-label="Tăng cỡ chữ">+</button>
                 <span class="stepper-unit">px</span>
               </div>
             </div>
             <div class="settings-grid-row" style="border-bottom: none;">
-              <span class="field-label">Font Weight</span>
+              <span class="field-label" data-i18n="settings.display.fontWeight">Độ đậm chữ</span>
               <select id="select-table-font-weight" class="source-select">
-                <option value="normal">Bình thường (Regular 400)</option>
-                <option value="medium" selected>Vừa phải (Medium 500)</option>
-                <option value="semibold">Đậm rõ nét (Semi-Bold 700)</option>
+                <option value="normal" data-i18n="settings.display.regular">Bình thường (Regular 400)</option>
+                <option value="medium" selected data-i18n="settings.display.medium">Vừa phải (Medium 500)</option>
+                <option value="semibold" data-i18n="settings.display.semibold">Đậm rõ nét (Semi-Bold 700)</option>
               </select>
             </div>
             <div class="settings-grid-row" style="border-bottom: none;">
-              <span class="field-label">Tab mặc định khi mở Logs</span>
-              <select id="select-default-logs-scope" class="source-select" title="Lựa chọn tab hiển thị đầu tiên khi mở danh sách cuộc họp">
-                <option value="work">💼 Luôn mở tab Công việc (Khuyên dùng - Riêng tư)</option>
-                <option value="personal">👤 Luôn mở tab Cá nhân</option>
-                <option value="all">📑 Tất cả cuộc họp</option>
-                <option value="last">🕒 Nhớ tab mở gần nhất</option>
+              <span class="field-label" data-i18n="settings.display.defaultLogsTab">Tab mặc định khi mở Logs</span>
+              <select id="select-default-logs-scope" class="source-select" data-i18n-title="settings.display.defaultLogsTabTitle" title="Lựa chọn tab hiển thị đầu tiên khi mở danh sách cuộc họp">
+                <option value="work" data-i18n="settings.display.logsWork">💼 Luôn mở tab Công việc (Khuyên dùng - Riêng tư)</option>
+                <option value="personal" data-i18n="settings.display.logsPersonal">👤 Luôn mở tab Cá nhân</option>
+                <option value="all" data-i18n="settings.display.logsAll">📑 Tất cả cuộc họp</option>
+                <option value="last" data-i18n="settings.display.logsLast">🕒 Nhớ tab mở gần nhất</option>
               </select>
             </div>
           </div>
 
           <!-- Note Editor Display Settings -->
           <div class="settings-group-card">
-            <div class="settings-group-header">📝 Ghi chú cuộc họp (Take Note & Logs)</div>
-            <p class="settings-group-hint">Áp dụng cho trình soạn thảo ghi chú (Take Note) và nội dung ghi chú trong chi tiết cuộc họp.</p>
+            <div class="settings-group-header" data-i18n="settings.display.notesTitle">📝 Ghi chú cuộc họp (Take Note & Logs)</div>
+            <p class="settings-group-hint" data-i18n="settings.display.notesHint">Áp dụng cho trình soạn thảo ghi chú (Take Note) và nội dung ghi chú trong chi tiết cuộc họp.</p>
             <div class="settings-grid-row">
-              <span class="field-label">Font Size</span>
+              <span class="field-label" data-i18n="settings.display.fontSize">Cỡ chữ</span>
               <div class="stepper-control-wrap">
-                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-note-font-size" aria-label="Giảm font size">−</button>
+                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-note-font-size" data-i18n-aria-label="settings.display.decreaseFontSize" aria-label="Giảm cỡ chữ">−</button>
                 <input type="number" id="input-note-font-size" min="12" max="36" value="14" class="input-stepper" />
-                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-note-font-size" aria-label="Tăng font size">+</button>
+                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-note-font-size" data-i18n-aria-label="settings.display.increaseFontSize" aria-label="Tăng cỡ chữ">+</button>
                 <span class="stepper-unit">px</span>
               </div>
             </div>
             <div class="settings-grid-row" style="border-bottom: none;">
-              <span class="field-label">Font Style</span>
+              <span class="field-label" data-i18n="settings.display.fontStyle">Kiểu chữ</span>
               <select id="select-note-font-family" class="source-select">
-                <option value="system">System (SF Pro / Mặc định)</option>
+                <option value="system" data-i18n="settings.display.systemFont">System (SF Pro / Mặc định)</option>
                 <option value="inter">Inter</option>
                 <option value="roboto">Roboto</option>
                 <option value="arial">Arial</option>
@@ -925,28 +925,28 @@
 
           <!-- Transcript Display Settings -->
           <div class="settings-group-card">
-            <div class="settings-group-header">💬 Bản gốc, Bản dịch & Timeline trực tiếp (Live Transcript)</div>
-            <p class="settings-group-hint">Áp dụng cho phụ đề Bản gốc, Bản dịch song ngữ và Timeline (thời gian từng câu) trong màn hình Live Transcript trực tiếp.</p>
+            <div class="settings-group-header" data-i18n="settings.display.transcriptTitle">💬 Bản gốc, Bản dịch & Timeline trực tiếp (Live Transcript)</div>
+            <p class="settings-group-hint" data-i18n="settings.display.transcriptHint">Áp dụng cho phụ đề Bản gốc, Bản dịch song ngữ và Timeline (thời gian từng câu) trong màn hình Live Transcript trực tiếp.</p>
             <div class="settings-grid-row">
-              <span class="field-label">Font Size</span>
+              <span class="field-label" data-i18n="settings.display.fontSize">Cỡ chữ</span>
               <div class="stepper-control-wrap">
-                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-font-size" aria-label="Giảm font size">−</button>
+                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-font-size" data-i18n-aria-label="settings.display.decreaseFontSize" aria-label="Giảm cỡ chữ">−</button>
                 <input type="number" id="input-font-size" min="12" max="36" value="16" class="input-stepper" />
-                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-font-size" aria-label="Tăng font size">+</button>
+                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-font-size" data-i18n-aria-label="settings.display.increaseFontSize" aria-label="Tăng cỡ chữ">+</button>
                 <span class="stepper-unit">px</span>
               </div>
             </div>
             <div class="settings-grid-row">
-              <span class="field-label">Font Color</span>
+              <span class="field-label" data-i18n="settings.display.fontColor">Màu chữ</span>
               <div class="color-input-wrap">
                 <input type="color" id="input-font-color" value="#ffffff" />
                 <span id="font-color-value">#FFFFFF</span>
               </div>
             </div>
             <div class="settings-grid-row">
-              <span class="field-label">Font Style</span>
+              <span class="field-label" data-i18n="settings.display.fontStyle">Kiểu chữ</span>
               <select id="select-font-family" class="source-select">
-                <option value="system">System</option>
+                <option value="system" data-i18n="settings.display.systemFont">System</option>
                 <option value="inter">Inter</option>
                 <option value="arial">Arial</option>
                 <option value="georgia">Georgia</option>
@@ -954,19 +954,19 @@
               </select>
             </div>
             <div class="settings-grid-row">
-              <span class="field-label">Max Lines</span>
+              <span class="field-label" data-i18n="settings.display.maxLines">Số dòng tối đa</span>
               <div class="stepper-control-wrap">
-                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-max-lines" aria-label="Giảm max lines">−</button>
+                <button type="button" class="btn-stepper btn-stepper-dec" data-target="input-max-lines" data-i18n-aria-label="settings.display.decreaseMaxLines" aria-label="Giảm số dòng tối đa">−</button>
                 <input type="number" id="input-max-lines" min="2" max="15" value="5" class="input-stepper" />
-                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-max-lines" aria-label="Tăng max lines">+</button>
-                <span class="stepper-unit">dòng</span>
+                <button type="button" class="btn-stepper btn-stepper-inc" data-target="input-max-lines" data-i18n-aria-label="settings.display.increaseMaxLines" aria-label="Tăng số dòng tối đa">+</button>
+                <span class="stepper-unit" data-i18n="settings.display.lines">dòng</span>
               </div>
             </div>
             <div class="settings-grid-row" style="border-bottom: none;">
-              <span class="field-label">Show Original</span>
+              <span class="field-label" data-i18n="settings.display.showOriginal">Hiển thị bản gốc</span>
               <label class="checkbox-option">
                 <input type="checkbox" id="check-show-original" checked />
-                <span class="checkbox-label">Hiển thị song song câu gốc (kèm Timeline)</span>
+                <span class="checkbox-label" data-i18n="settings.display.showOriginalHint">Hiển thị song song câu gốc (kèm Timeline)</span>
               </label>
             </div>
           </div>
@@ -975,14 +975,14 @@
         <!-- Detail: Templates (Meeting Minutes & Note Templates) -->
         <div class="settings-tab-content" id="tab-templates">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">📋 Templates (Mẫu văn bản)</h3>
+            <h3 class="settings-panel-title" data-i18n="settings.template.title">📋 Templates (Mẫu văn bản)</h3>
           </div>
 
           <div class="folder-tab-bar" id="templates-main-tabs" role="tablist">
-            <button type="button" class="folder-tab-btn active" data-tmpl-tab="minutes" id="tab-btn-tmpl-minutes">
+            <button type="button" class="folder-tab-btn active" data-tmpl-tab="minutes" id="tab-btn-tmpl-minutes" data-i18n="settings.template.minutesTab">
               📋 Meeting Minutes tự động
             </button>
-            <button type="button" class="folder-tab-btn" data-tmpl-tab="notes" id="tab-btn-tmpl-notes">
+            <button type="button" class="folder-tab-btn" data-tmpl-tab="notes" id="tab-btn-tmpl-notes" data-i18n="settings.template.notesTab">
               📝 Ghi chép bằng tay
             </button>
           </div>
@@ -990,44 +990,45 @@
           <!-- Tab 1: Meeting Minutes Templates -->
           <div class="template-main-pane" id="pane-template-minutes">
             <div class="settings-section" style="padding-top: 12px; padding-bottom: 4px;">
-              <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;">
+              <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;" data-i18n="settings.template.minutesHint">
                 Cung cấp 4 Mẫu Preset chuẩn mực cho từng ngữ cảnh cuộc họp. AI sẽ tự động áp dụng đúng mẫu theo Danh mục cuộc họp. Bạn có thể xem trước hoặc tuỳ biến cấu trúc mẫu bên dưới:
               </p>
 
               <div class="settings-grid-row template-source-setting">
-                <span class="field-label">Nguồn tạo biên bản</span>
+                <span class="field-label" data-i18n="settings.template.sourceLabel">Nguồn tạo biên bản</span>
                 <label class="checkbox-option" for="check-meeting-minutes-use-notes">
                   <input type="checkbox" id="check-meeting-minutes-use-notes" checked />
-                  <span class="checkbox-label">Sử dụng Ghi chép bằng tay làm căn cứ tạo Meeting Minutes tự động</span>
+                  <span class="checkbox-label" data-i18n="settings.template.sourceCheckbox">Sử dụng Ghi chép bằng tay làm căn cứ tạo Meeting Minutes tự động</span>
                 </label>
               </div>
-              <p class="hint template-source-hint">
+              <p class="hint template-source-hint" data-i18n="settings.template.sourceHint">
                 Bật để AI kết hợp ghi chép bằng tay với transcript. Tắt để AI chỉ sử dụng nội dung transcript.
               </p>
 
               <div class="templates-preset-bar folder-tab-bar" id="templates-preset-bar" role="tablist">
-                <button type="button" class="templates-preset-btn folder-tab-btn active" data-preset="standard">🤝 Tiêu chuẩn / Khách hàng</button>
-                <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="tech">💻 Kỹ thuật / Architecture</button>
-                <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="one_on_one">👥 1-on-1 / Đánh giá</button>
-                <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="personal">👤 Cá nhân / Tự học</button>
+                <button type="button" class="templates-preset-btn folder-tab-btn active" data-preset="standard" data-i18n="settings.template.presetStandard">🤝 Tiêu chuẩn / Khách hàng</button>
+                <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="tech" data-i18n="settings.template.presetTech">💻 Kỹ thuật / Architecture</button>
+                <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="one_on_one" data-i18n="settings.template.preset1on1">👥 1-on-1 / Đánh giá</button>
+                <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="personal" data-i18n="settings.template.presetPersonal">👤 Cá nhân / Tự học</button>
               </div>
 
               <!-- Khung bao trùm nội dung trực thuộc Preset được chọn -->
               <div class="templates-preset-content folder-tab-pane" id="templates-preset-content">
                 <div class="templates-subtab-container" id="templates-lang-subtabs-container">
-                  <span class="templates-subtab-label">🌐 Ngôn ngữ mẫu:</span>
+                  <span class="templates-subtab-label" data-i18n="settings.template.langLabel">🌐 Ngôn ngữ mẫu:</span>
                   <div class="templates-subtab-bar" id="templates-lang-subtabs">
+                    <button type="button" class="templates-subtab" data-lang="ja" id="subtab-template-lang-ja">🇯🇵 日本語</button>
                     <button type="button" class="templates-subtab active" data-lang="vi" id="subtab-template-lang-vi">🇻🇳 Tiếng Việt</button>
-                    <button type="button" class="templates-subtab" data-lang="ja" id="subtab-template-lang-ja">🇯🇵 Tiếng Nhật</button>
+                    <button type="button" class="templates-subtab" data-lang="en" id="subtab-template-lang-en">🇬🇧 English</button>
                   </div>
                 </div>
 
                 <div class="template-editor-wrapper">
                   <div class="template-editor-info">
-                    <span id="template-editor-hint" class="hint" style="margin:0; font-size:12px;">Biến tự động: <code>{{title}}</code>, <code>{{date}}</code>, <code>{{duration}}</code>, <code>{{participants}}</code></span>
+                    <span id="template-editor-hint" class="hint" style="margin:0; font-size:12px;" data-i18n="settings.template.autoVarsMinutes" data-i18n-html="true">Biến tự động: <code>{{title}}</code>, <code>{{date}}</code>, <code>{{duration}}</code>, <code>{{participants}}</code></span>
                     <div class="template-editor-actions">
-                      <button type="button" id="btn-template-reset" class="btn-secondary small" title="Khôi phục mẫu mặc định ban đầu">🔄 Khôi phục mặc định</button>
-                      <button type="button" id="btn-template-save" class="btn-primary small" title="Lưu mẫu (⌘S)">💾 Lưu mẫu</button>
+                      <button type="button" id="btn-template-reset" class="btn-secondary small" data-i18n-title="settings.template.resetTitleMinutes" data-i18n="settings.template.reset" title="Khôi phục mẫu mặc định ban đầu">🔄 Khôi phục mặc định</button>
+                      <button type="button" id="btn-template-save" class="btn-primary small" data-i18n-title="settings.template.saveTitle" data-i18n="settings.template.save" title="Lưu mẫu (⌘S)">💾 Lưu mẫu</button>
                     </div>
                   </div>
                   <div id="template-codemirror-container" class="template-cm-container"></div>
@@ -1039,17 +1040,17 @@
           <!-- Tab 2: Note Template -->
           <div class="template-main-pane" id="pane-template-notes" style="display: none;">
             <div class="settings-section" style="padding-top: 12px; padding-bottom: 4px;">
-              <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;">
+              <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;" data-i18n="settings.template.notesHint">
                 Cấu trúc mẫu ghi chú mặc định khi bắt đầu cuộc họp mới hoặc tạo ghi chép nhanh. Bạn có thể tuỳ biến các đề mục bên dưới:
               </p>
 
               <div class="folder-tab-pane" style="border-radius: 8px;">
                 <div class="template-editor-wrapper">
                   <div class="template-editor-info">
-                    <span class="hint" style="margin:0; font-size:12px;">Biến tự động: <code>{{date}}</code>, <code>{{time}}</code>, <code>{{title}}</code></span>
+                    <span class="hint" style="margin:0; font-size:12px;" data-i18n="settings.template.autoVarsNotes" data-i18n-html="true">Biến tự động: <code>{{date}}</code>, <code>{{time}}</code>, <code>{{title}}</code></span>
                     <div class="template-editor-actions">
-                      <button type="button" id="btn-notes-template-reset" class="btn-secondary small" title="Khôi phục mẫu ghi chú mặc định ban đầu">🔄 Khôi phục mặc định</button>
-                      <button type="button" id="btn-notes-template-save" class="btn-primary small" title="Lưu mẫu ghi chú (⌘S)">💾 Lưu mẫu</button>
+                      <button type="button" id="btn-notes-template-reset" class="btn-secondary small" data-i18n-title="settings.template.resetTitleNotes" data-i18n="settings.template.reset" title="Khôi phục mẫu ghi chú mặc định ban đầu">🔄 Khôi phục mặc định</button>
+                      <button type="button" id="btn-notes-template-save" class="btn-primary small" data-i18n-title="settings.template.saveTitle" data-i18n="settings.template.save" title="Lưu mẫu ghi chú (⌘S)">💾 Lưu mẫu</button>
                     </div>
                   </div>
                   <div id="notes-template-codemirror-container" class="template-cm-container"></div>
@@ -1062,25 +1063,25 @@
         <!-- 7. Detail: Storage -->
         <div class="settings-tab-content" id="tab-storage">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">📂 Lưu trữ &amp; backup</h3>
+            <h3 class="settings-panel-title" data-i18n="settings.storage.title">📂 Lưu trữ &amp; backup</h3>
           </div>
           <div class="settings-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-              <span class="field-label" style="margin:0;">Thư mục lưu trữ hiện tại</span>
+              <span class="field-label" style="margin:0;" data-i18n="settings.storage.currentDir">Thư mục lưu trữ hiện tại</span>
               <span id="storage-type-badge" class="status-pill active">Mặc định</span>
             </div>
-            <p class="hint" style="margin-bottom: 10px;">Toàn bộ meeting log (.md & .json), bản ghi âm và danh mục dữ liệu được lưu an toàn tại máy cục bộ.</p>
+            <p class="hint" style="margin-bottom: 10px;" data-i18n="settings.storage.desc">Toàn bộ meeting log (.md & .json), bản ghi âm và danh mục dữ liệu được lưu an toàn tại máy cục bộ.</p>
             <div style="background: var(--md-sys-color-surface-container); padding: 10px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); margin-bottom: 12px; font-family: monospace; font-size: 11px; word-break: break-all; color: var(--md-sys-color-primary);" id="storage-dir-path-text">
               ~/Library/Application Support/com.meetminder.app/transcripts
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
-              <button type="button" id="btn-change-storage-dir" class="btn-primary-small" style="display:inline-flex; align-items:center; gap:6px;">
+              <button type="button" id="btn-change-storage-dir" class="btn-primary-small" style="display:inline-flex; align-items:center; gap:6px;" data-i18n="settings.storage.changeDir">
                 📂 Đổi & di chuyển dữ liệu...
               </button>
-              <button type="button" id="btn-reset-storage-dir" class="btn-secondary-small" style="display:inline-flex; align-items:center; gap:6px;">
+              <button type="button" id="btn-reset-storage-dir" class="btn-secondary-small" style="display:inline-flex; align-items:center; gap:6px;" data-i18n="settings.storage.resetDir">
                 🔄 Đưa về mặc định...
               </button>
-              <button type="button" id="btn-open-transcripts-dir" class="btn-secondary-small" style="display:inline-flex; align-items:center; gap:6px;">
+              <button type="button" id="btn-open-transcripts-dir" class="btn-secondary-small" style="display:inline-flex; align-items:center; gap:6px;" data-i18n="settings.storage.openFinder">
                 ↗️ Mở trong Finder
               </button>
             </div>
@@ -1089,61 +1090,61 @@
           <div class="settings-section git-backup-section" style="margin-top: 14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:6px;">
               <div>
-                <span class="field-label" style="margin:0;">💾 Backup qua Git</span>
-                <p class="hint" style="margin:4px 0 0;">Git do bạn tự cài đặt và cấu hình. Meet Minder chỉ commit dữ liệu meeting, ảnh và danh mục; audio và API key không được đưa vào repo.</p>
+                <span class="field-label" style="margin:0;" data-i18n="settings.storage.gitTitle">💾 Backup qua Git</span>
+                <p class="hint" style="margin:4px 0 0;" data-i18n="settings.storage.gitDesc">Git do bạn tự cài đặt và cấu hình. Meet Minder chỉ commit dữ liệu meeting, ảnh và danh mục; audio và API key không được đưa vào repo.</p>
               </div>
-              <label class="switch-control" title="Bật hoặc tắt backup qua Git">
+              <label class="switch-control" data-i18n-title="settings.storage.gitSwitchTitle" title="Bật hoặc tắt backup qua Git">
                 <input type="checkbox" id="check-git-backup-enabled" aria-controls="git-backup-details" />
                 <span class="switch-slider"></span>
               </label>
             </div>
             <div id="git-backup-details" style="display:none; margin-top:14px;">
               <div class="git-backup-repo-summary" role="group" aria-label="Thư mục Git repository">
-                <div class="field-label" style="margin:0 0 5px;">📍 Dùng chung thư mục lưu trữ hiện tại</div>
+                <div class="field-label" style="margin:0 0 5px;" data-i18n="settings.storage.gitSharedDir">📍 Dùng chung thư mục lưu trữ hiện tại</div>
                 <code id="git-backup-repo-path">Đang tải đường dẫn...</code>
-                <p class="hint" style="margin:7px 0 0;">Bạn cần tự chạy <code>git init</code> và cấu hình remote trong thư mục này trước. App chỉ commit dữ liệu meeting/ảnh/danh mục; audio và API key luôn được bỏ qua.</p>
+                <p class="hint" style="margin:7px 0 0;" data-i18n="settings.storage.gitRepoHint" data-i18n-html="true">Bạn cần tự chạy <code>git init</code> và cấu hình remote trong thư mục này trước. App chỉ commit dữ liệu meeting/ảnh/danh mục; audio và API key luôn được bỏ qua.</p>
               </div>
               <div class="git-backup-options-grid" style="display:grid; grid-template-columns:1fr; gap:12px; margin-top:12px;">
-                <label class="field-label" style="margin:0;"><span style="display:block;"><input type="checkbox" id="check-git-auto-commit" /> Commit tự động theo lịch</span>
+                <label class="field-label" style="margin:0;"><span style="display:block;"><input type="checkbox" id="check-git-auto-commit" /> <span data-i18n="settings.storage.gitAutoCommit">Commit tự động theo lịch</span></span>
                   <select id="select-git-commit-interval" class="select-input" style="display:block; width:100%; margin-top:5px;">
-                    <option value="15">Mỗi 15 phút</option>
-                    <option value="30">Mỗi 30 phút</option>
-                    <option value="60">Mỗi 1 giờ</option>
-                    <option value="1440">Mỗi ngày</option>
+                    <option value="15" data-i18n="settings.storage.gitEvery15">Mỗi 15 phút</option>
+                    <option value="30" data-i18n="settings.storage.gitEvery30">Mỗi 30 phút</option>
+                    <option value="60" data-i18n="settings.storage.gitEvery60">Mỗi 1 giờ</option>
+                    <option value="1440" data-i18n="settings.storage.gitEveryDay">Mỗi ngày</option>
                   </select>
                 </label>
                 <div class="git-auto-push-group">
                   <label class="checkbox-label" style="display:block;">
                     <input type="checkbox" id="check-git-auto-push" aria-controls="git-auto-push-options" aria-expanded="false" />
-                    <span>Bật tự động push lên remote</span>
+                    <span data-i18n="settings.storage.gitAutoPush">Bật tự động push lên remote</span>
                   </label>
                   <div id="git-auto-push-options" class="git-auto-push-options" aria-disabled="true">
-                    <label class="field-label" style="margin:8px 0 0;">Chu kỳ push
+                    <label class="field-label" style="margin:8px 0 0;"><span data-i18n="settings.storage.gitPushInterval">Chu kỳ push</span>
                       <select id="select-git-push-interval" class="select-input" style="display:block; width:100%; margin-top:5px;">
-                        <option value="15">Mỗi 15 phút</option>
-                        <option value="30">Mỗi 30 phút</option>
-                        <option value="60">Mỗi 1 giờ</option>
-                        <option value="1440">Mỗi ngày</option>
+                        <option value="15" data-i18n="settings.storage.gitEvery15">Mỗi 15 phút</option>
+                        <option value="30" data-i18n="settings.storage.gitEvery30">Mỗi 30 phút</option>
+                        <option value="60" data-i18n="settings.storage.gitEvery60">Mỗi 1 giờ</option>
+                        <option value="1440" data-i18n="settings.storage.gitEveryDay">Mỗi ngày</option>
                       </select>
                     </label>
                     <label class="checkbox-label" style="display:block; margin-top:9px;">
                       <input type="checkbox" id="check-git-commit-on-meeting-end" />
-                      <span>Commit & push ngay sau khi kết thúc meeting</span>
+                      <span data-i18n="settings.storage.gitCommitOnEnd">Commit & push ngay sau khi kết thúc meeting</span>
                     </label>
                   </div>
                 </div>
               </div>
               <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:12px; flex-wrap:wrap;">
-                <button type="button" id="btn-git-backup-now" class="btn-primary-small">💾 Backup ngay</button>
+                <button type="button" id="btn-git-backup-now" class="btn-primary-small" data-i18n="settings.storage.gitBackupNow">💾 Backup ngay</button>
               </div>
               <div id="git-backup-status" class="git-backup-status" role="status" aria-live="polite" style="margin-top:12px;">Đang kiểm tra Git...</div>
               <div class="git-backup-history" role="region" aria-labelledby="git-backup-history-title">
-                <div id="git-backup-history-title" class="field-label">5 lần push gần nhất</div>
-                <div id="git-backup-history-empty" class="hint">Chưa có lần push nào được ghi nhận trên thiết bị này.</div>
+                <div id="git-backup-history-title" class="field-label" data-i18n="settings.storage.gitRecentPushes">5 lần push gần nhất</div>
+                <div id="git-backup-history-empty" class="hint" data-i18n="settings.storage.gitNoPushes">Chưa có lần push nào được ghi nhận trên thiết bị này.</div>
                 <div class="git-backup-history-table-wrap" style="display:none;">
                   <table class="git-backup-history-table">
                     <thead>
-                      <tr><th scope="col">Thời gian</th><th scope="col">Kết quả</th><th scope="col">Đã push</th><th scope="col">Lỗi</th></tr>
+                      <tr><th scope="col" data-i18n="settings.storage.gitTime">Thời gian</th><th scope="col" data-i18n="settings.storage.gitResult">Kết quả</th><th scope="col" data-i18n="settings.storage.gitPushed">Đã push</th><th scope="col" data-i18n="settings.storage.gitError">Lỗi</th></tr>
                     </thead>
                     <tbody id="git-backup-history-body"></tbody>
                   </table>
@@ -1152,7 +1153,7 @@
             </div>
           </div>
           <div class="settings-section" style="margin-top: 14px;">
-            <span class="field-label">Thống kê dữ liệu</span>
+            <span class="field-label" data-i18n="settings.storage.statsTitle">Thống kê dữ liệu</span>
             <div id="storage-stats-info" style="font-size: 12px; color: var(--md-sys-color-on-surface-variant); line-height: 1.8;">
               Đang tính toán thống kê...
             </div>
@@ -1162,21 +1163,21 @@
         <!-- 8. Detail: About -->
         <div class="settings-tab-content" id="tab-about">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">ℹ️ Giới thiệu Phần mềm</h3>
+            <h3 class="settings-panel-title" data-i18n="settings.about.title">ℹ️ Giới thiệu Phần mềm</h3>
           </div>
           <div class="settings-section about-info">
             <div class="about-app-header">
               <span class="about-app-name">Meet Minder</span>
               <span class="about-app-version" id="about-version">v0.9.1</span>
             </div>
-            <p class="hint">Ứng dụng phiên dịch & quản lý ghi chú cuộc họp thời gian thực cho macOS</p>
+            <p class="hint" data-i18n="settings.about.desc">Ứng dụng phiên dịch & quản lý ghi chú cuộc họp thời gian thực cho macOS</p>
           </div>
 
           <div class="settings-section" id="section-update">
-            <span class="field-label">Cập nhật ứng dụng (Updates)</span>
+            <span class="field-label" data-i18n="settings.about.updates">Cập nhật ứng dụng (Updates)</span>
             <div id="update-status" class="update-status">
               <span id="update-status-text">Click to check for updates</span>
-              <button id="btn-check-update" class="check-update-btn" title="Kiểm tra ngay">
+              <button id="btn-check-update" class="check-update-btn" data-i18n-title="settings.about.checkUpdate" title="Kiểm tra ngay">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="23 4 23 10 17 10"/>
                   <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -1200,10 +1201,10 @@
           </div>
 
           <div class="settings-section">
-            <span class="field-label">Liên kết</span>
+            <span class="field-label" data-i18n="settings.about.links">Liên kết</span>
             <div class="about-links">
               <a href="#" id="link-github">GitHub Repository</a>
-              <a href="#" id="link-issues">Báo lỗi (Report a Bug)</a>
+              <a href="#" id="link-issues" data-i18n="settings.about.reportBug">Báo lỗi (Report a Bug)</a>
             </div>
           </div>
         </div>
@@ -1615,7 +1616,7 @@
     <div class="modal-card" style="max-width: 420px;">
       <div class="modal-header">
         <h3 id="confirm-delete-title" style="color: #ef4444; display: flex; align-items: center; gap: 6px;">
-          <span id="confirm-delete-title-icon">🗑️</span> <span id="confirm-delete-title-text">Xác nhận xoá</span>
+          <span id="confirm-delete-title-icon">🗑️</span> <span id="confirm-delete-title-text" data-i18n="modal.delete.title">Xác nhận xoá</span>
         </h3>
         <button type="button" id="btn-close-confirm-delete" class="icon-btn close-btn">×</button>
       </div>
@@ -1623,8 +1624,8 @@
         <p id="confirm-delete-message" style="font-size: 13px; line-height: 1.5; color: var(--md-sys-color-on-surface); margin: 0;"></p>
       </div>
       <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
-        <button type="button" id="btn-cancel-confirm-delete" class="secondary-btn">Huỷ</button>
-        <button type="button" id="btn-agree-confirm-delete" class="danger-btn modal-action-btn">Xoá</button>
+        <button type="button" id="btn-cancel-confirm-delete" class="secondary-btn" data-i18n="modal.cancel">Huỷ</button>
+        <button type="button" id="btn-agree-confirm-delete" class="danger-btn modal-action-btn" data-i18n="modal.delete.confirm">Xoá</button>
       </div>
     </div>
   </div>
@@ -1674,38 +1675,38 @@
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
         <input type="hidden" id="input-modal-cust-id" value="" />
         <div>
-          <label class="field-label" for="input-modal-cust-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Tên khách hàng (*):</label>
-          <input type="text" id="input-modal-cust-name" class="modal-input" placeholder="VD: Tập đoàn FPT, Công ty VNG..." />
+          <label class="field-label" for="input-modal-cust-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.cust.nameLabel">Tên khách hàng (*):</label>
+          <input type="text" id="input-modal-cust-name" class="modal-input" data-i18n-placeholder="modal.cust.namePlaceholder" placeholder="VD: Tập đoàn FPT, Công ty VNG..." />
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: flex-end;">
           <div>
-            <label class="field-label" for="input-modal-cust-code" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Mã khách hàng:</label>
-            <input type="text" id="input-modal-cust-code" class="modal-input" placeholder="VD: FPT, VNG..." />
+            <label class="field-label" for="input-modal-cust-code" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.cust.codeLabel">Mã khách hàng:</label>
+            <input type="text" id="input-modal-cust-code" class="modal-input" data-i18n-placeholder="modal.cust.codePlaceholder" placeholder="VD: FPT, VNG..." />
           </div>
           <div>
-            <label class="field-label" for="select-modal-cust-status" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Trạng thái:</label>
+            <label class="field-label" for="select-modal-cust-status" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.cust.statusLabel">Trạng thái:</label>
             <select id="select-modal-cust-status" class="modal-input modal-select">
-              <option value="active">🟢 Đang hợp tác</option>
-              <option value="archived">⚪ Đã dừng</option>
+              <option value="active" data-i18n="modal.cust.statusActive">🟢 Đang hợp tác</option>
+              <option value="archived" data-i18n="modal.cust.statusArchived">⚪ Đã dừng</option>
             </select>
           </div>
           <div>
-            <label class="field-label" for="input-modal-cust-color" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Màu sắc:</label>
-            <input type="color" id="input-modal-cust-color" value="#431A46" class="color-picker-input" title="Chọn màu nhận diện" />
+            <label class="field-label" for="input-modal-cust-color" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.cust.colorLabel">Màu sắc:</label>
+            <input type="color" id="input-modal-cust-color" value="#431A46" class="color-picker-input" data-i18n-title="modal.cust.colorTitle" title="Chọn màu nhận diện" />
           </div>
         </div>
         <div>
-          <label class="field-label" for="input-modal-cust-desc" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Ghi chú / Thông tin liên hệ:</label>
-          <textarea id="input-modal-cust-desc" class="modal-input" rows="3" placeholder="Thông tin liên hệ, ghi chú dự án (tuỳ chọn)..." style="resize: none;"></textarea>
+          <label class="field-label" for="input-modal-cust-desc" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.cust.descLabel">Ghi chú / Thông tin liên hệ:</label>
+          <textarea id="input-modal-cust-desc" class="modal-input" rows="3" data-i18n-placeholder="modal.cust.descPlaceholder" placeholder="Thông tin liên hệ, ghi chú dự án (tuỳ chọn)..." style="resize: none;"></textarea>
         </div>
         <div id="modal-cust-projs-section" style="display:none; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border-subtle);">
-          <label class="field-label" style="margin-bottom: 6px; display: block; font-size: 11px; font-weight: 600;">Dự án liên kết:</label>
+          <label class="field-label" style="margin-bottom: 6px; display: block; font-size: 11px; font-weight: 600;" data-i18n="modal.cust.linkedProjsLabel">Dự án liên kết:</label>
           <div id="modal-cust-projs-list" class="table-proj-chips"></div>
         </div>
       </div>
       <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
-        <button type="button" id="btn-cancel-add-customer" class="secondary-btn">Huỷ</button>
-        <button type="button" id="btn-save-add-customer" class="primary-action-btn">Lưu thông tin</button>
+        <button type="button" id="btn-cancel-add-customer" class="secondary-btn" data-i18n="common.cancel">Huỷ</button>
+        <button type="button" id="btn-save-add-customer" class="primary-action-btn" data-i18n="modal.cust.save">Lưu thông tin</button>
       </div>
     </div>
   </div>
@@ -1720,42 +1721,42 @@
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
         <input type="hidden" id="input-modal-proj-id" value="" />
         <div>
-          <label class="field-label" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Phạm vi dự án:</label>
+          <label class="field-label" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.scopeLabel">Phạm vi dự án:</label>
           <div class="scope-choice-group" id="modal-proj-scope-group" style="display:flex; gap:8px;">
             <label class="scope-radio-btn active" id="label-modal-proj-scope-work">
               <input type="radio" name="modal-proj-scope" value="work" checked />
-              <span>💼 Công việc</span>
+              <span data-i18n="scope.work">💼 Công việc</span>
             </label>
             <label class="scope-radio-btn" id="label-modal-proj-scope-personal">
               <input type="radio" name="modal-proj-scope" value="personal" />
-              <span>👤 Cá nhân</span>
+              <span data-i18n="scope.personal">👤 Cá nhân</span>
             </label>
           </div>
         </div>
         <div id="modal-proj-customer-wrap">
-          <label class="field-label" for="select-modal-proj-customer" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Khách hàng trực thuộc:</label>
+          <label class="field-label" for="select-modal-proj-customer" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.customerLabel">Khách hàng trực thuộc:</label>
           <select id="select-modal-proj-customer" class="modal-input modal-select">
-            <option value="">(Không chọn KH / Dự án nội bộ)</option>
+            <option value="" data-i18n="modal.proj.customerDefault">(Không chọn KH / Dự án nội bộ)</option>
           </select>
         </div>
         <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: flex-end;">
           <div>
-            <label class="field-label" for="input-modal-proj-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Tên dự án (*):</label>
-            <input type="text" id="input-modal-proj-name" class="modal-input" placeholder="VD: Core Banking V2, AI Translator..." />
+            <label class="field-label" for="input-modal-proj-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.nameLabel">Tên dự án (*):</label>
+            <input type="text" id="input-modal-proj-name" class="modal-input" data-i18n-placeholder="modal.proj.namePlaceholder" placeholder="VD: Core Banking V2, AI Translator..." />
           </div>
           <div>
-            <label class="field-label" for="input-modal-proj-color" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Màu nhận diện:</label>
-            <input type="color" id="input-modal-proj-color" value="#431A46" class="color-picker-input" title="Chọn màu" />
+            <label class="field-label" for="input-modal-proj-color" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.colorLabel">Màu nhận diện:</label>
+            <input type="color" id="input-modal-proj-color" value="#431A46" class="color-picker-input" data-i18n-title="modal.proj.colorTitle" title="Chọn màu" />
           </div>
         </div>
         <div>
-          <label class="field-label" for="input-modal-proj-desc" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Mô tả dự án:</label>
-          <textarea id="input-modal-proj-desc" class="modal-input" rows="2" placeholder="Mô tả mục tiêu dự án (tuỳ chọn)..." style="resize: none;"></textarea>
+          <label class="field-label" for="input-modal-proj-desc" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.descLabel">Mô tả dự án:</label>
+          <textarea id="input-modal-proj-desc" class="modal-input" rows="2" data-i18n-placeholder="modal.proj.descPlaceholder" placeholder="Mô tả mục tiêu dự án (tuỳ chọn)..." style="resize: none;"></textarea>
         </div>
       </div>
       <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
-        <button type="button" id="btn-cancel-add-project" class="secondary-btn">Huỷ</button>
-        <button type="button" id="btn-save-add-project" class="primary-action-btn">+ Tạo Dự án</button>
+        <button type="button" id="btn-cancel-add-project" class="secondary-btn" data-i18n="common.cancel">Huỷ</button>
+        <button type="button" id="btn-save-add-project" class="primary-action-btn" data-i18n="modal.proj.saveAdd">+ Tạo Dự án</button>
       </div>
     </div>
   </div>
@@ -1771,35 +1772,35 @@
         <input type="hidden" id="input-modal-cat-id" value="" />
         <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: flex-end;">
           <div>
-            <label class="field-label" for="input-modal-cat-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Tên category (*):</label>
-            <input type="text" id="input-modal-cat-name" class="modal-input" placeholder="Tên category..." />
+            <label class="field-label" for="input-modal-cat-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.cat.nameLabel">Tên category (*):</label>
+            <input type="text" id="input-modal-cat-name" class="modal-input" data-i18n-placeholder="modal.cat.namePlaceholder" placeholder="Tên category..." />
           </div>
           <div>
-            <label class="field-label" for="input-modal-cat-color" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Màu nhận diện:</label>
-            <input type="color" id="input-modal-cat-color" value="#10b981" class="color-picker-input" title="Chọn màu" />
+            <label class="field-label" for="input-modal-cat-color" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.cat.colorLabel">Màu nhận diện:</label>
+            <input type="color" id="input-modal-cat-color" value="#10b981" class="color-picker-input" data-i18n-title="modal.cat.colorTitle" title="Chọn màu" />
           </div>
         </div>
         <div>
-          <label class="field-label" for="select-modal-cat-scope" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Phạm vi áp dụng:</label>
+          <label class="field-label" for="select-modal-cat-scope" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.cat.scopeLabel">Phạm vi áp dụng:</label>
           <select id="select-modal-cat-scope" class="modal-input modal-select">
-            <option value="work">💼 Công việc</option>
-            <option value="personal">👤 Cá nhân</option>
-            <option value="all">🌐 Cả hai</option>
+            <option value="work" data-i18n="scope.work">💼 Công việc</option>
+            <option value="personal" data-i18n="scope.personal">👤 Cá nhân</option>
+            <option value="all" data-i18n="scope.both">🌐 Cả hai</option>
           </select>
         </div>
         <div>
-          <label class="field-label" for="select-modal-cat-template" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Template liên kết:</label>
+          <label class="field-label" for="select-modal-cat-template" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.cat.templateLabel">Template liên kết:</label>
           <select id="select-modal-cat-template" class="modal-input modal-select">
-            <option value="standard">🤝 Mẫu Tiêu chuẩn / Khách hàng</option>
-            <option value="tech">💻 Mẫu Kỹ thuật / Architecture</option>
-            <option value="one_on_one">👥 Mẫu 1-on-1 / Đánh giá</option>
-            <option value="personal">👤 Mẫu Cá nhân / Tự học</option>
+            <option value="standard" data-i18n="modal.cat.tmplStandard">🤝 Mẫu Tiêu chuẩn / Khách hàng</option>
+            <option value="tech" data-i18n="modal.cat.tmplTech">💻 Mẫu Kỹ thuật / Architecture</option>
+            <option value="one_on_one" data-i18n="modal.cat.tmpl1on1">👥 Mẫu 1-on-1 / Đánh giá</option>
+            <option value="personal" data-i18n="modal.cat.tmplPersonal">👤 Mẫu Cá nhân / Tự học</option>
           </select>
         </div>
       </div>
       <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
-        <button type="button" id="btn-cancel-edit-category" class="secondary-btn">Huỷ</button>
-        <button type="button" id="btn-save-edit-category" class="primary-action-btn">Lưu thay đổi</button>
+        <button type="button" id="btn-cancel-edit-category" class="secondary-btn" data-i18n="common.cancel">Huỷ</button>
+        <button type="button" id="btn-save-edit-category" class="primary-action-btn" data-i18n="modal.cat.save">Lưu thay đổi</button>
       </div>
     </div>
   </div>
@@ -1814,21 +1815,21 @@
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
         <input type="hidden" id="input-modal-tag-old-name" value="" />
         <div>
-          <label class="field-label" for="input-modal-tag-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Tên tag (*):</label>
-          <input type="text" id="input-modal-tag-name" class="modal-input" placeholder="Tên tag..." />
+          <label class="field-label" for="input-modal-tag-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.tag.nameLabel">Tên tag (*):</label>
+          <input type="text" id="input-modal-tag-name" class="modal-input" data-i18n-placeholder="modal.tag.namePlaceholder" placeholder="Tên tag..." />
         </div>
         <div>
-          <label class="field-label" for="select-modal-tag-scope" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Phạm vi áp dụng:</label>
+          <label class="field-label" for="select-modal-tag-scope" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.tag.scopeLabel">Phạm vi áp dụng:</label>
           <select id="select-modal-tag-scope" class="modal-input modal-select">
-            <option value="work">💼 Công việc</option>
-            <option value="personal">👤 Cá nhân</option>
-            <option value="all">🌐 Cả hai</option>
+            <option value="work" data-i18n="scope.work">💼 Công việc</option>
+            <option value="personal" data-i18n="scope.personal">👤 Cá nhân</option>
+            <option value="all" data-i18n="scope.both">🌐 Cả hai</option>
           </select>
         </div>
       </div>
       <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
-        <button type="button" id="btn-cancel-edit-tag" class="secondary-btn">Huỷ</button>
-        <button type="button" id="btn-save-edit-tag" class="primary-action-btn">Lưu thay đổi</button>
+        <button type="button" id="btn-cancel-edit-tag" class="secondary-btn" data-i18n="common.cancel">Huỷ</button>
+        <button type="button" id="btn-save-edit-tag" class="primary-action-btn" data-i18n="modal.tag.save">Lưu thay đổi</button>
       </div>
     </div>
   </div>

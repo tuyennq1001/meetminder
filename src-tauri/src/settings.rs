@@ -163,24 +163,36 @@ pub struct Settings {
     /// Custom template for Meeting Minutes - Japanese (Markdown)
     #[serde(default)]
     pub template_minutes_ja: Option<String>,
+    /// Custom template for Meeting Minutes - English (Markdown)
+    #[serde(default)]
+    pub template_minutes_en: Option<String>,
     /// Custom template for Meeting Minutes - Tech - Vietnamese (Markdown)
     #[serde(default)]
     pub template_minutes_tech_vi: Option<String>,
     /// Custom template for Meeting Minutes - Tech - Japanese (Markdown)
     #[serde(default)]
     pub template_minutes_tech_ja: Option<String>,
+    /// Custom template for Meeting Minutes - Tech - English (Markdown)
+    #[serde(default)]
+    pub template_minutes_tech_en: Option<String>,
     /// Custom template for Meeting Minutes - 1-on-1 - Vietnamese (Markdown)
     #[serde(default)]
     pub template_minutes_1on1_vi: Option<String>,
     /// Custom template for Meeting Minutes - 1-on-1 - Japanese (Markdown)
     #[serde(default)]
     pub template_minutes_1on1_ja: Option<String>,
+    /// Custom template for Meeting Minutes - 1-on-1 - English (Markdown)
+    #[serde(default)]
+    pub template_minutes_1on1_en: Option<String>,
     /// Custom template for Meeting Minutes - Personal - Vietnamese (Markdown)
     #[serde(default)]
     pub template_minutes_personal_vi: Option<String>,
     /// Custom template for Meeting Minutes - Personal - Japanese (Markdown)
     #[serde(default)]
     pub template_minutes_personal_ja: Option<String>,
+    /// Custom template for Meeting Minutes - Personal - English (Markdown)
+    #[serde(default)]
+    pub template_minutes_personal_en: Option<String>,
     /// Default logs scope filter on app open: "work" | "personal" | "all" | "last"
     #[serde(default = "default_logs_scope_setting")]
     pub default_logs_scope: String,
@@ -266,12 +278,16 @@ impl Default for Settings {
             meeting_minutes_use_notes: true,
             template_minutes_vi: None,
             template_minutes_ja: None,
+            template_minutes_en: None,
             template_minutes_tech_vi: None,
             template_minutes_tech_ja: None,
+            template_minutes_tech_en: None,
             template_minutes_1on1_vi: None,
             template_minutes_1on1_ja: None,
+            template_minutes_1on1_en: None,
             template_minutes_personal_vi: None,
             template_minutes_personal_ja: None,
+            template_minutes_personal_en: None,
             default_logs_scope: "work".to_string(),
             git_backup_enabled: false,
             git_backup_repo_path: String::new(),

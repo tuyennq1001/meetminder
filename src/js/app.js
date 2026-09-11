@@ -10,6 +10,7 @@ import { updater } from './updater.js';
 import { sessionStore, SessionStore } from './session-store.js';
 import { QWEN_LANGS } from './qwen-langs.js';
 import { NotesEditor } from './notes-editor.js';
+import { applyLocale, normalizeLocale, t } from './i18n.js';
 import {
     initShell, setActivity, getActivity, setLiveBadge, bindMenu, initWindowModes,
 } from './ui-shell.js';
@@ -101,6 +102,34 @@ const DEFAULT_TEMPLATE_MINUTES_VI = `# 📋 BIÊN BẢN CUỘC HỌP (MEETING MI
 | 1 | ... | ... | ... | ... |
 `;
 
+const DEFAULT_TEMPLATE_MINUTES_EN = `# 📋 MEETING MINUTES
+
+### 📌 GENERAL INFORMATION
+- **Meeting title**: {{title}}
+- **Date & time**: {{date}} (Duration: approximately {{duration}} minutes)
+- **Participants**: {{participants}}
+
+---
+
+### 🎯 1. CONTEXT & OBJECTIVES
+(Background of the meeting, key topics to discuss, and intended outcomes)
+
+---
+
+### 📝 2. SUMMARY & DECISIONS
+- **Summary of the main discussion**:
+  - (Organize the key points clearly by topic)
+- **Key decisions**:
+  - (Record the decisions agreed upon)
+
+---
+
+### ✅ 3. ACTION ITEMS / NEXT STEPS
+| No. | Task | Assignee | Deadline | Notes |
+|:---|:---|:---|:---|:---|
+| 1 | ... | ... | ... | ... |
+`;
+
 const PRESET_TEMPLATE_TECH_JA = `# 💻 技術・アーキテクチャ検討議事録 (Technical Review)
 
 ### 📌 基本情報
@@ -175,6 +204,43 @@ const PRESET_TEMPLATE_TECH_VI = `# 💻 BIÊN BẢN HỌP KỸ THUẬT & KIẾN 
 | 1 | ... | ... | ... | ... |
 `;
 
+const PRESET_TEMPLATE_TECH_EN = `# 💻 TECHNICAL REVIEW & ARCHITECTURE SYNC
+
+### 📌 GENERAL INFORMATION
+- **Topic**: {{title}}
+- **Date & time**: {{date}} (Duration: approximately {{duration}} minutes)
+- **Participants**: {{participants}}
+
+---
+
+### 🔍 1. PROBLEM STATEMENT & CONTEXT
+- **Technical problem / context**:
+  - (Performance issue, architecture requirement, refactoring need, or integration challenge)
+- **Goals**:
+  - (Requirements, SLA, constraints, and success criteria)
+
+---
+
+### ⚙️ 2. OPTIONS & TRADE-OFFS
+- **Option A**: (Benefits, drawbacks, and cost)
+- **Option B**: (Benefits, drawbacks, and cost)
+
+---
+
+### 🎯 3. TECHNICAL DECISIONS
+- **Selected approach**:
+  - (Reasoning and implementation considerations)
+- **Technical risks & mitigations**:
+  - (Potential risks and fallback plan)
+
+---
+
+### 🛠 4. IMPLEMENTATION TASKS
+| No. | Task | Assignee | Deadline | Notes / PR |
+|:---|:---|:---|:---|:---|
+| 1 | ... | ... | ... | ... |
+`;
+
 const PRESET_TEMPLATE_1ON1_JA = `# 👥 1on1ミーティング・面談記録 (1-on-1 Notes)
 
 ### 📌 基本情報
@@ -245,6 +311,41 @@ const PRESET_TEMPLATE_1ON1_VI = `# 👥 BIÊN BẢN TRAO ĐỔI 1-ON-1 & ĐÁNH 
 - [ ] **Mục tiêu 2**: (Thời hạn & cam kết)
 `;
 
+const PRESET_TEMPLATE_1ON1_EN = `# 👥 1-ON-1 MEETING & DEVELOPMENT NOTES
+
+### 📌 MEETING INFORMATION
+- **Topic**: {{title}}
+- **Date & time**: {{date}} (Duration: approximately {{duration}} minutes)
+- **Participants**: {{participants}}
+
+---
+
+### 📊 1. STATUS & ACHIEVEMENTS
+- **Positive results / achievements**:
+  - (Completed work and notable contributions)
+- **Current work status**:
+  - (Progress against plan and work in progress)
+
+---
+
+### 💬 2. FEEDBACK & DISCUSSION
+- **Team member's perspective**:
+  - (Motivation, concerns, career interests, or support needed)
+- **Manager's feedback & expectations**:
+  - (Constructive feedback and development direction)
+
+---
+
+### 🚧 3. BLOCKERS & SUPPORT NEEDED
+- (Tools, processes, collaboration, or resource constraints)
+
+---
+
+### 🎯 4. ACTIONS BEFORE THE NEXT MEETING
+- [ ] **Action 1**: (Deadline and commitment)
+- [ ] **Action 2**: (Deadline and commitment)
+`;
+
 const PRESET_TEMPLATE_PERSONAL_JA = `# 👤 個人メモ・学習まとめ (Personal Notes)
 
 ### 📌 基本情報
@@ -307,6 +408,38 @@ const PRESET_TEMPLATE_PERSONAL_VI = `# 👤 GHI CHÉP & TÓM TẮT CÁ NHÂN
 
 ### 💭 4. CẢM NHẬN & SUY NGẪM THÊM (REFLECTIONS)
 - (Ghi chú suy nghĩ cá nhân, cảm xúc hoặc câu hỏi cần đào sâu thêm)
+`;
+
+const PRESET_TEMPLATE_PERSONAL_EN = `# 👤 PERSONAL NOTES & LEARNING SUMMARY
+
+### 📌 INFORMATION
+- **Topic**: {{title}}
+- **Date & time**: {{date}} (Duration: approximately {{duration}} minutes)
+- **Conversation partner / source**: {{participants}}
+
+---
+
+### 💡 1. KEY TAKEAWAYS
+- (Most important ideas, insights, and lessons from the conversation or session)
+
+---
+
+### 📝 2. DETAILED SUMMARY
+- **Topic 1**:
+  - (Important details)
+- **Topic 2**:
+  - (Important details)
+
+---
+
+### 🎯 3. MY ACTION ITEMS
+- [ ] ...
+- [ ] ...
+
+---
+
+### 💭 4. REFLECTIONS
+- (Personal thoughts, feelings, or questions to explore further)
 `;
 
 class App {
@@ -603,11 +736,11 @@ class App {
 
         if (!this.isAppleSilicon) {
             badge.className = 'local-mlx-badge not-ready';
-            badge.textContent = 'Không khả dụng';
+            badge.textContent = t('settings.engine.mlxNotAvail');
             btnInstall.style.display = 'none';
             if (btnDelete) btnDelete.style.display = 'none';
             if (sizeTag) sizeTag.style.display = 'none';
-            if (desc) desc.textContent = 'Local MLX chỉ hoạt động trên macOS với chip Apple Silicon (M1/M2/M3/M4).';
+            if (desc) desc.textContent = t('settings.engine.mlxAppleSiliconOnly');
             return;
         }
 
@@ -626,7 +759,7 @@ class App {
         if (btnDelete) {
             if (sizeBytes > 0) {
                 btnDelete.style.display = 'inline-flex';
-                btnDelete.textContent = `🗑️ Xoá mô hình (${sizeFormatted})`;
+                btnDelete.textContent = t('settings.engine.mlxDeleteBtn', { size: sizeFormatted });
             } else {
                 btnDelete.style.display = 'none';
             }
@@ -634,14 +767,14 @@ class App {
 
         if (this._isLocalMlxReady) {
             badge.className = 'local-mlx-badge is-ready';
-            badge.textContent = '✅ Đã cài đặt sẵn sàng';
-            btnInstall.textContent = '🔄 Cài đặt lại mô hình';
-            if (desc) desc.textContent = 'Mô hình Whisper & Gemma đã tải sẵn trên máy. Sẵn sàng dự phòng ngoại tuyến 100% khi mất mạng.';
+            badge.textContent = t('settings.engine.mlxReady');
+            btnInstall.textContent = t('settings.engine.mlxReinstall');
+            if (desc) desc.textContent = t('settings.engine.mlxReadyDesc');
         } else {
             badge.className = 'local-mlx-badge not-ready';
-            badge.textContent = '⚠️ Chưa cài đặt mô hình';
-            btnInstall.textContent = '⬇️ Cài đặt / Tải trước mô hình Local MLX';
-            if (desc) desc.textContent = 'Tải trước mô hình AI (~3.5 GB) về máy Mac để có thể phiên dịch ngoại tuyến bất cứ khi nào mất mạng hoặc Wi-Fi yếu.';
+            badge.textContent = t('settings.engine.mlxNotInstalled');
+            btnInstall.textContent = t('settings.engine.mlxInstallBtn');
+            if (desc) desc.textContent = t('settings.engine.mlxNotInstalledDesc');
         }
     }
 
@@ -854,6 +987,29 @@ class App {
         // Settings button
         document.getElementById('btn-settings')?.addEventListener('click', () => {
             this._showView('settings');
+        });
+
+        // App language is a shell setting: apply it immediately, then persist
+        // only this field so a full settings form save cannot overwrite it.
+        document.getElementById('select-app-language')?.addEventListener('change', async (event) => {
+            const select = event.target;
+            const previousLocale = normalizeLocale(settingsManager.get().app_language);
+            const nextLocale = normalizeLocale(select.value);
+            applyLocale(nextLocale);
+            if (this._currentSettingsScreen) {
+                this._showSettingsScreen(this._currentSettingsScreen);
+            }
+            try {
+                await settingsManager.save({ app_language: nextLocale });
+                this._showToast(t('settings.saved'), 'success');
+            } catch (err) {
+                select.value = previousLocale;
+                applyLocale(previousLocale);
+                if (this._currentSettingsScreen) {
+                    this._showSettingsScreen(this._currentSettingsScreen);
+                }
+                this._showToast(t('settings.saveFailed', { error: err }), 'error');
+            }
         });
 
         // Back from settings
@@ -2037,6 +2193,7 @@ class App {
                 this._switchTemplatesMainTab(this._activeTemplatesMainTab || 'minutes');
             }
         } else if (targetScreen === 'tab-translation') {
+            this._updateMlxSettingsUI();
             await this._checkMlxReadiness();
         }
 
@@ -2152,14 +2309,14 @@ class App {
                 await settingsManager.save({ meeting_minutes_use_notes: enabled });
                 this._showToast(
                     enabled
-                        ? 'Đã bật sử dụng Ghi chép bằng tay cho Meeting Minutes ✓'
-                        : 'Đã tắt sử dụng Ghi chép bằng tay cho Meeting Minutes ✓',
+                        ? t('settings.template.useNotesEnabled')
+                        : t('settings.template.useNotesDisabled'),
                     'success'
                 );
             } catch (err) {
                 settingsManager.settings.meeting_minutes_use_notes = previous;
                 checkbox.checked = previous;
-                this._showToast(`Lỗi lưu nguồn tạo Meeting Minutes: ${err}`, 'error');
+                this._showToast(t('settings.template.useNotesFailed', { error: err }), 'error');
             }
         });
 
@@ -2171,11 +2328,14 @@ class App {
             });
         });
 
-        // Language subtabs (VI / JA)
+        // Language subtabs (JA / VI / EN)
         document.querySelectorAll('#templates-lang-subtabs .templates-subtab').forEach(btn => {
             btn.addEventListener('click', () => {
                 const lang = btn.dataset.lang;
-                if (lang) this._switchSettingsTemplateLang(lang);
+                if (lang) {
+                    this._hasUserSwitchedTemplateLang = true;
+                    this._switchSettingsTemplateLang(lang);
+                }
             });
         });
 
@@ -2212,18 +2372,26 @@ class App {
 
     _renderSettingsTemplatesTab() {
         const s = settingsManager.get();
+        if (!this._hasUserSwitchedTemplateLang) {
+            const appLocale = normalizeLocale(s.app_language);
+            this._activeTemplateLang = ['ja', 'vi', 'en'].includes(appLocale) ? appLocale : 'vi';
+        }
         const useNotesCheckbox = document.getElementById('check-meeting-minutes-use-notes');
         if (useNotesCheckbox) useNotesCheckbox.checked = s.meeting_minutes_use_notes !== false;
         if (this._templateDrafts.standard_vi === undefined) {
             this._templateDrafts = {
                 standard_vi: (s.template_minutes_vi !== undefined && s.template_minutes_vi !== null && s.template_minutes_vi !== '') ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI,
                 standard_ja: (s.template_minutes_ja !== undefined && s.template_minutes_ja !== null && s.template_minutes_ja !== '') ? s.template_minutes_ja : DEFAULT_TEMPLATE_MINUTES_JA,
+                standard_en: (s.template_minutes_en !== undefined && s.template_minutes_en !== null && s.template_minutes_en !== '') ? s.template_minutes_en : DEFAULT_TEMPLATE_MINUTES_EN,
                 tech_vi: (s.template_minutes_tech_vi !== undefined && s.template_minutes_tech_vi !== null && s.template_minutes_tech_vi !== '') ? s.template_minutes_tech_vi : PRESET_TEMPLATE_TECH_VI,
                 tech_ja: (s.template_minutes_tech_ja !== undefined && s.template_minutes_tech_ja !== null && s.template_minutes_tech_ja !== '') ? s.template_minutes_tech_ja : PRESET_TEMPLATE_TECH_JA,
+                tech_en: (s.template_minutes_tech_en !== undefined && s.template_minutes_tech_en !== null && s.template_minutes_tech_en !== '') ? s.template_minutes_tech_en : PRESET_TEMPLATE_TECH_EN,
                 one_on_one_vi: (s.template_minutes_1on1_vi !== undefined && s.template_minutes_1on1_vi !== null && s.template_minutes_1on1_vi !== '') ? s.template_minutes_1on1_vi : PRESET_TEMPLATE_1ON1_VI,
                 one_on_one_ja: (s.template_minutes_1on1_ja !== undefined && s.template_minutes_1on1_ja !== null && s.template_minutes_1on1_ja !== '') ? s.template_minutes_1on1_ja : PRESET_TEMPLATE_1ON1_JA,
+                one_on_one_en: (s.template_minutes_1on1_en !== undefined && s.template_minutes_1on1_en !== null && s.template_minutes_1on1_en !== '') ? s.template_minutes_1on1_en : PRESET_TEMPLATE_1ON1_EN,
                 personal_vi: (s.template_minutes_personal_vi !== undefined && s.template_minutes_personal_vi !== null && s.template_minutes_personal_vi !== '') ? s.template_minutes_personal_vi : PRESET_TEMPLATE_PERSONAL_VI,
                 personal_ja: (s.template_minutes_personal_ja !== undefined && s.template_minutes_personal_ja !== null && s.template_minutes_personal_ja !== '') ? s.template_minutes_personal_ja : PRESET_TEMPLATE_PERSONAL_JA,
+                personal_en: (s.template_minutes_personal_en !== undefined && s.template_minutes_personal_en !== null && s.template_minutes_personal_en !== '') ? s.template_minutes_personal_en : PRESET_TEMPLATE_PERSONAL_EN,
             };
         }
 
@@ -2233,7 +2401,7 @@ class App {
             this._templateEditor = new NotesEditor();
             this._templateEditor.mount(container, {
                 initialContent: this._templateDrafts[currentKey] || '',
-                placeholderText: 'Nhập cấu trúc mẫu markdown...',
+                placeholderText: t('settings.template.placeholderMinutes'),
                 onChange: (content) => {
                     this._templateDrafts[this._getCurrentTemplateKey()] = content;
                 },
@@ -2278,7 +2446,7 @@ class App {
         // Update hint text
         const hintEl = document.getElementById('template-editor-hint');
         if (hintEl) {
-            hintEl.innerHTML = 'Biến tự động: <code>{{title}}</code>, <code>{{date}}</code>, <code>{{duration}}</code>, <code>{{participants}}</code>';
+            hintEl.innerHTML = t('settings.template.autoVarsMinutes');
         }
 
         // Update editor content
@@ -2292,18 +2460,22 @@ class App {
         let def = '';
         if (key === 'standard_vi') def = DEFAULT_TEMPLATE_MINUTES_VI;
         else if (key === 'standard_ja') def = DEFAULT_TEMPLATE_MINUTES_JA;
+        else if (key === 'standard_en') def = DEFAULT_TEMPLATE_MINUTES_EN;
         else if (key === 'tech_vi') def = PRESET_TEMPLATE_TECH_VI;
         else if (key === 'tech_ja') def = PRESET_TEMPLATE_TECH_JA;
+        else if (key === 'tech_en') def = PRESET_TEMPLATE_TECH_EN;
         else if (key === 'one_on_one_vi') def = PRESET_TEMPLATE_1ON1_VI;
         else if (key === 'one_on_one_ja') def = PRESET_TEMPLATE_1ON1_JA;
+        else if (key === 'one_on_one_en') def = PRESET_TEMPLATE_1ON1_EN;
         else if (key === 'personal_vi') def = PRESET_TEMPLATE_PERSONAL_VI;
         else if (key === 'personal_ja') def = PRESET_TEMPLATE_PERSONAL_JA;
+        else if (key === 'personal_en') def = PRESET_TEMPLATE_PERSONAL_EN;
 
         this._templateDrafts[key] = def;
         if (this._templateEditor) {
             this._templateEditor.setContent(def);
         }
-        this._showToast('Đã khôi phục mẫu mặc định ✓', 'info');
+        this._showToast(t('settings.template.resetMinutes'), 'info');
     }
 
     async _saveSettingsTemplates() {
@@ -2314,17 +2486,21 @@ class App {
             await settingsManager.save({
                 template_minutes_vi: this._templateDrafts.standard_vi,
                 template_minutes_ja: this._templateDrafts.standard_ja,
+                template_minutes_en: this._templateDrafts.standard_en,
                 template_minutes_tech_vi: this._templateDrafts.tech_vi,
                 template_minutes_tech_ja: this._templateDrafts.tech_ja,
+                template_minutes_tech_en: this._templateDrafts.tech_en,
                 template_minutes_1on1_vi: this._templateDrafts.one_on_one_vi,
                 template_minutes_1on1_ja: this._templateDrafts.one_on_one_ja,
+                template_minutes_1on1_en: this._templateDrafts.one_on_one_en,
                 template_minutes_personal_vi: this._templateDrafts.personal_vi,
                 template_minutes_personal_ja: this._templateDrafts.personal_ja,
+                template_minutes_personal_en: this._templateDrafts.personal_en,
                 meeting_minutes_use_notes: document.getElementById('check-meeting-minutes-use-notes')?.checked !== false,
             });
-            this._showToast('Đã lưu mẫu văn bản ✓', 'success');
+            this._showToast(t('settings.template.saved'), 'success');
         } catch (err) {
-            this._showToast(`Lỗi lưu mẫu: ${err}`, 'error');
+            this._showToast(t('settings.template.saveFailed', { error: err }), 'error');
         }
     }
 
@@ -2350,7 +2526,7 @@ class App {
             this._notesTemplateEditor = new NotesEditor();
             this._notesTemplateEditor.mount(container, {
                 initialContent: initial,
-                placeholderText: 'Nhập cấu trúc mẫu ghi chú markdown...',
+                placeholderText: t('settings.template.placeholderNotes'),
                 onSave: () => {
                     this._saveSettingsNotesTemplate();
                 },
@@ -2362,7 +2538,7 @@ class App {
         if (this._notesTemplateEditor) {
             this._notesTemplateEditor.setContent(DEFAULT_TEMPLATE_NOTES);
         }
-        this._showToast('Đã khôi phục mẫu ghi chú mặc định ✓', 'info');
+        this._showToast(t('settings.template.notesReset'), 'info');
     }
 
     async _saveSettingsNotesTemplate() {
@@ -2371,9 +2547,9 @@ class App {
                 ? this._notesTemplateEditor.getContent()
                 : DEFAULT_TEMPLATE_NOTES;
             await settingsManager.save({ template_notes: content });
-            this._showToast('Đã lưu mẫu ghi chú ✓', 'success');
+            this._showToast(t('settings.template.notesSaved'), 'success');
         } catch (err) {
-            this._showToast(`Lỗi lưu mẫu ghi chú: ${err}`, 'error');
+            this._showToast(t('settings.template.saveFailed', { error: err }), 'error');
         }
     }
 
@@ -2531,6 +2707,7 @@ class App {
 
     async _autoSaveSettingsFromForm() {
         const settings = {
+            app_language: normalizeLocale(document.getElementById('select-app-language')?.value || settingsManager.get().app_language),
             soniox_api_key: document.getElementById('input-api-key')?.value.trim() || '',
             openai_api_key: document.getElementById('input-openai-key')?.value.trim() || '',
             gemini_api_key: document.getElementById('input-gemini-key')?.value.trim() || '',
@@ -2609,13 +2786,20 @@ class App {
 
     async _saveSettingsFromForm() {
         await this._autoSaveSettingsFromForm();
-        this._showToast('Đã lưu cài đặt ✓', 'success');
+        this._showToast(t('settings.saved'), 'success');
         this._showView('overlay');
     }
 
     // ─── Apply Settings ────────────────────────────────────
 
     _applySettings(settings) {
+        const appLocale = normalizeLocale(settings.app_language);
+        applyLocale(appLocale);
+        const appLanguageSelect = document.getElementById('select-app-language');
+        if (appLanguageSelect && appLanguageSelect.value !== appLocale) {
+            appLanguageSelect.value = appLocale;
+        }
+
         // Update menu & UI font settings
         const menuFamilies = {
             system: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
@@ -7229,9 +7413,10 @@ class App {
     // ─── Universal Confirm Delete Modal ─────────────────────────────────────
 
     _promptConfirmDelete({
-        title = 'Xác nhận xoá',
-        message = 'Bạn có chắc chắn muốn xoá mục này?',
-        confirmText = 'Xoá',
+        title = t('modal.delete.title'),
+        message = t('modal.delete.message'),
+        confirmText = t('modal.delete.confirm'),
+        cancelText = t('modal.cancel'),
         icon = '🗑️',
         variant = 'danger',
     }) {
@@ -7264,6 +7449,7 @@ class App {
                 agreeBtn.classList.toggle('danger-btn', variant !== 'primary');
                 agreeBtn.classList.toggle('primary-action-btn', variant === 'primary');
             }
+            if (cancelBtn) cancelBtn.textContent = cancelText;
 
             const focusable = () => Array.from(modal.querySelectorAll(
                 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
@@ -7346,7 +7532,7 @@ class App {
         const projsSec = document.getElementById('modal-cust-projs-section');
         const saveBtn = document.getElementById('btn-save-add-customer');
 
-        if (titleEl) titleEl.textContent = '🤝 Thêm Khách hàng mới';
+        if (titleEl) titleEl.textContent = t('modal.cust.titleAdd');
         if (idInput) idInput.value = '';
         if (nameInput) nameInput.value = '';
         if (codeInput) codeInput.value = '';
@@ -7354,7 +7540,7 @@ class App {
         if (colorInput) colorInput.value = '#431A46';
         if (descInput) descInput.value = '';
         if (projsSec) projsSec.style.display = 'none';
-        if (saveBtn) saveBtn.textContent = '+ Thêm Khách hàng';
+        if (saveBtn) saveBtn.textContent = t('modal.cust.saveAdd');
 
         modal.style.display = 'flex';
         setTimeout(() => nameInput?.focus(), 50);
@@ -7375,14 +7561,14 @@ class App {
         const projsList = document.getElementById('modal-cust-projs-list');
         const saveBtn = document.getElementById('btn-save-add-customer');
 
-        if (titleEl) titleEl.textContent = `🤝 Chi tiết: ${customer.name}`;
+        if (titleEl) titleEl.textContent = t('modal.cust.titleEdit', { name: customer.name });
         if (idInput) idInput.value = customer.id || '';
         if (nameInput) nameInput.value = customer.name || '';
         if (codeInput) codeInput.value = customer.code || '';
         if (statusSelect) statusSelect.value = customer.status || 'active';
         if (colorInput) colorInput.value = customer.color || '#431A46';
         if (descInput) descInput.value = customer.description || '';
-        if (saveBtn) saveBtn.textContent = 'Lưu thay đổi';
+        if (saveBtn) saveBtn.textContent = t('modal.cust.saveEdit');
 
         if (projsSec && projsList) {
             const reg = await this._loadProjectRegistry();
@@ -7418,7 +7604,7 @@ class App {
         const descInput = document.getElementById('input-modal-cust-desc');
         const name = nameInput?.value.trim();
         if (!name) {
-            this._showToast('Vui lòng nhập tên khách hàng', 'error');
+            this._showToast(t('modal.cust.nameRequired'), 'error');
             return;
         }
         const code = codeInput?.value.trim().toUpperCase() || '';
@@ -7439,14 +7625,14 @@ class App {
                 }
             });
             this._closeAddCustomerModal();
-            this._showToast(id ? `Đã cập nhật khách hàng "${name}" ✓` : `Đã thêm khách hàng "${name}" ✓`, 'success');
+            this._showToast(id ? t('modal.cust.updated', { name }) : t('modal.cust.added', { name }), 'success');
             await this._loadProjectRegistry();
             this._renderSettingsCustomersTab();
             this._renderCustomerFilterBar();
             this._updateSidebarBadges();
             await this._showSessions();
         } catch (err) {
-            this._showToast(`Lưu khách hàng thất bại: ${err}`, 'error');
+            this._showToast(t('modal.cust.saveFailed', { error: err }), 'error');
         }
     }
 
@@ -7463,8 +7649,8 @@ class App {
         const titleEl = document.getElementById('modal-proj-title');
         const saveBtn = document.getElementById('btn-save-add-project');
 
-        if (titleEl) titleEl.textContent = '🚀 Thêm Dự án mới';
-        if (saveBtn) saveBtn.textContent = '+ Tạo Dự án';
+        if (titleEl) titleEl.textContent = t('modal.proj.titleAdd');
+        if (saveBtn) saveBtn.textContent = t('modal.proj.saveAdd');
         if (idInput) idInput.value = '';
 
         const defaultScope = this._projScopeFilter === 'personal' ? 'personal' : 'work';
@@ -7487,7 +7673,7 @@ class App {
         });
 
         if (custSelect) {
-            let html = '<option value="">(Không chọn KH / Dự án nội bộ)</option>';
+            let html = `<option value="">${this._esc(t('modal.proj.customerDefault'))}</option>`;
             for (const c of customers) {
                 html += `<option value="${this._escAttr(c.id)}">🤝 ${this._esc(c.name)}</option>`;
             }
@@ -7517,8 +7703,8 @@ class App {
         const titleEl = document.getElementById('modal-proj-title');
         const saveBtn = document.getElementById('btn-save-add-project');
 
-        if (titleEl) titleEl.textContent = `🚀 Chỉnh sửa: ${project.name}`;
-        if (saveBtn) saveBtn.textContent = 'Lưu thay đổi';
+        if (titleEl) titleEl.textContent = t('modal.proj.titleEdit', { name: project.name });
+        if (saveBtn) saveBtn.textContent = t('modal.proj.saveEdit');
         if (idInput) idInput.value = project.id || '';
         if (nameInput) nameInput.value = project.name || '';
         if (colorInput) colorInput.value = project.color || '#431A46';
@@ -7544,7 +7730,7 @@ class App {
         });
 
         if (custSelect) {
-            let html = '<option value="">(Không chọn KH / Dự án nội bộ)</option>';
+            let html = `<option value="">${this._esc(t('modal.proj.customerDefault'))}</option>`;
             for (const c of customers) {
                 const sel = project.customer_id === c.id ? 'selected' : '';
                 html += `<option value="${this._escAttr(c.id)}" ${sel}>🤝 ${this._esc(c.name)}</option>`;
@@ -7569,7 +7755,7 @@ class App {
         const descInput = document.getElementById('input-modal-proj-desc');
         const name = nameInput?.value.trim();
         if (!name) {
-            this._showToast('Vui lòng nhập tên dự án', 'error');
+            this._showToast(t('modal.proj.nameRequired'), 'error');
             return;
         }
         const id = idInput?.value.trim() || '';
@@ -7592,14 +7778,14 @@ class App {
                 }
             });
             this._closeAddProjectModal();
-            this._showToast(id ? `Đã cập nhật dự án "${name}" ✓` : `Đã tạo dự án "${name}" ✓`, 'success');
+            this._showToast(id ? t('modal.proj.updated', { name }) : t('modal.proj.added', { name }), 'success');
             await this._loadProjectRegistry();
             this._renderSettingsProjectsTab();
             this._renderProjectFilterBar();
             this._updateSidebarBadges();
             await this._showSessions();
         } catch (err) {
-            this._showToast(`Lưu dự án thất bại: ${err}`, 'error');
+            this._showToast(t('modal.proj.saveFailed', { error: err }), 'error');
         }
     }
 
@@ -7682,7 +7868,7 @@ class App {
     async _changeStorageDirectory(targetPath, { resetting = false } = {}) {
         if (this._storageMigrationBusy) return;
         if (this.isRunning || this.isPaused || this._hasUnsavedMeetingData) {
-            this._showToast('Hãy kết thúc và lưu cuộc họp hiện tại trước khi đổi thư mục lưu trữ', 'warning');
+            this._showToast(t('settings.storage.runningWarning'), 'warning');
             return;
         }
 
@@ -7690,13 +7876,13 @@ class App {
         try {
             preview = await invoke('preview_storage_dir_change', { targetPath });
         } catch (err) {
-            this._setStorageMigrationStatus(`Không thể kiểm tra thư mục đích: ${err}`, true);
-            this._showToast(`Đổi thư mục thất bại: ${err}`, 'error');
+            this._setStorageMigrationStatus(t('settings.storage.checkTargetFailed', { error: err }), true);
+            this._showToast(t('settings.storage.changeFailed', { error: err }), 'error');
             return;
         }
 
         if (preview.same_path) {
-            this._showToast('Thư mục được chọn đang là thư mục lưu trữ hiện tại', 'info');
+            this._showToast(t('settings.storage.sameDirWarning'), 'info');
             return;
         }
 
@@ -7704,15 +7890,15 @@ class App {
         const sourceSize = this._formatStorageBytes(preview.source_total_size_bytes);
         const targetCount = Number(preview.target_file_count || 0);
         const targetText = targetCount > 0
-            ? `Thư mục đích hiện có ${targetCount} file; file trùng nội dung sẽ được bỏ qua và file khác nội dung sẽ không bị ghi đè.`
-            : 'Thư mục đích hiện chưa có dữ liệu.';
+            ? t('settings.storage.targetHasFiles', { count: targetCount })
+            : t('settings.storage.targetEmpty');
         const title = resetting
-            ? 'Đưa dữ liệu về thư mục mặc định?'
-            : 'Di chuyển dữ liệu sang thư mục mới?';
-        const action = resetting ? 'Đưa về mặc định' : 'Di chuyển dữ liệu';
+            ? t('settings.storage.resetPromptTitle')
+            : t('settings.storage.migratePromptTitle');
+        const action = resetting ? t('settings.storage.resetBtn') : t('settings.storage.migrateBtn');
         const message = sourceCount > 0
-            ? `Meet Minder sẽ sao chép ${sourceCount} file (${sourceSize}) từ thư mục hiện tại sang:\n${preview.target_path}\n\n${targetText}\n\nThư mục cũ sẽ được giữ nguyên làm bản dự phòng. Tiếp tục?`
-            : `Meet Minder sẽ chuyển nơi lưu dữ liệu sang:\n${preview.target_path}\n\n${targetText}\n\nTiếp tục?`;
+            ? t('settings.storage.migrateMessageWithFiles', { count: sourceCount, size: sourceSize, targetPath: preview.target_path, targetText })
+            : t('settings.storage.migrateMessageNoFiles', { targetPath: preview.target_path, targetText });
         const agreed = await this._promptConfirmDelete({
             title,
             message,
@@ -7724,7 +7910,7 @@ class App {
 
         this._storageMigrationBusy = true;
         this._setStorageMigrationStatus(
-            sourceCount > 0 ? `Đang chuẩn bị di chuyển ${sourceCount} file...` : 'Đang đổi thư mục lưu trữ...',
+            sourceCount > 0 ? t('settings.storage.preparingMigrate', { count: sourceCount }) : t('settings.storage.changingDir'),
         );
         for (const id of ['btn-change-storage-dir', 'btn-reset-storage-dir']) {
             const button = document.getElementById(id);
@@ -7735,17 +7921,17 @@ class App {
             const result = await invoke('set_custom_transcripts_dir', { path: targetPath });
             const copied = Number(result.files_copied || 0);
             const skipped = Number(result.files_skipped || 0);
-            const retained = result.source_retained ? ' Thư mục cũ vẫn được giữ lại làm bản dự phòng.' : '';
-            this._setStorageMigrationStatus(`Đã xử lý ${result.total_files || 0} file ✓`);
-            this._showToast(`Đã chuyển thư mục lưu trữ thành công ✓${retained}`, 'success');
+            const retained = result.source_retained ? t('settings.storage.sourceRetained') : '';
+            this._setStorageMigrationStatus(t('settings.storage.processedFiles', { count: result.total_files || 0 }));
+            this._showToast(`${t('settings.storage.changeSuccess')}${retained}`, 'success');
             if (copied || skipped) {
                 console.info(`[Storage] migrated: copied=${copied}, skipped=${skipped}`);
             }
             await this._renderSettingsStorageTab();
             await this._showSessions();
         } catch (err) {
-            this._setStorageMigrationStatus(`Di chuyển dữ liệu thất bại: ${err}`, true);
-            this._showToast(`Di chuyển dữ liệu thất bại: ${err}`, 'error');
+            this._setStorageMigrationStatus(t('settings.storage.migrateFailed', { error: err }), true);
+            this._showToast(t('settings.storage.migrateFailed', { error: err }), 'error');
         } finally {
             this._storageMigrationBusy = false;
             for (const id of ['btn-change-storage-dir', 'btn-reset-storage-dir']) {
@@ -7765,16 +7951,16 @@ class App {
             const info = await invoke('get_storage_info');
             pathEl.textContent = info.current_path;
             if (badgeEl) {
-                badgeEl.textContent = info.is_custom ? 'Tùy chỉnh' : 'Mặc định';
+                badgeEl.textContent = info.is_custom ? t('settings.storage.custom') : t('settings.storage.default');
                 badgeEl.className = `status-pill ${info.is_custom ? 'archived' : 'active'}`;
             }
 
             const sizeMb = (info.total_size_bytes / (1024 * 1024)).toFixed(2);
             statsEl.innerHTML = `
-                <div>• <b>Tổng số cuộc họp đã lưu:</b> ${info.session_count} cuộc họp</div>
-                <div>• <b>Dung lượng dữ liệu trên đĩa:</b> ${sizeMb} MB (${info.total_size_bytes.toLocaleString()} bytes)</div>
-                <div>• <b>Định dạng tệp:</b> Markdown (.md), JSON metadata (.json) và Audio (.wav)</div>
-                <div>• <b>Vị trí mặc định:</b> <span style="font-family:monospace; font-size:11px; opacity:0.8;">${this._esc(info.default_path)}</span></div>
+                <div>• <b>${t('settings.storage.statsTotalMeetings')}</b> ${info.session_count} ${t('table.meetings')}</div>
+                <div>• <b>${t('settings.storage.statsDiskSize')}</b> ${sizeMb} MB (${info.total_size_bytes.toLocaleString()} bytes)</div>
+                <div>• <b>${t('settings.storage.statsFormats')}</b></div>
+                <div>• <b>${t('settings.storage.statsDefaultPath')}</b> <span style="font-family:monospace; font-size:11px; opacity:0.8;">${this._esc(info.default_path)}</span></div>
             `;
         } catch (err) {
             console.error('Failed to get storage info:', err);
@@ -7833,17 +8019,17 @@ class App {
             if (repoPathEl) repoPathEl.textContent = storagePath;
             this._renderGitPushHistory(storagePath);
         } catch (err) {
-            if (repoPathEl) repoPathEl.textContent = 'Không xác định được đường dẫn';
+            if (repoPathEl) repoPathEl.textContent = t('settings.storage.pathUnknown');
             statusEl.classList.add('is-error');
-            statusEl.textContent = `Không đọc được thư mục lưu trữ: ${err}`;
+            statusEl.textContent = t('settings.storage.readDirFailed', { error: err });
             return;
         }
         if (!s.git_backup_enabled) {
             statusEl.classList.remove('is-error');
-            statusEl.textContent = 'Backup qua Git đang tắt.';
+            statusEl.textContent = t('settings.storage.gitBackupDisabled');
             return;
         }
-        statusEl.textContent = 'Đang kiểm tra Git...';
+        statusEl.textContent = t('settings.storage.gitChecking');
         try {
             const info = await invoke('git_backup_status');
             statusEl.classList.toggle('is-error', Boolean(info.error));
@@ -7853,17 +8039,17 @@ class App {
             }
             if (s.git_backup_auto_push === true && !info.remote) {
                 statusEl.classList.add('is-error');
-                statusEl.textContent = 'Đã bật tự động push nhưng repository chưa có remote origin.';
+                statusEl.textContent = t('settings.storage.gitNoRemoteWarning');
                 return;
             }
             const commit = String(info.last_commit || '').split('\0');
-            const lastCommit = commit[0] ? new Date(commit[0]).toLocaleString() : 'Chưa có';
-            const remote = info.remote ? ` · Remote: ${this._esc(info.remote)}` : ' · Chưa cấu hình remote';
-            statusEl.innerHTML = `✓ Repository hợp lệ · Nhánh: <b>${this._esc(info.branch || 'detached')}</b>${remote}<br>`
-                + `Thay đổi đang chờ: <b>${Number(info.dirty_files || 0)}</b> · Commit gần nhất: ${this._esc(lastCommit)}`;
+            const lastCommit = commit[0] ? new Date(commit[0]).toLocaleString() : t('settings.storage.gitNoCommit');
+            const remote = info.remote ? ` · Remote: ${this._esc(info.remote)}` : t('settings.storage.gitNoRemote');
+            statusEl.innerHTML = `${t('settings.storage.gitRepoValid', { branch: this._esc(info.branch || 'detached'), remote })}<br>`
+                + t('settings.storage.gitPendingChanges', { count: Number(info.dirty_files || 0), lastCommit: this._esc(lastCommit) });
         } catch (err) {
             statusEl.classList.add('is-error');
-            statusEl.textContent = `Không kiểm tra được Git: ${err}`;
+            statusEl.textContent = t('settings.storage.gitCheckFailed', { error: err });
         }
     }
 
@@ -7912,15 +8098,18 @@ class App {
             const date = item.at ? new Date(item.at).toLocaleString() : '—';
             const success = item.success === true;
             const noChange = success && paths.length === 0;
-            const resultLabel = success ? (noChange ? 'Không thay đổi' : 'Thành công') : 'Thất bại';
+            const resultLabel = success ? (noChange ? t('settings.storage.pushNoChange') : t('settings.storage.pushSuccess')) : t('settings.storage.pushFailed');
             const resultClass = success ? (noChange ? 'push-no-change' : 'push-success') : 'push-failed';
             const pathSummary = paths.length
                 ? paths.slice(0, 5).join(', ') + (paths.length > 5 ? ` (+${paths.length - 5})` : '')
-                : 'Không có commit mới';
-            const dataLabel = success ? pathSummary : (paths.length ? `Chưa push: ${pathSummary}` : 'Chưa xác định');
+                : t('settings.storage.pushNoNewCommit');
+            const dataLabel = success ? pathSummary : (paths.length ? t('settings.storage.pushPending', { summary: pathSummary }) : t('settings.storage.pushUnknown'));
             const error = item.error ? this._esc(item.error) : '—';
+            const sourceLabel = item.source === 'Manual' || item.source === 'Backup ngay'
+                ? t('settings.storage.sourceManual')
+                : (item.source === 'Meeting End' || item.source === 'Sau meeting' ? t('settings.storage.sourceMeetingEnd') : t('settings.storage.sourceSchedule'));
             return `<tr>
-                <td>${this._esc(date)}<br><span class="hint">${this._esc(item.source || 'Theo lịch')}</span></td>
+                <td>${this._esc(date)}<br><span class="hint">${this._esc(sourceLabel)}</span></td>
                 <td class="${resultClass}">${resultLabel}</td>
                 <td title="${this._escAttr(paths.join('\n'))}">${this._esc(dataLabel)}</td>
                 <td class="push-error">${error}</td>
@@ -8101,7 +8290,7 @@ class App {
         const sort = this._custSort;
         let rowsHtml = '';
         if (sortedCustomers.length === 0) {
-            rowsHtml = `<tr><td colspan="7" style="text-align:center; padding: 24px; color: var(--md-sys-color-on-surface-variant); font-size:12px;">Không tìm thấy khách hàng nào phù hợp.</td></tr>`;
+            rowsHtml = `<tr><td colspan="7" style="text-align:center; padding: 24px; color: var(--md-sys-color-on-surface-variant); font-size:12px;">${t('settings.custTable.empty')}</td></tr>`;
         } else {
             sortedCustomers.forEach((c, idx) => {
                 const isActive = c.status === 'active';
@@ -8113,30 +8302,30 @@ class App {
                     <td>
                       <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
                         <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(c.color || '#431A46')}; flex-shrink:0;"></span>
-                        <button type="button" class="settings-metadata-link btn-jump-to-cust-logs" data-id="${this._escAttr(c.id)}" title="Mở Logs lọc theo khách hàng ${this._escAttr(c.name)}">${this._esc(c.name)}</button>
+                        <button type="button" class="settings-metadata-link btn-jump-to-cust-logs" data-id="${this._escAttr(c.id)}" title="${t('settings.custTable.jumpLogs', { name: c.name })}">${this._esc(c.name)}</button>
                       </div>
                     </td>
                     <td style="color: var(--md-sys-color-on-surface-variant); font-size:11px; max-width: 220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${this._escAttr(c.description || '')}">
                       ${c.description ? this._esc(c.description) : '<span style="opacity:0.3;">—</span>'}
                     </td>
                     <td>
-                      <span class="status-pill ${isActive ? 'active' : 'archived'}">${isActive ? '🟢 Đang chạy' : '⚪ Đã dừng'}</span>
+                      <span class="status-pill ${isActive ? 'active' : 'archived'}">${isActive ? t('table.statusActive') : t('table.statusArchived')}</span>
                     </td>
                     <td style="text-align: center; font-weight:600;">
-                      ${projCount > 0 ? `<button type="button" class="btn-jump-to-cust-projects" data-id="${this._escAttr(c.id)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;">${projCount} dự án</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                      ${projCount > 0 ? `<button type="button" class="btn-jump-to-cust-projects" data-id="${this._escAttr(c.id)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;">${projCount} ${t('table.projects')}</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
                     </td>
                     <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
-                      ${sessCount > 0 ? `<button type="button" class="btn-jump-to-cust-logs" data-id="${this._escAttr(c.id)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;" title="Mở Logs lọc theo khách hàng ${this._escAttr(c.name)}">${sessCount} cuộc họp</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                      ${sessCount > 0 ? `<button type="button" class="btn-jump-to-cust-logs" data-id="${this._escAttr(c.id)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;" title="${t('settings.custTable.jumpLogs', { name: c.name })}">${sessCount} ${t('table.meetings')}</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
                     </td>
                     <td style="text-align: center;">
                       <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
-                        <button type="button" class="btn-secondary-small btn-edit-cust" data-id="${this._escAttr(c.id)}" title="Sửa thông tin khách hàng" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                        <button type="button" class="btn-secondary-small btn-edit-cust" data-id="${this._escAttr(c.id)}" title="${t('settings.custTable.edit')}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                           ✏️
                         </button>
-                        <button type="button" class="btn-secondary-small btn-toggle-cust" data-id="${this._escAttr(c.id)}" title="${isActive ? 'Tạm dừng khách hàng' : 'Kích hoạt khách hàng'}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                        <button type="button" class="btn-secondary-small btn-toggle-cust" data-id="${this._escAttr(c.id)}" title="${isActive ? t('settings.custTable.pause') : t('settings.custTable.activate')}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                           ${isActive ? '⏸' : '▶'}
                         </button>
-                        <button type="button" class="btn-danger-small btn-del-cust" data-id="${this._escAttr(c.id)}" data-name="${this._escAttr(c.name)}" title="Xoá khách hàng" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                        <button type="button" class="btn-danger-small btn-del-cust" data-id="${this._escAttr(c.id)}" data-name="${this._escAttr(c.name)}" title="${t('settings.custTable.delete')}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                           🗑
                         </button>
                       </div>
@@ -8152,27 +8341,27 @@ class App {
             <thead>
               <tr>
                 <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
-                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên khách hàng ${this._getSortIcon(sort, 'name')}</th>
-                <th class="sortable ${sort.field === 'description' ? 'active-sort' : ''}" data-sort="description">Ghi chú ${this._getSortIcon(sort, 'description')}</th>
-                <th class="sortable ${sort.field === 'status' ? 'active-sort' : ''}" data-sort="status" style="width: 120px;">Trạng thái ${this._getSortIcon(sort, 'status')}</th>
-                <th class="sortable ${sort.field === 'projects' ? 'active-sort' : ''}" data-sort="projects" style="width: 100px; text-align: center;">Số dự án ${this._getSortIcon(sort, 'projects')}</th>
-                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 100px; text-align: center;">Số cuộc họp ${this._getSortIcon(sort, 'sessions')}</th>
-                <th style="width: 100px; text-align: center;">Thao tác</th>
+                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">${t('settings.custTable.name')} ${this._getSortIcon(sort, 'name')}</th>
+                <th class="sortable ${sort.field === 'description' ? 'active-sort' : ''}" data-sort="description">${t('settings.custTable.desc')} ${this._getSortIcon(sort, 'description')}</th>
+                <th class="sortable ${sort.field === 'status' ? 'active-sort' : ''}" data-sort="status" style="width: 120px;">${t('settings.custTable.status')} ${this._getSortIcon(sort, 'status')}</th>
+                <th class="sortable ${sort.field === 'projects' ? 'active-sort' : ''}" data-sort="projects" style="width: 100px; text-align: center;">${t('settings.custTable.projects')} ${this._getSortIcon(sort, 'projects')}</th>
+                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 100px; text-align: center;">${t('settings.custTable.sessions')} ${this._getSortIcon(sort, 'sessions')}</th>
+                <th style="width: 100px; text-align: center;">${t('table.actions')}</th>
               </tr>
               <tr class="mgr-filter-row">
                 <td></td>
-                <td><input type="search" class="mgr-filter-input" data-filter="name" value="${this._escAttr(this._custFilters.name)}" placeholder="Lọc tên..."></td>
-                <td><input type="search" class="mgr-filter-input" data-filter="description" value="${this._escAttr(this._custFilters.description)}" placeholder="Lọc ghi chú..."></td>
+                <td><input type="search" class="mgr-filter-input" data-filter="name" value="${this._escAttr(this._custFilters.name)}" placeholder="${t('settings.custTable.filterName')}"></td>
+                <td><input type="search" class="mgr-filter-input" data-filter="description" value="${this._escAttr(this._custFilters.description)}" placeholder="${t('settings.custTable.filterDesc')}"></td>
                 <td>
                   <select class="mgr-filter-select" data-filter="status">
-                    <option value="">Tất cả</option>
-                    <option value="active" ${this._custFilters.status === 'active' ? 'selected' : ''}>🟢 Đang chạy</option>
-                    <option value="archived" ${this._custFilters.status === 'archived' ? 'selected' : ''}>⚪ Đã dừng</option>
+                    <option value="">${t('table.all')}</option>
+                    <option value="active" ${this._custFilters.status === 'active' ? 'selected' : ''}>${t('table.statusActive')}</option>
+                    <option value="archived" ${this._custFilters.status === 'archived' ? 'selected' : ''}>${t('table.statusArchived')}</option>
                   </select>
                 </td>
                 <td></td>
                 <td></td>
-                <td><button type="button" class="mgr-reset-filters" data-clear-filters title="Xoá toàn bộ điều kiện lọc">↺ Clear</button></td>
+                <td><button type="button" class="mgr-reset-filters" data-clear-filters title="${t('table.clearTitle')}">↺ ${t('table.clear')}</button></td>
               </tr>
             </thead>
             <tbody>
@@ -8396,7 +8585,7 @@ class App {
 
         let rowsHtml = '';
         if (sortedProjects.length === 0) {
-            rowsHtml = `<tr><td colspan="${colCount}" style="text-align:center; padding: 24px; color: var(--md-sys-color-on-surface-variant); font-size:12px;">Không tìm thấy dự án nào phù hợp.</td></tr>`;
+            rowsHtml = `<tr><td colspan="${colCount}" style="text-align:center; padding: 24px; color: var(--md-sys-color-on-surface-variant); font-size:12px;">${t('settings.projTable.empty')}</td></tr>`;
         } else {
             sortedProjects.forEach((p, idx) => {
                 const isActive = p.status === 'active';
@@ -8405,14 +8594,14 @@ class App {
                 const sessCount = sessions.filter(s => s.project_id === p.id).length;
 
                 const scopeBadge = pScope === 'personal'
-                    ? '<span class="scope-badge-personal" style="font-size:10px;">👤 Cá nhân</span>'
-                    : '<span class="scope-badge-work" style="font-size:10px;">💼 Công việc</span>';
+                    ? `<span class="scope-badge-personal" style="font-size:10px;">${t('scope.personal')}</span>`
+                    : `<span class="scope-badge-work" style="font-size:10px;">${t('scope.work')}</span>`;
 
                 const custBadge = pScope === 'personal'
                     ? '<span style="font-size:11px; opacity:0.3;">—</span>'
                     : (cust
-                        ? `<button type="button" class="session-customer-badge btn-jump-to-customer" data-cust-id="${this._escAttr(cust.id)}" style="border-color:${this._escAttr(cust.color || '#431A46')}44; color:${this._escAttr(cust.color || '#D9B0DE')}; background:${this._escAttr(cust.color || '#431A46')}1a; cursor:pointer;" title="Mở Logs lọc theo khách hàng ${this._escAttr(cust.name)}">🤝 ${this._esc(cust.name)} ↗</button>`
-                        : `<span style="font-size:11px; opacity:0.4;">(Chưa gán KH)</span>`);
+                        ? `<button type="button" class="session-customer-badge btn-jump-to-customer" data-cust-id="${this._escAttr(cust.id)}" style="border-color:${this._escAttr(cust.color || '#431A46')}44; color:${this._escAttr(cust.color || '#D9B0DE')}; background:${this._escAttr(cust.color || '#431A46')}1a; cursor:pointer;" title="${t('settings.custTable.jumpLogs', { name: cust.name })}">🤝 ${this._esc(cust.name)} ↗</button>`
+                        : `<span style="font-size:11px; opacity:0.4;">${t('settings.projTable.unassignedCustomer')}</span>`);
 
                 rowsHtml += `
                   <tr>
@@ -8420,7 +8609,7 @@ class App {
                     <td>
                       <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
                         <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(p.color || '#431A46')}; flex-shrink:0;"></span>
-                        <button type="button" class="settings-metadata-link btn-jump-to-proj-logs" data-id="${this._escAttr(p.id)}" data-scope="${this._escAttr(pScope)}" title="Mở Logs lọc theo dự án ${this._escAttr(p.name)}">${this._esc(p.name)}</button>
+                        <button type="button" class="settings-metadata-link btn-jump-to-proj-logs" data-id="${this._escAttr(p.id)}" data-scope="${this._escAttr(pScope)}" title="${t('settings.projTable.jumpLogs', { name: p.name })}">${this._esc(p.name)}</button>
                       </div>
                     </td>
                     ${isAllScopeTab ? `<td style="text-align: center;">${scopeBadge}</td>` : ''}
@@ -8429,20 +8618,20 @@ class App {
                       ${p.description ? this._esc(p.description) : '<span style="opacity:0.3;">-</span>'}
                     </td>
                     <td>
-                      <span class="status-pill ${isActive ? 'active' : 'archived'}">${isActive ? '🟢 Đang chạy' : '⚪ Đã dừng'}</span>
+                      <span class="status-pill ${isActive ? 'active' : 'archived'}">${isActive ? t('table.statusActive') : t('table.statusArchived')}</span>
                     </td>
                     <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
-                      ${sessCount > 0 ? `<button type="button" class="btn-jump-to-proj-logs" data-id="${this._escAttr(p.id)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;" title="Mở Logs lọc theo dự án ${this._escAttr(p.name)}">${sessCount} cuộc họp</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                      ${sessCount > 0 ? `<button type="button" class="btn-jump-to-proj-logs" data-id="${this._escAttr(p.id)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;" title="${t('settings.projTable.jumpLogs', { name: p.name })}">${sessCount} ${t('table.meetings')}</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
                     </td>
                     <td style="text-align: center;">
                       <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
-                        <button type="button" class="btn-secondary-small btn-edit-proj" data-id="${this._escAttr(p.id)}" title="Chỉnh sửa dự án" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                        <button type="button" class="btn-secondary-small btn-edit-proj" data-id="${this._escAttr(p.id)}" title="${t('settings.projTable.edit')}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                           ✏️
                         </button>
-                        <button type="button" class="btn-secondary-small btn-toggle-proj" data-id="${this._escAttr(p.id)}" title="${isActive ? 'Tạm dừng dự án' : 'Kích hoạt dự án'}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                        <button type="button" class="btn-secondary-small btn-toggle-proj" data-id="${this._escAttr(p.id)}" title="${isActive ? t('settings.projTable.pause') : t('settings.projTable.activate')}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                           ${isActive ? '⏸' : '▶'}
                         </button>
-                        <button type="button" class="btn-danger-small btn-del-proj" data-id="${this._escAttr(p.id)}" data-name="${this._escAttr(p.name)}" title="Xoá dự án" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                        <button type="button" class="btn-danger-small btn-del-proj" data-id="${this._escAttr(p.id)}" data-name="${this._escAttr(p.name)}" title="${t('settings.projTable.delete')}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                           🗑
                         </button>
                       </div>
@@ -8452,7 +8641,7 @@ class App {
             });
         }
 
-        const custOptionsHtml = `<option value="">🤝 Tất cả khách hàng</option>` + customers.map(c => `<option value="${this._escAttr(c.id)}" ${this._projFilters.customer_id === c.id ? 'selected' : ''}>🤝 ${this._esc(c.name)}</option>`).join('');
+        const custOptionsHtml = `<option value="">${t('settings.projTable.allCustomers')}</option>` + customers.map(c => `<option value="${this._escAttr(c.id)}" ${this._projFilters.customer_id === c.id ? 'selected' : ''}>🤝 ${this._esc(c.name)}</option>`).join('');
 
         const html = `
         <div class="mgr-table-container">
@@ -8460,23 +8649,23 @@ class App {
             <thead>
               <tr>
                 <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
-                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên dự án ${this._getSortIcon(sort, 'name')}</th>
-                ${isAllScopeTab ? `<th class="sortable ${sort.field === 'scope' ? 'active-sort' : ''}" data-sort="scope" style="width: 110px; text-align: center;">Phạm vi ${this._getSortIcon(sort, 'scope')}</th>` : ''}
-                ${!isPersonalScopeTab ? `<th class="sortable ${sort.field === 'customer' ? 'active-sort' : ''}" data-sort="customer" style="width: 170px;">Khách hàng ${this._getSortIcon(sort, 'customer')}</th>` : ''}
-                <th class="sortable ${sort.field === 'description' ? 'active-sort' : ''}" data-sort="description">Mô tả ${this._getSortIcon(sort, 'description')}</th>
-                <th class="sortable ${sort.field === 'status' ? 'active-sort' : ''}" data-sort="status" style="width: 110px;">Trạng thái ${this._getSortIcon(sort, 'status')}</th>
-                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 100px; text-align: center;">Số cuộc họp ${this._getSortIcon(sort, 'sessions')}</th>
-                <th style="width: 90px; text-align: center;">Thao tác</th>
+                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">${t('settings.projTable.name')} ${this._getSortIcon(sort, 'name')}</th>
+                ${isAllScopeTab ? `<th class="sortable ${sort.field === 'scope' ? 'active-sort' : ''}" data-sort="scope" style="width: 110px; text-align: center;">${t('settings.projTable.scope')} ${this._getSortIcon(sort, 'scope')}</th>` : ''}
+                ${!isPersonalScopeTab ? `<th class="sortable ${sort.field === 'customer' ? 'active-sort' : ''}" data-sort="customer" style="width: 170px;">${t('settings.projTable.customer')} ${this._getSortIcon(sort, 'customer')}</th>` : ''}
+                <th class="sortable ${sort.field === 'description' ? 'active-sort' : ''}" data-sort="description">${t('settings.projTable.desc')} ${this._getSortIcon(sort, 'description')}</th>
+                <th class="sortable ${sort.field === 'status' ? 'active-sort' : ''}" data-sort="status" style="width: 110px;">${t('settings.projTable.status')} ${this._getSortIcon(sort, 'status')}</th>
+                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 100px; text-align: center;">${t('settings.projTable.sessions')} ${this._getSortIcon(sort, 'sessions')}</th>
+                <th style="width: 90px; text-align: center;">${t('table.actions')}</th>
               </tr>
               <tr class="mgr-filter-row">
                 <td></td>
-                <td><input type="search" class="mgr-filter-input" data-filter="name" value="${this._escAttr(this._projFilters.name)}" placeholder="Lọc tên dự án..."></td>
+                <td><input type="search" class="mgr-filter-input" data-filter="name" value="${this._escAttr(this._projFilters.name)}" placeholder="${t('settings.projTable.filterName')}"></td>
                 ${isAllScopeTab ? `
                   <td>
                     <select class="mgr-filter-select" data-filter="scope">
-                      <option value="">Tất cả</option>
-                      <option value="work" ${this._projFilters.scope === 'work' ? 'selected' : ''}>💼 Công việc</option>
-                      <option value="personal" ${this._projFilters.scope === 'personal' ? 'selected' : ''}>👤 Cá nhân</option>
+                      <option value="">${t('table.all')}</option>
+                      <option value="work" ${this._projFilters.scope === 'work' ? 'selected' : ''}>${t('scope.work')}</option>
+                      <option value="personal" ${this._projFilters.scope === 'personal' ? 'selected' : ''}>${t('scope.personal')}</option>
                     </select>
                   </td>
                 ` : ''}
@@ -8487,16 +8676,16 @@ class App {
                     </select>
                   </td>
                 ` : ''}
-                <td><input type="search" class="mgr-filter-input" data-filter="description" value="${this._escAttr(this._projFilters.description)}" placeholder="Lọc mô tả..."></td>
+                <td><input type="search" class="mgr-filter-input" data-filter="description" value="${this._escAttr(this._projFilters.description)}" placeholder="${t('settings.projTable.filterDesc')}"></td>
                 <td>
                   <select class="mgr-filter-select" data-filter="status">
-                    <option value="">Tất cả</option>
-                    <option value="active" ${this._projFilters.status === 'active' ? 'selected' : ''}>🟢 Đang chạy</option>
-                    <option value="archived" ${this._projFilters.status === 'archived' ? 'selected' : ''}>⚪ Đã dừng</option>
+                    <option value="">${t('table.all')}</option>
+                    <option value="active" ${this._projFilters.status === 'active' ? 'selected' : ''}>${t('table.statusActive')}</option>
+                    <option value="archived" ${this._projFilters.status === 'archived' ? 'selected' : ''}>${t('table.statusArchived')}</option>
                   </select>
                 </td>
                 <td></td>
-                <td><button type="button" class="mgr-reset-filters" data-clear-filters title="Xoá toàn bộ điều kiện lọc">↺ Clear</button></td>
+                <td><button type="button" class="mgr-reset-filters" data-clear-filters title="${t('table.clearTitle')}">↺ ${t('table.clear')}</button></td>
               </tr>
             </thead>
             <tbody>
@@ -8655,8 +8844,10 @@ class App {
         const scopeSelect = document.getElementById('select-modal-cat-scope');
         const tmplSelect = document.getElementById('select-modal-cat-template');
         const titleEl = document.getElementById('modal-cat-title');
+        const saveBtn = document.getElementById('btn-save-edit-category');
 
-        if (titleEl) titleEl.textContent = '🗂️ Thêm Category mới';
+        if (titleEl) titleEl.textContent = t('modal.cat.titleAdd');
+        if (saveBtn) saveBtn.textContent = t('modal.cat.saveAdd');
         if (idInput) idInput.value = '';
         if (nameInput) nameInput.value = '';
         if (colorInput) colorInput.value = '#10b981';
@@ -8677,8 +8868,10 @@ class App {
         const scopeSelect = document.getElementById('select-modal-cat-scope');
         const tmplSelect = document.getElementById('select-modal-cat-template');
         const titleEl = document.getElementById('modal-cat-title');
+        const saveBtn = document.getElementById('btn-save-edit-category');
 
-        if (titleEl) titleEl.textContent = `🗂️ Chỉnh sửa: ${category.name}`;
+        if (titleEl) titleEl.textContent = t('modal.cat.titleEdit', { name: category.name });
+        if (saveBtn) saveBtn.textContent = t('modal.cat.saveEdit');
         if (idInput) idInput.value = category.id || '';
         if (nameInput) nameInput.value = category.name || '';
         if (colorInput) colorInput.value = category.color || '#10b981';
@@ -8702,7 +8895,7 @@ class App {
         const tmplSelect = document.getElementById('select-modal-cat-template');
         const name = nameInput?.value.trim();
         if (!name) {
-            this._showToast('Vui lòng nhập tên category', 'error');
+            this._showToast(t('modal.cat.nameRequired'), 'error');
             return;
         }
         const id = idInput?.value.trim() || '';
@@ -8721,14 +8914,14 @@ class App {
                 }
             });
             this._closeEditCategoryModal();
-            this._showToast(id ? `Đã cập nhật category "${name}" ✓` : `Đã thêm category "${name}" ✓`, 'success');
+            this._showToast(id ? t('modal.cat.updated', { name }) : t('modal.cat.added', { name }), 'success');
             await this._loadProjectRegistry();
             this._renderSettingsCategoriesTab();
             this._renderCategoryFilterSelect();
             this._updateSidebarBadges();
             await this._showSessions();
         } catch (err) {
-            this._showToast(`Lưu category thất bại: ${err}`, 'error');
+            this._showToast(t('modal.cat.saveFailed', { error: err }), 'error');
         }
     }
 
@@ -8779,17 +8972,17 @@ class App {
         }
 
         const templateLabels = {
-            standard: '🤝 Tiêu chuẩn',
-            tech: '💻 Kỹ thuật',
-            one_on_one: '👥 1-on-1',
-            personal: '👤 Cá nhân',
+            standard: t('settings.template.badgeStandard'),
+            tech: t('settings.template.badgeTech'),
+            one_on_one: t('settings.template.badge1on1'),
+            personal: t('settings.template.badgePersonal'),
         };
 
         // Sort categories
         const sortedCategories = this._sortItems(categories, this._catSort, (c, field) => {
             if (field === 'name') return c.name || '';
             if (field === 'scope') return c.scope || 'work';
-            if (field === 'template') return templateLabels[c.template_id] || 'Mặc định';
+            if (field === 'template') return templateLabels[c.template_id] || t('settings.template.badgeDefault');
             if (field === 'sessions') return sessions.filter(s => s.category === c.name || s.category === c.id).length;
             return 0;
         });
@@ -8799,16 +8992,16 @@ class App {
 
         let rowsHtml = '';
         if (sortedCategories.length === 0) {
-            rowsHtml = `<tr><td colspan="${colCount}" style="text-align:center; padding: 24px; color: var(--md-sys-color-on-surface-variant); font-size:12px;">Không tìm thấy category nào phù hợp.</td></tr>`;
+            rowsHtml = `<tr><td colspan="${colCount}" style="text-align:center; padding: 24px; color: var(--md-sys-color-on-surface-variant); font-size:12px;">${t('settings.catTable.empty')}</td></tr>`;
         } else {
             sortedCategories.forEach((c, idx) => {
                 const sessCount = sessions.filter(s => s.category === c.name || s.category === c.id).length;
                 const scopeBadge = c.scope === 'personal'
-                    ? '<span class="scope-badge-personal">👤 Cá nhân</span>'
-                    : (c.scope === 'work' ? '<span class="scope-badge-work">💼 Công việc</span>' : '<span style="font-size:11px; opacity:0.6;">🌐 Cả hai</span>');
+                    ? `<span class="scope-badge-personal">${t('scope.personal')}</span>`
+                    : (c.scope === 'work' ? `<span class="scope-badge-work">${t('scope.work')}</span>` : `<span style="font-size:11px; opacity:0.6;">${t('scope.both')}</span>`);
                 const tmplBadge = c.template_id && templateLabels[c.template_id]
-                    ? `<button type="button" class="template-badge-pill btn-jump-to-template" data-template="${this._escAttr(c.template_id)}" style="cursor:pointer; font:inherit;" title="Mở cài đặt mẫu ${this._escAttr(templateLabels[c.template_id])}">${templateLabels[c.template_id]} ↗</button>`
-                    : '<span style="font-size:11px; opacity:0.4;">(Mặc định)</span>';
+                    ? `<button type="button" class="template-badge-pill btn-jump-to-template" data-template="${this._escAttr(c.template_id)}" style="cursor:pointer; font:inherit;" title="${t('settings.catTable.openTemplate', { name: templateLabels[c.template_id] })}">${templateLabels[c.template_id]} ↗</button>`
+                    : `<span style="font-size:11px; opacity:0.4;">${t('settings.catTable.defaultTemplate')}</span>`;
 
                 rowsHtml += `
                   <tr>
@@ -8816,20 +9009,20 @@ class App {
                     <td>
                       <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
                         <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(c.color || '#431A46')}; flex-shrink:0;"></span>
-                        <button type="button" class="settings-metadata-link btn-jump-to-cat-logs" data-cat="${this._escAttr(c.name)}" data-scope="${this._escAttr(c.scope || 'work')}" title="Mở Logs lọc theo category ${this._escAttr(c.name)}">${this._esc(c.name)}</button>
+                        <button type="button" class="settings-metadata-link btn-jump-to-cat-logs" data-cat="${this._escAttr(c.name)}" data-scope="${this._escAttr(c.scope || 'work')}" title="${t('settings.catTable.jumpLogs', { name: c.name })}">${this._esc(c.name)}</button>
                       </div>
                     </td>
                     ${isAllCatTab ? `<td style="text-align: center;">${scopeBadge}</td>` : ''}
                     <td style="text-align: center;">${tmplBadge}</td>
                     <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
-                      ${sessCount > 0 ? `<button type="button" class="btn-jump-to-cat-logs" data-cat="${this._escAttr(c.name)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;" title="Mở Logs lọc theo category ${this._escAttr(c.name)}">${sessCount} cuộc họp</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                      ${sessCount > 0 ? `<button type="button" class="btn-jump-to-cat-logs" data-cat="${this._escAttr(c.name)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;" title="${t('settings.catTable.jumpLogs', { name: c.name })}">${sessCount} ${t('table.meetings')}</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
                     </td>
                     <td style="text-align: center;">
                       <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
-                        <button type="button" class="btn-secondary-small btn-edit-cat" data-id="${this._escAttr(c.id)}" title="Chỉnh sửa category" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                        <button type="button" class="btn-secondary-small btn-edit-cat" data-id="${this._escAttr(c.id)}" title="${t('settings.catTable.edit')}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                           ✏️
                         </button>
-                        <button type="button" class="btn-danger-small btn-del-cat" data-id="${this._escAttr(c.id)}" data-name="${this._escAttr(c.name)}" title="Xoá category" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                        <button type="button" class="btn-danger-small btn-del-cat" data-id="${this._escAttr(c.id)}" data-name="${this._escAttr(c.name)}" title="${t('settings.catTable.delete')}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                           🗑
                         </button>
                       </div>
@@ -8845,36 +9038,36 @@ class App {
             <thead>
               <tr>
                 <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
-                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên category cuộc họp ${this._getSortIcon(sort, 'name')}</th>
-                ${isAllCatTab ? `<th class="sortable ${sort.field === 'scope' ? 'active-sort' : ''}" data-sort="scope" style="width: 120px; text-align: center;">Phạm vi ${this._getSortIcon(sort, 'scope')}</th>` : ''}
-                <th class="sortable ${sort.field === 'template' ? 'active-sort' : ''}" data-sort="template" style="width: 160px; text-align: center;">Template ${this._getSortIcon(sort, 'template')}</th>
-                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 120px; text-align: center;">Số cuộc họp gắn ${this._getSortIcon(sort, 'sessions')}</th>
-                <th style="width: 90px; text-align: center;">Thao tác</th>
+                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">${t('settings.catTable.name')} ${this._getSortIcon(sort, 'name')}</th>
+                ${isAllCatTab ? `<th class="sortable ${sort.field === 'scope' ? 'active-sort' : ''}" data-sort="scope" style="width: 120px; text-align: center;">${t('settings.catTable.scope')} ${this._getSortIcon(sort, 'scope')}</th>` : ''}
+                <th class="sortable ${sort.field === 'template' ? 'active-sort' : ''}" data-sort="template" style="width: 160px; text-align: center;">${t('settings.catTable.template')} ${this._getSortIcon(sort, 'template')}</th>
+                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 120px; text-align: center;">${t('settings.catTable.sessions')} ${this._getSortIcon(sort, 'sessions')}</th>
+                <th style="width: 90px; text-align: center;">${t('table.actions')}</th>
               </tr>
               <tr class="mgr-filter-row">
                 <td></td>
-                <td><input type="search" class="mgr-filter-input" data-filter="name" value="${this._escAttr(this._catFilters.name)}" placeholder="Lọc category..."></td>
+                <td><input type="search" class="mgr-filter-input" data-filter="name" value="${this._escAttr(this._catFilters.name)}" placeholder="${t('settings.catTable.filterName')}"></td>
                 ${isAllCatTab ? `
                   <td>
                     <select class="mgr-filter-select" data-filter="scope">
-                      <option value="">Tất cả</option>
-                      <option value="work" ${this._catFilters.scope === 'work' ? 'selected' : ''}>💼 Công việc</option>
-                      <option value="personal" ${this._catFilters.scope === 'personal' ? 'selected' : ''}>👤 Cá nhân</option>
-                      <option value="all" ${this._catFilters.scope === 'all' ? 'selected' : ''}>🌐 Cả hai</option>
+                      <option value="">${t('table.all')}</option>
+                      <option value="work" ${this._catFilters.scope === 'work' ? 'selected' : ''}>${t('scope.work')}</option>
+                      <option value="personal" ${this._catFilters.scope === 'personal' ? 'selected' : ''}>${t('scope.personal')}</option>
+                      <option value="all" ${this._catFilters.scope === 'all' ? 'selected' : ''}>${t('scope.both')}</option>
                     </select>
                   </td>
                 ` : ''}
                 <td>
                   <select class="mgr-filter-select" data-filter="template_id">
-                    <option value="">Tất cả template</option>
-                    <option value="standard" ${this._catFilters.template_id === 'standard' ? 'selected' : ''}>🤝 Tiêu chuẩn</option>
-                    <option value="tech" ${this._catFilters.template_id === 'tech' ? 'selected' : ''}>💻 Kỹ thuật</option>
-                    <option value="one_on_one" ${this._catFilters.template_id === 'one_on_one' ? 'selected' : ''}>👥 1-on-1</option>
-                    <option value="personal" ${this._catFilters.template_id === 'personal' ? 'selected' : ''}>👤 Cá nhân</option>
+                    <option value="">${t('settings.catTable.allTemplates')}</option>
+                    <option value="standard" ${this._catFilters.template_id === 'standard' ? 'selected' : ''}>${t('settings.template.badgeStandard')}</option>
+                    <option value="tech" ${this._catFilters.template_id === 'tech' ? 'selected' : ''}>${t('settings.template.badgeTech')}</option>
+                    <option value="one_on_one" ${this._catFilters.template_id === 'one_on_one' ? 'selected' : ''}>${t('settings.template.badge1on1')}</option>
+                    <option value="personal" ${this._catFilters.template_id === 'personal' ? 'selected' : ''}>${t('settings.template.badgePersonal')}</option>
                   </select>
                 </td>
                 <td></td>
-                <td><button type="button" class="mgr-reset-filters" data-clear-filters title="Xoá toàn bộ điều kiện lọc">↺ Clear</button></td>
+                <td><button type="button" class="mgr-reset-filters" data-clear-filters title="${t('table.clearTitle')}">↺ ${t('table.clear')}</button></td>
               </tr>
             </thead>
             <tbody>
@@ -9073,10 +9266,10 @@ class App {
             filteredTags = filteredTags.filter(t => (t.scope || 'work') === this._tagFilters.scope);
         }
 
-        const sortedTags = this._sortItems(filteredTags, this._tagSort, (t, field) => {
-            if (field === 'name') return t.name || '';
-            if (field === 'scope') return t.scope || 'work';
-            if (field === 'sessions') return t.count;
+        const sortedTags = this._sortItems(filteredTags, this._tagSort, (item, field) => {
+            if (field === 'name') return item.name || '';
+            if (field === 'scope') return item.scope || 'work';
+            if (field === 'sessions') return item.count;
             return 0;
         });
 
@@ -9085,29 +9278,29 @@ class App {
 
         let rowsHtml = '';
         if (sortedTags.length === 0) {
-            rowsHtml = `<tr><td colspan="${colCount}" style="text-align:center; padding: 24px; color: var(--md-sys-color-on-surface-variant); font-size:12px;">Không tìm thấy tag nào phù hợp.</td></tr>`;
+            rowsHtml = `<tr><td colspan="${colCount}" style="text-align:center; padding: 24px; color: var(--md-sys-color-on-surface-variant); font-size:12px;">${t('settings.tagTable.empty')}</td></tr>`;
         } else {
-            sortedTags.forEach((t, idx) => {
-                const scopeBadge = t.scope === 'personal'
-                    ? '<span class="scope-badge-personal">👤 Cá nhân</span>'
-                    : (t.scope === 'work' ? '<span class="scope-badge-work">💼 Công việc</span>' : '<span style="font-size:11px; opacity:0.6;">🌐 Cả hai</span>');
+            sortedTags.forEach((tagItem, idx) => {
+                const scopeBadge = tagItem.scope === 'personal'
+                    ? `<span class="scope-badge-personal">${t('scope.personal')}</span>`
+                    : (tagItem.scope === 'work' ? `<span class="scope-badge-work">${t('scope.work')}</span>` : `<span style="font-size:11px; opacity:0.6;">${t('scope.both')}</span>`);
 
                 rowsHtml += `
                   <tr>
                     <td style="text-align: center; color: var(--md-sys-color-on-surface-variant); font-size: 11px;">${idx + 1}</td>
                     <td>
-                      <button type="button" class="mgr-tag-chip settings-metadata-link btn-jump-to-tag-logs" data-tag="${this._escAttr(t.name)}" data-scope="${this._escAttr(t.scope || 'work')}" style="font-size:12px; font-weight:600;" title="Mở Logs lọc theo tag #${this._escAttr(t.name)}">#${this._esc(t.name)}</button>
+                      <button type="button" class="mgr-tag-chip settings-metadata-link btn-jump-to-tag-logs" data-tag="${this._escAttr(tagItem.name)}" data-scope="${this._escAttr(tagItem.scope || 'work')}" style="font-size:12px; font-weight:600;" title="${t('settings.tagTable.jumpLogs', { name: tagItem.name })}">#${this._esc(tagItem.name)}</button>
                     </td>
                     ${isAllTagTab ? `<td style="text-align: center;">${scopeBadge}</td>` : ''}
                     <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
-                      ${t.count > 0 ? `<button type="button" class="btn-jump-to-tag-logs" data-tag="${this._escAttr(t.name)}" data-scope="${this._escAttr(t.scope || 'work')}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;" title="Mở Logs lọc theo tag #${this._escAttr(t.name)}">${t.count} cuộc họp</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                      ${tagItem.count > 0 ? `<button type="button" class="btn-jump-to-tag-logs" data-tag="${this._escAttr(tagItem.name)}" data-scope="${this._escAttr(tagItem.scope || 'work')}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;" title="${t('settings.tagTable.jumpLogs', { name: tagItem.name })}">${tagItem.count} ${t('table.meetings')}</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
                     </td>
                     <td style="text-align: center;">
                       <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
-                        <button type="button" class="btn-secondary-small btn-edit-tag" data-tag="${this._escAttr(t.name)}" data-scope="${this._escAttr(t.scope || 'work')}" title="Chỉnh sửa tag" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                        <button type="button" class="btn-secondary-small btn-edit-tag" data-tag="${this._escAttr(tagItem.name)}" data-scope="${this._escAttr(tagItem.scope || 'work')}" title="${t('settings.tagTable.edit')}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                           ✏️
                         </button>
-                        <button type="button" class="btn-danger-small btn-del-tag-tbl" data-tag="${this._escAttr(t.name)}" title="Xoá tag" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
+                        <button type="button" class="btn-danger-small btn-del-tag-tbl" data-tag="${this._escAttr(tagItem.name)}" title="${t('settings.tagTable.delete')}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
                           🗑
                         </button>
                       </div>
@@ -9123,26 +9316,26 @@ class App {
             <thead>
               <tr>
                 <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
-                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">Tên tag ${this._getSortIcon(sort, 'name')}</th>
-                ${isAllTagTab ? `<th class="sortable ${sort.field === 'scope' ? 'active-sort' : ''}" data-sort="scope" style="width: 130px; text-align: center;">Phạm vi ${this._getSortIcon(sort, 'scope')}</th>` : ''}
-                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 140px; text-align: center;">Số cuộc họp gắn ${this._getSortIcon(sort, 'sessions')}</th>
-                <th style="width: 90px; text-align: center;">Thao tác</th>
+                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">${t('settings.tagTable.name')} ${this._getSortIcon(sort, 'name')}</th>
+                ${isAllTagTab ? `<th class="sortable ${sort.field === 'scope' ? 'active-sort' : ''}" data-sort="scope" style="width: 130px; text-align: center;">${t('settings.tagTable.scope')} ${this._getSortIcon(sort, 'scope')}</th>` : ''}
+                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 140px; text-align: center;">${t('settings.tagTable.sessions')} ${this._getSortIcon(sort, 'sessions')}</th>
+                <th style="width: 90px; text-align: center;">${t('table.actions')}</th>
               </tr>
               <tr class="mgr-filter-row">
                 <td></td>
-                <td><input type="search" class="mgr-filter-input" data-filter="name" value="${this._escAttr(this._tagFilters.name)}" placeholder="Lọc tag..."></td>
+                <td><input type="search" class="mgr-filter-input" data-filter="name" value="${this._escAttr(this._tagFilters.name)}" placeholder="${t('settings.tagTable.filterName')}"></td>
                 ${isAllTagTab ? `
                   <td>
                     <select class="mgr-filter-select" data-filter="scope">
-                      <option value="">Tất cả</option>
-                      <option value="work" ${this._tagFilters.scope === 'work' ? 'selected' : ''}>💼 Công việc</option>
-                      <option value="personal" ${this._tagFilters.scope === 'personal' ? 'selected' : ''}>👤 Cá nhân</option>
-                      <option value="all" ${this._tagFilters.scope === 'all' ? 'selected' : ''}>🌐 Cả hai</option>
+                      <option value="">${t('table.all')}</option>
+                      <option value="work" ${this._tagFilters.scope === 'work' ? 'selected' : ''}>${t('scope.work')}</option>
+                      <option value="personal" ${this._tagFilters.scope === 'personal' ? 'selected' : ''}>${t('scope.personal')}</option>
+                      <option value="all" ${this._tagFilters.scope === 'all' ? 'selected' : ''}>${t('scope.both')}</option>
                     </select>
                   </td>
                 ` : ''}
                 <td></td>
-                <td><button type="button" class="mgr-reset-filters" data-clear-filters title="Xoá toàn bộ điều kiện lọc">↺ Clear</button></td>
+                <td><button type="button" class="mgr-reset-filters" data-clear-filters title="${t('table.clearTitle')}">↺ ${t('table.clear')}</button></td>
               </tr>
             </thead>
             <tbody>
@@ -9282,8 +9475,10 @@ class App {
         const nameInput = document.getElementById('input-modal-tag-name');
         const scopeSelect = document.getElementById('select-modal-tag-scope');
         const titleEl = document.getElementById('modal-tag-title');
+        const saveBtn = document.getElementById('btn-save-edit-tag');
 
-        if (titleEl) titleEl.textContent = '🏷️ Thêm Tag mới';
+        if (titleEl) titleEl.textContent = t('modal.tag.titleAdd');
+        if (saveBtn) saveBtn.textContent = t('modal.tag.saveAdd');
         if (oldNameInput) oldNameInput.value = '';
         if (nameInput) nameInput.value = '';
         if (scopeSelect) scopeSelect.value = this._tagScopeFilter || 'work';
@@ -9299,8 +9494,10 @@ class App {
         const nameInput = document.getElementById('input-modal-tag-name');
         const scopeSelect = document.getElementById('select-modal-tag-scope');
         const titleEl = document.getElementById('modal-tag-title');
+        const saveBtn = document.getElementById('btn-save-edit-tag');
 
-        if (titleEl) titleEl.textContent = `🏷️ Chỉnh sửa thẻ: #${tag}`;
+        if (titleEl) titleEl.textContent = t('modal.tag.titleEdit', { name: tag });
+        if (saveBtn) saveBtn.textContent = t('modal.tag.saveEdit');
         if (oldNameInput) oldNameInput.value = tag;
         if (nameInput) nameInput.value = tag;
         if (scopeSelect) scopeSelect.value = scope || 'work';
@@ -9323,7 +9520,7 @@ class App {
         const scope = scopeSelect?.value || 'work';
 
         if (!newTag) {
-            this._showToast('Vui lòng nhập tên tag', 'error');
+            this._showToast(t('modal.tag.nameRequired'), 'error');
             return;
         }
 
@@ -9333,14 +9530,14 @@ class App {
             }
             await invoke('save_tag', { tag: newTag, scope });
             this._closeEditTagModal();
-            this._showToast(oldTag ? `Đã cập nhật tag #${newTag} ✓` : `Đã thêm tag #${newTag} ✓`, 'success');
+            this._showToast(oldTag ? t('modal.tag.updated', { name: newTag }) : t('modal.tag.added', { name: newTag }), 'success');
             await this._loadProjectRegistry();
             this._renderSettingsTagsTab();
             this._renderTagFilterSelect();
             this._updateSidebarBadges();
             await this._showSessions();
         } catch (err) {
-            this._showToast(`Cập nhật tag thất bại: ${err}`, 'error');
+            this._showToast(t('modal.tag.saveFailed', { error: err }), 'error');
         }
     }
 
@@ -11531,18 +11728,22 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     _getPresetMinutesTemplate(templateId, lang = 'vi') {
         const s = settingsManager.get();
         if (templateId === 'tech') {
+            if (lang === 'en') return (s.template_minutes_tech_en && s.template_minutes_tech_en.trim()) ? s.template_minutes_tech_en : PRESET_TEMPLATE_TECH_EN;
             if (lang === 'ja') return (s.template_minutes_tech_ja && s.template_minutes_tech_ja.trim()) ? s.template_minutes_tech_ja : PRESET_TEMPLATE_TECH_JA;
             return (s.template_minutes_tech_vi && s.template_minutes_tech_vi.trim()) ? s.template_minutes_tech_vi : PRESET_TEMPLATE_TECH_VI;
         }
         if (templateId === 'one_on_one') {
+            if (lang === 'en') return (s.template_minutes_1on1_en && s.template_minutes_1on1_en.trim()) ? s.template_minutes_1on1_en : PRESET_TEMPLATE_1ON1_EN;
             if (lang === 'ja') return (s.template_minutes_1on1_ja && s.template_minutes_1on1_ja.trim()) ? s.template_minutes_1on1_ja : PRESET_TEMPLATE_1ON1_JA;
             return (s.template_minutes_1on1_vi && s.template_minutes_1on1_vi.trim()) ? s.template_minutes_1on1_vi : PRESET_TEMPLATE_1ON1_VI;
         }
         if (templateId === 'personal') {
+            if (lang === 'en') return (s.template_minutes_personal_en && s.template_minutes_personal_en.trim()) ? s.template_minutes_personal_en : PRESET_TEMPLATE_PERSONAL_EN;
             if (lang === 'ja') return (s.template_minutes_personal_ja && s.template_minutes_personal_ja.trim()) ? s.template_minutes_personal_ja : PRESET_TEMPLATE_PERSONAL_JA;
             return (s.template_minutes_personal_vi && s.template_minutes_personal_vi.trim()) ? s.template_minutes_personal_vi : PRESET_TEMPLATE_PERSONAL_VI;
         }
         // default / 'standard'
+        if (lang === 'en') return (s.template_minutes_en && s.template_minutes_en.trim()) ? s.template_minutes_en : DEFAULT_TEMPLATE_MINUTES_EN;
         if (lang === 'ja') return (s.template_minutes_ja && s.template_minutes_ja.trim()) ? s.template_minutes_ja : DEFAULT_TEMPLATE_MINUTES_JA;
         return (s.template_minutes_vi && s.template_minutes_vi.trim()) ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI;
     }
@@ -12610,12 +12811,12 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
         const statusEl = document.getElementById('audio-test-status');
         const btnRec = document.getElementById('btn-test-mic-rec');
-        const originalBtnText = '🎙️ Ghi âm thử 3s & Nghe lại';
+        const originalBtnText = t('settings.engine.audioTestRec');
 
-        if (statusEl) statusEl.textContent = '⏳ Đang khởi động...';
+        if (statusEl) statusEl.textContent = t('settings.engine.audioTestStarting');
         if (btnRec) {
             btnRec.disabled = true;
-            btnRec.innerHTML = '🔴 Đang thu (3s)...';
+            btnRec.innerHTML = t('settings.engine.audioTestRecording3s');
         }
 
         const recordedChunks = [];
@@ -12643,8 +12844,8 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
             // Countdown 3 seconds
             for (let sec = 3; sec > 0; sec--) {
-                if (statusEl) statusEl.textContent = `🔴 Thu từ ${testSource}: ${sec}s...`;
-                if (btnRec) btnRec.innerHTML = `🔴 Đang thu (${sec}s)...`;
+                if (statusEl) statusEl.textContent = t('settings.engine.audioTestCountdown', { source: testSource, sec });
+                if (btnRec) btnRec.innerHTML = t('settings.engine.audioTestRecordingSec', { sec });
                 await new Promise(r => setTimeout(r, 1000));
             }
 
@@ -12666,20 +12867,20 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
             if (totalBytes === 0 || avgRms < 0.001) {
                 if (statusEl) {
-                    statusEl.innerHTML = '<span style="color: #ef4444; font-weight:600;">⚠️ Im lặng (Không có tiếng)</span>';
+                    statusEl.innerHTML = `<span style="color: #ef4444; font-weight:600;">${t('settings.engine.audioTestSilent')}</span>`;
                 }
-                this._showToast('Không thu được âm thanh! Hãy kiểm tra microphone hoặc quyền Screen Recording trong macOS.', 'error');
+                this._showToast(t('settings.engine.audioTestNoAudioToast'), 'error');
             } else {
                 if (statusEl) {
-                    statusEl.innerHTML = '<span style="color: #10b981; font-weight:600;">🔊 Đang phát lại âm thanh vừa thu...</span>';
+                    statusEl.innerHTML = `<span style="color: #10b981; font-weight:600;">${t('settings.engine.audioTestPlaying')}</span>`;
                 }
-                if (btnRec) btnRec.innerHTML = '🔊 Đang phát lại...';
+                if (btnRec) btnRec.innerHTML = t('settings.engine.audioTestPlayingBtn');
                 await this._playPcmAudio(merged, 16000);
 
                 const playDuration = Math.round(totalBytes / 32000 * 1000);
                 setTimeout(() => {
                     if (statusEl) {
-                        statusEl.innerHTML = '<span style="color: #10b981; font-weight:600;">✅ Thu âm tốt (RMS: ' + (avgRms * 100).toFixed(1) + '%)</span>';
+                        statusEl.innerHTML = `<span style="color: #10b981; font-weight:600;">${t('settings.engine.audioTestGood', { rms: (avgRms * 100).toFixed(1) })}</span>`;
                     }
                     if (btnRec) {
                         btnRec.disabled = false;
@@ -12695,7 +12896,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._showToast(`Lỗi thu âm: ${err}`, 'error');
             try { await invoke('stop_capture'); } catch {}
         } finally {
-            if (btnRec && !btnRec.innerHTML.includes('phát lại')) {
+            if (btnRec && !btnRec.innerHTML.includes('play') && !btnRec.innerHTML.includes('phát lại') && !btnRec.innerHTML.includes('再生')) {
                 btnRec.disabled = false;
                 btnRec.innerHTML = originalBtnText;
                 this._isAudioTesting = false;
@@ -12711,14 +12912,14 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._isLiveMonitoring = false;
             try { await invoke('stop_capture'); } catch {}
             this._renderAudioMeter(0);
-            if (btnLive) btnLive.innerHTML = '🔊 Bật Live Monitor';
-            if (statusEl) statusEl.textContent = 'Đã dừng Monitor';
+            if (btnLive) btnLive.innerHTML = t('settings.engine.audioTestLive');
+            if (statusEl) statusEl.textContent = t('settings.engine.audioTestStopped');
             return;
         }
 
         this._isLiveMonitoring = true;
-        if (btnLive) btnLive.innerHTML = '⏹ Dừng Monitor';
-        if (statusEl) statusEl.textContent = '🟢 Đang đo âm lượng Live...';
+        if (btnLive) btnLive.innerHTML = t('settings.engine.audioTestLiveStop');
+        if (statusEl) statusEl.textContent = t('settings.engine.audioTestMeasuring');
 
         const testChannel = new window.__TAURI__.core.Channel();
         testChannel.onmessage = (pcmData) => {
