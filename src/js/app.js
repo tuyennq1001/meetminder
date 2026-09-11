@@ -12499,8 +12499,8 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const scope = json.scope || (project && project.scope) || 'work';
         const isPersonal = scope === 'personal';
         const scopeBadge = isPersonal
-            ? `<span class="scope-badge-personal" title="${this._escAttr(t('session.personalTooltip'))}">👤 ${this._esc(t('scope.personal'))}</span>`
-            : `<span class="scope-badge-work" title="${this._escAttr(t('session.workTooltip'))}">💼 ${this._esc(t('scope.work'))}</span>`;
+            ? `<span class="scope-badge-personal" title="${this._escAttr(t('session.personalTooltip'))}">${this._esc(t('scope.personal'))}</span>`
+            : `<span class="scope-badge-work" title="${this._escAttr(t('session.workTooltip'))}">${this._esc(t('scope.work'))}</span>`;
 
         badgesHtml += scopeBadge;
 
