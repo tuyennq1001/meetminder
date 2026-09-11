@@ -7074,6 +7074,15 @@ body.expanded #library-panel { padding: 8px 6%; }
   box-shadow: 0 -2px 0 0 var(--md-sys-color-primary, #a855f7) inset;
 }
 
+.folder-tab-count {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  opacity: 0.8;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
 .folder-tab-pane {
   position: relative;
   z-index: 1;
