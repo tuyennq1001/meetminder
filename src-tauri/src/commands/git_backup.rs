@@ -1,8 +1,9 @@
 //! Optional Git backup for Meet Minder's text and image data.
 //!
-//! Git is intentionally user-configured. Meet Minder only copies the managed
-//! data into a selected repository, commits it, and (optionally) pushes using
-//! the user's existing Git credentials. Audio and settings are never staged.
+//! Meet Minder uses the current storage folder as its local Git repository.
+//! Managed backup data is committed directly from the shared storage folder
+//! and (optionally) pushed using the user's existing Git credentials. Audio and
+//! settings are never staged.
 
 use base64::Engine;
 use serde::Serialize;
@@ -38,6 +39,16 @@ pub struct GitBackupStatus {
 pub struct GitBackupResult {
     pub committed: bool,
     pub pushed: bool,
+    pub changed_paths: Vec<String>,
+    pub message: String,
+    pub warning: Option<String>,
+    pub status: GitBackupStatus,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct GitPushResult {
+    pub pushed: bool,
+    pub changed_paths: Vec<String>,
     pub message: String,
     pub warning: Option<String>,
     pub status: GitBackupStatus,
@@ -110,6 +121,49 @@ fn read_git_value(repo: &Path, args: &[&str]) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+fn git_name_only(repo: &Path, args: &[&str]) -> Vec<String> {
+    run_git(repo, args)
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| {
+            output_text(&o)
+                .lines()
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn changed_paths_for_push(repo: &Path) -> Vec<String> {
+    if let Some(upstream) = read_git_value(
+        repo,
+        &[
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{u}",
+        ],
+    ) {
+        let range = format!("{}..HEAD", upstream);
+        return git_name_only(repo, &["diff", "--name-only", &range, "--"]);
+    }
+
+    git_name_only(
+        repo,
+        &[
+            "diff-tree",
+            "--root",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            "HEAD",
+            "--",
+        ],
+    )
+}
+
 fn status_for(repo_path: &str) -> GitBackupStatus {
     let configured = !repo_path.trim().is_empty();
     let git_available = is_git_available();
@@ -152,7 +206,10 @@ fn status_for(repo_path: &str) -> GitBackupStatus {
             remote: None,
             dirty_files: 0,
             last_commit: None,
-            error: Some("Thư mục đã chọn chưa phải là Git repository".into()),
+            error: Some(
+                "Thư mục lưu trữ hiện tại chưa là Git repository. Hãy tự chạy git init trong thư mục này trước."
+                    .into(),
+            ),
         };
     }
 
@@ -187,6 +244,9 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
 
 fn copy_if_exists(source: &Path, destination: &Path) -> Result<(), String> {
     if !source.exists() {
+        return Ok(());
+    }
+    if source == destination {
         return Ok(());
     }
     if let Some(parent) = destination.parent() {
@@ -276,13 +336,14 @@ fn sync_managed_data(app: &AppHandle, repo: &Path) -> Result<(), String> {
         .map_err(|e| format!("Tạo thư mục images thất bại: {}", e))?;
 
     let source_dir = crate::commands::session_store::sessions_dir(app)?;
-    for entry in
-        fs::read_dir(&source_dir).map_err(|e| format!("Đọc dữ liệu meeting thất bại: {}", e))?
-    {
-        let entry = entry.map_err(|e| format!("Đọc file meeting thất bại: {}", e))?;
-        let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !path.is_file() || !name.starts_with("session-") {
+    let source_records_dir = crate::commands::session_store::records_dir(&source_dir);
+    for path in crate::commands::session_store::record_files(&source_dir)? {
+        let name = path
+            .file_name()
+            .map(|value| value.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let is_canonical_record = path.parent() == Some(source_records_dir.as_path());
+        if !is_canonical_record && !name.starts_with("session-") && !name.ends_with(".md") {
             continue;
         }
         match path.extension().and_then(|e| e.to_str()) {
@@ -309,10 +370,15 @@ fn sync_managed_data(app: &AppHandle, repo: &Path) -> Result<(), String> {
         .path()
         .app_data_dir()
         .map_err(|e| format!("Không lấy được thư mục app data: {}", e))?;
-    copy_if_exists(&app_data.join("projects.json"), &repo.join("projects.json"))?;
+    copy_if_exists(
+        &app_data.join("projects.json"),
+        &repo.join("projects.json"),
+    )?;
 
     // Preserve any future externally-stored image assets without touching audio.
-    copy_dir_recursive(&source_dir.join("images"), &repo.join("images"))?;
+    if source_dir != repo {
+        copy_dir_recursive(&source_dir.join("images"), &repo.join("images"))?;
+    }
 
     let manifest = br#"{
   "format": "meet-minder-git-backup",
@@ -333,18 +399,17 @@ fn sync_managed_data(app: &AppHandle, repo: &Path) -> Result<(), String> {
 }
 
 fn stage_managed_data(repo: &Path) -> Result<(), String> {
-    let output = run_git(
-        repo,
-        &[
-            "add",
-            "--",
-            "records",
-            "images",
-            "projects.json",
-            "meet-minder-data.json",
-            ".gitignore",
-        ],
-    )?;
+    let paths: Vec<&str> = MANAGED_PATHS
+        .iter()
+        .copied()
+        .filter(|path| repo.join(path).exists())
+        .collect();
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let mut args = vec!["add", "-f", "--"];
+    args.extend(paths);
+    let output = run_git(repo, &args)?;
     if output.status.success() {
         Ok(())
     } else {
@@ -353,36 +418,37 @@ fn stage_managed_data(repo: &Path) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn select_git_backup_dir(app: AppHandle) -> Result<Option<String>, String> {
-    use tauri_plugin_dialog::DialogExt;
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog()
-        .file()
-        .set_title("Chọn Git repository cho Meet Minder")
-        .pick_folder(move |folder| {
-            let _ = tx.send(folder.map(|p| p.to_string()));
-        });
-    rx.await
-        .map_err(|e| format!("Chọn thư mục thất bại: {}", e))
+pub fn git_backup_status(app: AppHandle) -> GitBackupStatus {
+    match crate::commands::session_store::sessions_dir(&app) {
+        Ok(repo) => {
+            let repo_path = repo.to_string_lossy().to_string();
+            status_for(&repo_path)
+        }
+        Err(error) => GitBackupStatus {
+            configured: false,
+            git_available: is_git_available(),
+            is_repo: false,
+            repo_path: String::new(),
+            branch: None,
+            remote: None,
+            dirty_files: 0,
+            last_commit: None,
+            error: Some(error),
+        },
+    }
 }
 
 #[tauri::command]
-pub fn git_backup_status(repo_path: String) -> GitBackupStatus {
-    status_for(&repo_path)
-}
-
-#[tauri::command]
-pub fn git_backup_now(
-    app: AppHandle,
-    repo_path: String,
-    push: bool,
-) -> Result<GitBackupResult, String> {
-    let repo = PathBuf::from(repo_path.trim());
+pub fn git_backup_now(app: AppHandle, push: bool) -> Result<GitBackupResult, String> {
+    let repo = crate::commands::session_store::sessions_dir(&app)?;
     if !is_git_available() {
         return Err("Git chưa được cài đặt hoặc chưa có trong PATH".into());
     }
     if !repo_is_valid(&repo) {
-        return Err("Thư mục đã chọn chưa phải là Git repository".into());
+        return Err(
+            "Thư mục lưu trữ hiện tại chưa là Git repository. Hãy tự chạy git init trong thư mục này trước."
+                .into(),
+        );
     }
     if run_git(&repo, &["diff", "--name-only", "--diff-filter=U", "--"])
         .map(|o| !output_text(&o).is_empty())
@@ -393,6 +459,7 @@ pub fn git_backup_now(
 
     sync_managed_data(&app, &repo)?;
     stage_managed_data(&repo)?;
+    let staged_paths = git_name_only(&repo, &["diff", "--cached", "--name-only", "--"]);
     let diff = run_git(&repo, &["diff", "--cached", "--quiet"])?;
     let mut committed = false;
     if !diff.status.success() {
@@ -404,8 +471,14 @@ pub fn git_backup_now(
     }
 
     let mut pushed = false;
+    let mut changed_paths = Vec::new();
     let mut warning = None;
     if push {
+        changed_paths = if committed {
+            staged_paths
+        } else {
+            changed_paths_for_push(&repo)
+        };
         let push_output = run_git(&repo, &["push"])?;
         if !push_output.status.success() {
             warning = Some(format!("Git push thất bại: {}", output_error(&push_output)));
@@ -414,10 +487,12 @@ pub fn git_backup_now(
         }
     }
 
+    let repo_path = repo.to_string_lossy().to_string();
     let status = status_for(&repo_path);
     Ok(GitBackupResult {
         committed,
         pushed,
+        changed_paths,
         message: if let Some(ref push_warning) = warning {
             if committed {
                 format!(
@@ -444,14 +519,67 @@ pub fn git_backup_now(
 }
 
 #[tauri::command]
-pub fn git_backup_push(repo_path: String) -> Result<GitBackupStatus, String> {
-    let repo = PathBuf::from(repo_path.trim());
+pub fn git_backup_push(app: AppHandle) -> Result<GitPushResult, String> {
+    let repo = crate::commands::session_store::sessions_dir(&app)?;
+    let repo_path = repo.to_string_lossy().to_string();
     if !repo_is_valid(&repo) {
-        return Err("Thư mục đã chọn chưa phải là Git repository".into());
+        return Err(
+            "Thư mục lưu trữ hiện tại chưa là Git repository. Hãy tự chạy git init trong thư mục này trước."
+                .into(),
+        );
     }
+    let changed_paths = changed_paths_for_push(&repo);
     let output = run_git(&repo, &["push"])?;
     if !output.status.success() {
-        return Err(format!("Git push thất bại: {}", output_error(&output)));
+        let warning = format!("Git push thất bại: {}", output_error(&output));
+        return Ok(GitPushResult {
+            pushed: false,
+            changed_paths,
+            message: warning.clone(),
+            warning: Some(warning),
+            status: status_for(&repo_path),
+        });
     }
-    Ok(status_for(&repo_path))
+    let message = if changed_paths.is_empty() {
+        "Không có commit mới; remote đã up-to-date ✓".into()
+    } else {
+        "Đã push backup lên remote ✓".into()
+    };
+    Ok(GitPushResult {
+        pushed: true,
+        changed_paths,
+        message,
+        warning: None,
+        status: status_for(&repo_path),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_git_backup_stages_only_internal_backup_data() {
+        let root = std::env::temp_dir().join(format!(
+            "meet-minder-git-backup-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(root.join("records")).unwrap();
+        fs::create_dir_all(root.join("audio")).unwrap();
+        fs::write(root.join("records/session-test.md"), b"meeting log").unwrap();
+        fs::write(root.join("audio/session-test.wav"), b"audio").unwrap();
+        fs::write(root.join("settings.json"), b"secret settings").unwrap();
+        fs::write(root.join(".gitignore"), b"*.wav\nsettings.json\n").unwrap();
+
+        let init = run_git(&root, &["init"]).unwrap();
+        assert!(init.status.success());
+        stage_managed_data(&root).unwrap();
+        let staged = output_text(&run_git(&root, &["diff", "--cached", "--name-only"]).unwrap());
+
+        assert!(staged.contains("records/session-test.md"));
+        assert!(!staged.contains("session-test.wav"));
+        assert!(!staged.contains("settings.json"));
+
+        let _ = fs::remove_dir_all(root);
+    }
 }

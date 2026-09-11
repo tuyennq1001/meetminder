@@ -486,7 +486,7 @@
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-storage">
             <span class="settings-nav-icon">📂</span>
-            <span class="settings-nav-label">Lưu trữ dữ liệu</span>
+            <span class="settings-nav-label">Lưu trữ &amp; backup</span>
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-about">
             <span class="settings-nav-icon">ℹ️</span>
@@ -1052,7 +1052,7 @@
         <!-- 7. Detail: Storage -->
         <div class="settings-tab-content" id="tab-storage">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">📂 Lưu trữ Dữ liệu (Data Storage)</h3>
+            <h3 class="settings-panel-title">📂 Lưu trữ &amp; backup</h3>
           </div>
           <div class="settings-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -1065,15 +1065,16 @@
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
               <button type="button" id="btn-change-storage-dir" class="btn-primary-small" style="display:inline-flex; align-items:center; gap:6px;">
-                📂 Đổi thư mục lưu trữ...
+                📂 Đổi & di chuyển dữ liệu...
               </button>
               <button type="button" id="btn-reset-storage-dir" class="btn-secondary-small" style="display:inline-flex; align-items:center; gap:6px;">
-                🔄 Đặt lại mặc định
+                🔄 Đưa về mặc định...
               </button>
               <button type="button" id="btn-open-transcripts-dir" class="btn-secondary-small" style="display:inline-flex; align-items:center; gap:6px;">
                 ↗️ Mở trong Finder
               </button>
             </div>
+            <div id="storage-migration-status" class="storage-migration-status" role="status" aria-live="polite" style="display:none; margin-top:12px;"></div>
           </div>
           <div class="settings-section git-backup-section" style="margin-top: 14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:6px;">
@@ -1087,15 +1088,13 @@
               </label>
             </div>
             <div id="git-backup-details" style="display:none; margin-top:14px;">
-              <div class="git-backup-repo-row" style="display:flex; gap:8px; align-items:stretch;">
-                <div style="flex:1; min-width:0;">
-                  <label class="field-label" for="input-git-backup-repo">Thư mục Git repository</label>
-                  <input id="input-git-backup-repo" class="text-input" type="text" placeholder="Chọn thư mục repository đã git init" autocomplete="off" />
-                </div>
-                <button type="button" id="btn-select-git-backup-repo" class="btn-secondary-small" style="align-self:end; white-space:nowrap;">📂 Chọn...</button>
+              <div class="git-backup-repo-summary" role="group" aria-label="Thư mục Git repository">
+                <div class="field-label" style="margin:0 0 5px;">📍 Dùng chung thư mục lưu trữ hiện tại</div>
+                <code id="git-backup-repo-path">Đang tải đường dẫn...</code>
+                <p class="hint" style="margin:7px 0 0;">Bạn cần tự chạy <code>git init</code> và cấu hình remote trong thư mục này trước. App chỉ commit dữ liệu meeting/ảnh/danh mục; audio và API key luôn được bỏ qua.</p>
               </div>
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
-                <label class="field-label" style="margin:0;"><span style="display:block;"><input type="checkbox" id="check-git-auto-commit" /> Tự động commit</span>
+              <div class="git-backup-options-grid" style="display:grid; grid-template-columns:1fr; gap:12px; margin-top:12px;">
+                <label class="field-label" style="margin:0;"><span style="display:block;"><input type="checkbox" id="check-git-auto-commit" /> Commit tự động theo lịch</span>
                   <select id="select-git-commit-interval" class="select-input" style="display:block; width:100%; margin-top:5px;">
                     <option value="15">Mỗi 15 phút</option>
                     <option value="30">Mỗi 30 phút</option>
@@ -1103,20 +1102,42 @@
                     <option value="1440">Mỗi ngày</option>
                   </select>
                 </label>
-                <label class="field-label" style="margin:0;">Push tự động
-                  <select id="select-git-push-interval" class="select-input" style="display:block; width:100%; margin-top:5px;">
-                    <option value="15">Mỗi 15 phút</option>
-                    <option value="30">Mỗi 30 phút</option>
-                    <option value="60">Mỗi 1 giờ</option>
-                    <option value="1440">Mỗi ngày</option>
-                  </select>
-                </label>
-              </div>
+                <div class="git-auto-push-group">
+                  <label class="checkbox-label" style="display:block;">
+                    <input type="checkbox" id="check-git-auto-push" aria-controls="git-auto-push-options" aria-expanded="false" />
+                    <span>Bật tự động push lên remote</span>
+                  </label>
+                  <div id="git-auto-push-options" class="git-auto-push-options" aria-disabled="true">
+                    <label class="field-label" style="margin:8px 0 0;">Chu kỳ push
+                      <select id="select-git-push-interval" class="select-input" style="display:block; width:100%; margin-top:5px;">
+                        <option value="15">Mỗi 15 phút</option>
+                        <option value="30">Mỗi 30 phút</option>
+                        <option value="60">Mỗi 1 giờ</option>
+                        <option value="1440">Mỗi ngày</option>
+                      </select>
+                    </label>
+                    <label class="checkbox-label" style="display:block; margin-top:9px;">
+                      <input type="checkbox" id="check-git-commit-on-meeting-end" />
+                      <span>Commit & push ngay sau khi kết thúc meeting</span>
+                    </label>
+                  </div>
+                </div>
               <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:12px; flex-wrap:wrap;">
-                <label class="checkbox-label"><input type="checkbox" id="check-git-auto-push" /> <span>Tự động push lên remote</span></label>
                 <button type="button" id="btn-git-backup-now" class="btn-primary-small">💾 Backup ngay</button>
               </div>
               <div id="git-backup-status" class="git-backup-status" role="status" aria-live="polite" style="margin-top:12px;">Đang kiểm tra Git...</div>
+              <div class="git-backup-history" role="region" aria-labelledby="git-backup-history-title">
+                <div id="git-backup-history-title" class="field-label">5 lần push gần nhất</div>
+                <div id="git-backup-history-empty" class="hint">Chưa có lần push nào được ghi nhận trên thiết bị này.</div>
+                <div class="git-backup-history-table-wrap" style="display:none;">
+                  <table class="git-backup-history-table">
+                    <thead>
+                      <tr><th scope="col">Thời gian</th><th scope="col">Kết quả</th><th scope="col">Đã push</th><th scope="col">Lỗi</th></tr>
+                    </thead>
+                    <tbody id="git-backup-history-body"></tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
           <div class="settings-section" style="margin-top: 14px;">
@@ -1579,11 +1600,11 @@
   </div>
 
   <!-- ═══════════════════ UNIVERSAL CONFIRM DELETE MODAL ═══════════════════ -->
-  <div id="modal-confirm-delete" class="modal-overlay" style="display:none">
+  <div id="modal-confirm-delete" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="confirm-delete-title-text">
     <div class="modal-card" style="max-width: 420px;">
       <div class="modal-header">
         <h3 id="confirm-delete-title" style="color: #ef4444; display: flex; align-items: center; gap: 6px;">
-          <span>🗑️</span> <span id="confirm-delete-title-text">Xác nhận xoá</span>
+          <span id="confirm-delete-title-icon">🗑️</span> <span id="confirm-delete-title-text">Xác nhận xoá</span>
         </h3>
         <button type="button" id="btn-close-confirm-delete" class="icon-btn close-btn">×</button>
       </div>

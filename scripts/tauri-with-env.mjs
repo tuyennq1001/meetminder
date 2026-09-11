@@ -12,6 +12,7 @@
  * Usage: node scripts/tauri-with-env.mjs <dev|build> [extra tauri args...]
  */
 import { run } from '@tauri-apps/cli';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -68,10 +69,14 @@ if (identifier) {
       'Configure a stable macOS code-signing certificate in .env (for example: Meet Minder Dev).'
     );
   }
+  const manualDevSigning = args[0] === 'build';
   const override = {
     identifier,
     productName: devName,
-    bundle: { macOS: { signingIdentity } },
+    // Tauri's identity discovery does not find the local macOS identity in this
+    // environment, although codesign can use it. Disable Tauri's signing for the
+    // Dev bundle and sign the completed app explicitly below.
+    bundle: { macOS: { signingIdentity: manualDevSigning ? null : signingIdentity } },
   };
   args.push('--config', JSON.stringify(override));
   // Enable the WebView inspector (DevTools) so JS/console errors are visible in the dev app.
@@ -84,11 +89,48 @@ if (identifier) {
     args.push('--bundles', 'app');
   }
   console.log(`[tauri-with-env] override: identifier=${identifier}, productName="${devName}", signing="${signingIdentity}", devtools=on`);
+
+  if (manualDevSigning) {
+    // Keep the Dev identity stable across rebuilds so macOS permissions do not
+    // reset like they do with ad-hoc signatures.
+    const devBundle = join(repoRoot, 'src-tauri', 'target', 'release', 'bundle', 'macos', `${devName}.app`);
+    const entitlements = join(repoRoot, 'src-tauri', 'Entitlements.plist');
+    const signDevBundle = () => {
+      execFileSync('/usr/bin/codesign', [
+        '--deep',
+        '--force',
+        '--options',
+        'runtime',
+        '--entitlements',
+        entitlements,
+        '--sign',
+        signingIdentity,
+        '--verbose',
+        devBundle,
+      ], { stdio: 'inherit' });
+      execFileSync('/usr/bin/codesign', [
+        '--verify',
+        '--deep',
+        '--strict',
+        '--verbose=2',
+        devBundle,
+      ], { stdio: 'inherit' });
+      console.log(`[tauri-with-env] manually signed Dev bundle with "${signingIdentity}"`);
+    };
+    run(args, 'tauri').then(signDevBundle).catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+  } else {
+    run(args, 'tauri').catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+  }
 } else {
   console.log('[tauri-with-env] no APP_IDENTIFIER — using default identifier + name + signing from tauri.conf.json');
+  run(args, 'tauri').catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }
-
-run(args, 'tauri').catch((err) => {
-  console.error(err);
-  process.exit(1);
-});

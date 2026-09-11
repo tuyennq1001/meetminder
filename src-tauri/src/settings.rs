@@ -184,12 +184,16 @@ pub struct Settings {
     /// Enable optional Git backup for managed meeting data.
     #[serde(default)]
     pub git_backup_enabled: bool,
-    /// User-configured local Git repository path.
+    /// Legacy field retained so existing settings files remain compatible.
+    /// Git backup now uses the current storage directory automatically.
     #[serde(default)]
     pub git_backup_repo_path: String,
     /// Automatically create local Git commits.
     #[serde(default = "default_git_auto_commit")]
     pub git_backup_auto_commit: bool,
+    /// Commit and push immediately after a meeting is saved.
+    #[serde(default = "default_git_commit_on_meeting_end")]
+    pub git_backup_commit_on_meeting_end: bool,
     /// Commit interval in minutes when automatic commit is enabled.
     #[serde(default = "default_git_commit_interval")]
     pub git_backup_commit_interval_min: u32,
@@ -268,6 +272,7 @@ impl Default for Settings {
             git_backup_enabled: false,
             git_backup_repo_path: String::new(),
             git_backup_auto_commit: true,
+            git_backup_commit_on_meeting_end: true,
             git_backup_commit_interval_min: 30,
             git_backup_auto_push: false,
             git_backup_push_interval_min: 60,
@@ -280,6 +285,10 @@ fn default_logs_scope_setting() -> String {
 }
 
 fn default_git_auto_commit() -> bool {
+    true
+}
+
+fn default_git_commit_on_meeting_end() -> bool {
     true
 }
 

@@ -2,18 +2,23 @@ use chrono::Local;
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 /// Get the transcript directory path
 fn transcript_dir(app: &AppHandle) -> Result<PathBuf, String> {
     crate::commands::session_store::sessions_dir(app)
 }
 
+fn records_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(crate::commands::session_store::records_dir(&transcript_dir(app)?))
+}
+
 /// Save a complete transcript session to a timestamped file
 /// Called when user clicks "Clear", stops recording, or closes app
 #[tauri::command]
 pub fn save_transcript(app: AppHandle, content: String) -> Result<String, String> {
-    let dir = transcript_dir(&app)?;
+    let dir = records_dir(&app)?;
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create records dir: {}", e))?;
     let now = Local::now();
     let filename = format!("{}.md", now.format("%Y-%m-%d_%H-%M-%S"));
     let filepath = dir.join(&filename);
@@ -56,26 +61,16 @@ pub struct TranscriptEntry {
 pub fn list_transcripts(app: AppHandle) -> Result<Vec<TranscriptEntry>, String> {
     let dir = transcript_dir(&app)?;
 
-    let mut entries: Vec<TranscriptEntry> = fs::read_dir(&dir)
-        .map_err(|e| format!("Failed to read transcript dir: {}", e))?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let filename = entry.file_name().to_string_lossy().to_string();
+    let mut entries: Vec<TranscriptEntry> = crate::commands::session_store::record_files(&dir)?
+        .into_iter()
+        .filter_map(|path| {
+            let filename = path.file_name()?.to_string_lossy().to_string();
             if !filename.ends_with(".md") {
                 return None;
             }
-            let path = entry.path().to_string_lossy().to_string();
-            let size_bytes = entry.metadata().ok()?.len();
+            let path_string = path.to_string_lossy().to_string();
+            let size_bytes = path.metadata().ok()?.len();
             // Parse created_at from filename: YYYY-MM-DD_HH-MM-SS.md
-            let created_at = filename
-                .strip_suffix(".md")
-                .unwrap_or(&filename)
-                .replace('_', " ")
-                .replace('-', ":")
-                // Fix date separator: first two colons are date separators
-                // Transform "2026:03:27 10:21:05" → "2026-03-27 10:21:05"
-                .to_string();
-            // More accurate: split on space, fix date part
             let created_at = {
                 let base = filename.strip_suffix(".md").unwrap_or(&filename);
                 // base = "2026-03-27_10-21-05"
@@ -89,7 +84,7 @@ pub fn list_transcripts(app: AppHandle) -> Result<Vec<TranscriptEntry>, String> 
             };
             Some(TranscriptEntry {
                 filename,
-                path,
+                path: path_string,
                 created_at,
                 size_bytes,
             })
@@ -110,6 +105,11 @@ pub fn read_transcript(app: AppHandle, filename: String) -> Result<String, Strin
         return Err("Invalid filename".to_string());
     }
     let dir = transcript_dir(&app)?;
-    let filepath = dir.join(&filename);
+    let filepath = crate::commands::session_store::records_dir(&dir).join(&filename);
+    let filepath = if filepath.exists() {
+        filepath
+    } else {
+        dir.join(&filename)
+    };
     fs::read_to_string(&filepath).map_err(|e| format!("Failed to read transcript: {}", e))
 }

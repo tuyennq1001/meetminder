@@ -1,6 +1,6 @@
 // Session-aware transcript persistence (.md + .json sidecar pairs).
 //
-// File pair: session-{YYMMDD-HHMM}.md (human-readable) + .json (structured).
+// File pair: records/session-{YYMMDD-HHMM}.md (human-readable) + .json (structured).
 // Writes are atomic: write to {path}.tmp then rename, so a crash mid-write
 // never corrupts an existing file.
 //
@@ -9,15 +9,20 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
 pub const SUPPORTED_AUDIO_EXTS: &[&str] = &["wav", "mp3", "m4a", "aac", "ogg", "flac", "webm"];
+pub const RECORDS_DIR_NAME: &str = "records";
+pub const AUDIO_DIR_NAME: &str = "audio";
+pub const IMAGES_DIR_NAME: &str = "images";
 
 pub fn audio_mime_type(ext: &str) -> &'static str {
     match ext.to_ascii_lowercase().as_str() {
@@ -33,13 +38,29 @@ pub fn audio_mime_type(ext: &str) -> &'static str {
 }
 
 pub fn find_session_audio(dir: &Path, id: &str) -> Option<(PathBuf, &'static str)> {
-    for ext in SUPPORTED_AUDIO_EXTS {
-        let p = dir.join(format!("session-{}.{}", id, ext));
-        if p.exists() {
-            return Some((p, audio_mime_type(ext)));
+    // Prefer the canonical audio folder as a whole, then fall back to the
+    // legacy root layout while the user is moving existing recordings.
+    for base in [dir.join(AUDIO_DIR_NAME), dir.to_path_buf()] {
+        for ext in SUPPORTED_AUDIO_EXTS {
+            let p = base.join(format!("session-{}.{}", id, ext));
+            if p.exists() {
+                return Some((p, audio_mime_type(ext)));
+            }
         }
     }
     None
+}
+
+pub fn records_dir(root: &Path) -> PathBuf {
+    root.join(RECORDS_DIR_NAME)
+}
+
+pub fn audio_dir(root: &Path) -> PathBuf {
+    root.join(AUDIO_DIR_NAME)
+}
+
+pub fn images_dir(root: &Path) -> PathBuf {
+    root.join(IMAGES_DIR_NAME)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -224,13 +245,54 @@ pub struct SessionReadResult {
     pub json: SessionData,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Clone, Debug)]
 pub struct StorageInfo {
     pub current_path: String,
     pub is_custom: bool,
     pub default_path: String,
     pub session_count: usize,
     pub total_size_bytes: u64,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct StorageMigrationPreview {
+    pub current_path: String,
+    pub target_path: String,
+    pub source_file_count: usize,
+    pub source_total_size_bytes: u64,
+    pub target_file_count: usize,
+    pub target_total_size_bytes: u64,
+    pub same_path: bool,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct StorageMigrationResult {
+    pub source_path: String,
+    pub target_path: String,
+    pub files_copied: usize,
+    pub files_skipped: usize,
+    pub total_files: usize,
+    pub total_size_bytes: u64,
+    pub source_retained: bool,
+    pub storage: StorageInfo,
+}
+
+#[derive(Clone, Debug)]
+struct StorageFile {
+    relative_path: PathBuf,
+    full_path: PathBuf,
+    size: u64,
+}
+
+#[derive(Debug)]
+struct StorageMigrationPlan {
+    source: PathBuf,
+    target: PathBuf,
+    source_files: Vec<StorageFile>,
+    copy_files: Vec<StorageFile>,
+    skipped_files: usize,
+    skipped_size_bytes: u64,
+    total_size_bytes: u64,
 }
 
 // ─── Path helpers ────────────────────────────────────────────────────────
@@ -349,12 +411,345 @@ pub fn sessions_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+fn collect_storage_files(
+    root: &Path,
+    current: &Path,
+    files: &mut Vec<StorageFile>,
+) -> Result<(), String> {
+    for entry in fs::read_dir(current)
+        .map_err(|e| format!("Không thể đọc thư mục lưu trữ {}: {}", current.display(), e))?
+    {
+        let entry = entry.map_err(|e| format!("Không thể đọc file lưu trữ: {}", e))?;
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|e| format!("Không thể đọc metadata {}: {}", path.display(), e))?;
+        let file_type = metadata.file_type();
+        if file_type.is_symlink() {
+            return Err(format!(
+                "Thư mục lưu trữ chứa symbolic link chưa được hỗ trợ: {}",
+                path.display()
+            ));
+        }
+        if file_type.is_dir() {
+            collect_storage_files(root, &path, files)?;
+        } else if file_type.is_file() {
+            let relative_path = path
+                .strip_prefix(root)
+                .map_err(|e| format!("Không xác định được đường dẫn file: {}", e))?
+                .to_path_buf();
+            files.push(StorageFile {
+                relative_path,
+                full_path: path,
+                size: metadata.len(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn storage_size_bytes(current: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(current) else {
+        return 0;
+    };
+    entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| {
+            let path = entry.path();
+            if path.file_name().and_then(|name| name.to_str()) == Some(".git") {
+                return 0;
+            }
+            let Ok(metadata) = fs::symlink_metadata(&path) else {
+                return 0;
+            };
+            if metadata.file_type().is_symlink() {
+                0
+            } else if metadata.is_dir() {
+                storage_size_bytes(&path)
+            } else if metadata.is_file() {
+                metadata.len()
+            } else {
+                0
+            }
+        })
+        .sum()
+}
+
+fn file_sha256(path: &Path) -> Result<[u8; 32], String> {
+    let mut file = fs::File::open(path)
+        .map_err(|e| format!("Không thể mở file {}: {}", path.display(), e))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|e| format!("Không thể đọc file {}: {}", path.display(), e))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hasher.finalize().into())
+}
+
+fn files_identical(source: &Path, destination: &Path) -> Result<bool, String> {
+    let source_meta = fs::metadata(source)
+        .map_err(|e| format!("Không thể đọc metadata {}: {}", source.display(), e))?;
+    let destination_meta = fs::metadata(destination).map_err(|e| {
+        format!(
+            "Không thể đọc metadata {}: {}",
+            destination.display(),
+            e
+        )
+    })?;
+    if !source_meta.is_file() || !destination_meta.is_file() {
+        return Ok(false);
+    }
+    if source_meta.len() != destination_meta.len() {
+        return Ok(false);
+    }
+    Ok(file_sha256(source)? == file_sha256(destination)?)
+}
+
+fn storage_target_path(app: &AppHandle, requested: Option<&str>) -> Result<PathBuf, String> {
+    let target = requested
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or(default_sessions_dir(app)?);
+    fs::create_dir_all(&target)
+        .map_err(|e| format!("Không thể tạo hoặc truy cập thư mục đích: {}", e))?;
+    target
+        .canonicalize()
+        .map_err(|e| format!("Không thể xác định thư mục đích: {}", e))
+}
+
+fn storage_migration_plan(
+    app: &AppHandle,
+    requested: Option<&str>,
+) -> Result<StorageMigrationPlan, String> {
+    let source = sessions_dir(app)?
+        .canonicalize()
+        .map_err(|e| format!("Không thể xác định thư mục lưu trữ hiện tại: {}", e))?;
+    let target = storage_target_path(app, requested)?;
+
+    if source != target
+        && (source.starts_with(&target) || target.starts_with(&source))
+    {
+        return Err(
+            "Thư mục đích không được nằm trong hoặc bao quanh thư mục lưu trữ hiện tại".into(),
+        );
+    }
+
+    let mut source_files = Vec::new();
+    collect_storage_files(&source, &source, &mut source_files)?;
+
+    let mut target_files = Vec::new();
+    collect_storage_files(&target, &target, &mut target_files)?;
+    let target_by_path: HashMap<PathBuf, StorageFile> = target_files
+        .iter()
+        .cloned()
+        .map(|file| (file.relative_path.clone(), file))
+        .collect();
+
+    let mut copy_files = Vec::new();
+    let mut skipped_files = 0;
+    let mut skipped_size_bytes = 0;
+    let mut conflicting_files = Vec::new();
+    let mut total_size_bytes = 0;
+
+    for source_file in &source_files {
+        total_size_bytes += source_file.size;
+        let destination = target.join(&source_file.relative_path);
+        if let Some(target_file) = target_by_path.get(&source_file.relative_path) {
+            if files_identical(&source_file.full_path, &target_file.full_path)? {
+                skipped_files += 1;
+                skipped_size_bytes += source_file.size;
+            } else {
+                conflicting_files.push(source_file.relative_path.display().to_string());
+            }
+        } else if destination.exists() {
+            conflicting_files.push(source_file.relative_path.display().to_string());
+        } else {
+            copy_files.push(source_file.clone());
+        }
+    }
+
+    if !conflicting_files.is_empty() {
+        let examples = conflicting_files
+            .iter()
+            .take(3)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "Thư mục đích có {} file trùng tên nhưng khác nội dung (ví dụ: {}). Hãy chọn thư mục khác hoặc xử lý thủ công để tránh ghi đè.",
+            conflicting_files.len(),
+            examples
+        ));
+    }
+
+    Ok(StorageMigrationPlan {
+        source,
+        target,
+        source_files,
+        copy_files,
+        skipped_files,
+        skipped_size_bytes,
+        total_size_bytes,
+    })
+}
+
+fn emit_storage_migration_progress(
+    app: &AppHandle,
+    stage: &str,
+    completed_files: usize,
+    total_files: usize,
+    completed_bytes: u64,
+    total_bytes: u64,
+    message: &str,
+) {
+    let percent = if total_bytes == 0 {
+        if total_files == 0 {
+            100
+        } else {
+            ((completed_files * 100) / total_files).min(100)
+        }
+    } else {
+        ((completed_bytes.saturating_mul(100) / total_bytes).min(100)) as usize
+    };
+    let _ = app.emit(
+        "storage-migration-progress",
+        serde_json::json!({
+            "stage": stage,
+            "completed_files": completed_files,
+            "total_files": total_files,
+            "completed_bytes": completed_bytes,
+            "total_bytes": total_bytes,
+            "percent": percent,
+            "message": message,
+        }),
+    );
+}
+
+fn copy_file_atomic_verified(source: &Path, destination: &Path) -> Result<bool, String> {
+    if let Ok(metadata) = fs::metadata(destination) {
+        if metadata.is_dir() {
+            return Err(format!(
+                "Không thể sao chép {} vì đường dẫn đích đang là thư mục",
+                destination.display()
+            ));
+        }
+        if files_identical(source, destination)? {
+            return Ok(false);
+        }
+        return Err(format!(
+            "File đích đã thay đổi, không ghi đè: {}",
+            destination.display()
+        ));
+    }
+
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Không thể tạo thư mục đích: {}", e))?;
+    }
+    let file_name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("file");
+    let temporary = destination.with_file_name(format!(
+        ".meet-minder-migrate-{}-{}",
+        chrono_timestamp_id(),
+        file_name
+    ));
+    let copy_result = (|| -> Result<(), String> {
+        fs::copy(source, &temporary)
+            .map_err(|e| format!("Không thể sao chép {}: {}", source.display(), e))?;
+        let file = fs::File::open(&temporary)
+            .map_err(|e| format!("Không thể mở file tạm: {}", e))?;
+        file.sync_all()
+            .map_err(|e| format!("Không thể đồng bộ file tạm: {}", e))?;
+        if !files_identical(source, &temporary)? {
+            return Err(format!(
+                "Kiểm tra file sau khi sao chép thất bại: {}",
+                source.display()
+            ));
+        }
+        fs::rename(&temporary, destination)
+            .map_err(|e| format!("Không thể hoàn tất sao chép {}: {}", destination.display(), e))?;
+        Ok(())
+    })();
+    if copy_result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    copy_result.map(|_| true)
+}
+
+/// Return the canonical paths for newly written session files.
+///
+/// The storage root itself remains the user-selected folder; only meeting
+/// records are placed in its `records/` child directory.
 fn session_paths(dir: &Path, id: &str) -> (PathBuf, PathBuf) {
     let base = format!("session-{}", id);
     (
-        dir.join(format!("{}.md", base)),
-        dir.join(format!("{}.json", base)),
+        records_dir(dir).join(format!("{}.md", base)),
+        records_dir(dir).join(format!("{}.json", base)),
     )
+}
+
+/// Read an individual session file from the new layout first, with a
+/// temporary fallback for files that the user has not moved yet.
+fn session_paths_for_read(dir: &Path, id: &str) -> (PathBuf, PathBuf) {
+    let (new_md, new_json) = session_paths(dir, id);
+    let old_md = dir.join(format!("session-{}.md", id));
+    let old_json = dir.join(format!("session-{}.json", id));
+    (
+        if new_md.exists() { new_md } else { old_md },
+        if new_json.exists() { new_json } else { old_json },
+    )
+}
+
+fn record_file_for_read(dir: &Path, filename: &str) -> PathBuf {
+    let new_path = records_dir(dir).join(filename);
+    if new_path.exists() {
+        new_path
+    } else {
+        dir.join(filename)
+    }
+}
+
+/// List direct record files in the canonical folder and then legacy files at
+/// the storage root. When both locations contain the same filename, the
+/// canonical `records/` copy wins.
+pub fn record_files(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut files = Vec::new();
+    let mut seen_names = std::collections::HashSet::new();
+
+    for folder in [records_dir(root), root.to_path_buf()] {
+        if !folder.is_dir() {
+            continue;
+        }
+        for entry in fs::read_dir(&folder)
+            .map_err(|e| format!("Không thể đọc thư mục records {}: {}", folder.display(), e))?
+        {
+            let entry = entry.map_err(|e| format!("Không thể đọc file records: {}", e))?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(extension) = path.extension().and_then(|ext| ext.to_str()) else {
+                continue;
+            };
+            if extension != "md" && extension != "json" {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if seen_names.insert(name) {
+                files.push(path);
+            }
+        }
+    }
+
+    Ok(files)
 }
 
 fn validate_id(id: &str) -> Result<(), String> {
@@ -634,6 +1029,8 @@ pub fn save_session(
     }
     let dir = sessions_dir(&app)?;
     let (md_path, json_path) = session_paths(&dir, &id);
+    fs::create_dir_all(records_dir(&dir))
+        .map_err(|e| format!("Không thể tạo thư mục records: {}", e))?;
 
     // Auto-register any new tags into registry
     if !json_data.tags.is_empty() {
@@ -679,19 +1076,20 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
             .map(|p| (p.id, (p.name, p.color, p.status, p.customer_id, p.scope)))
             .collect();
 
-    let entries = fs::read_dir(&dir).map_err(|e| format!("Read dir failed: {}", e))?;
-    let entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+    let entries = record_files(&dir)?;
 
     // Pass 1: parse all .json sidecars
-    for entry in &entries {
-        let name = entry.file_name().to_string_lossy().to_string();
+    for path in &entries {
+        let name = path
+            .file_name()
+            .map(|value| value.to_string_lossy().to_string())
+            .unwrap_or_default();
         let Some(stem) = name.strip_suffix(".json") else {
             continue;
         };
         let Some(id) = stem.strip_prefix("session-") else {
             continue;
         };
-        let path = entry.path();
         let Ok(content) = fs::read_to_string(&path) else {
             continue;
         };
@@ -787,8 +1185,11 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
     }
 
     // Pass 2: legacy .md-only files (old save_transcript output, no sidecar)
-    for entry in &entries {
-        let name = entry.file_name().to_string_lossy().to_string();
+    for path in &entries {
+        let name = path
+            .file_name()
+            .map(|value| value.to_string_lossy().to_string())
+            .unwrap_or_default();
         let Some(stem) = name.strip_suffix(".md") else {
             continue;
         };
@@ -835,7 +1236,7 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
 pub fn read_session(app: AppHandle, id: String) -> Result<SessionReadResult, String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
-    let (md_path, json_path) = session_paths(&dir, &id);
+    let (md_path, json_path) = session_paths_for_read(&dir, &id);
     let md = fs::read_to_string(&md_path).map_err(|e| format!("Read md failed: {}", e))?;
     let json_str =
         fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
@@ -852,7 +1253,7 @@ pub fn read_legacy_session(app: AppHandle, id: String) -> Result<String, String>
         return Err("Invalid id".into());
     }
     let dir = sessions_dir(&app)?;
-    let path = dir.join(format!("{}.md", id));
+    let path = record_file_for_read(&dir, &format!("{}.md", id));
     fs::read_to_string(&path).map_err(|e| format!("Read failed: {}", e))
 }
 
@@ -860,13 +1261,17 @@ pub fn read_legacy_session(app: AppHandle, id: String) -> Result<String, String>
 pub fn delete_session(app: AppHandle, id: String) -> Result<(), String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
-    // New format: session-{id}.{md,json,wav,mp3,...}
+    // Remove both canonical files and any legacy root copies, so a manual
+    // move that left a duplicate behind cannot resurrect the session.
     let (md_path, json_path) = session_paths(&dir, &id);
     let _ = fs::remove_file(&json_path);
     let _ = fs::remove_file(&md_path);
     for ext in SUPPORTED_AUDIO_EXTS {
+        let _ = fs::remove_file(audio_dir(&dir).join(format!("session-{}.{}", id, ext)));
         let _ = fs::remove_file(dir.join(format!("session-{}.{}", id, ext)));
     }
+    let _ = fs::remove_file(dir.join(format!("session-{}.json", id)));
+    let _ = fs::remove_file(dir.join(format!("session-{}.md", id)));
     // Legacy format: {id}.md (no session- prefix, no sidecar)
     let _ = fs::remove_file(dir.join(format!("{}.md", id)));
     Ok(())
@@ -898,8 +1303,10 @@ pub fn update_session_metadata(
 ) -> Result<(), String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
+    let (existing_md_path, existing_json_path) = session_paths_for_read(&dir, &id);
     let (md_path, json_path) = session_paths(&dir, &id);
-    let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read failed: {}", e))?;
+    let json_str =
+        fs::read_to_string(&existing_json_path).map_err(|e| format!("Read failed: {}", e))?;
     let mut data: SessionData =
         serde_json::from_str(&json_str).map_err(|e| format!("Parse failed: {}", e))?;
 
@@ -945,10 +1352,12 @@ pub fn update_session_metadata(
 
     let json_bytes =
         serde_json::to_vec_pretty(&data).map_err(|e| format!("Serialize failed: {}", e))?;
+    fs::create_dir_all(records_dir(&dir))
+        .map_err(|e| format!("Không thể tạo thư mục records: {}", e))?;
     write_atomic(&json_path, &json_bytes)?;
 
     // Update MD header with new title
-    let md = fs::read_to_string(&md_path).unwrap_or_default();
+    let md = fs::read_to_string(&existing_md_path).unwrap_or_default();
     let new_md = if let Some(eol) = md.find('\n') {
         format!("# {}\n{}", data.title, &md[eol + 1..])
     } else {
@@ -973,11 +1382,12 @@ pub fn update_session_content(
 ) -> Result<(), String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
+    let (_existing_md_path, existing_json_path) = session_paths_for_read(&dir, &id);
     let (md_path, json_path) = session_paths(&dir, &id);
 
-    if json_path.exists() {
+    if existing_json_path.exists() {
         let json_str =
-            fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
+            fs::read_to_string(&existing_json_path).map_err(|e| format!("Read json failed: {}", e))?;
         let mut data: SessionData =
             serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
         if let Some(ref t) = title {
@@ -985,6 +1395,8 @@ pub fn update_session_content(
         }
         let json_bytes =
             serde_json::to_vec_pretty(&data).map_err(|e| format!("Serialize failed: {}", e))?;
+        fs::create_dir_all(records_dir(&dir))
+            .map_err(|e| format!("Không thể tạo thư mục records: {}", e))?;
         write_atomic(&json_path, &json_bytes)?;
         write_atomic(&md_path, md_content.as_bytes())?;
     } else {
@@ -992,6 +1404,8 @@ pub fn update_session_content(
         if legacy_path.exists() {
             write_atomic(&legacy_path, md_content.as_bytes())?;
         } else {
+            fs::create_dir_all(records_dir(&dir))
+                .map_err(|e| format!("Không thể tạo thư mục records: {}", e))?;
             write_atomic(&md_path, md_content.as_bytes())?;
         }
     }
@@ -1204,14 +1618,15 @@ pub fn update_session_meeting_minutes(
 ) -> Result<SessionReadResult, String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
+    let (_existing_md_path, existing_json_path) = session_paths_for_read(&dir, &id);
     let (md_path, json_path) = session_paths(&dir, &id);
 
-    if !json_path.exists() {
+    if !existing_json_path.exists() {
         return Err("Session json does not exist".into());
     }
 
     let json_str =
-        fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
+        fs::read_to_string(&existing_json_path).map_err(|e| format!("Read json failed: {}", e))?;
     let mut data: SessionData =
         serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
 
@@ -1228,6 +1643,8 @@ pub fn update_session_meeting_minutes(
 
     let json_bytes =
         serde_json::to_vec_pretty(&data).map_err(|e| format!("Serialize failed: {}", e))?;
+    fs::create_dir_all(records_dir(&dir))
+        .map_err(|e| format!("Không thể tạo thư mục records: {}", e))?;
     write_atomic(&json_path, &json_bytes)?;
 
     let md_content = rebuild_session_markdown(&data);
@@ -1247,14 +1664,15 @@ pub fn update_session_notes(
 ) -> Result<SessionReadResult, String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
+    let (_existing_md_path, existing_json_path) = session_paths_for_read(&dir, &id);
     let (md_path, json_path) = session_paths(&dir, &id);
 
-    if !json_path.exists() {
+    if !existing_json_path.exists() {
         return Err("Session json does not exist".into());
     }
 
     let json_str =
-        fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
+        fs::read_to_string(&existing_json_path).map_err(|e| format!("Read json failed: {}", e))?;
     let mut data: SessionData =
         serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
 
@@ -1262,6 +1680,8 @@ pub fn update_session_notes(
 
     let json_bytes =
         serde_json::to_vec_pretty(&data).map_err(|e| format!("Serialize failed: {}", e))?;
+    fs::create_dir_all(records_dir(&dir))
+        .map_err(|e| format!("Không thể tạo thư mục records: {}", e))?;
     write_atomic(&json_path, &json_bytes)?;
 
     let md_content = rebuild_session_markdown(&data);
@@ -1282,9 +1702,10 @@ pub fn update_session_langs(
 ) -> Result<SessionReadResult, String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
+    let (_existing_md_path, existing_json_path) = session_paths_for_read(&dir, &id);
     let (md_path, json_path) = session_paths(&dir, &id);
 
-    if !json_path.exists() {
+    if !existing_json_path.exists() {
         return Err("Session json does not exist".into());
     }
 
@@ -1298,7 +1719,7 @@ pub fn update_session_langs(
     }
 
     let json_str =
-        fs::read_to_string(&json_path).map_err(|e| format!("Read json failed: {}", e))?;
+        fs::read_to_string(&existing_json_path).map_err(|e| format!("Read json failed: {}", e))?;
     let mut data: SessionData =
         serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
 
@@ -1307,6 +1728,8 @@ pub fn update_session_langs(
 
     let json_bytes =
         serde_json::to_vec_pretty(&data).map_err(|e| format!("Serialize failed: {}", e))?;
+    fs::create_dir_all(records_dir(&dir))
+        .map_err(|e| format!("Không thể tạo thư mục records: {}", e))?;
     write_atomic(&json_path, &json_bytes)?;
 
     let md_content = rebuild_session_markdown(&data);
@@ -1373,7 +1796,7 @@ pub fn session_item_matches_metadata(item: &SessionListItem, q: &str, tag_match:
 pub fn export_session_srt(app: AppHandle, id: String) -> Result<String, String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
-    let (_, json_path) = session_paths(&dir, &id);
+    let (_, json_path) = session_paths_for_read(&dir, &id);
     let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read failed: {}", e))?;
     let data: SessionData =
         serde_json::from_str(&json_str).map_err(|e| format!("Parse failed: {}", e))?;
@@ -1385,7 +1808,7 @@ pub fn export_session_srt(app: AppHandle, id: String) -> Result<String, String> 
 pub fn export_session_txt(app: AppHandle, id: String) -> Result<String, String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
-    let (_, json_path) = session_paths(&dir, &id);
+    let (_, json_path) = session_paths_for_read(&dir, &id);
     let json_str = fs::read_to_string(&json_path).map_err(|e| format!("Read failed: {}", e))?;
     let data: SessionData =
         serde_json::from_str(&json_str).map_err(|e| format!("Parse failed: {}", e))?;
@@ -1406,7 +1829,7 @@ pub fn search_sessions(app: AppHandle, query: String) -> Result<Vec<SessionListI
     for item in all {
         if item.has_legacy_only {
             // Match against title + raw md content
-            let path = dir.join(format!("{}.md", item.id));
+            let path = record_file_for_read(&dir, &format!("{}.md", item.id));
             if let Ok(body) = fs::read_to_string(&path) {
                 if body.to_lowercase().contains(&q) || item.title.to_lowercase().contains(&q) {
                     hits.push(item);
@@ -1418,7 +1841,7 @@ pub fn search_sessions(app: AppHandle, query: String) -> Result<Vec<SessionListI
             hits.push(item);
             continue;
         }
-        let (_, json_path) = session_paths(&dir, &item.id);
+        let (_, json_path) = session_paths_for_read(&dir, &item.id);
         let Ok(json_str) = fs::read_to_string(&json_path) else {
             continue;
         };
@@ -1512,7 +1935,7 @@ pub fn get_session_record_path(app: AppHandle, id: String) -> Result<String, Str
     if let Some((p, _)) = find_session_audio(&dir, &id) {
         Ok(p.to_string_lossy().to_string())
     } else {
-        let wav_path = dir.join(format!("session-{}.wav", id));
+        let wav_path = audio_dir(&dir).join(format!("session-{}.wav", id));
         Ok(wav_path.to_string_lossy().to_string())
     }
 }
@@ -2342,6 +2765,7 @@ pub async fn retranscribe_session_with_gemini(
     }
     let dir = sessions_dir(&app)?;
     let (md_path, json_path) = session_paths(&dir, &id);
+    let (_, existing_json_path) = session_paths_for_read(&dir, &id);
     let (audio_path, mime_type) = find_session_audio(&dir, &id)
         .ok_or_else(|| "This meeting does not have an audio recording".to_string())?;
     let audio_size = fs::metadata(&audio_path)
@@ -2350,8 +2774,8 @@ pub async fn retranscribe_session_with_gemini(
     if audio_size <= 44 {
         return Err("The audio recording is empty".into());
     }
-    let json_str =
-        fs::read_to_string(&json_path).map_err(|e| format!("Read session failed: {}", e))?;
+    let json_str = fs::read_to_string(&existing_json_path)
+        .map_err(|e| format!("Read session failed: {}", e))?;
     let mut data: SessionData =
         serde_json::from_str(&json_str).map_err(|e| format!("Parse session failed: {}", e))?;
 
@@ -2923,7 +3347,11 @@ pub async fn import_audio_session(
 
     let dir = sessions_dir(&app)?;
     let (md_path, json_path) = session_paths(&dir, &id);
-    let dest_audio_path = dir.join(format!("session-{}.{}", id, ext));
+    fs::create_dir_all(records_dir(&dir))
+        .map_err(|e| format!("Không thể tạo thư mục records: {}", e))?;
+    fs::create_dir_all(audio_dir(&dir))
+        .map_err(|e| format!("Không thể tạo thư mục audio: {}", e))?;
+    let dest_audio_path = audio_dir(&dir).join(format!("session-{}.{}", id, ext));
 
     let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     {
@@ -3467,21 +3895,13 @@ pub fn get_storage_info(app: AppHandle) -> Result<StorageInfo, String> {
         reg.custom_transcripts_dir.is_some() && reg.custom_transcripts_dir.as_deref() != Some("");
 
     let mut session_count = 0;
-    let mut total_size_bytes = 0;
-
-    if let Ok(entries) = fs::read_dir(&current) {
-        for entry in entries.flatten() {
-            if let Ok(meta) = entry.metadata() {
-                if meta.is_file() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    if name.ends_with(".json") && name.starts_with("session-") {
-                        session_count += 1;
-                    }
-                    total_size_bytes += meta.len();
-                }
-            }
+    for path in record_files(&current)? {
+        let name = path.file_name().and_then(|value| value.to_str()).unwrap_or("");
+        if name.ends_with(".json") && name.starts_with("session-") {
+            session_count += 1;
         }
     }
+    let total_size_bytes = storage_size_bytes(&current);
 
     Ok(StorageInfo {
         current_path: current.to_string_lossy().to_string(),
@@ -3493,7 +3913,7 @@ pub fn get_storage_info(app: AppHandle) -> Result<StorageInfo, String> {
 }
 
 #[tauri::command]
-pub async fn select_custom_transcripts_dir(app: AppHandle) -> Result<Option<StorageInfo>, String> {
+pub async fn select_custom_transcripts_dir(app: AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     let current = sessions_dir(&app)?;
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -3506,29 +3926,84 @@ pub async fn select_custom_transcripts_dir(app: AppHandle) -> Result<Option<Stor
         });
 
     let folder = rx.await.map_err(|e| e.to_string())?;
-    if let Some(folder_path) = folder {
-        let path_str = folder_path.to_string();
-        set_custom_transcripts_dir(app.clone(), Some(path_str))?;
-        let info = get_storage_info(app)?;
-        Ok(Some(info))
-    } else {
-        Ok(None)
-    }
+    Ok(folder.map(|folder_path| folder_path.to_string()))
+}
+
+#[tauri::command]
+pub fn preview_storage_dir_change(
+    app: AppHandle,
+    target_path: Option<String>,
+) -> Result<StorageMigrationPreview, String> {
+    let plan = storage_migration_plan(&app, target_path.as_deref())?;
+    let mut target_files = Vec::new();
+    collect_storage_files(&plan.target, &plan.target, &mut target_files)?;
+
+    Ok(StorageMigrationPreview {
+        current_path: plan.source.to_string_lossy().to_string(),
+        target_path: plan.target.to_string_lossy().to_string(),
+        source_file_count: plan.source_files.len(),
+        source_total_size_bytes: plan.total_size_bytes,
+        target_file_count: target_files.len(),
+        target_total_size_bytes: target_files.iter().map(|file| file.size).sum(),
+        same_path: plan.source == plan.target,
+    })
 }
 
 #[tauri::command]
 pub fn set_custom_transcripts_dir(
     app: AppHandle,
     path: Option<String>,
-) -> Result<StorageInfo, String> {
+) -> Result<StorageMigrationResult, String> {
+    let plan = storage_migration_plan(&app, path.as_deref())?;
+    let total_files = plan.source_files.len();
+    let total_size_bytes = plan.total_size_bytes;
+    let mut completed_files = plan.skipped_files;
+    let mut completed_bytes = plan.skipped_size_bytes;
+    let mut files_copied = 0;
+    let mut files_skipped = plan.skipped_files;
+
+    emit_storage_migration_progress(
+        &app,
+        "preparing",
+        completed_files,
+        total_files,
+        completed_bytes,
+        total_size_bytes,
+        if total_files == 0 {
+            "Không có dữ liệu cần di chuyển"
+        } else {
+            "Đang chuẩn bị di chuyển dữ liệu..."
+        },
+    );
+
+    for source_file in &plan.copy_files {
+        let destination = plan.target.join(&source_file.relative_path);
+        if copy_file_atomic_verified(&source_file.full_path, &destination)? {
+            files_copied += 1;
+        } else {
+            files_skipped += 1;
+        }
+        completed_files += 1;
+        completed_bytes = completed_bytes.saturating_add(source_file.size);
+        emit_storage_migration_progress(
+            &app,
+            "copying",
+            completed_files,
+            total_files,
+            completed_bytes,
+            total_size_bytes,
+            &format!(
+                "Đã xử lý {}/{} file lưu trữ...",
+                completed_files, total_files
+            ),
+        );
+    }
+
     let mut reg = load_project_registry(&app).unwrap_or_default();
     if let Some(ref p) = path {
         let p_trimmed = p.trim();
         if !p_trimmed.is_empty() {
-            let pb = PathBuf::from(p_trimmed);
-            fs::create_dir_all(&pb)
-                .map_err(|e| format!("Không thể tạo hoặc truy cập thư mục: {}", e))?;
-            reg.custom_transcripts_dir = Some(p_trimmed.to_string());
+            reg.custom_transcripts_dir = Some(plan.target.to_string_lossy().to_string());
         } else {
             reg.custom_transcripts_dir = None;
         }
@@ -3536,7 +4011,26 @@ pub fn set_custom_transcripts_dir(
         reg.custom_transcripts_dir = None;
     }
     save_project_registry(&app, &reg)?;
-    get_storage_info(app)
+    let storage = get_storage_info(app.clone())?;
+    emit_storage_migration_progress(
+        &app,
+        "done",
+        total_files,
+        total_files,
+        total_size_bytes,
+        total_size_bytes,
+        "Đã di chuyển dữ liệu lưu trữ thành công",
+    );
+    Ok(StorageMigrationResult {
+        source_path: plan.source.to_string_lossy().to_string(),
+        target_path: plan.target.to_string_lossy().to_string(),
+        files_copied,
+        files_skipped,
+        total_files,
+        total_size_bytes,
+        source_retained: true,
+        storage,
+    })
 }
 
 #[cfg(test)]
@@ -4014,5 +4508,54 @@ mod tests {
         assert_eq!(src_lang, "ja");
         assert_eq!(tgt_lang, "vi");
         assert_eq!(segs.len(), 1);
+    }
+
+    #[test]
+    fn test_new_storage_layout_prefers_canonical_records_and_audio() {
+        let root = std::env::temp_dir().join(format!(
+            "meet-minder-storage-layout-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(records_dir(&root)).unwrap();
+        fs::create_dir_all(audio_dir(&root)).unwrap();
+        fs::write(records_dir(&root).join("session-test.md"), b"new record").unwrap();
+        fs::write(root.join("session-test.md"), b"legacy record").unwrap();
+        fs::write(audio_dir(&root).join("session-test.mp3"), b"new audio").unwrap();
+        fs::write(root.join("session-test.wav"), b"legacy audio").unwrap();
+
+        let files = record_files(&root).unwrap();
+        let record = files
+            .iter()
+            .find(|path| path.file_name().and_then(|name| name.to_str()) == Some("session-test.md"))
+            .unwrap();
+        assert_eq!(record, &records_dir(&root).join("session-test.md"));
+
+        let (audio_path, mime) = find_session_audio(&root, "test").unwrap();
+        assert_eq!(audio_path, audio_dir(&root).join("session-test.mp3"));
+        assert_eq!(mime, "audio/mp3");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn test_storage_copy_is_verified_and_never_overwrites() {
+        let root = std::env::temp_dir().join(format!(
+            "meet-minder-storage-migration-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let source = root.join("source/session.json");
+        let destination = root.join("destination/nested/session.json");
+        fs::create_dir_all(source.parent().expect("source parent should exist")).unwrap();
+        fs::write(&source, b"original transcript").unwrap();
+
+        assert!(copy_file_atomic_verified(&source, &destination).unwrap());
+        assert_eq!(fs::read(&destination).unwrap(), b"original transcript");
+        assert!(!copy_file_atomic_verified(&source, &destination).unwrap());
+
+        fs::write(&destination, b"different transcript").unwrap();
+        assert!(copy_file_atomic_verified(&source, &destination).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"different transcript");
+
+        let _ = fs::remove_dir_all(root);
     }
 }

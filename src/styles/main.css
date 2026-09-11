@@ -2220,7 +2220,106 @@ input[type="range"]::-webkit-slider-thumb:hover {
     line-height: 1.5;
 }
 
+.git-backup-repo-summary {
+    padding: 10px 12px;
+    border-radius: var(--radius-md);
+    background: var(--md-sys-color-surface-container);
+    border: 1px solid var(--border-subtle);
+}
+
+.git-backup-repo-summary code {
+    display: block;
+    color: var(--md-sys-color-primary);
+    font-size: 11px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.git-auto-push-group {
+    min-width: 0;
+}
+
+.git-auto-push-options {
+    transition: opacity var(--transition-fast);
+}
+
+.git-auto-push-options.is-disabled {
+    opacity: 0.55;
+}
+
 .git-backup-status.is-error {
+    color: var(--md-sys-color-error);
+    border-color: color-mix(in srgb, var(--md-sys-color-error) 45%, var(--border-subtle));
+}
+
+.git-backup-history {
+    margin-top: 12px;
+}
+
+.git-backup-history-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--md-sys-color-surface-container);
+}
+
+.git-backup-history-table {
+    width: 100%;
+    min-width: 560px;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.git-backup-history-table th,
+.git-backup-history-table td {
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--border-subtle);
+    text-align: left;
+    vertical-align: top;
+}
+
+.git-backup-history-table th {
+    color: var(--md-sys-color-on-surface-variant);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.git-backup-history-table tr:last-child td {
+    border-bottom: 0;
+}
+
+.git-backup-history-table .push-success {
+    color: var(--md-sys-color-primary);
+    font-weight: 600;
+}
+
+.git-backup-history-table .push-no-change {
+    color: var(--md-sys-color-on-surface-variant);
+    font-weight: 600;
+}
+
+.git-backup-history-table .push-failed {
+    color: var(--md-sys-color-error);
+    font-weight: 600;
+}
+
+.git-backup-history-table .push-error {
+    max-width: 280px;
+    color: var(--md-sys-color-error);
+    overflow-wrap: anywhere;
+}
+
+.storage-migration-status {
+    padding: 9px 11px;
+    border-radius: var(--radius-md);
+    background: var(--md-sys-color-surface-container);
+    border: 1px solid var(--md-sys-color-primary);
+    color: var(--md-sys-color-primary);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.storage-migration-status.is-error {
     color: var(--md-sys-color-error);
     border-color: color-mix(in srgb, var(--md-sys-color-error) 45%, var(--border-subtle));
 }

@@ -410,6 +410,7 @@ class App {
         this._gitBackupBusy = false;
         this._gitBackupLastCommitAt = 0;
         this._gitBackupLastPushAt = 0;
+        this._storageMigrationBusy = false;
     }
 
     async init() {
@@ -457,6 +458,12 @@ class App {
             await this._bindAudioTranscriptProgressEvents();
         } catch (err) {
             console.warn('[App] Could not bind audio transcript progress events:', err);
+        }
+
+        try {
+            await this._bindStorageMigrationProgressEvents();
+        } catch (err) {
+            console.warn('[App] Could not bind storage migration progress events:', err);
         }
 
         // All modal overlays use the same dismissal behavior: Escape and a
@@ -1325,32 +1332,15 @@ class App {
         // Storage Directory Customization
         document.getElementById('btn-change-storage-dir')?.addEventListener('click', async () => {
             try {
-                const info = await invoke('select_custom_transcripts_dir');
-                if (info) {
-                    this._showToast('Đã đổi thư mục lưu trữ thành công ✓', 'success');
-                    this._renderSettingsStorageTab();
-                    await this._showSessions();
-                }
+                const path = await invoke('select_custom_transcripts_dir');
+                if (path) await this._changeStorageDirectory(path);
             } catch (err) {
                 this._showToast(`Đổi thư mục thất bại: ${err}`, 'error');
             }
         });
 
         document.getElementById('btn-reset-storage-dir')?.addEventListener('click', async () => {
-            const agreed = await this._promptConfirmDelete({
-                title: 'Đặt lại thư mục mặc định',
-                message: 'Bạn có muốn chuyển vị trí lưu trữ về lại thư mục mặc định của ứng dụng?',
-                confirmText: 'Đặt lại'
-            });
-            if (!agreed) return;
-            try {
-                await invoke('set_custom_transcripts_dir', { path: null });
-                this._showToast('Đã chuyển về thư mục mặc định ✓', 'success');
-                this._renderSettingsStorageTab();
-                await this._showSessions();
-            } catch (err) {
-                this._showToast(`Lỗi: ${err}`, 'error');
-            }
+            await this._changeStorageDirectory(null, { resetting: true });
         });
 
         // Optional Git backup. Git itself, the repository and credentials are
@@ -1364,27 +1354,14 @@ class App {
         document.getElementById('check-git-auto-commit')?.addEventListener('change', async (e) => {
             await this._saveGitBackupSettings({ git_backup_auto_commit: e.target.checked });
         });
+        document.getElementById('check-git-commit-on-meeting-end')?.addEventListener('change', async (e) => {
+            await this._saveGitBackupSettings({ git_backup_commit_on_meeting_end: e.target.checked });
+        });
         document.getElementById('select-git-commit-interval')?.addEventListener('change', async (e) => {
             await this._saveGitBackupSettings({ git_backup_commit_interval_min: Number(e.target.value) || 30 });
         });
         document.getElementById('select-git-push-interval')?.addEventListener('change', async (e) => {
             await this._saveGitBackupSettings({ git_backup_push_interval_min: Number(e.target.value) || 60 });
-        });
-        document.getElementById('input-git-backup-repo')?.addEventListener('change', async (e) => {
-            await this._saveGitBackupSettings({ git_backup_repo_path: e.target.value.trim() });
-            this._renderGitBackupStatus();
-        });
-        document.getElementById('btn-select-git-backup-repo')?.addEventListener('click', async () => {
-            try {
-                const path = await invoke('select_git_backup_dir');
-                if (path) {
-                    await this._saveGitBackupSettings({ git_backup_repo_path: path });
-                    this._showToast('Đã chọn Git repository ✓', 'success');
-                    await this._renderGitBackupStatus();
-                }
-            } catch (err) {
-                this._showToast(`Chọn Git repository thất bại: ${err}`, 'error');
-            }
         });
         document.getElementById('btn-git-backup-now')?.addEventListener('click', async () => {
             await this._runGitBackup({ manual: true, push: settingsManager.get().git_backup_auto_push === true });
@@ -5001,9 +4978,12 @@ class App {
                 );
 
                 if (savedId) {
-                    // A completed meeting is the most useful backup boundary;
-                    // the scheduler will also handle later note edits.
-                    this._runGitBackup({ push: false }).catch(err => console.warn('[Git backup] post-meeting backup failed:', err));
+                    const backupSettings = settingsManager.get();
+                    if (backupSettings.git_backup_auto_push === true
+                        && backupSettings.git_backup_commit_on_meeting_end !== false) {
+                        this._runGitBackup({ push: true, reason: 'meeting-end' })
+                            .catch(err => console.warn('[Git backup] post-meeting commit/push failed:', err));
+                    }
                     if (stopAction.autoRetranscript) {
                         setActivity('library');
                         await this._openSession(savedId);
@@ -5217,6 +5197,25 @@ class App {
             active.backendProgress = true;
             active.progressBaseText = message;
             this._setRetranscriptProgress(stage, message, percent, active.customTitle);
+        });
+    }
+
+    async _bindStorageMigrationProgressEvents() {
+        await this.appWindow.listen('storage-migration-progress', ({ payload }) => {
+            if (!this._storageMigrationBusy || !payload) return;
+            const statusEl = document.getElementById('storage-migration-status');
+            if (!statusEl) return;
+            const completed = Number(payload.completed_files || 0);
+            const total = Number(payload.total_files || 0);
+            const percent = Math.max(0, Math.min(100, Number(payload.percent || 0)));
+            const message = String(payload.message || 'Đang di chuyển dữ liệu...');
+            statusEl.style.display = 'block';
+            statusEl.classList.remove('is-error');
+            statusEl.textContent = total > 0
+                ? `${message} ${percent}%`
+                : message;
+            statusEl.setAttribute('aria-valuenow', String(percent));
+            statusEl.setAttribute('aria-valuetext', `${completed}/${total} file`);
         });
     }
 
@@ -7229,14 +7228,23 @@ class App {
 
     // ─── Universal Confirm Delete Modal ─────────────────────────────────────
 
-    _promptConfirmDelete({ title = 'Xác nhận xoá', message = 'Bạn có chắc chắn muốn xoá mục này?', confirmText = 'Xoá' }) {
+    _promptConfirmDelete({
+        title = 'Xác nhận xoá',
+        message = 'Bạn có chắc chắn muốn xoá mục này?',
+        confirmText = 'Xoá',
+        icon = '🗑️',
+        variant = 'danger',
+    }) {
         return new Promise((resolve) => {
             const modal = document.getElementById('modal-confirm-delete');
             const titleEl = document.getElementById('confirm-delete-title-text');
+            const titleIconEl = document.getElementById('confirm-delete-title-icon');
+            const titleHeading = document.getElementById('confirm-delete-title');
             const msgEl = document.getElementById('confirm-delete-message');
             const agreeBtn = document.getElementById('btn-agree-confirm-delete');
             const cancelBtn = document.getElementById('btn-cancel-confirm-delete');
             const closeBtn = document.getElementById('btn-close-confirm-delete');
+            const previousFocus = document.activeElement;
 
             if (!modal) {
                 resolve(window.confirm(message));
@@ -7244,8 +7252,22 @@ class App {
             }
 
             if (titleEl) titleEl.textContent = title;
+            if (titleIconEl) titleIconEl.textContent = icon;
+            if (titleHeading) {
+                titleHeading.style.color = variant === 'primary'
+                    ? 'var(--md-sys-color-primary)'
+                    : '#ef4444';
+            }
             if (msgEl) msgEl.textContent = message;
-            if (agreeBtn) agreeBtn.textContent = confirmText;
+            if (agreeBtn) {
+                agreeBtn.textContent = confirmText;
+                agreeBtn.classList.toggle('danger-btn', variant !== 'primary');
+                agreeBtn.classList.toggle('primary-action-btn', variant === 'primary');
+            }
+
+            const focusable = () => Array.from(modal.querySelectorAll(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+            )).filter((element) => !element.disabled && element.offsetParent !== null);
 
             const onKeyDown = (e) => {
                 if (e.key === 'Escape') {
@@ -7254,6 +7276,18 @@ class App {
                 } else if (e.key === 'Enter') {
                     e.preventDefault();
                     onAgree();
+                } else if (e.key === 'Tab') {
+                    const elements = focusable();
+                    if (elements.length === 0) return;
+                    const first = elements[0];
+                    const last = elements[elements.length - 1];
+                    if (e.shiftKey && document.activeElement === first) {
+                        e.preventDefault();
+                        last.focus();
+                    } else if (!e.shiftKey && document.activeElement === last) {
+                        e.preventDefault();
+                        first.focus();
+                    }
                 }
             };
 
@@ -7264,6 +7298,7 @@ class App {
                 closeBtn?.removeEventListener('click', onCancel);
                 modal.removeEventListener('click', onBackdrop);
                 window.removeEventListener('keydown', onKeyDown);
+                if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
             };
 
             const onAgree = () => {
@@ -7290,6 +7325,7 @@ class App {
             window.addEventListener('keydown', onKeyDown);
 
             modal.style.display = 'flex';
+            requestAnimationFrame(() => (cancelBtn || agreeBtn || closeBtn)?.focus());
         });
     }
 
@@ -7621,6 +7657,104 @@ class App {
         }
     }
 
+    _formatStorageBytes(bytes) {
+        const value = Number(bytes || 0);
+        if (!Number.isFinite(value) || value < 1024) return `${Math.max(0, Math.round(value))} bytes`;
+        const units = ['KB', 'MB', 'GB', 'TB'];
+        let size = value;
+        let unit = -1;
+        while (size >= 1024 && unit < units.length - 1) {
+            size /= 1024;
+            unit += 1;
+        }
+        return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unit]}`;
+    }
+
+    _setStorageMigrationStatus(message, isError = false) {
+        const statusEl = document.getElementById('storage-migration-status');
+        if (!statusEl) return;
+        statusEl.style.display = message ? 'block' : 'none';
+        statusEl.classList.toggle('is-error', isError);
+        statusEl.textContent = message || '';
+        if (!isError) statusEl.removeAttribute('aria-valuenow');
+    }
+
+    async _changeStorageDirectory(targetPath, { resetting = false } = {}) {
+        if (this._storageMigrationBusy) return;
+        if (this.isRunning || this.isPaused || this._hasUnsavedMeetingData) {
+            this._showToast('Hãy kết thúc và lưu cuộc họp hiện tại trước khi đổi thư mục lưu trữ', 'warning');
+            return;
+        }
+
+        let preview;
+        try {
+            preview = await invoke('preview_storage_dir_change', { targetPath });
+        } catch (err) {
+            this._setStorageMigrationStatus(`Không thể kiểm tra thư mục đích: ${err}`, true);
+            this._showToast(`Đổi thư mục thất bại: ${err}`, 'error');
+            return;
+        }
+
+        if (preview.same_path) {
+            this._showToast('Thư mục được chọn đang là thư mục lưu trữ hiện tại', 'info');
+            return;
+        }
+
+        const sourceCount = Number(preview.source_file_count || 0);
+        const sourceSize = this._formatStorageBytes(preview.source_total_size_bytes);
+        const targetCount = Number(preview.target_file_count || 0);
+        const targetText = targetCount > 0
+            ? `Thư mục đích hiện có ${targetCount} file; file trùng nội dung sẽ được bỏ qua và file khác nội dung sẽ không bị ghi đè.`
+            : 'Thư mục đích hiện chưa có dữ liệu.';
+        const title = resetting
+            ? 'Đưa dữ liệu về thư mục mặc định?'
+            : 'Di chuyển dữ liệu sang thư mục mới?';
+        const action = resetting ? 'Đưa về mặc định' : 'Di chuyển dữ liệu';
+        const message = sourceCount > 0
+            ? `Meet Minder sẽ sao chép ${sourceCount} file (${sourceSize}) từ thư mục hiện tại sang:\n${preview.target_path}\n\n${targetText}\n\nThư mục cũ sẽ được giữ nguyên làm bản dự phòng. Tiếp tục?`
+            : `Meet Minder sẽ chuyển nơi lưu dữ liệu sang:\n${preview.target_path}\n\n${targetText}\n\nTiếp tục?`;
+        const agreed = await this._promptConfirmDelete({
+            title,
+            message,
+            confirmText: action,
+            icon: '📦',
+            variant: 'primary',
+        });
+        if (!agreed) return;
+
+        this._storageMigrationBusy = true;
+        this._setStorageMigrationStatus(
+            sourceCount > 0 ? `Đang chuẩn bị di chuyển ${sourceCount} file...` : 'Đang đổi thư mục lưu trữ...',
+        );
+        for (const id of ['btn-change-storage-dir', 'btn-reset-storage-dir']) {
+            const button = document.getElementById(id);
+            if (button) button.disabled = true;
+        }
+
+        try {
+            const result = await invoke('set_custom_transcripts_dir', { path: targetPath });
+            const copied = Number(result.files_copied || 0);
+            const skipped = Number(result.files_skipped || 0);
+            const retained = result.source_retained ? ' Thư mục cũ vẫn được giữ lại làm bản dự phòng.' : '';
+            this._setStorageMigrationStatus(`Đã xử lý ${result.total_files || 0} file ✓`);
+            this._showToast(`Đã chuyển thư mục lưu trữ thành công ✓${retained}`, 'success');
+            if (copied || skipped) {
+                console.info(`[Storage] migrated: copied=${copied}, skipped=${skipped}`);
+            }
+            await this._renderSettingsStorageTab();
+            await this._showSessions();
+        } catch (err) {
+            this._setStorageMigrationStatus(`Di chuyển dữ liệu thất bại: ${err}`, true);
+            this._showToast(`Di chuyển dữ liệu thất bại: ${err}`, 'error');
+        } finally {
+            this._storageMigrationBusy = false;
+            for (const id of ['btn-change-storage-dir', 'btn-reset-storage-dir']) {
+                const button = document.getElementById(id);
+                if (button) button.disabled = false;
+            }
+        }
+    }
+
     async _renderSettingsStorageTab() {
         const pathEl = document.getElementById('storage-dir-path-text');
         const badgeEl = document.getElementById('storage-type-badge');
@@ -7654,28 +7788,56 @@ class App {
         const s = settingsManager.get();
         const enabled = document.getElementById('check-git-backup-enabled');
         const details = document.getElementById('git-backup-details');
-        const repo = document.getElementById('input-git-backup-repo');
         const commit = document.getElementById('select-git-commit-interval');
         const push = document.getElementById('select-git-push-interval');
         const autoCommit = document.getElementById('check-git-auto-commit');
+        const commitOnMeetingEnd = document.getElementById('check-git-commit-on-meeting-end');
         const autoPush = document.getElementById('check-git-auto-push');
+        const pushOptions = document.getElementById('git-auto-push-options');
+        const autoPushEnabled = s.git_backup_auto_push === true;
         if (!enabled) return;
         enabled.checked = s.git_backup_enabled === true;
         enabled.setAttribute('aria-expanded', String(enabled.checked));
         if (details) details.style.display = enabled.checked ? 'block' : 'none';
-        if (repo) repo.value = s.git_backup_repo_path || '';
         if (commit) commit.value = String(s.git_backup_commit_interval_min || 30);
         if (push) push.value = String(s.git_backup_push_interval_min || 60);
         if (autoCommit) autoCommit.checked = s.git_backup_auto_commit !== false;
+        if (commitOnMeetingEnd) commitOnMeetingEnd.checked = s.git_backup_commit_on_meeting_end !== false;
         if (commit) commit.disabled = s.git_backup_auto_commit === false;
-        if (autoPush) autoPush.checked = s.git_backup_auto_push === true;
-        if (push) push.disabled = s.git_backup_auto_push !== true;
+        if (autoPush) {
+            autoPush.checked = autoPushEnabled;
+            autoPush.setAttribute('aria-expanded', String(autoPushEnabled));
+        }
+        if (pushOptions) {
+            pushOptions.setAttribute('aria-disabled', String(!autoPushEnabled));
+            pushOptions.classList.toggle('is-disabled', !autoPushEnabled);
+        }
+        if (commitOnMeetingEnd) commitOnMeetingEnd.disabled = !autoPushEnabled;
+        if (push) push.disabled = !autoPushEnabled;
+    }
+
+    async _getCurrentStoragePath() {
+        const info = await invoke('get_storage_info');
+        const path = String(info.current_path || '').trim();
+        if (!path) throw new Error('Không xác định được thư mục lưu trữ hiện tại');
+        return path;
     }
 
     async _renderGitBackupStatus() {
         const statusEl = document.getElementById('git-backup-status');
         if (!statusEl) return;
+        const repoPathEl = document.getElementById('git-backup-repo-path');
         const s = settingsManager.get();
+        try {
+            const storagePath = await this._getCurrentStoragePath();
+            if (repoPathEl) repoPathEl.textContent = storagePath;
+            this._renderGitPushHistory(storagePath);
+        } catch (err) {
+            if (repoPathEl) repoPathEl.textContent = 'Không xác định được đường dẫn';
+            statusEl.classList.add('is-error');
+            statusEl.textContent = `Không đọc được thư mục lưu trữ: ${err}`;
+            return;
+        }
         if (!s.git_backup_enabled) {
             statusEl.classList.remove('is-error');
             statusEl.textContent = 'Backup qua Git đang tắt.';
@@ -7683,7 +7845,7 @@ class App {
         }
         statusEl.textContent = 'Đang kiểm tra Git...';
         try {
-            const info = await invoke('git_backup_status', { repoPath: s.git_backup_repo_path || '' });
+            const info = await invoke('git_backup_status');
             statusEl.classList.toggle('is-error', Boolean(info.error));
             if (info.error) {
                 statusEl.textContent = info.error;
@@ -7720,20 +7882,91 @@ class App {
         return `git-backup:${repoPath}:${suffix}`;
     }
 
+    _readGitPushHistory(storagePath) {
+        try {
+            const raw = localStorage.getItem(this._gitBackupStorageKey(storagePath, 'push-history'));
+            const history = raw ? JSON.parse(raw) : [];
+            return Array.isArray(history) ? history.slice(0, 5) : [];
+        } catch (err) {
+            console.warn('[Git backup] Could not read push history:', err);
+            return [];
+        }
+    }
+
+    _renderGitPushHistory(storagePath) {
+        const emptyEl = document.getElementById('git-backup-history-empty');
+        const wrapEl = document.querySelector('.git-backup-history-table-wrap');
+        const bodyEl = document.getElementById('git-backup-history-body');
+        if (!emptyEl || !wrapEl || !bodyEl || !storagePath) return;
+        const history = this._readGitPushHistory(storagePath);
+        if (!history.length) {
+            emptyEl.style.display = '';
+            wrapEl.style.display = 'none';
+            bodyEl.replaceChildren();
+            return;
+        }
+        emptyEl.style.display = 'none';
+        wrapEl.style.display = '';
+        bodyEl.innerHTML = history.map((item) => {
+            const paths = Array.isArray(item.changed_paths) ? item.changed_paths : [];
+            const date = item.at ? new Date(item.at).toLocaleString() : '—';
+            const success = item.success === true;
+            const noChange = success && paths.length === 0;
+            const resultLabel = success ? (noChange ? 'Không thay đổi' : 'Thành công') : 'Thất bại';
+            const resultClass = success ? (noChange ? 'push-no-change' : 'push-success') : 'push-failed';
+            const pathSummary = paths.length
+                ? paths.slice(0, 5).join(', ') + (paths.length > 5 ? ` (+${paths.length - 5})` : '')
+                : 'Không có commit mới';
+            const dataLabel = success ? pathSummary : (paths.length ? `Chưa push: ${pathSummary}` : 'Chưa xác định');
+            const error = item.error ? this._esc(item.error) : '—';
+            return `<tr>
+                <td>${this._esc(date)}<br><span class="hint">${this._esc(item.source || 'Theo lịch')}</span></td>
+                <td class="${resultClass}">${resultLabel}</td>
+                <td title="${this._escAttr(paths.join('\n'))}">${this._esc(dataLabel)}</td>
+                <td class="push-error">${error}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    _recordGitPushHistory(storagePath, { result = null, source = 'Theo lịch', error = null } = {}) {
+        if (!storagePath) return;
+        const changedPaths = Array.isArray(result?.changed_paths) ? result.changed_paths : [];
+        const entry = {
+            at: new Date().toISOString(),
+            source,
+            success: Boolean(result?.pushed),
+            changed_paths: changedPaths,
+            error: error || result?.warning || null,
+        };
+        const history = [entry, ...this._readGitPushHistory(storagePath)].slice(0, 5);
+        try {
+            localStorage.setItem(this._gitBackupStorageKey(storagePath, 'push-history'), JSON.stringify(history));
+        } catch (err) {
+            console.warn('[Git backup] Could not save push history:', err);
+        }
+        this._renderGitPushHistory(storagePath);
+    }
+
     _configureGitBackupScheduler(settings) {
         if (this._gitBackupTimer) {
             clearInterval(this._gitBackupTimer);
             this._gitBackupTimer = null;
         }
-        if (!settings?.git_backup_enabled || !settings.git_backup_repo_path) return;
+        if (!settings?.git_backup_enabled) return;
         this._gitBackupTimer = setInterval(() => this._runGitBackupScheduled(), 60 * 1000);
     }
 
     async _runGitBackupScheduled() {
         const s = settingsManager.get();
-        if (!s.git_backup_enabled || !s.git_backup_repo_path || this._gitBackupBusy) return;
+        if (!s.git_backup_enabled || this._gitBackupBusy) return;
+        let repo;
+        try {
+            repo = await this._getCurrentStoragePath();
+        } catch (err) {
+            console.warn('[Git backup] Could not resolve current storage path:', err);
+            return;
+        }
         const now = Date.now();
-        const repo = s.git_backup_repo_path;
         const lastCommit = Number(localStorage.getItem(this._gitBackupStorageKey(repo, 'commit')) || 0);
         const lastPush = Number(localStorage.getItem(this._gitBackupStorageKey(repo, 'push')) || 0);
         const commitDue = s.git_backup_auto_commit && now - lastCommit >= (Number(s.git_backup_commit_interval_min) || 30) * 60 * 1000;
@@ -7742,28 +7975,48 @@ class App {
         if (pushDue && !this._gitBackupBusy) await this._runGitPush();
     }
 
-    async _runGitBackup({ manual = false, push = false } = {}) {
+    async _runGitBackup({ manual = false, push = false, reason = 'schedule' } = {}) {
         const s = settingsManager.get();
-        if (!s.git_backup_enabled || !s.git_backup_repo_path) {
-            if (manual) this._showToast('Hãy bật backup Git và chọn repository trước', 'warning');
+        if (!s.git_backup_enabled) {
+            if (manual) this._showToast('Hãy bật backup Git trước', 'warning');
             return;
         }
-        if (!manual && !s.git_backup_auto_commit) return;
+        if (!manual && reason === 'schedule' && !s.git_backup_auto_commit) return;
+        if (!manual && reason === 'meeting-end'
+            && (s.git_backup_auto_push !== true || s.git_backup_commit_on_meeting_end === false)) return;
         if (this._gitBackupBusy) return;
+        let repo;
+        try {
+            repo = await this._getCurrentStoragePath();
+        } catch (err) {
+            if (manual) this._showToast(`Không đọc được thư mục lưu trữ: ${err}`, 'error');
+            return;
+        }
         this._gitBackupBusy = true;
         const btn = document.getElementById('btn-git-backup-now');
         if (btn) btn.disabled = true;
         try {
-            const result = await invoke('git_backup_now', {
-                repoPath: s.git_backup_repo_path,
-                push: Boolean(push),
-            });
+            const result = await invoke('git_backup_now', { push: Boolean(push) });
             const now = Date.now();
-            if (result.committed) localStorage.setItem(this._gitBackupStorageKey(s.git_backup_repo_path, 'commit'), String(now));
-            if (result.pushed) localStorage.setItem(this._gitBackupStorageKey(s.git_backup_repo_path, 'push'), String(now));
+            if (reason === 'schedule') localStorage.setItem(this._gitBackupStorageKey(repo, 'commit'), String(now));
+            if (result.committed) localStorage.setItem(this._gitBackupStorageKey(repo, 'commit'), String(now));
+            if (result.pushed) localStorage.setItem(this._gitBackupStorageKey(repo, 'push'), String(now));
+            if (push) {
+                this._recordGitPushHistory(repo, {
+                    result,
+                    source: manual ? 'Backup ngay' : 'Theo lịch',
+                });
+            }
             if (manual) this._showToast(result.message, result.warning ? 'warning' : 'success');
             await this._renderGitBackupStatus();
         } catch (err) {
+            if (reason === 'schedule') localStorage.setItem(this._gitBackupStorageKey(repo, 'commit'), String(Date.now()));
+            if (push) {
+                this._recordGitPushHistory(repo, {
+                    source: manual ? 'Backup ngay' : 'Theo lịch',
+                    error: String(err),
+                });
+            }
             if (manual) this._showToast(`Backup Git thất bại: ${err}`, 'error');
             const statusEl = document.getElementById('git-backup-status');
             if (statusEl) {
@@ -7778,13 +8031,31 @@ class App {
 
     async _runGitPush() {
         const s = settingsManager.get();
-        if (!s.git_backup_enabled || !s.git_backup_repo_path || this._gitBackupBusy) return;
+        if (!s.git_backup_enabled || this._gitBackupBusy) return;
+        let repo;
+        try {
+            repo = await this._getCurrentStoragePath();
+        } catch (err) {
+            console.warn('[Git backup] Could not resolve current storage path:', err);
+            return;
+        }
         this._gitBackupBusy = true;
         try {
-            await invoke('git_backup_push', { repoPath: s.git_backup_repo_path });
-            localStorage.setItem(this._gitBackupStorageKey(s.git_backup_repo_path, 'push'), String(Date.now()));
+            const result = await invoke('git_backup_push');
+            this._recordGitPushHistory(repo, { result, source: 'Theo lịch' });
+            localStorage.setItem(this._gitBackupStorageKey(repo, 'push'), String(Date.now()));
+            if (result.warning) {
+                const statusEl = document.getElementById('git-backup-status');
+                if (statusEl) {
+                    statusEl.classList.add('is-error');
+                    statusEl.textContent = result.warning;
+                }
+                return;
+            }
             await this._renderGitBackupStatus();
         } catch (err) {
+            localStorage.setItem(this._gitBackupStorageKey(repo, 'push'), String(Date.now()));
+            this._recordGitPushHistory(repo, { source: 'Theo lịch', error: String(err) });
             const statusEl = document.getElementById('git-backup-status');
             if (statusEl) {
                 statusEl.classList.add('is-error');
