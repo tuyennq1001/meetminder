@@ -6,7 +6,7 @@ const { invoke } = window.__TAURI__.core;
 
 // Default settings shape
 const DEFAULT_SETTINGS = {
-  app_language: 'vi',
+  app_language: 'en',
   soniox_api_key: '',
   openai_api_key: '',
   gemini_api_key: '',
@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS = {
   inactivity_timeout_min: 10,
   template_notes: '',
   meeting_minutes_use_notes: true,
+  meeting_minutes_lang: 'en',
   template_minutes_vi: '',
   template_minutes_ja: '',
   template_minutes_en: '',

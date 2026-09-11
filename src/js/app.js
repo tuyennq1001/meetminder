@@ -35,14 +35,14 @@ const LANGUAGE_DISPLAY = {
 const PENCIL_YELLOW_ICON = `<svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="13" height="13" style="display:inline-block;vertical-align:-2px;margin-right:3px;" aria-hidden="true"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>`;
 
 const DEFAULT_TEMPLATE_NOTES = `# MTG Title
-## Thông tin cuộc họp
-- Người tham gia: 
-- Ngày tháng: {{date}}
+## Meeting Information
+- Attendees: 
+- Date: {{date}}
 
-## Nội dung cuộc họp 
+## Discussion & Notes
 
 
-## TODO
+## Action Items
 - [ ] 
 `;
 
@@ -522,7 +522,8 @@ class App {
         this._templateEditor = null;
         this._activeTemplatesMainTab = 'minutes';
         this._activeTemplatePreset = 'standard';
-        this._activeTemplateLang = 'vi';
+        this._activeTemplateLang = 'en';
+        this._activeMinutesLang = 'en';
         this._templateDrafts = {};
         this._notesTemplateEditor = null;
         this._selectedSessionIds = new Set();
@@ -999,6 +1000,13 @@ class App {
             if (this._currentSettingsScreen) {
                 this._showSettingsScreen(this._currentSettingsScreen);
             }
+            if (this._cachedSessions) {
+                this._renderFilteredSessions();
+            }
+            if (this._currentSessionJson) {
+                this._renderSessionViewerMetadata(this._currentSessionJson);
+            }
+            this._populateNoteMetadataSelectors?.();
             try {
                 await settingsManager.save({ app_language: nextLocale });
                 this._showToast(t('settings.saved'), 'success');
@@ -1008,6 +1016,13 @@ class App {
                 if (this._currentSettingsScreen) {
                     this._showSettingsScreen(this._currentSettingsScreen);
                 }
+                if (this._cachedSessions) {
+                    this._renderFilteredSessions();
+                }
+                if (this._currentSessionJson) {
+                    this._renderSessionViewerMetadata(this._currentSessionJson);
+                }
+                this._populateNoteMetadataSelectors?.();
                 this._showToast(t('settings.saveFailed', { error: err }), 'error');
             }
         });
@@ -1198,7 +1213,7 @@ class App {
         const handleOpenViewerMetadataEdit = async () => {
             const cur = this._currentViewedSession;
             if (!cur || cur.isLegacy) {
-                this._showToast('Không thể sửa thông tin cuộc họp định dạng cũ', 'info');
+                this._showToast(t('session.cannotEditLegacy'), 'info');
                 return;
             }
             try {
@@ -1239,25 +1254,25 @@ class App {
             const cur = this._currentViewedSession;
             if (!cur) return;
             if (cur.id === sessionStore.id) {
-                this._showToast('Không thể xoá cuộc họp đang chạy — hãy Dừng trước', 'error');
+                this._showToast(t('session.deleteRunningError'), 'error');
                 return;
             }
             const title = this._currentSessionJson?.title || document.getElementById('session-viewer-title')?.textContent || cur.id;
             const agreed = await this._promptConfirmDelete({
-                title: 'Xác nhận xoá log',
-                message: `Bạn có chắc chắn muốn xoá vĩnh viễn log "${title}"? Hành động này không thể hoàn tác.`,
-                confirmText: 'Xoá'
+                title: t('modal.delete.title'),
+                message: t('modal.delete.confirmSingle', { title }),
+                confirmText: t('modal.delete.confirm'),
             });
             if (!agreed) return;
             try {
                 await invoke('delete_session', { id: cur.id });
                 this._selectedSessionIds?.delete(cur.id);
-                this._showToast('Đã xóa log', 'success');
+                this._showToast(t('modal.delete.singleSuccess'), 'success');
                 document.getElementById('sessions-list-panel').style.display = '';
                 document.getElementById('session-viewer').style.display = 'none';
                 await this._showSessions();
             } catch (err) {
-                this._showToast(`Xóa thất bại: ${err}`, 'error');
+                this._showToast(t('modal.delete.failed', { error: err }), 'error');
             }
         });
 
@@ -1318,7 +1333,7 @@ class App {
             if (!active?.id) return;
 
             const targetId = active.id;
-            const targetLang = active.lang || this._activeMinutesLang || 'ja';
+            const targetLang = active.lang || this._activeMinutesLang || 'en';
 
             if (!this._activeMinutesGeneration) {
                 this._hideMinutesProgress();
@@ -2374,7 +2389,7 @@ class App {
         const s = settingsManager.get();
         if (!this._hasUserSwitchedTemplateLang) {
             const appLocale = normalizeLocale(s.app_language);
-            this._activeTemplateLang = ['ja', 'vi', 'en'].includes(appLocale) ? appLocale : 'vi';
+            this._activeTemplateLang = ['ja', 'vi', 'en'].includes(appLocale) ? appLocale : 'en';
         }
         const useNotesCheckbox = document.getElementById('check-meeting-minutes-use-notes');
         if (useNotesCheckbox) useNotesCheckbox.checked = s.meeting_minutes_use_notes !== false;
@@ -2920,6 +2935,7 @@ class App {
             const validTgts = ['vi', 'ja', 'en', 'none'];
             quickTgt.value = validTgts.includes(settings.target_language) ? settings.target_language : 'none';
         }
+        this._syncTargetLanguageOptions(quickSrc, quickTgt);
 
         const timing = settings.translation_timing || 'on_pause';
         const timingSel = document.getElementById('select-translation-timing');
@@ -4934,17 +4950,17 @@ class App {
         const chkAutoMinutesLabel = document.getElementById('chk-stop-auto-minutes-label');
         const chkAutoMinutesHint = document.getElementById('chk-stop-auto-minutes-hint');
         if (chkAutoMinutesLabel) {
-            chkAutoMinutesLabel.textContent = '✨ Tạo Meeting Minutes sau khi lưu';
+            chkAutoMinutesLabel.textContent = t('modal.stop.minutesLabel');
         }
         if (chkAutoMinutesHint) {
-            chkAutoMinutesHint.textContent = 'Tóm tắt theo template có sẵn';
+            chkAutoMinutesHint.textContent = t('modal.stop.minutesHint');
         }
 
         const currentSettings = settingsManager.get();
-        const autoMinutesLang = currentSettings.meeting_minutes_lang || 'vi';
+        const autoMinutesLang = currentSettings.meeting_minutes_lang || 'en';
 
         if (!modal) {
-            const entered = prompt('Nhập tên cuộc họp để kết thúc & lưu:', defaultTitle);
+            const entered = prompt(t('modal.stop.promptFallback'), defaultTitle);
             return entered !== null ? {
                 title: entered.trim() || defaultTitle,
                 tags: sessionStore.tags || [],
@@ -5179,7 +5195,7 @@ class App {
                             this._showToast('Không thể tự động re-transcript: Cần Gemini API Key trong Cài đặt', 'warning');
                             if (stopAction.autoGenerateMinutes) {
                                 this._switchSessionTab('minutes');
-                                await this._generateMeetingMinutesForSession(savedId, stopAction.minutesLang || 'vi');
+                                await this._generateMeetingMinutesForSession(savedId, stopAction.minutesLang || 'en');
                             }
                         } else {
                             this._retranscribeSession(savedId, false, {
@@ -5202,7 +5218,7 @@ class App {
                             }
                         } catch (minErr) {
                             console.error('[App] Error creating minutes on stop:', minErr);
-                            await this._generateMeetingMinutesForSession(savedId, 'ja');
+                            await this._generateMeetingMinutesForSession(savedId, 'en');
                         }
                     }
                 }
@@ -5807,10 +5823,53 @@ class App {
         return this._liveEngineRestart;
     }
 
+    _syncTargetLanguageOptions(sourceSelect, targetSelect) {
+        if (!sourceSelect || !targetSelect) return null;
+        const src = sourceSelect.value;
+        const curTgt = targetSelect.value;
+
+        let hasDisabledCurrent = false;
+        for (const opt of targetSelect.options) {
+            if (src && src !== 'auto' && opt.value === src) {
+                opt.disabled = true;
+                if (curTgt === opt.value) {
+                    hasDisabledCurrent = true;
+                }
+            } else {
+                opt.disabled = false;
+            }
+        }
+
+        if (hasDisabledCurrent) {
+            const fallbackOrder = src === 'vi' ? ['ja', 'en', 'none']
+                : (src === 'ja' ? ['vi', 'en', 'none']
+                : ['vi', 'ja', 'none']);
+            const nextValid = fallbackOrder.find(lang => {
+                const opt = Array.from(targetSelect.options).find(o => o.value === lang);
+                return opt && !opt.disabled;
+            }) || 'none';
+            targetSelect.value = nextValid;
+            return nextValid;
+        }
+        return curTgt;
+    }
+
     async _handleQuickSourceLangChange(srcLang) {
-        const s = await this._saveQuickLanguageSettings({ source_language: srcLang });
+        const quickSrc = document.getElementById('quick-select-source-lang');
+        const quickTgt = document.getElementById('quick-select-target-lang');
+        const syncedTgt = this._syncTargetLanguageOptions(quickSrc, quickTgt);
+
+        const updates = { source_language: srcLang };
+        if (syncedTgt && syncedTgt !== settingsManager.get().target_language) {
+            updates.target_language = syncedTgt;
+            if (this.transcriptUI) {
+                this.transcriptUI.configure({ targetLanguage: syncedTgt });
+            }
+        }
+
+        const s = await this._saveQuickLanguageSettings(updates);
         const srcName = this._getQuickLangName(srcLang);
-        this._showToast(`Ngôn ngữ gốc: ${srcName}`, 'info');
+        this._showToast(t('toast.sourceLanguage', { language: srcName }), 'info');
         const langEl = document.getElementById('live-lang');
         if (langEl) {
             const tgtName = this._getQuickLangName(s.target_language || 'none');
@@ -5833,14 +5892,14 @@ class App {
             const selectViewMode = document.getElementById('select-view-mode');
             if (selectViewMode) selectViewMode.value = 'original';
             this._setViewMode('original');
-            this._showToast('Đã tắt dịch (Chỉ chép lời)', 'info');
+            this._showToast(t('toast.noTranslation'), 'info');
         } else {
             if (this._forcedOriginalForNoTranslation) {
                 this._forcedOriginalForNoTranslation = false;
                 this._setViewMode(this._viewModeBeforeNoTranslation || 'dual');
                 this._viewModeBeforeNoTranslation = null;
             }
-            this._showToast(`Ngôn ngữ dịch: ${tgtName}`, 'info');
+            this._showToast(t('toast.targetLanguage', { language: tgtName }), 'info');
         }
         const langEl = document.getElementById('live-lang');
         if (langEl) {
@@ -5856,18 +5915,21 @@ class App {
         const curTgt = current.target_language || 'ja';
 
         if (curTgt === 'none') {
-            this._showToast('Không thể đổi chiều khi đang tắt dịch', 'warning');
+            this._showToast(t('toast.swapBlocked'), 'warning');
             return;
         }
 
         const newSrc = curTgt;
-        const newTgt = curSrc === 'auto' ? 'en' : curSrc;
+        let newTgt = curSrc === 'auto' ? 'en' : curSrc;
 
         const quickSrc = document.getElementById('quick-select-source-lang');
         const quickTgt = document.getElementById('quick-select-target-lang');
 
         if (quickSrc) quickSrc.value = newSrc;
         if (quickTgt) quickTgt.value = newTgt;
+
+        const syncedTgt = this._syncTargetLanguageOptions(quickSrc, quickTgt);
+        if (syncedTgt) newTgt = syncedTgt;
 
         await this._saveQuickLanguageSettings({
             source_language: newSrc,
@@ -5878,7 +5940,7 @@ class App {
         }
         const newSrcName = this._getQuickLangName(newSrc);
         const newTgtName = this._getQuickLangName(newTgt);
-        this._showToast(`Đã đổi chiều: ${newSrcName} → ${newTgtName}`, 'success');
+        this._showToast(t('toast.swapped', { source: newSrcName, target: newTgtName }), 'success');
 
         const langEl = document.getElementById('live-lang');
         if (langEl) {
@@ -5952,24 +6014,24 @@ class App {
         const count = ids.length;
 
         if (ids.includes(sessionStore.id)) {
-            this._showToast('Không thể xoá cuộc họp đang chạy — hãy Dừng trước', 'error');
+            this._showToast(t('session.deleteRunningError'), 'error');
             return;
         }
 
         const agreed = await this._promptConfirmDelete({
-            title: 'Xác nhận xoá log',
-            message: `Bạn có chắc chắn muốn xoá vĩnh viễn ${count} log đã chọn? Hành động này không thể hoàn tác.`,
-            confirmText: 'Xoá'
+            title: t('modal.delete.title'),
+            message: t('modal.delete.confirmBatch', { count }),
+            confirmText: t('modal.delete.confirm'),
         });
         if (!agreed) return;
 
         try {
             await invoke('delete_sessions', { ids });
             this._selectedSessionIds.clear();
-            this._showToast(`Đã xóa ${count} log`, 'success');
+            this._showToast(t('modal.delete.batchSuccess', { count }), 'success');
             await this._showSessions();
         } catch (err) {
-            this._showToast(`Xóa thất bại: ${err}`, 'error');
+            this._showToast(t('modal.delete.failed', { error: err }), 'error');
         }
     }
 
@@ -6048,10 +6110,10 @@ class App {
                             const titleEl = document.getElementById('session-viewer-title');
                             if (titleEl) titleEl.textContent = newTitle;
                         }
-                        this._showToast('Đã đổi tên cuộc họp', 'success');
+                        this._showToast(t('modal.rename.success'), 'success');
                         await this._showSessions();
                     } catch (err) {
-                        this._showToast(`Đổi tên thất bại: ${err}`, 'error');
+                        this._showToast(t('modal.rename.failed', { error: err }), 'error');
                     }
                 }
                 modal.style.display = 'none';
@@ -6406,7 +6468,7 @@ class App {
             this._renderTagFilterSelect();
 
             if (this._cachedSessions.length === 0) {
-                listEl.innerHTML = '<div class="sessions-empty">Chưa có meeting log nào được lưu.<br><button type="button" class="btn-primary small" id="btn-empty-import-audio" style="margin-top:12px;">📥 Import file ghi âm</button></div>';
+                listEl.innerHTML = `<div class="sessions-empty">${this._esc(t('logsTable.emptyNoLogs'))}<br><button type="button" class="btn-primary small" id="btn-empty-import-audio" style="margin-top:12px;">${this._esc(t('library.import'))}</button></div>`;
                 document.getElementById('btn-empty-import-audio')?.addEventListener('click', () => this._handleOpenImportAudio());
                 this._updateBatchSelectionUI();
                 return;
@@ -6490,7 +6552,7 @@ class App {
 
         const rows = pageItems.length
             ? pageItems.map((session, index) => this._renderSessionTableRow(session, pageStart + index + 1, isPersonalScope, isAllScope)).join('')
-            : `<tr><td class="logs-table-empty" colspan="${isPersonalScope ? 8 : 9}">Không tìm thấy log nào phù hợp bộ lọc.</td></tr>`;
+            : `<tr><td class="logs-table-empty" colspan="${isPersonalScope ? 8 : 9}">${t('logsTable.empty')}</td></tr>`;
 
         const existingTable = listEl.querySelector('.logs-table');
         if (existingTable && existingTable.dataset.scope === activeScope) {
@@ -6510,7 +6572,7 @@ class App {
             if (batchDeleteBtn) {
                 batchDeleteBtn.classList.toggle('is-visible', selectedCount > 0);
                 batchDeleteBtn.disabled = selectedCount === 0;
-                batchDeleteBtn.textContent = `🗑 Xoá (${selectedCount})`;
+                batchDeleteBtn.textContent = `🗑 ${t('logsTable.deleteSelected', { count: selectedCount })}`;
             }
 
             // Update sort indicators in table header
@@ -6523,7 +6585,7 @@ class App {
 
             // Update pagination text and button disabled states
             const totalCountEl = listEl.querySelector('.session-pagination-count');
-            if (totalCountEl) totalCountEl.textContent = `${filtered.length} log`;
+            if (totalCountEl) totalCountEl.textContent = t('logsTable.count', { count: filtered.length });
             const pageTextEl = listEl.querySelector('.session-pagination-page-text');
             if (pageTextEl) pageTextEl.textContent = `${this._sessionPage} / ${totalPages}`;
             const prevBtn = listEl.querySelector('[data-page-prev]');
@@ -6577,7 +6639,7 @@ class App {
         const tags = Array.from(tagSet).sort();
 
         const renderSelectOptions = (items, selectedVal, allLabel, formatFn) => {
-            let html = `<option value="">Tất cả ${allLabel}</option>`;
+            let html = `<option value="">${this._esc(allLabel)}</option>`;
             for (const item of items) {
                 const val = typeof item === 'string' ? item : item.id;
                 const label = formatFn ? formatFn(item) : (typeof item === 'string' ? item : item.name);
@@ -6592,36 +6654,36 @@ class App {
         const activeCategory = this._activeCategoryFilter[0] || '';
         const activeTag = this._activeTagFilter[0] || '';
 
-        const customerHeader = isPersonalScope ? '' : `<th class="${sortHeaderClass('customer_name')}" data-sort="customer_name">Khách hàng <span class="sort-icon">${sortIcon('customer_name')}</span></th>`;
-        const projectHeaderTitle = isPersonalScope ? 'Dự án cá nhân' : 'Dự án';
-        const customerFilterCell = isPersonalScope ? '' : `<td><select class="logs-filter-select" data-filter-select="customer">${renderSelectOptions(customers, activeCustomer, 'khách hàng', c => (c.status === 'active' ? '🟢 ' : (c.status === 'archived' ? '⚪ ' : '')) + c.name)}</select></td>`;
+        const customerHeader = isPersonalScope ? '' : `<th class="${sortHeaderClass('customer_name')}" data-sort="customer_name">${t('logsTable.customer')} <span class="sort-icon">${sortIcon('customer_name')}</span></th>`;
+        const projectHeaderTitle = isPersonalScope ? t('logsTable.personalProject') : t('logsTable.project');
+        const customerFilterCell = isPersonalScope ? '' : `<td><select class="logs-filter-select" data-filter-select="customer">${renderSelectOptions(customers, activeCustomer, t('logsTable.allCustomers'), c => (c.status === 'active' ? '🟢 ' : (c.status === 'archived' ? '⚪ ' : '')) + c.name)}</select></td>`;
 
         const header = `<tr class="logs-column-header">
-                <th class="logs-check-column"><input id="chk-select-all-sessions" type="checkbox" title="Chọn tất cả log đang lọc"></th>
+                <th class="logs-check-column"><input id="chk-select-all-sessions" type="checkbox" title="${this._escAttr(t('logsTable.selectAll'))}"></th>
                 <th>#</th>
-                <th class="${sortHeaderClass('title')}" data-sort="title">Tên log <span class="sort-icon">${sortIcon('title')}</span></th>
-                <th class="${sortHeaderClass('created_at')}" data-sort="created_at">Ngày <span class="sort-icon">${sortIcon('created_at')}</span></th>
+                <th class="${sortHeaderClass('title')}" data-sort="title">${t('logsTable.title')} <span class="sort-icon">${sortIcon('title')}</span></th>
+                <th class="${sortHeaderClass('created_at')}" data-sort="created_at">${t('logsTable.date')} <span class="sort-icon">${sortIcon('created_at')}</span></th>
                 ${customerHeader}
                 <th class="${sortHeaderClass('project_name')}" data-sort="project_name">${projectHeaderTitle} <span class="sort-icon">${sortIcon('project_name')}</span></th>
-                <th class="${sortHeaderClass('category')}" data-sort="category">Category <span class="sort-icon">${sortIcon('category')}</span></th>
-                <th class="${sortHeaderClass('tags')}" data-sort="tags">Tag <span class="sort-icon">${sortIcon('tags')}</span></th>
-                <th class="logs-col-actions-header">Actions</th>
+                <th class="${sortHeaderClass('category')}" data-sort="category">${t('logsTable.category')} <span class="sort-icon">${sortIcon('category')}</span></th>
+                <th class="${sortHeaderClass('tags')}" data-sort="tags">${t('logsTable.tags')} <span class="sort-icon">${sortIcon('tags')}</span></th>
+                <th class="logs-col-actions-header">${t('logsTable.actions')}</th>
             </tr>
             <tr class="logs-filter-row">
                 <td colspan="2" class="logs-filter-actions-cell">
-                    <button type="button" class="btn-danger-small logs-delete-selected ${selectedCount ? 'is-visible' : ''}" data-batch-delete ${selectedCount ? '' : 'disabled'} title="Xóa các log đã chọn">🗑 Xoá (${selectedCount})</button>
+                    <button type="button" class="btn-danger-small logs-delete-selected ${selectedCount ? 'is-visible' : ''}" data-batch-delete ${selectedCount ? '' : 'disabled'} title="${this._escAttr(t('logsTable.deleteSelectedTitle'))}">🗑 ${t('logsTable.deleteSelected', { count: selectedCount })}</button>
                 </td>
-                <td><input type="search" class="logs-filter-input" data-filter-name value="${this._escAttr(this._sessionNameQuery)}" placeholder="Lọc tên log"></td>
+                <td><input type="search" class="logs-filter-input" data-filter-name value="${this._escAttr(this._sessionNameQuery)}" placeholder="${this._escAttr(t('logsTable.filterTitlePlaceholder'))}"></td>
                 <td></td>
                 ${customerFilterCell}
-                <td><select class="logs-filter-select" data-filter-select="project">${renderSelectOptions(relevantProjects, activeProject, isPersonalScope ? 'dự án cá nhân' : 'dự án')}</select></td>
-                <td><select class="logs-filter-select" data-filter-select="category">${renderSelectOptions(categories, activeCategory, 'category')}</select></td>
-                <td><select class="logs-filter-select" data-filter-select="tag">${renderSelectOptions(tags, activeTag, 'tag', t => {
+                <td><select class="logs-filter-select" data-filter-select="project">${renderSelectOptions(relevantProjects, activeProject, isPersonalScope ? t('logsTable.allPersonalProjects') : t('logsTable.allProjects'))}</select></td>
+                <td><select class="logs-filter-select" data-filter-select="category">${renderSelectOptions(categories, activeCategory, t('logsTable.allCategories'))}</select></td>
+                <td><select class="logs-filter-select" data-filter-select="tag">${renderSelectOptions(tags, activeTag, t('logsTable.allTags'), t => {
                     const tKey = (t || '').toLowerCase();
                     const count = (this._cachedSessions || []).filter(s => (s.tags || []).some(x => (x || '').toLowerCase() === tKey)).length;
                     return `#${t} (${count})`;
                 })}</select></td>
-                <td><button type="button" class="logs-reset-filters" data-clear-filters title="Xoá toàn bộ điều kiện lọc">↺ Clear</button></td>
+                <td><button type="button" class="logs-reset-filters" data-clear-filters title="${this._escAttr(t('logsTable.clearFiltersTitle'))}">${t('logsTable.clearFilters')}</button></td>
             </tr>`;
 
         const colGroup = isPersonalScope
@@ -6630,8 +6692,8 @@ class App {
 
         listEl.innerHTML = `<div class="logs-table-container"><table class="logs-table" data-scope="${activeScope}">${colGroup}<thead>${header}</thead><tbody>${rows}</tbody></table></div>
             <div class="session-pagination">
-                <span class="session-pagination-count">${filtered.length} log</span>
-                <label>Hiển thị <select data-page-size><option value="10" ${this._sessionPageSize === 10 ? 'selected' : ''}>10</option><option value="20" ${this._sessionPageSize === 20 ? 'selected' : ''}>20</option><option value="50" ${this._sessionPageSize === 50 ? 'selected' : ''}>50</option></select> / trang</label>
+                <span class="session-pagination-count">${t('logsTable.count', { count: filtered.length })}</span>
+                <label>${t('logsTable.pageSizeDisplay')} <select data-page-size><option value="10" ${this._sessionPageSize === 10 ? 'selected' : ''}>10</option><option value="20" ${this._sessionPageSize === 20 ? 'selected' : ''}>20</option><option value="50" ${this._sessionPageSize === 50 ? 'selected' : ''}>50</option></select> ${t('logsTable.pageSizePer')}</label>
                 <div class="session-pagination-actions"><button type="button" data-page-prev ${this._sessionPage === 1 ? 'disabled' : ''}>‹</button><span class="session-pagination-page-text">${this._sessionPage} / ${totalPages}</span><button type="button" data-page-next ${this._sessionPage === totalPages ? 'disabled' : ''}>›</button></div>
             </div>`;
 
@@ -6659,18 +6721,18 @@ class App {
 
     _renderSessionTableRow(session, number, isPersonalScope = false, isAllScope = false) {
         const sessionTags = session.tags || [];
-        const tags = sessionTags.map(tag => `<button type="button" class="session-tag-badge" data-tag="${this._escAttr(tag)}" title="Lọc Logs theo #${this._escAttr(tag)}">#${this._esc(tag)}</button>`).join('') || '<span class="logs-empty-value">—</span>';
+        const tags = sessionTags.map(tag => `<button type="button" class="session-tag-badge" data-tag="${this._escAttr(tag)}" title="${this._escAttr(t('logsTable.filterByTag', { tag }))}">#${this._esc(tag)}</button>`).join('') || '<span class="logs-empty-value">—</span>';
         const tagsTitle = sessionTags.map(tag => `#${tag}`).join(', ');
-        const customer = session.customer_name ? `<button type="button" class="session-customer-badge" data-customer-id="${this._escAttr(session.customer_id || '')}" title="Lọc Logs theo khách hàng ${this._escAttr(session.customer_name)}">${this._esc(session.customer_name)}</button>` : '<span class="logs-empty-value">—</span>';
-        const project = session.project_name ? `<button type="button" class="session-project-badge" data-project-id="${this._escAttr(session.project_id || '')}" title="Lọc Logs theo dự án ${this._escAttr(session.project_name)}">${this._esc(session.project_name)}</button>` : '<span class="logs-empty-value">—</span>';
-        const category = session.category ? `<button type="button" class="session-category-badge" data-category="${this._escAttr(session.category)}" title="Lọc Logs theo category ${this._escAttr(session.category)}">${this._esc(session.category)}</button>` : '<span class="logs-empty-value">—</span>';
-        const retranscriptButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-retranscript-session="${this._escAttr(session.id)}" title="Dùng file ghi âm để Gemini tạo lại Logs">🔄</button>`;
-        const editButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-edit-session="${this._escAttr(session.id)}" title="Sửa thông tin">${PENCIL_YELLOW_ICON}</button>`;
+        const customer = session.customer_name ? `<button type="button" class="session-customer-badge" data-customer-id="${this._escAttr(session.customer_id || '')}" title="${this._escAttr(t('logsTable.filterByCustomer', { customer: session.customer_name }))}">${this._esc(session.customer_name)}</button>` : '<span class="logs-empty-value">—</span>';
+        const project = session.project_name ? `<button type="button" class="session-project-badge" data-project-id="${this._escAttr(session.project_id || '')}" title="${this._escAttr(t('logsTable.filterByProject', { project: session.project_name }))}">${this._esc(session.project_name)}</button>` : '<span class="logs-empty-value">—</span>';
+        const category = session.category ? `<button type="button" class="session-category-badge" data-category="${this._escAttr(session.category)}" title="${this._escAttr(t('logsTable.filterByCategory', { category: session.category }))}">${this._esc(session.category)}</button>` : '<span class="logs-empty-value">—</span>';
+        const retranscriptButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-retranscript-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.retranscriptTooltip'))}">🔄</button>`;
+        const editButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-edit-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.editTooltip'))}">${PENCIL_YELLOW_ICON}</button>`;
 
         const scopeBadge = isAllScope
             ? (session.scope === 'personal'
-                ? '<span class="scope-badge-personal" style="margin-right:6px; font-size:10px;">👤 Cá nhân</span>'
-                : '<span class="scope-badge-work" style="margin-right:6px; font-size:10px;">💼 Công việc</span>')
+                ? `<span class="scope-badge-personal" style="margin-right:6px; font-size:10px;">${t('scope.personal')}</span>`
+                : `<span class="scope-badge-work" style="margin-right:6px; font-size:10px;">${t('scope.work')}</span>`)
             : '';
 
         const customerTd = isPersonalScope ? '' : `<td>${customer}</td>`;
@@ -6678,10 +6740,10 @@ class App {
         return `<tr data-session-id="${this._escAttr(session.id)}" data-legacy="${session.has_legacy_only ? '1' : '0'}">
             <td class="logs-check-column"><input type="checkbox" data-session-check="${this._escAttr(session.id)}" ${this._selectedSessionIds.has(session.id) ? 'checked' : ''}></td>
             <td class="logs-index">${number}</td>
-            <td class="logs-title-cell"><button type="button" class="logs-title-link" data-open-session="${this._escAttr(session.id)}">${scopeBadge}${this._esc(session.title || 'Cuộc họp chưa đặt tên')}</button></td>
+            <td class="logs-title-cell"><button type="button" class="logs-title-link" data-open-session="${this._escAttr(session.id)}">${scopeBadge}${this._esc(session.title || t('logsTable.untitled'))}</button></td>
             <td class="logs-date">${this._formatSessionDate(session.created_at)}</td>
             ${customerTd}<td>${project}</td><td>${category}</td><td><div class="logs-tags" title="${this._escAttr(tagsTitle)}">${tags}</div></td>
-            <td><div class="logs-actions">${retranscriptButton}${editButton}<button type="button" class="session-btn-action" data-copy-session="${this._escAttr(session.id)}" title="Copy nội dung">⧉</button><button type="button" class="session-delete-btn" data-delete-session="${this._escAttr(session.id)}" title="Xoá log">×</button></div></td>
+            <td><div class="logs-actions">${retranscriptButton}${editButton}<button type="button" class="session-btn-action" data-copy-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.copyTooltip'))}">⧉</button><button type="button" class="session-delete-btn" data-delete-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.deleteTooltip'))}">×</button></div></td>
         </tr>`;
     }
 
@@ -6706,7 +6768,7 @@ class App {
             } else if (custId) {
                 availableProjects = availableProjects.filter(p => !p.customer_id || p.customer_id === custId);
             }
-            projectSelect.innerHTML = optionsContext.renderSelectOptions(availableProjects, this._activeProjectFilter[0] || '', optionsContext.isPersonalScope ? 'dự án cá nhân' : 'dự án');
+            projectSelect.innerHTML = optionsContext.renderSelectOptions(availableProjects, this._activeProjectFilter[0] || '', optionsContext.isPersonalScope ? t('logsTable.allPersonalProjects') : t('logsTable.allProjects'));
         };
 
         const applyFilter = (kind, select) => {
@@ -6858,7 +6920,7 @@ class App {
             const text = isLegacy ? await invoke('read_legacy_session', { id }) : (await invoke('read_session', { id })).md;
             if (text) {
                 await navigator.clipboard.writeText(text);
-                this._showToast('Đã copy nội dung log ✓', 'success');
+                this._showToast(t('logsTable.copySuccess'), 'success');
             }
         } catch (err) {
             this._showToast(`Lỗi copy: ${err}`, 'error');
@@ -6867,25 +6929,25 @@ class App {
 
     async _deleteSessionFromTable(id) {
         if (id === sessionStore.id) {
-            this._showToast('Không thể xoá cuộc họp đang chạy — hãy Dừng trước', 'error');
+            this._showToast(t('session.deleteRunningError'), 'error');
             return;
         }
         const sess = (this._cachedSessions || []).find(s => s.id === id);
         const title = sess?.title || id;
         const agreed = await this._promptConfirmDelete({
-            title: 'Xác nhận xoá log',
-            message: `Bạn có chắc chắn muốn xoá vĩnh viễn log "${title}"? Hành động này không thể hoàn tác.`,
-            confirmText: 'Xoá'
+            title: t('modal.delete.title'),
+            message: t('modal.delete.confirmSingle', { title }),
+            confirmText: t('modal.delete.confirm'),
         });
         if (!agreed) return;
 
         try {
             await invoke('delete_session', { id });
             this._selectedSessionIds.delete(id);
-            this._showToast('Đã xóa log', 'success');
+            this._showToast(t('modal.delete.singleSuccess'), 'success');
             await this._showSessions();
         } catch (err) {
-            this._showToast(`Xóa thất bại: ${err}`, 'error');
+            this._showToast(t('modal.delete.failed', { error: err }), 'error');
         }
     }
 
@@ -6908,7 +6970,7 @@ class App {
         }
 
         if (filtered.length === 0) {
-            listEl.innerHTML = `<div class="sessions-empty">Không tìm thấy cuộc họp nào phù hợp bộ lọc.</div>`;
+            listEl.innerHTML = `<div class="sessions-empty">${this._esc(t('logsTable.empty'))}</div>`;
             this._updateBatchSelectionUI();
             return;
         }
@@ -7025,7 +7087,7 @@ class App {
                     }
                     if (text) {
                         await navigator.clipboard.writeText(text);
-                        this._showToast('Đã copy nội dung cuộc họp ✓', 'success');
+                        this._showToast(t('logsTable.copySuccess'), 'success');
                         const orig = btn.innerHTML;
                         btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
                         setTimeout(() => { if (btn) btn.innerHTML = orig; }, 1500);
@@ -7042,24 +7104,24 @@ class App {
                 e.stopPropagation();
                 const id = btn.dataset.id;
                 if (id === sessionStore.id) {
-                    this._showToast('Không thể xoá cuộc họp đang chạy — hãy Dừng trước', 'error');
+                    this._showToast(t('session.deleteRunningError'), 'error');
                     return;
                 }
                 const sess = (this._cachedSessions || []).find(s => s.id === id);
                 const title = sess?.title || id;
                 const agreed = await this._promptConfirmDelete({
-                    title: 'Xác nhận xoá log',
-                    message: `Bạn có chắc chắn muốn xoá vĩnh viễn log "${title}"? Hành động này không thể hoàn tác.`,
-                    confirmText: 'Xoá'
+                    title: t('modal.delete.title'),
+                    message: t('modal.delete.confirmSingle', { title }),
+                    confirmText: t('modal.delete.confirm'),
                 });
                 if (!agreed) return;
                 try {
                     await invoke('delete_session', { id });
                     this._selectedSessionIds.delete(id);
                     await this._showSessions();
-                    this._showToast('Đã xóa log', 'success');
+                    this._showToast(t('modal.delete.singleSuccess'), 'success');
                 } catch (err) {
-                    this._showToast(`Delete failed: ${err}`, 'error');
+                    this._showToast(t('modal.delete.failed', { error: err }), 'error');
                 }
             });
         });
@@ -7076,7 +7138,7 @@ class App {
     }
 
     _renderSessionItem(s) {
-        const title = this._esc(s.title || 'Cuộc họp chưa đặt tên');
+        const title = this._esc(s.title || t('logsTable.untitled'));
         const created = this._esc(s.created_at || '').slice(0, 16);
         const duration = this._formatSeconds(s.duration_sec || 0);
         const engine = s.engine || 'unknown';
@@ -7089,38 +7151,38 @@ class App {
                 ? `<span class="session-badge session-language-pair">${this._formatLanguage(s.source_lang)}</span>`
                 : `<span class="session-badge session-language-pair">${this._formatLanguage(s.source_lang)} <span class="session-language-arrow">→</span> ${this._formatLanguage(s.target_lang)}</span>`)
             : '';
-        const segCount = s.segment_count > 0 ? `<span class="session-meta-dim">${s.segment_count} câu</span>` : '';
+        const segCount = s.segment_count > 0 ? `<span class="session-meta-dim">${this._esc(t('logsTable.segmentCount', { count: s.segment_count }))}</span>` : '';
         const isChecked = this._selectedSessionIds.has(s.id);
 
         // Customer badge
         const customerBadge = (!s.has_legacy_only && s.customer_name)
-            ? `<span class="session-customer-badge" data-customer-id="${this._escAttr(s.customer_id || '')}" style="border-color:${this._escAttr(s.customer_color || '#431A46')}44; color:${this._escAttr(s.customer_color || '#D9B0DE')}; background:${this._escAttr(s.customer_color || '#431A46')}1a;" title="Khách hàng: ${this._escAttr(s.customer_name)}">🤝 ${this._esc(s.customer_name)}</span>`
+            ? `<span class="session-customer-badge" data-customer-id="${this._escAttr(s.customer_id || '')}" style="border-color:${this._escAttr(s.customer_color || '#431A46')}44; color:${this._escAttr(s.customer_color || '#D9B0DE')}; background:${this._escAttr(s.customer_color || '#431A46')}1a;" title="${this._escAttr(t('logsTable.filterByCustomer', { customer: s.customer_name }))}">🤝 ${this._esc(s.customer_name)}</span>`
             : '';
 
         // Project badge
         const projectBadge = (!s.has_legacy_only && s.project_name)
-            ? `<span class="session-project-badge ${s.project_status === 'archived' ? 'archived' : ''}" data-project-id="${this._escAttr(s.project_id || '')}" style="border-color:${this._escAttr(s.project_color || '#431A46')}44; color:${this._escAttr(s.project_color || '#D9B0DE')}; background:${this._escAttr(s.project_color || '#431A46')}1a;" title="Dự án: ${this._escAttr(s.project_name)}${s.project_status === 'archived' ? ' (Đã dừng)' : ''}">🚀 ${this._esc(s.project_name)}</span>`
+            ? `<span class="session-project-badge ${s.project_status === 'archived' ? 'archived' : ''}" data-project-id="${this._escAttr(s.project_id || '')}" style="border-color:${this._escAttr(s.project_color || '#431A46')}44; color:${this._escAttr(s.project_color || '#D9B0DE')}; background:${this._escAttr(s.project_color || '#431A46')}1a;" title="${this._escAttr(t('logsTable.filterByProject', { project: s.project_name }))}${s.project_status === 'archived' ? t('logsTable.statusArchived') : ''}">🚀 ${this._esc(s.project_name)}</span>`
             : '';
 
         // Category badge
         const categoryBadge = (!s.has_legacy_only && s.category)
-            ? `<span class="session-category-badge" data-category="${this._escAttr(s.category)}" title="Category: ${this._escAttr(s.category)}">🗂️ ${this._esc(s.category)}</span>`
+            ? `<span class="session-category-badge" data-category="${this._escAttr(s.category)}" title="${this._escAttr(t('logsTable.filterByCategory', { category: s.category }))}">🗂️ ${this._esc(s.category)}</span>`
             : '';
 
         // Tags
         const tagsHtml = (!s.has_legacy_only && s.tags && s.tags.length > 0)
-            ? s.tags.map(t => `<span class="session-tag-badge" data-tag="${this._escAttr(t)}" title="Lọc theo #${this._escAttr(t)}">#${this._esc(t)}</span>`).join('')
+            ? s.tags.map(tTag => `<span class="session-tag-badge" data-tag="${this._escAttr(tTag)}" title="${this._escAttr(t('logsTable.filterByTag', { tag: tTag }))}">#${this._esc(tTag)}</span>`).join('')
             : '';
 
         const retranscriptBtn = !s.has_legacy_only
-            ? `<button type="button" class="session-btn-action retranscript" data-id="${this._escAttr(s.id)}" title="Dùng file ghi âm để Gemini tạo lại Logs">🔄 Re-transcript</button>`
+            ? `<button type="button" class="session-btn-action retranscript" data-id="${this._escAttr(s.id)}" title="${this._escAttr(t('logsTable.retranscriptTooltip'))}">🔄 Re-transcript</button>`
             : '';
         const editBtn = !s.has_legacy_only
-            ? `<button type="button" class="session-btn-action edit-meta" data-id="${this._escAttr(s.id)}" title="Sửa thông tin / Đổi tên / Dự án / Category / Thẻ">${PENCIL_YELLOW_ICON}Sửa</button>`
+            ? `<button type="button" class="session-btn-action edit-meta" data-id="${this._escAttr(s.id)}" title="${this._escAttr(t('logsTable.editTooltip'))}">${PENCIL_YELLOW_ICON}${this._esc(t('common.edit'))}</button>`
             : '';
 
         const minutesBadge = s.has_meeting_minutes
-            ? `<span class="session-badge" style="background:#10b98126;color:#34d399;border:1px solid #10b9814d;" title="Đã có biên bản Meeting Minutes">📋 Minutes</span>`
+            ? `<span class="session-badge" style="background:#10b98126;color:#34d399;border:1px solid #10b9814d;" title="${this._escAttr(t('session.minutesBadgeDone'))}">📋 Minutes</span>`
             : '';
 
         return `<div class="session-item" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}">
@@ -7130,13 +7192,13 @@ class App {
                 <div class="session-actions-inline">
                     ${retranscriptBtn}
                     ${editBtn}
-                    <button type="button" class="session-btn-action copy-session" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}" title="Copy nội dung cuộc họp">
+                    <button type="button" class="session-btn-action copy-session" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}" title="${this._escAttr(t('logsTable.copyTooltip'))}">
                         <svg class="icon-copy-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                         </svg>
                     </button>
-                    <button type="button" class="session-delete-btn" data-id="${this._escAttr(s.id)}" title="Xóa">×</button>
+                    <button type="button" class="session-delete-btn" data-id="${this._escAttr(s.id)}" title="${this._escAttr(t('logsTable.deleteTooltip'))}">×</button>
                 </div>
             </div>
             <div class="session-item-row2">
@@ -7186,9 +7248,9 @@ class App {
 
         // Populate customer select
         if (selectCust) {
-            let custHtml = '<option value="">(Không chọn KH)</option>';
+            let custHtml = `<option value="">${this._esc(t('modal.importAudio.noCustomer'))}</option>`;
             for (const c of allCustomers) {
-                const statusSuffix = c.status === 'archived' ? ' (Đã dừng)' : '';
+                const statusSuffix = c.status === 'archived' ? t('logsTable.statusArchived') : '';
                 custHtml += `<option value="${this._escAttr(c.id)}">🤝 ${this._esc(c.name)}${statusSuffix}</option>`;
             }
             selectCust.innerHTML = custHtml;
@@ -7223,7 +7285,7 @@ class App {
                 const categoryScope = category.scope || 'work';
                 return categoryScope === scope;
             });
-            let catHtml = '<option value="">(Không chọn category)</option>';
+            let catHtml = `<option value="">${this._esc(t('modal.importAudio.noCategory'))}</option>`;
             for (const category of availableCategories) {
                 catHtml += `<option value="${this._escAttr(category.name)}">🗂️ ${this._esc(category.name)}</option>`;
             }
@@ -7249,9 +7311,9 @@ class App {
                     filteredProjs = filteredProjs.filter(p => p.customer_id === selectedCustomerId || p.id === currentProjectId);
                 }
             }
-            let projHtml = '<option value="">(Không gán dự án)</option>';
+            let projHtml = `<option value="">${this._esc(t('modal.importAudio.noProject'))}</option>`;
             for (const p of filteredProjs) {
-                const statusSuffix = p.status === 'archived' ? ' (Đã dừng)' : '';
+                const statusSuffix = p.status === 'archived' ? t('logsTable.statusArchived') : '';
                 projHtml += `<option value="${this._escAttr(p.id)}">🚀 ${this._esc(p.name)}${statusSuffix}</option>`;
             }
             selectProj.innerHTML = projHtml;
@@ -7362,10 +7424,10 @@ class App {
                             console.warn('[App] Failed to refresh viewer after metadata edit:', refErr);
                         }
                     }
-                    this._showToast('Đã lưu thông tin cuộc họp ✓', 'success');
+                    this._showToast(t('modal.metadata.success'), 'success');
                     await this._showSessions();
                 } catch (err) {
-                    this._showToast(`Lỗi lưu thông tin: ${err}`, 'error');
+                    this._showToast(t('modal.metadata.failed', { error: err }), 'error');
                 }
                 resolve();
             };
@@ -9929,21 +9991,25 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     }
 
     _getQuickLangName(code) {
-        const map = {
-            vi: 'Tiếng Việt',
-            ja: '日本語',
-            en: 'English',
-            none: 'Không dịch',
-            off: 'Không dịch',
-            auto: 'Tự động',
-        };
         const normalized = String(code || '').toLowerCase().split(/[-_]/)[0];
-        return map[normalized] || LANGUAGE_DISPLAY[normalized]?.[1] || code;
+        if (normalized === 'off' || normalized === 'none') {
+            return t('lang.name.none');
+        }
+        if (normalized === 'auto') {
+            return t('lang.name.auto');
+        }
+        const key = `lang.name.${normalized}`;
+        const translated = t(key);
+        if (translated && translated !== key) {
+            return translated;
+        }
+        return LANGUAGE_DISPLAY[normalized]?.[1] || code;
     }
 
     _formatLanguage(code) {
         const normalized = String(code || '').toLowerCase().split(/[-_]/)[0];
-        const [flag, name] = LANGUAGE_DISPLAY[normalized] || ['🌐', String(code || '').toUpperCase()];
+        const [flag] = LANGUAGE_DISPLAY[normalized] || ['🌐'];
+        const name = this._getQuickLangName(normalized);
         return `<span class="session-language"><span class="session-language-flag">${flag}</span> ${this._esc(name)}</span>`;
     }
 
@@ -9980,12 +10046,12 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         document.getElementById('btn-minutes-regenerate')?.addEventListener('click', async () => {
             const cur = this._currentViewedSession;
             if (!cur || cur.isLegacy) return;
-            await this._generateMeetingMinutesForSession(cur.id, this._activeMinutesLang || 'ja');
+            await this._generateMeetingMinutesForSession(cur.id, this._activeMinutesLang || 'en');
         });
         document.getElementById('btn-minutes-generate-empty')?.addEventListener('click', async () => {
             const cur = this._currentViewedSession;
             if (!cur || cur.isLegacy) return;
-            await this._generateMeetingMinutesForSession(cur.id, this._activeMinutesLang || 'ja');
+            await this._generateMeetingMinutesForSession(cur.id, this._activeMinutesLang || 'en');
         });
 
         // Tab Notes actions
@@ -10009,7 +10075,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 const logs = this._sessionLogsEditor.getContent();
                 if (logs) {
                     await navigator.clipboard.writeText(logs);
-                    this._showToast('Đã copy thoại cuộc họp ✓', 'success');
+                    this._showToast(t('session.copyDialogueSuccess'), 'success');
                 }
             }
         });
@@ -10032,11 +10098,11 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     }
 
     _minutesLangName(lang) {
-        return lang === 'ja' ? 'Tiếng Nhật' : (lang === 'en' ? 'English' : 'Tiếng Việt');
+        return this._getQuickLangName(lang);
     }
 
     _switchMinutesSubtab(lang) {
-        this._activeMinutesLang = lang || 'ja';
+        this._activeMinutesLang = lang || 'en';
         const subtabs = ['ja', 'vi', 'en'];
         subtabs.forEach(l => {
             const btn = document.getElementById(`subtab-btn-minutes-${l}`);
@@ -10048,7 +10114,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     }
 
     _renderCurrentMinutesSubtab() {
-        const lang = this._activeMinutesLang || 'ja';
+        const lang = this._activeMinutesLang || 'en';
         const content = (this._loadedMinutes && this._loadedMinutes[lang]) ? this._loadedMinutes[lang].trim() : '';
 
         const emptyEl = document.getElementById('minutes-empty');
@@ -10234,7 +10300,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const p = n => String(n).padStart(2, '0');
             formatted = `${p(date.getDate())}/${p(date.getMonth() + 1)}/${date.getFullYear()} ${p(date.getHours())}:${p(date.getMinutes())}`;
         }
-        status.textContent = `Đã Re-transcript vào ${formatted}`;
+        status.textContent = t('session.retranscribedAt', { date: formatted });
         status.style.display = '';
     }
 
@@ -10251,17 +10317,17 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const copyButton = (kind, title, extraClass = '') => `<button type="button" class="panel-copy-btn ${extraClass}" data-copy-session-log="${kind}" title="${title}"><svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>`;
         const singleRow = (segment, text) => `<div class="session-log-line"><span class="session-log-time">${esc(segment.ts || '')}</span><span>${esc(text)}</span></div>`;
         const dualRow = (index, text) => `<div class="session-log-line session-log-dual-line" data-segment-index="${index}">${esc(text)}</div>`;
-        const timelineRow = (index, segment) => `<button type="button" class="session-log-timeline-row" data-segment-index="${index}" title="Nhấp để cuộn tới câu tương ứng">${esc(segment.ts || '--:--')}</button>`;
+        const timelineRow = (index, segment) => `<button type="button" class="session-log-timeline-row" data-segment-index="${index}" title="${this._escAttr(t('session.timelineRowTooltip'))}">${esc(segment.ts || '--:--')}</button>`;
 
         if (!segments.length) {
-            container.innerHTML = '<div class="session-logs-empty">Chưa có nội dung transcript.</div>';
+            container.innerHTML = `<div class="session-logs-empty">${this._esc(t('session.logsEmpty'))}</div>`;
             return;
         }
 
-        const jumpBottomButton = `<button type="button" class="live-jump-bottom-btn session-log-scroll-bottom" aria-label="Cuộn xuống đoạn mới nhất" title="Cuộn xuống đoạn mới nhất"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="4" x2="12" y2="19"></line><polyline points="19 13 12 20 5 13"></polyline></svg><span>Mới nhất</span></button>`;
+        const jumpBottomButton = `<button type="button" class="live-jump-bottom-btn session-log-scroll-bottom" aria-label="${this._escAttr(t('session.scrollBottomTooltip'))}" title="${this._escAttr(t('session.scrollBottomTooltip'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="4" x2="12" y2="19"></line><polyline points="19 13 12 20 5 13"></polyline></svg><span>${this._esc(t('session.latest'))}</span></button>`;
 
         if (!hasTranslation) {
-            container.innerHTML = `<div class="session-logs-live session-logs-single"><section class="session-log-column"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', 'Copy toàn bộ bản gốc', 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map(segment => singleRow(segment, segment.src)).join('')}</div></section>${jumpBottomButton}</div>`;
+            container.innerHTML = `<div class="session-logs-live session-logs-single"><section class="session-log-column"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', this._escAttr(t('session.copySourceTooltip')), 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map(segment => singleRow(segment, segment.src)).join('')}</div></section>${jumpBottomButton}</div>`;
             const singleScroll = container.querySelector('.session-log-scroll');
             const scrollBottom = container.querySelector('.session-log-scroll-bottom');
             const updateScrollButton = () => {
@@ -10279,11 +10345,11 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
 
         container.innerHTML = `<div class="session-logs-live session-logs-dual">
-            <section class="session-log-column" data-log-panel="source"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', 'Copy toàn bộ bản gốc', 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.src)).join('')}</div></section>
+            <section class="session-log-column" data-log-panel="source"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', this._escAttr(t('session.copySourceTooltip')), 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.src)).join('')}</div></section>
             <div class="session-log-timeline-wrap">
               <div class="session-log-timeline" data-log-panel="timeline"><header class="panel-column-header panel-time-header"><span class="panel-header-title">Timeline</span></header>${segments.map((segment, index) => timelineRow(index, segment)).join('')}</div>
             </div>
-            <section class="session-log-column" data-log-panel="translation"><header class="panel-column-header"><span class="panel-header-title">🌐 ${esc(targetName)}</span>${copyButton('translation', 'Copy toàn bộ bản dịch', 'btn-copy-translation')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.tgt || '—')).join('')}</div></section>
+            <section class="session-log-column" data-log-panel="translation"><header class="panel-column-header"><span class="panel-header-title">🌐 ${esc(targetName)}</span>${copyButton('translation', this._escAttr(t('session.copyTranslationTooltip')), 'btn-copy-translation')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.tgt || '—')).join('')}</div></section>
             ${jumpBottomButton}
         </div>`;
 
@@ -10377,10 +10443,21 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const validTgt = ['ja', 'vi', 'en', 'none'];
             selectSrc.value = validSrc.includes(curSrc) ? curSrc : 'ja';
             selectTgt.value = validTgt.includes(curTgt) ? curTgt : 'vi';
-            if (currentEl) currentEl.textContent = `Hiện tại: ${curSrc} → ${curTgt}`;
+            this._syncTargetLanguageOptions(selectSrc, selectTgt);
+            const onSrcChange = () => {
+                this._syncTargetLanguageOptions(selectSrc, selectTgt);
+            };
+            selectSrc.addEventListener('change', onSrcChange);
+
+            if (currentEl) {
+                const srcLabel = this._getQuickLangName(curSrc);
+                const tgtLabel = this._getQuickLangName(curTgt);
+                currentEl.textContent = t('modal.sessionLangs.current', { src: srcLabel, tgt: tgtLabel });
+            }
 
             const cleanup = () => {
                 modal.style.display = 'none';
+                selectSrc.removeEventListener('change', onSrcChange);
                 saveBtn?.removeEventListener('click', onSave);
                 cancelBtn?.removeEventListener('click', onCancel);
                 closeBtn?.removeEventListener('click', onCancel);
@@ -10422,7 +10499,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     async _handleEditSessionLangs() {
         const cur = this._currentViewedSession;
         if (!cur || cur.isLegacy) {
-            this._showToast('Log định dạng cũ không sửa được ngôn ngữ', 'info');
+            this._showToast(t('modal.sessionLangs.legacyNotSupported'), 'info');
             return;
         }
         const json = this._currentSessionJson;
@@ -10434,7 +10511,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (!picked) return;
         const { src, tgt } = picked;
         if (src === curSrc && tgt === curTgt) {
-            this._showToast('Cặp ngôn ngữ không thay đổi', 'info');
+            this._showToast(t('modal.sessionLangs.unchanged'), 'info');
             return;
         }
 
@@ -10442,7 +10519,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const origBtn = btn ? btn.innerHTML : '';
         if (btn) {
             btn.disabled = true;
-            btn.innerHTML = '<span class="retranscript-spinner-inline"></span> Đang xử lý...';
+            btn.innerHTML = `<span class="retranscript-spinner-inline"></span> ${this._esc(t('common.processing'))}`;
         }
         try {
             // Chạy Re-transcript từ file ghi âm theo cặp ngôn ngữ mới.
@@ -10451,7 +10528,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             await this._retranscribeSession(cur.id, cur.isLegacy, {
                 sourceLang: src,
                 targetLang: tgt,
-                customTitle: 'Đổi ngôn ngữ & Re-transcript',
+                customTitle: t('modal.sessionLangs.customTitle'),
             });
         } finally {
             if (btn) {
@@ -10501,15 +10578,19 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         status?.classList.remove('is-error');
         if (errorCopy) errorCopy.style.display = 'none';
         if (modalCancel) {
-            modalCancel.title = 'Hủy bỏ';
+            modalCancel.title = t('common.close');
             modalCancel.textContent = '✕';
         }
         if (modalAbort) {
             modalAbort.style.display = '';
-            modalAbort.title = 'Hủy bỏ tiến trình Re-transcript này';
-            modalAbort.textContent = '✕ Hủy bỏ';
+            modalAbort.title = t('retranscript.modal.cancelTooltip');
+            modalAbort.textContent = `✕ ${t('common.cancel')}`;
         }
-        if (modalRunBg) modalRunBg.style.display = '';
+        if (modalRunBg) {
+            modalRunBg.style.display = '';
+            modalRunBg.title = t('retranscript.modal.runBgTooltip');
+            modalRunBg.textContent = `⬇ ${t('retranscript.modal.runBg')}`;
+        }
 
         if (this._activeRetranscribe) {
             this._activeRetranscribe.stage = stage;
@@ -10524,10 +10605,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const sessionStatus = document.getElementById('session-retranscript-status');
             if (retranscriptBtn) {
                 retranscriptBtn.disabled = true;
-                retranscriptBtn.innerHTML = '<span class="retranscript-spinner-inline"></span> Đang transcript...';
+                retranscriptBtn.innerHTML = `<span class="retranscript-spinner-inline"></span> ${this._esc(t('retranscript.progress.inlineBtn'))}`;
             }
             if (sessionStatus) {
-                sessionStatus.textContent = `⏳ Đang Re-transcript: ${text} (${percent}%)`;
+                sessionStatus.textContent = t('retranscript.progress.runningStatus', { text, percent });
                 sessionStatus.style.display = '';
                 sessionStatus.classList.add('is-running');
             }
@@ -10542,16 +10623,16 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
         this._updateFloatingBarsPosition();
 
-        const currentTitle = customTitle || this._activeRetranscribe?.customTitle || (this._activeRetranscribe?.isImport ? 'Import file ghi âm' : 'Re-transcript cuộc họp');
+        const currentTitle = customTitle || this._activeRetranscribe?.customTitle || (this._activeRetranscribe?.isImport ? t('retranscript.floating.importTitle') : t('retranscript.floating.title'));
         if (floatingBar) floatingBar.classList.remove('is-completed');
         if (floatingSpinner) floatingSpinner.style.display = '';
         if (floatingCheck) floatingCheck.style.display = 'none';
         if (floatingTitle) floatingTitle.textContent = currentTitle;
         const modalTitle = document.getElementById('retranscript-progress-title');
-        if (modalTitle) modalTitle.textContent = this._activeRetranscribe?.isImport ? 'Đang import file ghi âm' : 'Đang re-transcript';
+        if (modalTitle) modalTitle.textContent = this._activeRetranscribe?.isImport ? t('retranscript.modal.importing') : t('retranscript.modal.title');
         if (floatingExpand) floatingExpand.style.display = '';
         if (floatingCancel) {
-            floatingCancel.title = 'Hủy bỏ';
+            floatingCancel.title = t('common.close');
             floatingCancel.textContent = '✕';
         }
 
@@ -10601,28 +10682,28 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         modal.style.display = 'flex';
         modalCard?.classList.add('is-error');
         modalSpinner?.style.setProperty('display', 'none');
-        if (modalTitle) modalTitle.textContent = isImport ? 'Import file ghi âm thất bại' : 'Re-transcript thất bại';
-        if (progressText) progressText.textContent = 'Không thể hoàn tất tác vụ. Vui lòng kiểm tra lỗi bên dưới.';
+        if (modalTitle) modalTitle.textContent = isImport ? t('retranscript.modal.importFailed') : t('retranscript.modal.failed');
+        if (progressText) progressText.textContent = t('retranscript.modal.failedDesc');
         if (fill) fill.style.width = '100%';
-        if (pct) pct.textContent = 'Lỗi';
+        if (pct) pct.textContent = t('retranscript.modal.errorPct');
         if (status) {
             status.classList.add('is-error');
-            status.textContent = this._redactSensitiveError(error || 'Không xác định được nguyên nhân lỗi.');
+            status.textContent = this._redactSensitiveError(error || t('retranscript.modal.unknownError'));
         }
         if (errorCopy) {
             errorCopy.style.display = 'inline-flex';
-            errorCopy.title = 'Copy lỗi';
-            errorCopy.setAttribute('aria-label', 'Copy thông báo lỗi');
+            errorCopy.title = t('retranscript.modal.copyError');
+            errorCopy.setAttribute('aria-label', t('retranscript.modal.copyError'));
         }
         if (modalRunBg) modalRunBg.style.display = 'none';
         if (modalCancel) {
-            modalCancel.title = 'Đóng thông báo lỗi';
+            modalCancel.title = t('common.close');
             modalCancel.textContent = '✕';
         }
         if (modalAbort) {
             modalAbort.style.display = '';
-            modalAbort.title = 'Đóng thông báo lỗi';
-            modalAbort.textContent = 'Đóng';
+            modalAbort.title = t('common.close');
+            modalAbort.textContent = t('common.close');
             setTimeout(() => modalAbort.focus(), 0);
         }
 
@@ -10657,13 +10738,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             }
             const original = button.innerHTML;
             button.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-            button.title = 'Đã copy lỗi';
-            button.setAttribute('aria-label', 'Đã copy lỗi');
+            button.title = t('retranscript.modal.copiedError');
+            button.setAttribute('aria-label', t('retranscript.modal.copiedError'));
             setTimeout(() => {
                 if (!button.isConnected) return;
                 button.innerHTML = original;
-                button.title = 'Copy lỗi';
-                button.setAttribute('aria-label', 'Copy thông báo lỗi');
+                button.title = t('retranscript.modal.copyError');
+                button.setAttribute('aria-label', t('retranscript.modal.copyError'));
             }, 1500);
         } catch (copyError) {
             console.warn('[App] Could not copy retranscript error:', copyError);
@@ -10699,13 +10780,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
         if (floatingSpinner) floatingSpinner.style.display = 'none';
         if (floatingCheck) floatingCheck.style.display = 'flex';
-        if (floatingTitle) floatingTitle.textContent = titleText || 'Hoàn tất Re-transcript & Minutes ✓';
-        if (floatingStatus) floatingStatus.textContent = 'Nhấn để xem chi tiết log ➔';
+        if (floatingTitle) floatingTitle.textContent = titleText || t('retranscript.floating.doneWithMinutes');
+        if (floatingStatus) floatingStatus.textContent = t('retranscript.floating.viewDetails');
         if (floatingFill) floatingFill.style.width = '100%';
         if (floatingPct) floatingPct.textContent = '100%';
         if (floatingExpand) floatingExpand.style.display = 'none';
         if (floatingCancel) {
-            floatingCancel.title = 'Đóng thông báo';
+            floatingCancel.title = t('common.close');
             floatingCancel.textContent = '✕';
         }
     }
@@ -10776,7 +10857,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (floatingCheck) floatingCheck.style.display = 'none';
 
         const langName = this._minutesLangName(lang);
-        if (floatingTitle) floatingTitle.textContent = `Tạo Meeting Minutes (${langName})`;
+        if (floatingTitle) floatingTitle.textContent = t('minutes.floating.generating', { lang: langName });
         if (floatingStatus) floatingStatus.textContent = text;
         if (floatingFill) floatingFill.style.width = `${percent}%`;
         if (floatingPct) floatingPct.textContent = `${percent}%`;
@@ -10809,8 +10890,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (floatingCheck) floatingCheck.style.display = 'flex';
 
         const langName = this._minutesLangName(lang);
-        if (floatingTitle) floatingTitle.textContent = `Hoàn tất Meeting Minutes (${langName}) ✓`;
-        if (floatingStatus) floatingStatus.textContent = 'Nhấp để xem chi tiết biên bản ➔';
+        if (floatingTitle) floatingTitle.textContent = t('minutes.floating.done', { lang: langName });
+        if (floatingStatus) floatingStatus.textContent = t('minutes.floating.viewDetails');
         if (floatingFill) floatingFill.style.width = '100%';
         if (floatingPct) floatingPct.textContent = '100%';
 
@@ -10845,12 +10926,12 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
         if (isTimeout) {
             this._showRetranscriptFailed(
-                'Quá thời gian xử lý. Tác vụ đã được tự động hủy để tránh nghẽn hệ thống.',
+                t('retranscript.progress.timeout'),
                 isImport,
                 stage || 'transcribe',
             );
         } else {
-            this._showToast(isImport ? 'Đã hủy import file ghi âm' : 'Đã hủy re-transcript', 'info');
+            this._showToast(t('common.cancel'), 'info');
         }
     }
 
@@ -10888,7 +10969,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     }
 
     _getMinutesLangsForSession(sessionData) {
-        const src = (sessionData?.source_lang || 'vi').toLowerCase();
+        const src = (sessionData?.source_lang || 'en').toLowerCase();
         const tgt = (sessionData?.target_lang || '').toLowerCase();
         const hasTranslation = !!tgt && tgt !== 'none' && tgt !== 'off' && tgt !== src;
 
@@ -10900,12 +10981,12 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const tMapped = mapCode(tgt);
             if (sMapped) langs.push(sMapped);
             if (tMapped && !langs.includes(tMapped)) langs.push(tMapped);
-            if (langs.length === 0) langs.push('vi');
+            if (langs.length === 0) langs.push('en');
             return langs;
         } else {
             // Không có bản dịch: tạo cho ngôn ngữ gốc
-            if (src === 'ja' || src === 'en') return [src];
-            return ['vi'];
+            if (src === 'ja' || src === 'vi') return [src];
+            return ['en'];
         }
     }
 
@@ -10936,7 +11017,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const originalTexts = buttonsToDisable.map(b => b.innerHTML);
         buttonsToDisable.forEach(b => {
             b.disabled = true;
-            b.innerHTML = '<span class="retranscript-spinner-inline"></span> Đang transcript...';
+            b.innerHTML = `<span class="retranscript-spinner-inline"></span> ${this._esc(t('retranscript.progress.inlineBtn'))}`;
         });
 
         const sess = (this._cachedSessions || []).find(s => s.id === id);
@@ -10956,16 +11037,16 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             isMinimized: true,
             progressInterval: null,
             backendProgress: false,
-            progressBaseText: 'Đang tải file ghi âm lên Gemini...',
+            progressBaseText: t('retranscript.progress.uploading'),
             stage: 'upload',
-            text: 'Đang tải file ghi âm lên Gemini...',
+            text: t('retranscript.progress.uploading'),
             percent: 15,
             options,
-            customTitle: options.customTitle || 'Re-transcript cuộc họp',
+            customTitle: options.customTitle || t('retranscript.floating.title'),
             startedAt: Date.now(),
         };
 
-        this._setRetranscriptProgress('upload', 'Đang tải file ghi âm lên Gemini...', 15, options.customTitle);
+        this._setRetranscriptProgress('upload', t('retranscript.progress.uploading'), 15, options.customTitle);
 
         let currentPct = 15;
         const progressInterval = setInterval(() => {
@@ -10976,28 +11057,30 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (this._activeRetranscribe.backendProgress) {
                 const active = this._activeRetranscribe;
                 const elapsedSec = Math.floor((Date.now() - active.startedAt) / 1000);
-                const elapsedText = elapsedSec >= 60 ? ` (đã xử lý ${Math.floor(elapsedSec / 60)} phút)` : '';
-                const baseText = active.progressBaseText || active.text || 'Gemini đang xử lý file ghi âm...';
+                const elapsedMin = Math.floor(elapsedSec / 60);
+                const elapsedText = elapsedMin >= 1 ? ` (${t('retranscript.progress.elapsed', { min: elapsedMin })})` : '';
+                const baseText = active.progressBaseText || active.text || t('retranscript.progress.transcribing');
                 this._setRetranscriptProgress(active.stage, `${baseText}${elapsedText}`, active.percent, active.customTitle);
                 return;
             }
             if (currentPct < 88) {
                 currentPct += (currentPct < 45 ? 3 : (currentPct < 70 ? 2 : 1));
             }
-            let text = 'Đang tải file ghi âm lên Gemini...';
+            let text = t('retranscript.progress.uploading');
             let stage = 'upload';
             if (currentPct >= 25 && currentPct < 65) {
                 stage = 'transcribe';
-                text = 'Gemini đang transcript và dịch file ghi âm...';
+                text = t('retranscript.progress.transcribing');
             } else if (currentPct >= 65 && currentPct < 80) {
                 stage = 'transcribe';
-                text = 'Gemini đang phân tích và chuẩn hóa văn bản...';
+                text = t('retranscript.progress.formatting');
             } else if (currentPct >= 80) {
                 stage = 'transcribe';
-                text = 'File ghi âm dài, Gemini đang hoàn thiện các đoạn thoại...';
+                text = t('retranscript.progress.finalizing');
             }
             const elapsedSec = Math.floor((Date.now() - this._activeRetranscribe.startedAt) / 1000);
-            const elapsedText = elapsedSec >= 60 ? ` (đã xử lý ${Math.floor(elapsedSec / 60)} phút)` : '';
+            const elapsedMin = Math.floor(elapsedSec / 60);
+            const elapsedText = elapsedMin >= 1 ? ` (${t('retranscript.progress.elapsed', { min: elapsedMin })})` : '';
             this._setRetranscriptProgress(stage, `${text}${elapsedText}`, currentPct);
         }, 1500);
         this._activeRetranscribe.progressInterval = progressInterval;
@@ -11014,7 +11097,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             clearInterval(progressInterval);
             if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
 
-            this._setRetranscriptProgress('save', 'Đang lưu Logs mới...', 89);
+            this._setRetranscriptProgress('save', t('retranscript.progress.saving'), 89);
             if (this._currentViewedSession?.id === id) {
                 this._renderSessionLogs(result.json);
                 this._currentSessionJson = result.json;
@@ -11034,8 +11117,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                     const langName = this._minutesLangName(mLang);
                     const stepPct = totalLangs === 1 ? 94 : (i === 0 ? 92 : 96);
                     const stepLabel = totalLangs > 1
-                        ? `Đang tạo lại Meeting Minutes (${langName})... (${i + 1}/${totalLangs})`
-                        : `Đang tạo lại Meeting Minutes (${langName})...`;
+                        ? t('retranscript.progress.minutesStepMulti', { lang: langName, current: i + 1, total: totalLangs })
+                        : t('retranscript.progress.minutesStepSingle', { lang: langName });
 
                     this._setRetranscriptProgress('minutes', stepLabel, stepPct);
                     try {
@@ -11044,9 +11127,9 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                         console.warn(`[App] Lỗi tạo Meeting Minutes (${mLang}) khi re-transcript:`, minErr);
                     }
                 }
-                this._setRetranscriptProgress('minutes', 'Hoàn tất Re-transcript & Meeting Minutes ✓', 100);
+                this._setRetranscriptProgress('minutes', t('retranscript.progress.doneWithMinutes'), 100);
             } else {
-                this._setRetranscriptProgress('save', 'Hoàn tất Re-transcript ✓', 100);
+                this._setRetranscriptProgress('save', t('retranscript.progress.done'), 100);
             }
 
             if (this._activeRetranscribe?.buttonsToDisable) {
@@ -11079,13 +11162,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             }
 
             const compTitle = shouldGenerateMinutes
-                ? 'Hoàn tất Re-transcript & Minutes ✓'
-                : 'Hoàn tất Re-transcript ✓';
+                ? t('retranscript.floating.doneWithMinutes')
+                : t('retranscript.floating.done');
             this._showRetranscriptCompleted(id, compTitle);
 
             const toastMsg = shouldGenerateMinutes
-                ? 'Đã tạo lại Logs & Meeting Minutes từ file ghi âm ✓'
-                : 'Đã tạo lại Logs từ file ghi âm ✓';
+                ? t('retranscript.toast.doneWithMinutes')
+                : t('retranscript.toast.done');
             this._showToast(toastMsg, 'success');
             await this._showSessions();
         } catch (err) {
@@ -11096,7 +11179,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 this._cleanupActiveRetranscribe();
                 if (!isCancelled) {
                     console.error('[App] Re-transcript failed:', err);
-                    this._showRetranscriptFailed(`Re-transcript thất bại: ${err}`, false, failedStage);
+                    this._showRetranscriptFailed(t('retranscript.error.prefix', { error: err }), false, failedStage);
                 }
             }
         }
@@ -11171,10 +11254,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const fileInfo = await invoke('inspect_audio_file', { path });
             if (!fileInfo) return;
             await this._selectImportFileInfo(fileInfo);
-            this._showToast(`Đã nhận file ghi âm: ${fileInfo.file_name}`, 'success');
+            this._showToast(t('modal.importAudio.received', { name: fileInfo.file_name }), 'success');
         } catch (err) {
             console.error('[App] inspect dropped audio failed:', err);
-            this._showToast(`Không thể nhận file ghi âm: ${err}`, 'error');
+            this._showToast(t('modal.importAudio.receiveFailed', { error: err }), 'error');
         }
     }
 
@@ -11185,7 +11268,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             await this._selectImportFileInfo(fileInfo);
         } catch (err) {
             console.error('[App] select_audio_file failed:', err);
-            this._showToast(`Lỗi chọn file: ${err}`, 'error');
+            this._showToast(t('modal.importAudio.selectFailed', { error: err }), 'error');
         }
     }
 
@@ -11207,14 +11290,14 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const inputTags = document.getElementById('input-import-meeting-tags');
         const chkAutoMinutes = document.getElementById('chk-import-auto-minutes');
 
-        if (fileNameEl) fileNameEl.textContent = fileInfo?.file_name || 'Chưa chọn file';
+        if (fileNameEl) fileNameEl.textContent = fileInfo?.file_name || t('modal.importAudio.noFile');
         if (fileMetaEl) {
             if (fileInfo) {
                 const sizeStr = this._formatFileSize(fileInfo.file_size);
                 const extStr = (fileInfo.extension || '').toUpperCase();
                 fileMetaEl.textContent = `${extStr} · ${sizeStr}`;
             } else {
-                fileMetaEl.textContent = 'Kéo thả hoặc chọn file local';
+                fileMetaEl.textContent = t('modal.importAudio.dropOrBrowse');
             }
         }
 
@@ -11231,7 +11314,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const activeProjects = (reg.projects || []).filter(p => p.status === 'active');
 
         if (selectCust) {
-            let custHtml = '<option value="">(Không chọn KH)</option>';
+            let custHtml = `<option value="">${this._esc(t('modal.importAudio.noCustomer'))}</option>`;
             for (const c of activeCustomers) {
                 custHtml += `<option value="${this._escAttr(c.id)}">🤝 ${this._esc(c.name)}</option>`;
             }
@@ -11244,7 +11327,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const filteredProjs = selectedCustomerId
                 ? activeProjects.filter(p => p.customer_id === selectedCustomerId)
                 : activeProjects;
-            let projHtml = '<option value="">(Không gán dự án)</option>';
+            let projHtml = `<option value="">${this._esc(t('modal.importAudio.noProject'))}</option>`;
             for (const p of filteredProjs) {
                 projHtml += `<option value="${this._escAttr(p.id)}">🚀 ${this._esc(p.name)}</option>`;
             }
@@ -11268,7 +11351,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         };
 
         if (selectCat) {
-            let catHtml = '<option value="">(Không chọn category)</option>';
+            let catHtml = `<option value="">${this._esc(t('modal.importAudio.noCategory'))}</option>`;
             for (const c of (reg.categories || [])) {
                 catHtml += `<option value="${this._escAttr(c.name)}">🗂️ ${this._esc(c.name)}</option>`;
             }
@@ -11298,7 +11381,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
     async _confirmImportAudio() {
         if (!this._pendingImportFile) {
-            this._showToast('Vui lòng chọn file ghi âm trước', 'error');
+            this._showToast(t('modal.importAudio.selectFileFirst'), 'error');
             return;
         }
         const fileInfo = this._pendingImportFile;
@@ -11315,19 +11398,19 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const category = selectCat?.value || null;
         const rawTags = (inputTags?.value || '').trim();
         const tags = rawTags
-            ? rawTags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean)
+            ? rawTags.split(',').map(tTag => tTag.trim().replace(/^#/, '')).filter(Boolean)
             : [];
         const autoMinutes = chkAutoMinutes ? chkAutoMinutes.checked : true;
 
         const settings = settingsManager.get();
         const apiKey = settings.gemini_api_key?.trim();
         if (!apiKey) {
-            this._showToast('Cần Gemini API Key trong Cài đặt để import và nhận diện file ghi âm', 'error');
+            this._showToast(t('modal.importAudio.apiKeyRequired'), 'error');
             return;
         }
 
         if (this._activeRetranscribe) {
-            this._showToast('Đang có tiến trình xử lý audio khác đang chạy', 'info');
+            this._showToast(t('modal.importAudio.busy'), 'info');
             return;
         }
 
@@ -11337,7 +11420,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
     async _startAudioImport({ fileInfo, title, customerId, projectId, category, tags, autoMinutes, apiKey }) {
         if (this._activeRetranscribe) {
-            this._showToast('Đang có tiến trình xử lý audio khác đang chạy', 'info');
+            this._showToast(t('modal.importAudio.busy'), 'info');
             return;
         }
 
@@ -11362,15 +11445,15 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             isMinimized: true,
             progressInterval: null,
             backendProgress: false,
-            progressBaseText: 'Đang đọc và tải file ghi âm lên Gemini...',
+            progressBaseText: t('retranscript.progress.readingAndUploading'),
             stage: 'upload',
-            text: 'Đang đọc và tải file ghi âm lên Gemini...',
+            text: t('retranscript.progress.readingAndUploading'),
             percent: 15,
             customTitle: `Import: ${title}`,
             startedAt: Date.now(),
         };
 
-        this._setRetranscriptProgress('upload', 'Đang đọc và tải file ghi âm lên Gemini...', 15, `Import: ${title}`);
+        this._setRetranscriptProgress('upload', t('retranscript.progress.readingAndUploading'), 15, `Import: ${title}`);
 
         let currentPct = 15;
         const progressInterval = setInterval(() => {
@@ -11381,28 +11464,30 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (this._activeRetranscribe.backendProgress) {
                 const active = this._activeRetranscribe;
                 const elapsedSec = Math.floor((Date.now() - active.startedAt) / 1000);
-                const elapsedText = elapsedSec >= 60 ? ` (đã xử lý ${Math.floor(elapsedSec / 60)} phút)` : '';
-                const baseText = active.progressBaseText || active.text || 'Gemini đang xử lý file ghi âm...';
+                const elapsedMin = Math.floor(elapsedSec / 60);
+                const elapsedText = elapsedMin >= 1 ? ` (${t('retranscript.progress.elapsed', { min: elapsedMin })})` : '';
+                const baseText = active.progressBaseText || active.text || t('retranscript.progress.transcribing');
                 this._setRetranscriptProgress(active.stage, `${baseText}${elapsedText}`, active.percent, active.customTitle);
                 return;
             }
             if (currentPct < 88) {
                 currentPct += (currentPct < 45 ? 3 : (currentPct < 70 ? 2 : 1));
             }
-            let text = 'Đang tải file ghi âm lên Gemini...';
+            let text = t('retranscript.progress.uploading');
             let stage = 'upload';
             if (currentPct >= 25 && currentPct < 55) {
                 stage = 'transcribe';
-                text = 'Gemini đang nhận diện ngôn ngữ và transcript...';
+                text = t('retranscript.progress.identifyingAndTranscribing');
             } else if (currentPct >= 55 && currentPct < 75) {
                 stage = 'transcribe';
-                text = 'Gemini đang phân tích và dịch sang Tiếng Việt...';
+                text = t('retranscript.progress.translatingVi');
             } else if (currentPct >= 75) {
                 stage = 'transcribe';
-                text = 'Gemini đang hoàn thiện các đoạn thoại...';
+                text = t('retranscript.progress.finalizing');
             }
             const elapsedSec = Math.floor((Date.now() - this._activeRetranscribe.startedAt) / 1000);
-            const elapsedText = elapsedSec >= 60 ? ` (đã xử lý ${Math.floor(elapsedSec / 60)} phút)` : '';
+            const elapsedMin = Math.floor(elapsedSec / 60);
+            const elapsedText = elapsedMin >= 1 ? ` (${t('retranscript.progress.elapsed', { min: elapsedMin })})` : '';
             this._setRetranscriptProgress(stage, `${text}${elapsedText}`, currentPct, `Import: ${title}`);
         }, 1500);
         this._activeRetranscribe.progressInterval = progressInterval;
@@ -11422,7 +11507,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             clearInterval(progressInterval);
             if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
 
-            this._setRetranscriptProgress('save', 'Đang lưu Log cuộc họp mới...', 90, `Import: ${title}`);
+            this._setRetranscriptProgress('save', t('retranscript.progress.savingImport'), 90, `Import: ${title}`);
 
             if (autoMinutes) {
                 const minutesLangs = this._getMinutesLangsForSession(result.json);
@@ -11433,8 +11518,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                     const langName = this._minutesLangName(mLang);
                     const stepPct = totalLangs === 1 ? 95 : (i === 0 ? 93 : 97);
                     const stepLabel = totalLangs > 1
-                        ? `Đang tạo Meeting Minutes (${langName})... (${i + 1}/${totalLangs})`
-                        : `Đang tạo Meeting Minutes (${langName})...`;
+                        ? t('retranscript.progress.minutesStepMulti', { lang: langName, current: i + 1, total: totalLangs })
+                        : t('retranscript.progress.minutesStepSingle', { lang: langName });
                     this._setRetranscriptProgress('minutes', stepLabel, stepPct, `Import: ${title}`);
                     try {
                         await this._generateMinutesCore(id, mLang);
@@ -11444,7 +11529,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 }
             }
 
-            this._setRetranscriptProgress('minutes', 'Hoàn tất import file ghi âm ✓', 100, `Import: ${title}`);
+            this._setRetranscriptProgress('minutes', t('retranscript.progress.doneImport'), 100, `Import: ${title}`);
 
             if (this._activeRetranscribe?.timeoutId) {
                 clearTimeout(this._activeRetranscribe.timeoutId);
@@ -11452,8 +11537,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             this._lastCompletedRetranscribeId = id;
             this._activeRetranscribe = null;
 
-            this._showRetranscriptCompleted(id, `Hoàn tất import "${title}" ✓`);
-            this._showToast('Đã import thành công file ghi âm vào Logs ✓', 'success');
+            this._showRetranscriptCompleted(id, t('retranscript.floating.doneImport', { title }));
+            this._showToast(t('retranscript.toast.doneImport'), 'success');
             await this._showSessions();
         } catch (err) {
             clearInterval(progressInterval);
@@ -11463,7 +11548,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 this._cleanupActiveRetranscribe();
                 if (!isCancelled) {
                     console.error('[App] Import audio failed:', err);
-                    this._showRetranscriptFailed(`Import file ghi âm thất bại: ${err}`, true, failedStage);
+                    this._showRetranscriptFailed(t('retranscript.error.importPrefix', { error: err }), true, failedStage);
                 }
             }
         }
@@ -11725,30 +11810,30 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         return 'standard';
     }
 
-    _getPresetMinutesTemplate(templateId, lang = 'vi') {
+    _getPresetMinutesTemplate(templateId, lang = 'en') {
         const s = settingsManager.get();
         if (templateId === 'tech') {
-            if (lang === 'en') return (s.template_minutes_tech_en && s.template_minutes_tech_en.trim()) ? s.template_minutes_tech_en : PRESET_TEMPLATE_TECH_EN;
+            if (lang === 'vi') return (s.template_minutes_tech_vi && s.template_minutes_tech_vi.trim()) ? s.template_minutes_tech_vi : PRESET_TEMPLATE_TECH_VI;
             if (lang === 'ja') return (s.template_minutes_tech_ja && s.template_minutes_tech_ja.trim()) ? s.template_minutes_tech_ja : PRESET_TEMPLATE_TECH_JA;
-            return (s.template_minutes_tech_vi && s.template_minutes_tech_vi.trim()) ? s.template_minutes_tech_vi : PRESET_TEMPLATE_TECH_VI;
+            return (s.template_minutes_tech_en && s.template_minutes_tech_en.trim()) ? s.template_minutes_tech_en : PRESET_TEMPLATE_TECH_EN;
         }
         if (templateId === 'one_on_one') {
-            if (lang === 'en') return (s.template_minutes_1on1_en && s.template_minutes_1on1_en.trim()) ? s.template_minutes_1on1_en : PRESET_TEMPLATE_1ON1_EN;
+            if (lang === 'vi') return (s.template_minutes_1on1_vi && s.template_minutes_1on1_vi.trim()) ? s.template_minutes_1on1_vi : PRESET_TEMPLATE_1ON1_VI;
             if (lang === 'ja') return (s.template_minutes_1on1_ja && s.template_minutes_1on1_ja.trim()) ? s.template_minutes_1on1_ja : PRESET_TEMPLATE_1ON1_JA;
-            return (s.template_minutes_1on1_vi && s.template_minutes_1on1_vi.trim()) ? s.template_minutes_1on1_vi : PRESET_TEMPLATE_1ON1_VI;
+            return (s.template_minutes_1on1_en && s.template_minutes_1on1_en.trim()) ? s.template_minutes_1on1_en : PRESET_TEMPLATE_1ON1_EN;
         }
         if (templateId === 'personal') {
-            if (lang === 'en') return (s.template_minutes_personal_en && s.template_minutes_personal_en.trim()) ? s.template_minutes_personal_en : PRESET_TEMPLATE_PERSONAL_EN;
+            if (lang === 'vi') return (s.template_minutes_personal_vi && s.template_minutes_personal_vi.trim()) ? s.template_minutes_personal_vi : PRESET_TEMPLATE_PERSONAL_VI;
             if (lang === 'ja') return (s.template_minutes_personal_ja && s.template_minutes_personal_ja.trim()) ? s.template_minutes_personal_ja : PRESET_TEMPLATE_PERSONAL_JA;
-            return (s.template_minutes_personal_vi && s.template_minutes_personal_vi.trim()) ? s.template_minutes_personal_vi : PRESET_TEMPLATE_PERSONAL_VI;
+            return (s.template_minutes_personal_en && s.template_minutes_personal_en.trim()) ? s.template_minutes_personal_en : PRESET_TEMPLATE_PERSONAL_EN;
         }
         // default / 'standard'
-        if (lang === 'en') return (s.template_minutes_en && s.template_minutes_en.trim()) ? s.template_minutes_en : DEFAULT_TEMPLATE_MINUTES_EN;
+        if (lang === 'vi') return (s.template_minutes_vi && s.template_minutes_vi.trim()) ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI;
         if (lang === 'ja') return (s.template_minutes_ja && s.template_minutes_ja.trim()) ? s.template_minutes_ja : DEFAULT_TEMPLATE_MINUTES_JA;
-        return (s.template_minutes_vi && s.template_minutes_vi.trim()) ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI;
+        return (s.template_minutes_en && s.template_minutes_en.trim()) ? s.template_minutes_en : DEFAULT_TEMPLATE_MINUTES_EN;
     }
 
-    _buildMeetingMinutesPrompt(sessionData, targetLang = 'vi') {
+    _buildMeetingMinutesPrompt(sessionData, targetLang = 'en') {
         const title = sessionData.title || sessionData.id;
         const createdAt = sessionData.created_at || '';
         const durationMin = Math.round((sessionData.duration_sec || 0) / 60);
@@ -11918,7 +12003,7 @@ ${template}
 Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy gọn.`;
     }
 
-    async _generateMinutesCore(sessionId, lang = 'ja', onStatusUpdate = null) {
+    async _generateMinutesCore(sessionId, lang = 'en', onStatusUpdate = null) {
         const settings = settingsManager.get();
         const geminiKey = settings.gemini_api_key?.trim();
         const openaiKey = settings.openai_api_key?.trim();
@@ -11972,7 +12057,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     }
 
     async _generateMeetingMinutesForSession(sessionId, targetLang = null) {
-        const lang = targetLang || this._activeMinutesLang || 'ja';
+        const lang = targetLang || this._activeMinutesLang || 'en';
         const loadingEl = document.getElementById('minutes-loading');
         const emptyEl = document.getElementById('minutes-empty');
         const editorContainer = document.getElementById('session-minutes-editor-container');
@@ -12003,14 +12088,14 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (loadingEl) loadingEl.style.display = 'none';
             if (regenBtn) {
                 regenBtn.disabled = false;
-                regenBtn.innerHTML = '🔄 Tạo lại (AI)';
+                regenBtn.innerHTML = t('session.minutesRegenerate');
             }
             if (emptyBtn) {
                 emptyBtn.disabled = false;
-                emptyBtn.innerHTML = '✨ Tạo Meeting Minutes ngay';
+                emptyBtn.innerHTML = t('session.minutesGenerateEmpty');
             }
             this._renderCurrentMinutesSubtab();
-            this._showToast('Vui lòng cài đặt Gemini hoặc OpenAI API Key trong Cài đặt (⌘,) để tạo Meeting Minutes', 'error');
+            this._showToast(t('session.minutesApiKeyRequired'), 'error');
             return;
         }
 
@@ -12045,7 +12130,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (this._currentViewedSession?.id === sessionId) {
                 this._switchMinutesSubtab(lang);
             }
-            this._showToast(`Đã tạo Meeting Minutes (${this._minutesLangName(lang)}) thành công ✓`, 'success');
+            this._showToast(t('session.minutesSavedSuccess', { lang: this._minutesLangName(lang) }), 'success');
         } catch (err) {
             clearInterval(progressTimer);
             this._hideMinutesProgress();
@@ -12054,18 +12139,18 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._renderCurrentMinutesSubtab();
             const errMsg = err.message || String(err);
             if (errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('quá tải')) {
-                this._showToast('Máy chủ AI đang quá tải tạm thời. Vui lòng bấm tạo lại sau giây lát.', 'error');
+                this._showToast(t('session.minutesAiOverloaded'), 'error');
             } else {
-                this._showToast(`Lỗi tạo Meeting Minutes: ${errMsg}`, 'error');
+                this._showToast(t('session.minutesGenerateError', { error: errMsg }), 'error');
             }
         } finally {
             if (regenBtn) {
                 regenBtn.disabled = false;
-                regenBtn.innerHTML = '🔄 Tạo lại (AI)';
+                regenBtn.innerHTML = t('session.minutesRegenerate');
             }
             if (emptyBtn) {
                 emptyBtn.disabled = false;
-                emptyBtn.innerHTML = '✨ Tạo Meeting Minutes ngay';
+                emptyBtn.innerHTML = t('session.minutesGenerateEmpty');
             }
         }
     }
@@ -12112,7 +12197,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     async _saveMinutesEdit() {
         const cur = this._currentViewedSession;
         if (!cur || !this._sessionMinutesEditor) return;
-        const lang = this._activeMinutesLang || 'ja';
+        const lang = this._activeMinutesLang || 'en';
         const newMinutes = this._sessionMinutesEditor.getContent();
         try {
             await invoke('update_session_meeting_minutes', {
@@ -12123,9 +12208,9 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._loadedMinutes[lang] = newMinutes;
             this._updateMinutesBadges();
             this._exitMinutesEditMode();
-            this._showToast(`Đã lưu Meeting Minutes (${this._minutesLangName(lang)}) ✓`, 'success');
+            this._showToast(t('session.minutesUpdatedSuccess', { lang: this._minutesLangName(lang) }), 'success');
         } catch (err) {
-            this._showToast(`Lỗi lưu Meeting Minutes: ${err}`, 'error');
+            this._showToast(t('session.minutesSaveError', { error: err }), 'error');
         }
     }
 
@@ -12174,9 +12259,9 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 notes: newNotes,
             });
             this._exitNotesEditMode();
-            this._showToast('Đã lưu ghi chú ✓', 'success');
+            this._showToast(t('session.notesSavedSuccess'), 'success');
         } catch (err) {
-            this._showToast(`Lỗi lưu ghi chú: ${err}`, 'error');
+            this._showToast(t('session.notesSaveError', { error: err }), 'error');
         }
     }
 
@@ -12184,17 +12269,17 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         if (!this._sessionMinutesEditor) return;
         const md = this._sessionMinutesEditor.getContent();
         if (!md || !md.trim()) {
-            this._showToast('Chưa có nội dung Meeting Minutes để copy', 'info');
+            this._showToast(t('session.minutesEmptyCopy'), 'info');
             return;
         }
         const html = this._markdownToRichHtml(md);
         try {
             await this._writeRichClipboard(html);
-            this._showToast('Đã copy HTML Meeting Minutes ✓', 'success');
+            this._showToast(t('session.minutesCopyHtmlSuccess'), 'success');
         } catch (err) {
             console.error('[App] _copyRichMeetingMinutes failed:', err);
             await navigator.clipboard.writeText(this._richHtmlToPlainText(html));
-            this._showToast('Đã copy Meeting Minutes (văn bản) ✓', 'success');
+            this._showToast(t('session.minutesCopyTextSuccess'), 'success');
         }
     }
 
@@ -12202,17 +12287,17 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         if (!this._sessionNotesEditor) return;
         const md = this._sessionNotesEditor.getContent();
         if (!md || !md.trim()) {
-            this._showToast('Chưa có nội dung ghi chú để copy', 'info');
+            this._showToast(t('session.notesEmptyCopy'), 'info');
             return;
         }
         const html = this._markdownToRichHtml(md);
         try {
             await this._writeRichClipboard(html);
-            this._showToast('Đã copy HTML ghi chú ✓', 'success');
+            this._showToast(t('session.notesCopyHtmlSuccess'), 'success');
         } catch (err) {
             console.error('[App] _copyRichNotes failed:', err);
             await navigator.clipboard.writeText(this._richHtmlToPlainText(html));
-            this._showToast('Đã copy ghi chú (văn bản) ✓', 'success');
+            this._showToast(t('session.notesCopyTextSuccess'), 'success');
         }
     }
 
@@ -12256,17 +12341,17 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 const strippedText = this._stripNotesFromMarkdown(text);
                 const logsContainer = document.getElementById('session-logs-editor-container');
                 if (logsContainer) {
-                    logsContainer.innerHTML = `<div class="session-logs-live session-logs-single"><section class="session-log-column" style="height:100%"><header class="panel-column-header"><span class="panel-header-title">📜 Bản ghi thô</span><button type="button" class="panel-copy-btn btn-copy-source" data-copy-legacy-log title="Copy toàn bộ bản ghi"><svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></header><pre class="session-logs-legacy">${this._esc(strippedText)}</pre></section></div>`;
+                    logsContainer.innerHTML = `<div class="session-logs-live session-logs-single"><section class="session-log-column" style="height:100%"><header class="panel-column-header"><span class="panel-header-title">${this._esc(t('session.rawLogTitle'))}</span><button type="button" class="panel-copy-btn btn-copy-source" data-copy-legacy-log title="${this._escAttr(t('session.copyRawLogTooltip'))}"><svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></header><pre class="session-logs-legacy">${this._esc(strippedText)}</pre></section></div>`;
                     logsContainer.querySelector('[data-copy-legacy-log]')?.addEventListener('click', async (e) => {
                         const btn = e.currentTarget;
                         try {
                             await navigator.clipboard.writeText(strippedText);
-                            this._showToast('Đã copy bản ghi ✓', 'success');
+                            this._showToast(t('session.copyRawLogSuccess'), 'success');
                             const orig = btn.innerHTML;
                             btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
                             setTimeout(() => { if (btn) btn.innerHTML = orig; }, 1500);
                         } catch (err) {
-                            this._showToast(`Không thể copy: ${err}`, 'error');
+                            this._showToast(t('session.copyRawLogError', { error: err }), 'error');
                         }
                     });
                 }
@@ -12330,7 +12415,26 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 if (subtabJa) subtabJa.style.display = '';
                 if (subtabVi) subtabVi.style.display = '';
                 if (subtabEn) subtabEn.style.display = '';
-                const preferredSubtab = this._loadedMinutes.ja ? 'ja' : (this._loadedMinutes.vi ? 'vi' : (this._loadedMinutes.en ? 'en' : 'ja'));
+                const appLocale = normalizeLocale(settingsManager.get().app_language);
+                const targetLang = (json.target_lang || '').toLowerCase();
+                const sourceLang = (json.source_lang || '').toLowerCase();
+
+                let preferredSubtab = 'en';
+                if (this._loadedMinutes[appLocale]) {
+                    preferredSubtab = appLocale;
+                } else if (targetLang && targetLang !== 'none' && targetLang !== 'off' && this._loadedMinutes[targetLang]) {
+                    preferredSubtab = targetLang;
+                } else if (sourceLang && this._loadedMinutes[sourceLang]) {
+                    preferredSubtab = sourceLang;
+                } else if (this._loadedMinutes.en) {
+                    preferredSubtab = 'en';
+                } else if (this._loadedMinutes.ja) {
+                    preferredSubtab = 'ja';
+                } else if (this._loadedMinutes.vi) {
+                    preferredSubtab = 'vi';
+                } else {
+                    preferredSubtab = (appLocale === 'ja' || appLocale === 'vi') ? appLocale : 'en';
+                }
                 this._switchMinutesSubtab(preferredSubtab);
 
                 // 2. Notes Tab
@@ -12353,7 +12457,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             }
         } catch (err) {
             console.error('[App] _openSession error:', err);
-            this._showToast(`Lỗi đọc cuộc họp: ${err}`, 'error');
+            this._showToast(t('session.readError', { error: err }), 'error');
         }
     }
 
@@ -12391,28 +12495,28 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const scope = json.scope || (project && project.scope) || 'work';
         const isPersonal = scope === 'personal';
         const scopeBadge = isPersonal
-            ? `<span class="scope-badge-personal" title="Cá nhân (Nhấp để sửa)">👤 Cá nhân</span>`
-            : `<span class="scope-badge-work" title="Công việc (Nhấp để sửa)">💼 Công việc</span>`;
+            ? `<span class="scope-badge-personal" title="${this._escAttr(t('session.personalTooltip'))}">👤 ${this._esc(t('scope.personal'))}</span>`
+            : `<span class="scope-badge-work" title="${this._escAttr(t('session.workTooltip'))}">💼 ${this._esc(t('scope.work'))}</span>`;
 
         badgesHtml += scopeBadge;
 
         if (customerName) {
-            badgesHtml += `<span class="session-customer-badge" title="Khách hàng: ${this._escAttr(customerName)} (Nhấp để sửa)">🤝 ${this._esc(customerName)}</span>`;
+            badgesHtml += `<span class="session-customer-badge" title="${this._escAttr(t('session.customerTooltip', { name: customerName }))}">🤝 ${this._esc(customerName)}</span>`;
         }
 
         if (projectName) {
             const colorStyle = projectColor
                 ? `background:${this._escAttr(projectColor)}1f; border-color:${this._escAttr(projectColor)}55; color:${this._escAttr(projectColor)};`
                 : '';
-            badgesHtml += `<span class="session-project-badge" title="Dự án: ${this._escAttr(projectName)} (Nhấp để sửa)" style="${colorStyle}">🚀 ${this._esc(projectName)}</span>`;
+            badgesHtml += `<span class="session-project-badge" title="${this._escAttr(t('session.projectTooltip', { name: projectName }))}" style="${colorStyle}">🚀 ${this._esc(projectName)}</span>`;
         }
 
         if (category) {
-            badgesHtml += `<span class="session-category-badge" title="Category: ${this._escAttr(category)} (Nhấp để sửa)">🗂️ ${this._esc(category)}</span>`;
+            badgesHtml += `<span class="session-category-badge" title="${this._escAttr(t('session.categoryTooltip', { name: category }))}">🗂️ ${this._esc(category)}</span>`;
         }
 
         if (tags.length > 0) {
-            badgesHtml += tags.map(tag => `<span class="session-tag-badge" title="Thẻ: #${this._escAttr(tag)} (Nhấp để sửa)">#${this._esc(tag)}</span>`).join('');
+            badgesHtml += tags.map(tag => `<span class="session-tag-badge" title="${this._escAttr(t('session.tagTooltip', { name: tag }))}">#${this._esc(tag)}</span>`).join('');
         }
 
         badgesContainer.innerHTML = badgesHtml;
@@ -12963,9 +13067,9 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             const text = this._liveNotesEditor?.getContent();
             if (text && text.trim()) {
                 await navigator.clipboard.writeText(text);
-                this._showToast('📋 Đã copy ghi chú vào clipboard', 'success');
+                this._showToast(t('notes.copied'), 'success');
             } else {
-                this._showToast('Ghi chú đang trống', 'info');
+                this._showToast(t('notes.empty'), 'info');
             }
         });
 
@@ -12993,7 +13097,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._liveNotesEditor.mount(editorContainer, {
                 initialContent: sessionStore.notes || '',
                 imageAssets: sessionStore.noteImages || [],
-                placeholderText: 'Nhập ghi chú cuộc họp dạng Markdown (Live Preview)...',
+                placeholderText: t('notes.editorPlaceholder'),
                 allowImagePaste: true,
                 onChange: (val) => {
                     if (this._suppressLiveNoteDraft) {
@@ -13127,7 +13231,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         if (selectCust) {
             selectCust.style.display = isPersonal ? 'none' : '';
             const curVal = isPersonal ? '' : (selectCust.value || sessionStore.customerId || '');
-            let html = '<option value="">🤝 Khách hàng...</option>';
+            let html = `<option value="">${this._esc(t('notes.customer'))}</option>`;
             for (const c of activeCustomers) {
                 html += `<option value="${this._escAttr(c.id)}">🤝 ${this._esc(c.name)}</option>`;
             }
@@ -13140,7 +13244,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
         if (selectCat) {
             const curCat = selectCat.value || sessionStore.category || '';
-            let catHtml = '<option value="">🗂️ Category...</option>';
+            let catHtml = `<option value="">${this._esc(t('notes.category'))}</option>`;
             for (const c of (reg.categories || [])) {
                 catHtml += `<option value="${this._escAttr(c.name)}">🗂️ ${this._esc(c.name)}</option>`;
             }
@@ -13186,7 +13290,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             ? scopedProjs.filter(p => p.customer_id === selectedCustomerId)
             : scopedProjs;
 
-        let projHtml = '<option value="">🚀 Dự án...</option>';
+        let projHtml = `<option value="">${this._esc(t('notes.project'))}</option>`;
         for (const p of filteredProjs) {
             projHtml += `<option value="${this._escAttr(p.id)}">🚀 ${this._esc(p.name)}</option>`;
         }
@@ -13312,7 +13416,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const dateStr = `${now.getFullYear()}/${p(now.getMonth() + 1)}/${p(now.getDate())}`;
         const timeStr = `${p(now.getHours())}:${p(now.getMinutes())}`;
         const s = settingsManager.get();
-        const raw = (s.template_notes && s.template_notes.trim()) ? s.template_notes : DEFAULT_TEMPLATE_NOTES;
+        const raw = (s.template_notes && s.template_notes.trim()) ? s.template_notes : t('notes.defaultTemplate');
         return raw
             .replace(/\{\{date\}\}/g, dateStr)
             .replace(/\{\{time\}\}/g, timeStr)
@@ -13371,7 +13475,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         if (btnToggleNotes) {
             btnToggleNotes.setAttribute('aria-pressed', String(shouldOpen));
             btnToggleNotes.setAttribute('aria-expanded', String(shouldOpen));
-            btnToggleNotes.title = `${shouldOpen ? 'Thu gọn' : 'Mở'} ghi chú cuộc họp (⌘N)`;
+            btnToggleNotes.title = t(shouldOpen ? 'notes.toggle.close' : 'notes.toggle.open');
         }
     }
 

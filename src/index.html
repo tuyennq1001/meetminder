@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="vi">
+<html lang="en">
 
 <head>
   <meta charset="UTF-8" />
@@ -45,7 +45,7 @@
           <button class="activity-tab active" data-activity="live" data-i18n-title="nav.live.title" title="Dịch trực tiếp (⌘L)" type="button">
             <span data-i18n="nav.live" data-i18n-html="true">🎙 <u>L</u>ive</span><span id="live-tab-badge" class="live-tab-badge state-waiting" title="Trạng thái chờ / đang dịch"></span>
           </button>
-          <button class="activity-tab" data-activity="library" data-i18n-title="nav.logs.title" title="Cuộc họp đã lưu (⌘O)" type="button"><span data-i18n="nav.logs" data-i18n-html="true">📚 L<u>o</u>gs</span></button>
+          <button class="activity-tab" data-activity="library" data-i18n-title="nav.logs.title" title="Cuộc họp đã lưu (⌘O)" type="button"><span data-i18n="nav.logs" data-i18n-html="true">📚 Meeting L<u>o</u>gs</span></button>
         </div>
 
         <div class="header-divider"></div>
@@ -233,14 +233,14 @@
           </div>
           <div class="notes-toolbar-format">
             <div class="notes-format-tools" data-i18n-aria-label="notes.format.title" aria-label="Định dạng ghi chú">
-              <button type="button" class="note-fmt-btn" data-fmt="bold" title="In đậm (Bold) **text**"><b>B</b></button>
-              <button type="button" class="note-fmt-btn" data-fmt="italic" title="In nghiêng (Italic) *text*"><i>I</i></button>
-              <button type="button" class="note-fmt-btn" data-fmt="h1" title="Tiêu đề H1 #">H1</button>
-              <button type="button" class="note-fmt-btn" data-fmt="h2" title="Tiêu đề H2 ##">H2</button>
-              <button type="button" class="note-fmt-btn" data-fmt="list" title="Gạch đầu dòng - ">• List</button>
-              <button type="button" class="note-fmt-btn" data-fmt="todo" title="Checklist - [ ] ">☑ To-Do</button>
-              <button type="button" class="note-fmt-btn" data-fmt="code" title="Mã code `code`"><code>&lt;/&gt;</code></button>
-              <button type="button" class="note-fmt-btn" data-fmt="link" title="Gắn liên kết Markdown [text](url)">🔗 Link</button>
+              <button type="button" class="note-fmt-btn" data-fmt="bold" data-i18n-title="notes.fmt.bold" title="In đậm (Bold) **text**"><b>B</b></button>
+              <button type="button" class="note-fmt-btn" data-fmt="italic" data-i18n-title="notes.fmt.italic" title="In nghiêng (Italic) *text*"><i>I</i></button>
+              <button type="button" class="note-fmt-btn" data-fmt="h1" data-i18n-title="notes.fmt.h1" title="Tiêu đề H1 #">H1</button>
+              <button type="button" class="note-fmt-btn" data-fmt="h2" data-i18n-title="notes.fmt.h2" title="Tiêu đề H2 ##">H2</button>
+              <button type="button" class="note-fmt-btn" data-fmt="list" data-i18n-title="notes.fmt.list" title="Gạch đầu dòng - ">• List</button>
+              <button type="button" class="note-fmt-btn" data-fmt="todo" data-i18n-title="notes.fmt.todo" title="Checklist - [ ] ">☑ To-Do</button>
+              <button type="button" class="note-fmt-btn" data-fmt="code" data-i18n-title="notes.fmt.code" title="Mã code `code`"><code>&lt;/&gt;</code></button>
+              <button type="button" class="note-fmt-btn" data-fmt="link" data-i18n-title="notes.fmt.link" title="Gắn liên kết Markdown [text](url)">🔗 Link</button>
             </div>
             <button type="button" id="btn-note-copy" class="note-copy-btn" data-i18n-title="notes.copy.title" title="Copy nội dung ghi chú">
               <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -272,13 +272,13 @@
         </div>
 
         <div class="logs-folder-tab-bar folder-tab-bar" id="logs-scope-tabs" role="tablist">
-          <button type="button" class="logs-scope-tab folder-tab-btn active" data-scope="work" id="scope-tab-work" title="Các cuộc họp công việc & khách hàng">
+          <button type="button" class="logs-scope-tab folder-tab-btn active" data-scope="work" id="scope-tab-work" data-i18n-title="scope.workTitle" title="Các cuộc họp công việc & khách hàng">
             <span data-i18n="scope.work">💼 Công việc</span> (<span id="scope-count-work">0</span>)
           </button>
-          <button type="button" class="logs-scope-tab folder-tab-btn" data-scope="personal" id="scope-tab-personal" title="Các cuộc họp & ghi chép cá nhân">
+          <button type="button" class="logs-scope-tab folder-tab-btn" data-scope="personal" id="scope-tab-personal" data-i18n-title="scope.personalTitle" title="Các cuộc họp & ghi chép cá nhân">
             <span data-i18n="scope.personal">👤 Cá nhân</span> (<span id="scope-count-personal">0</span>)
           </button>
-          <button type="button" class="logs-scope-tab folder-tab-btn" data-scope="all" id="scope-tab-all" title="Toàn bộ danh sách cuộc họp">
+          <button type="button" class="logs-scope-tab folder-tab-btn" data-scope="all" id="scope-tab-all" data-i18n-title="scope.allTitle" title="Toàn bộ danh sách cuộc họp">
             <span data-i18n="scope.all">📑 Tất cả</span> (<span id="scope-count-all">0</span>)
           </button>
         </div>
@@ -310,10 +310,10 @@
           </div>
         </div>
 
-        <div class="session-player session-player-detail" data-player-id="" aria-label="Trình phát bản ghi âm">
-          <button type="button" class="session-player-toggle" data-player-toggle title="Phát bản ghi âm">▶</button>
+        <div class="session-player session-player-detail" data-player-id="" data-i18n-aria-label="session.playerAria" aria-label="Trình phát bản ghi âm">
+          <button type="button" class="session-player-toggle" data-player-toggle data-i18n-title="session.playAudio" title="Phát bản ghi âm">▶</button>
           <span class="session-player-time" data-player-current>0:00</span>
-          <input class="session-player-timeline" data-player-timeline type="range" min="0" max="0" step="0.1" value="0" aria-label="Timeline bản ghi âm" />
+          <input class="session-player-timeline" data-player-timeline type="range" min="0" max="0" step="0.1" value="0" data-i18n-aria-label="session.playerTimelineAria" aria-label="Timeline bản ghi âm" />
           <span class="session-player-time" data-player-duration>0:00</span>
         </div>
 
@@ -328,7 +328,7 @@
               <span data-i18n="session.notes">📝 Ghi chép bằng tay</span>
             </button>
             <button type="button" class="session-nav-tab folder-tab-btn" data-tab="logs" id="tab-btn-logs">
-              <span data-i18n="session.logs">📜 Logs</span>
+              <span data-i18n="session.logs">📜 Meeting Logs</span>
             </button>
           </div>
 
@@ -344,42 +344,42 @@
           <!-- Sub-tabs: JA & VI + Actions (Same row, right-aligned) -->
           <div class="minutes-subtab-bar">
             <div class="minutes-subtab-container">
-                  <span class="minutes-subtab-label">🌐 Ngôn ngữ biên bản:</span>
+                  <span class="minutes-subtab-label" data-i18n="session.minutesLangLabel">🌐 Ngôn ngữ biên bản:</span>
                   <div class="minutes-subtab-group">
-                    <button type="button" class="minutes-subtab active" id="subtab-btn-minutes-ja" data-lang="ja" title="Biên bản cuộc họp Tiếng Nhật">
+                    <button type="button" class="minutes-subtab" id="subtab-btn-minutes-ja" data-lang="ja" data-i18n-title="session.minutesSubtabJa" title="Biên bản cuộc họp Tiếng Nhật">
                       <span>🇯🇵 日本語</span>
-                  <span class="subtab-badge" id="subtab-badge-minutes-ja" style="display:none">✓ Đã có</span>
+                  <span class="subtab-badge" id="subtab-badge-minutes-ja" style="display:none" data-i18n="session.minutesBadgeDone">✓ Đã có</span>
                 </button>
-                <button type="button" class="minutes-subtab" id="subtab-btn-minutes-vi" data-lang="vi" title="Biên bản cuộc họp Tiếng Việt">
+                <button type="button" class="minutes-subtab" id="subtab-btn-minutes-vi" data-lang="vi" data-i18n-title="session.minutesSubtabVi" title="Biên bản cuộc họp Tiếng Việt">
                   <span>🇻🇳 Tiếng Việt</span>
-                  <span class="subtab-badge" id="subtab-badge-minutes-vi" style="display:none">✓ Đã có</span>
+                  <span class="subtab-badge" id="subtab-badge-minutes-vi" style="display:none" data-i18n="session.minutesBadgeDone">✓ Đã có</span>
                 </button>
-                <button type="button" class="minutes-subtab" id="subtab-btn-minutes-en" data-lang="en" title="Meeting Minutes in English">
+                <button type="button" class="minutes-subtab active" id="subtab-btn-minutes-en" data-lang="en" data-i18n-title="session.minutesSubtabEn" title="Meeting Minutes in English">
                   <span>🇬🇧 English</span>
-                  <span class="subtab-badge" id="subtab-badge-minutes-en" style="display:none">✓ Đã có</span>
+                  <span class="subtab-badge" id="subtab-badge-minutes-en" style="display:none" data-i18n="session.minutesBadgeDone">✓ Đã có</span>
                 </button>
               </div>
             </div>
             <div class="minutes-actions-group">
-              <button type="button" id="btn-minutes-regenerate" class="btn-secondary small" title="Yêu cầu AI tạo lại biên bản cho ngôn ngữ đang chọn">🔄 Tạo lại (AI)</button>
-              <button type="button" id="btn-minutes-edit" class="btn-secondary small" title="Sửa biên bản"><svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="13" height="13" style="margin-right:3px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>Sửa</button>
-              <button type="button" id="btn-minutes-save" class="btn-primary small" style="display:none" title="Lưu biên bản (⌘S)">💾 Lưu</button>
-              <button type="button" id="btn-minutes-cancel" class="btn-secondary small" style="display:none" title="Huỷ (Esc)">✕ Huỷ</button>
-              <button type="button" id="btn-minutes-copy-rich" class="btn-primary small" title="Copy dạng Rich Text / HTML (giữ nguyên bảng và in đậm) để dán vào Gmail, Outlook, Slack">📋 Copy HTML</button>
-              <button type="button" id="btn-minutes-copy-md" class="btn-secondary small" title="Copy dạng Markdown">📄 Copy .md</button>
+              <button type="button" id="btn-minutes-regenerate" class="btn-secondary small" data-i18n-title="session.minutesRegenerateTitle" title="Yêu cầu AI tạo lại biên bản cho ngôn ngữ đang chọn"><span data-i18n="session.minutesRegenerate">🔄 Tạo lại (AI)</span></button>
+              <button type="button" id="btn-minutes-edit" class="btn-secondary small" data-i18n-title="session.minutesEditTitle" title="Sửa biên bản"><svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="13" height="13" style="margin-right:3px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg><span data-i18n="session.minutesEdit">Sửa</span></button>
+              <button type="button" id="btn-minutes-save" class="btn-primary small" style="display:none" data-i18n-title="session.minutesSaveTitle" title="Lưu biên bản (⌘S)"><span data-i18n="session.minutesSave">💾 Lưu</span></button>
+              <button type="button" id="btn-minutes-cancel" class="btn-secondary small" style="display:none" data-i18n-title="session.minutesCancelTitle" title="Huỷ (Esc)"><span data-i18n="session.minutesCancel">✕ Huỷ</span></button>
+              <button type="button" id="btn-minutes-copy-rich" class="btn-primary small" data-i18n-title="session.minutesCopyHtmlTitle" title="Copy dạng Rich Text / HTML (giữ nguyên bảng và in đậm) để dán vào Gmail, Outlook, Slack"><span data-i18n="session.minutesCopyHtml">📋 Copy HTML</span></button>
+              <button type="button" id="btn-minutes-copy-md" class="btn-secondary small" data-i18n-title="session.minutesCopyMdTitle" title="Copy dạng Markdown"><span data-i18n="session.minutesCopyMd">📄 Copy .md</span></button>
             </div>
           </div>
           
           <div id="minutes-loading" class="minutes-state-card" style="display:none">
             <div class="spinner-ring" style="margin: 0 auto 12px auto;"></div>
-            <p id="minutes-loading-text" style="color:var(--md-sys-color-on-surface-variant); font-size:13px;">Đang tổng hợp Meeting Minutes bằng AI...</p>
+            <p id="minutes-loading-text" data-i18n="session.minutesLoading" style="color:var(--md-sys-color-on-surface-variant); font-size:13px;">Đang tổng hợp Meeting Minutes bằng AI...</p>
           </div>
 
           <div id="minutes-empty" class="minutes-state-card" style="display:none">
             <div style="font-size:32px; margin-bottom:8px;">📋</div>
-            <h4 id="minutes-empty-title" style="margin:0 0 6px 0; font-size:14px;">Chưa có Meeting Minutes cho ngôn ngữ này</h4>
-            <p id="minutes-empty-desc" style="margin:0 0 14px 0; font-size:12px; color:var(--md-sys-color-on-surface-variant);">Tự động phân tích hội thoại thành biên bản chuẩn.</p>
-            <button type="button" id="btn-minutes-generate-empty" class="btn-primary small" style="font-size:12px; padding:6px 14px;">✨ Tạo Meeting Minutes ngay</button>
+            <h4 id="minutes-empty-title" data-i18n="session.minutesEmptyTitle" style="margin:0 0 6px 0; font-size:14px;">Chưa có Meeting Minutes cho ngôn ngữ này</h4>
+            <p id="minutes-empty-desc" data-i18n="session.minutesEmptyDesc" style="margin:0 0 14px 0; font-size:12px; color:var(--md-sys-color-on-surface-variant);">Tự động phân tích hội thoại thành biên bản chuẩn.</p>
+            <button type="button" id="btn-minutes-generate-empty" class="btn-primary small" data-i18n="session.minutesGenerateEmpty" style="font-size:12px; padding:6px 14px;">✨ Tạo Meeting Minutes ngay</button>
           </div>
 
           <div id="session-minutes-editor-container" class="session-viewer-editor-container"></div>
@@ -389,14 +389,14 @@
         <div id="session-tab-panel-notes" class="session-tab-panel folder-tab-panel" style="display:none">
           <div class="session-tab-subbar">
             <div class="session-tab-subbar-left">
-              <span class="subbar-info">📝 Ghi chú do bạn tự nhập trong và sau cuộc họp</span>
+              <span class="subbar-info" data-i18n="session.notesSubbarInfo">📝 Ghi chú do bạn tự nhập trong và sau cuộc họp</span>
             </div>
             <div class="session-tab-subbar-right">
-              <button type="button" id="btn-notes-edit" class="btn-secondary small" title="Sửa ghi chú"><svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="13" height="13" style="margin-right:3px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>Sửa</button>
-              <button type="button" id="btn-notes-save" class="btn-primary small" style="display:none" title="Lưu ghi chú (⌘S)">💾 Lưu</button>
-              <button type="button" id="btn-notes-cancel" class="btn-secondary small" style="display:none" title="Huỷ (Esc)">✕ Huỷ</button>
-              <button type="button" id="btn-notes-copy-rich" class="btn-primary small" title="Copy dạng Rich Text / HTML để dán vào Email, Slack">📋 Copy HTML</button>
-              <button type="button" id="btn-notes-copy-md" class="btn-secondary small" title="Copy dạng Markdown">📄 Copy .md</button>
+              <button type="button" id="btn-notes-edit" class="btn-secondary small" data-i18n-title="session.notesEditTitle" title="Sửa ghi chú"><svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="13" height="13" style="margin-right:3px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg><span data-i18n="session.notesEdit">Sửa</span></button>
+              <button type="button" id="btn-notes-save" class="btn-primary small" style="display:none" data-i18n-title="session.notesSaveTitle" title="Lưu ghi chú (⌘S)"><span data-i18n="session.notesSave">💾 Lưu</span></button>
+              <button type="button" id="btn-notes-cancel" class="btn-secondary small" style="display:none" data-i18n-title="session.notesCancelTitle" title="Huỷ (Esc)"><span data-i18n="session.notesCancel">✕ Huỷ</span></button>
+              <button type="button" id="btn-notes-copy-rich" class="btn-primary small" data-i18n-title="session.notesCopyHtmlTitle" title="Copy dạng Rich Text / HTML để dán vào Email, Slack"><span data-i18n="session.notesCopyHtml">📋 Copy HTML</span></button>
+              <button type="button" id="btn-notes-copy-md" class="btn-secondary small" data-i18n-title="session.notesCopyMdTitle" title="Copy dạng Markdown"><span data-i18n="session.notesCopyMd">📄 Copy .md</span></button>
             </div>
           </div>
           <div id="session-notes-editor-container" class="session-viewer-editor-container"></div>
@@ -406,14 +406,14 @@
         <div id="session-tab-panel-logs" class="session-tab-panel folder-tab-panel" style="display:none">
           <div class="session-tab-subbar">
             <div class="session-tab-subbar-left">
-              <button type="button" id="btn-session-retranscript" class="btn-primary small" title="Dùng file ghi âm để Gemini tạo lại toàn bộ Logs">🔄 Re-transcript</button>
-              <button type="button" id="btn-session-edit-langs" class="btn-secondary small" title="Sửa cặp ngôn ngữ nguồn → đích của Logs (mặc định: Nhật/Anh/Việt)">🌐 Ngôn ngữ</button>
+              <button type="button" id="btn-session-retranscript" class="btn-primary small" data-i18n-title="session.retranscriptTooltip" title="Dùng file ghi âm để Gemini tạo lại toàn bộ Meeting Logs"><span data-i18n="session.retranscriptBtn">🔄 Re-transcript</span></button>
+              <button type="button" id="btn-session-edit-langs" class="btn-secondary small" data-i18n-title="session.editLangsTooltip" title="Sửa cặp ngôn ngữ nguồn → đích của Meeting Logs (mặc định: Nhật/Anh/Việt)"><span data-i18n="session.editLangsBtn">🌐 Cài đặt ngôn ngữ</span></button>
               <span id="session-retranscript-status" class="subbar-info" style="display:none"></span>
             </div>
             <div class="session-tab-subbar-right">
-              <button type="button" id="btn-session-export-srt" class="btn-secondary small" title="Xuất file .srt">.srt</button>
-              <button type="button" id="btn-session-export-txt" class="btn-secondary small" title="Xuất file .txt">.txt</button>
-              <button type="button" id="btn-session-edit-title-legacy" class="icon-btn small" title="Sửa file thô" style="display:none"><svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="13" height="13"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg></button>
+              <button type="button" id="btn-session-export-srt" class="btn-secondary small" data-i18n-title="session.exportSrtTooltip" title="Xuất file .srt">.srt</button>
+              <button type="button" id="btn-session-export-txt" class="btn-secondary small" data-i18n-title="session.exportTxtTooltip" title="Xuất file .txt">.txt</button>
+              <button type="button" id="btn-session-edit-title-legacy" class="icon-btn small" data-i18n-title="session.editLegacyTitle" title="Sửa file thô" style="display:none"><svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="13" height="13"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg></button>
             </div>
           </div>
           <div id="session-logs-editor-container" class="session-viewer-editor-container"></div>
@@ -1018,8 +1018,8 @@
                   <span class="templates-subtab-label" data-i18n="settings.template.langLabel">🌐 Ngôn ngữ mẫu:</span>
                   <div class="templates-subtab-bar" id="templates-lang-subtabs">
                     <button type="button" class="templates-subtab" data-lang="ja" id="subtab-template-lang-ja">🇯🇵 日本語</button>
-                    <button type="button" class="templates-subtab active" data-lang="vi" id="subtab-template-lang-vi">🇻🇳 Tiếng Việt</button>
-                    <button type="button" class="templates-subtab" data-lang="en" id="subtab-template-lang-en">🇬🇧 English</button>
+                    <button type="button" class="templates-subtab" data-lang="vi" id="subtab-template-lang-vi">🇻🇳 Tiếng Việt</button>
+                    <button type="button" class="templates-subtab active" data-lang="en" id="subtab-template-lang-en">🇬🇧 English</button>
                   </div>
                 </div>
 
@@ -1292,34 +1292,34 @@
       <div class="modal-header modal-header-retranscript">
         <div style="display:flex;align-items:center;gap:10px;">
           <div class="spinner-ring retranscript-spinner"></div>
-          <h3 id="retranscript-progress-title">Đang re-transcript</h3>
+          <h3 id="retranscript-progress-title" data-i18n="retranscript.modal.title">Đang re-transcript</h3>
         </div>
         <div class="retranscript-header-actions">
-          <button type="button" id="btn-retranscript-minimize" class="icon-btn small" title="Thu nhỏ / Chạy nền">🗕</button>
-          <button type="button" id="btn-retranscript-cancel" class="icon-btn small close-btn" title="Hủy bỏ">✕</button>
+          <button type="button" id="btn-retranscript-minimize" class="icon-btn small" data-i18n-title="retranscript.modal.minimizeTooltip" title="Thu nhỏ / Chạy nền">🗕</button>
+          <button type="button" id="btn-retranscript-cancel" class="icon-btn small close-btn" data-i18n-title="common.close" title="Đóng">✕</button>
         </div>
       </div>
       <div class="modal-body">
-        <p id="retranscript-progress-text" class="modal-desc">Đang chuẩn bị file ghi âm...</p>
+        <p id="retranscript-progress-text" class="modal-desc" data-i18n="retranscript.modal.prepAudio">Đang chuẩn bị file ghi âm...</p>
         <div class="progress-container">
           <div class="progress-bar"><div id="retranscript-progress-fill" class="progress-fill"></div></div>
           <span id="retranscript-progress-pct" class="progress-pct">0%</span>
         </div>
         <div class="setup-steps">
-          <div class="setup-step" data-retranscript-step="upload"><span class="step-icon">⏳</span><span class="step-text">Đang tải file ghi âm lên Gemini</span></div>
-          <div class="setup-step" data-retranscript-step="transcribe"><span class="step-icon">○</span><span class="step-text">Gemini đang transcript và dịch</span></div>
-          <div class="setup-step" data-retranscript-step="save"><span class="step-icon">○</span><span class="step-text">Đang lưu Logs mới</span></div>
-          <div class="setup-step" data-retranscript-step="minutes"><span class="step-icon">○</span><span class="step-text">Tự động tạo lại Meeting Minutes</span></div>
+          <div class="setup-step" data-retranscript-step="upload"><span class="step-icon">⏳</span><span class="step-text" data-i18n="retranscript.step.upload">Đang tải file ghi âm lên Gemini</span></div>
+          <div class="setup-step" data-retranscript-step="transcribe"><span class="step-icon">○</span><span class="step-text" data-i18n="retranscript.step.transcribe">Gemini đang transcript và dịch</span></div>
+          <div class="setup-step" data-retranscript-step="save"><span class="step-icon">○</span><span class="step-text" data-i18n="retranscript.step.save">Đang lưu Meeting Logs mới</span></div>
+          <div class="setup-step" data-retranscript-step="minutes"><span class="step-icon">○</span><span class="step-text" data-i18n="retranscript.step.minutes">Tự động tạo lại Meeting Minutes</span></div>
         </div>
         <div class="setup-status">
-          <span id="retranscript-progress-status" aria-live="assertive">Quá trình có thể mất vài phút với file ghi âm dài.</span>
-          <button type="button" id="btn-copy-retranscript-error" class="icon-btn small retranscript-error-copy" title="Copy lỗi" aria-label="Copy thông báo lỗi" style="display:none">
+          <span id="retranscript-progress-status" aria-live="assertive" data-i18n="retranscript.modal.timeNotice">Quá trình có thể mất vài phút với file ghi âm dài.</span>
+          <button type="button" id="btn-copy-retranscript-error" class="icon-btn small retranscript-error-copy" data-i18n-title="retranscript.modal.copyError" data-i18n-aria-label="retranscript.modal.copyError" title="Copy thông báo lỗi" aria-label="Copy thông báo lỗi" style="display:none">
             <svg class="icon-copy-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
           </button>
         </div>
         <div class="modal-actions retranscript-modal-actions">
-          <button type="button" id="btn-retranscript-run-bg" class="btn-secondary small" title="Tiếp tục xử lý ngầm, cho phép bạn làm việc khác">⬇ Chạy ngầm</button>
-          <button type="button" id="btn-retranscript-abort" class="btn-danger small" title="Hủy bỏ tiến trình Re-transcript này">✕ Hủy bỏ</button>
+          <button type="button" id="btn-retranscript-run-bg" class="btn-secondary small" data-i18n="retranscript.modal.runBg" data-i18n-title="retranscript.modal.runBgTooltip" title="Tiếp tục xử lý ngầm, cho phép bạn làm việc khác">⬇ Chạy ngầm</button>
+          <button type="button" id="btn-retranscript-abort" class="btn-danger small" data-i18n="common.cancel" data-i18n-title="retranscript.modal.cancelTooltip" title="Hủy bỏ tiến trình Re-transcript này">✕ Hủy bỏ</button>
         </div>
       </div>
     </div>
@@ -1327,48 +1327,48 @@
 
   <!-- Floating indicator when re-transcript runs in background -->
   <div id="retranscript-floating-bar" class="retranscript-floating-bar" style="display:none" role="status">
-    <div class="retranscript-floating-content" id="btn-retranscript-floating-click" title="Nhấp để xem chi tiết">
+    <div class="retranscript-floating-content" id="btn-retranscript-floating-click" data-i18n-title="retranscript.floating.clickTooltip" title="Nhấp để xem chi tiết">
       <div class="retranscript-floating-icon-wrap">
         <div id="retranscript-floating-spinner" class="spinner-ring retranscript-spinner-mini"></div>
         <div id="retranscript-floating-check" class="retranscript-floating-check" style="display:none">✓</div>
       </div>
       <div class="retranscript-floating-info">
         <div class="retranscript-floating-header">
-          <span id="retranscript-floating-title" class="retranscript-floating-title">Re-transcript cuộc họp</span>
+          <span id="retranscript-floating-title" class="retranscript-floating-title" data-i18n="retranscript.floating.title">Re-transcript cuộc họp</span>
           <span id="retranscript-floating-pct" class="retranscript-floating-pct">0%</span>
         </div>
         <div class="retranscript-floating-bar-track">
           <div id="retranscript-floating-progress-fill" class="retranscript-floating-progress-fill" style="width: 0%;"></div>
         </div>
-        <div id="retranscript-floating-status" class="retranscript-floating-status">Đang xử lý...</div>
+        <div id="retranscript-floating-status" class="retranscript-floating-status" data-i18n="retranscript.floating.processing">Đang xử lý...</div>
       </div>
     </div>
     <div class="retranscript-floating-actions">
-      <button type="button" id="btn-retranscript-expand" class="icon-btn small" title="Mở rộng chi tiết">⤢</button>
-      <button type="button" id="btn-retranscript-floating-cancel" class="icon-btn small" title="Hủy bỏ">✕</button>
+      <button type="button" id="btn-retranscript-expand" class="icon-btn small" data-i18n-title="retranscript.floating.expandTooltip" title="Mở rộng chi tiết">⤢</button>
+      <button type="button" id="btn-retranscript-floating-cancel" class="icon-btn small" data-i18n-title="common.cancel" title="Hủy bỏ">✕</button>
     </div>
   </div>
 
   <!-- Floating indicator when Meeting Minutes is generating in background -->
   <div id="minutes-floating-bar" class="minutes-floating-bar" style="display:none" role="status">
-    <div class="minutes-floating-content" id="btn-minutes-floating-click" title="Nhấp để xem Meeting Minutes">
+    <div class="minutes-floating-content" id="btn-minutes-floating-click" data-i18n-title="minutes.floating.clickTooltip" title="Nhấp để xem Meeting Minutes">
       <div class="minutes-floating-icon-wrap">
         <div id="minutes-floating-spinner" class="spinner-ring minutes-spinner-mini"></div>
         <div id="minutes-floating-check" class="minutes-floating-check" style="display:none">✓</div>
       </div>
       <div class="minutes-floating-info">
         <div class="minutes-floating-header">
-          <span id="minutes-floating-title" class="minutes-floating-title">Tạo Meeting Minutes</span>
+          <span id="minutes-floating-title" class="minutes-floating-title" data-i18n="minutes.floating.title">Tạo Meeting Minutes</span>
           <span id="minutes-floating-pct" class="minutes-floating-pct">0%</span>
         </div>
         <div class="minutes-floating-bar-track">
           <div id="minutes-floating-progress-fill" class="minutes-floating-progress-fill" style="width: 0%;"></div>
         </div>
-        <div id="minutes-floating-status" class="minutes-floating-status">Đang xử lý...</div>
+        <div id="minutes-floating-status" class="minutes-floating-status" data-i18n="minutes.floating.processing">Đang xử lý...</div>
       </div>
     </div>
     <div class="minutes-floating-actions">
-      <button type="button" id="btn-minutes-floating-close" class="icon-btn small" title="Đóng">✕</button>
+      <button type="button" id="btn-minutes-floating-close" class="icon-btn small" data-i18n-title="common.close" title="Đóng">✕</button>
     </div>
   </div>
 
@@ -1376,51 +1376,51 @@
   <div id="modal-confirm-stop" class="modal-overlay" style="display:none">
     <div class="modal-card" style="width: 624px; max-width: 92vw;">
       <div class="modal-header">
-        <h3>⏹ Kết thúc & Lưu cuộc họp</h3>
-        <button type="button" id="btn-close-confirm-stop" class="icon-btn close-btn" title="Đóng">×</button>
+        <h3 data-i18n="modal.stop.title">⏹ Kết thúc & Lưu cuộc họp</h3>
+        <button type="button" id="btn-close-confirm-stop" class="icon-btn close-btn" data-i18n-title="modal.close" title="Đóng">×</button>
       </div>
       <div class="modal-body">
         <div style="margin-bottom: 12px;">
-          <label class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Phạm vi cuộc họp:</label>
+          <label class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.stop.scopeLabel">Phạm vi cuộc họp:</label>
           <div class="scope-choice-group" id="stop-meeting-scope-group" style="display:flex; gap:8px;">
             <label class="scope-radio-btn active" id="label-stop-scope-work">
               <input type="radio" name="stop-meeting-scope" value="work" checked />
-              <span>💼 Công việc</span>
+              <span data-i18n="scope.work">💼 Công việc</span>
             </label>
             <label class="scope-radio-btn" id="label-stop-scope-personal">
               <input type="radio" name="stop-meeting-scope" value="personal" />
-              <span>👤 Cá nhân</span>
+              <span data-i18n="scope.personal">👤 Cá nhân</span>
             </label>
           </div>
         </div>
 
-        <label for="input-stop-meeting-title" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tên cuộc họp:</label>
+        <label for="input-stop-meeting-title" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.stop.titleLabel">Tên cuộc họp:</label>
         <input type="text" id="input-stop-meeting-title" class="modal-input" placeholder="MM_20260901_11:00" />
         
         <div id="stop-customer-project-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
           <div id="stop-customer-field-wrap">
-            <label for="select-stop-meeting-customer" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🤝 Khách hàng:</label>
+            <label for="select-stop-meeting-customer" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.stop.customerLabel">🤝 Khách hàng:</label>
             <select id="select-stop-meeting-customer" class="modal-input modal-select">
-              <option value="">(Không chọn KH)</option>
+              <option value="" data-i18n="modal.importAudio.noCustomer">(Không chọn KH)</option>
             </select>
           </div>
           <div id="stop-project-field-wrap">
-            <label for="select-stop-meeting-project" id="label-stop-meeting-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🚀 Dự án (Active):</label>
+            <label for="select-stop-meeting-project" id="label-stop-meeting-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.stop.projectLabel">🚀 Dự án (Active):</label>
             <select id="select-stop-meeting-project" class="modal-input modal-select">
-              <option value="">(Không gán dự án)</option>
+              <option value="" data-i18n="modal.importAudio.noProject">(Không gán dự án)</option>
             </select>
           </div>
         </div>
 
         <div style="margin-top: 10px;">
-          <label for="select-stop-meeting-category" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🗂️ Category cuộc họp:</label>
+          <label for="select-stop-meeting-category" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.stop.categoryLabel">🗂️ Category cuộc họp:</label>
           <select id="select-stop-meeting-category" class="modal-input modal-select">
-            <option value="">(Không chọn category)</option>
+            <option value="" data-i18n="modal.importAudio.noCategory">(Không chọn category)</option>
           </select>
         </div>
 
-        <label for="input-stop-meeting-tags" class="field-label" style="margin-top:10px; margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🏷️ Thẻ (Tags):</label>
-        <input type="text" id="input-stop-meeting-tags" class="modal-input" placeholder="#frontend, #api, #sprint-12 (cách nhau dấu phẩy)" autocomplete="off" />
+        <label for="input-stop-meeting-tags" class="field-label" style="margin-top:10px; margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.stop.tagsLabel">🏷️ Thẻ (Tags):</label>
+        <input type="text" id="input-stop-meeting-tags" class="modal-input" data-i18n-placeholder="modal.importAudio.tagsPlaceholder" placeholder="#frontend, #api, #sprint-12 (cách nhau dấu phẩy)" autocomplete="off" />
         <div id="stop-meeting-tags-suggestions" class="tag-suggestions-box" style="display:none"></div>
         
         <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px;">
@@ -1429,8 +1429,8 @@
             <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; user-select: none;">
               <input type="checkbox" id="chk-stop-auto-retranscript" checked style="width: 16px; height: 16px; margin-top: 1px; accent-color: var(--md-sys-color-primary); cursor: pointer;" />
               <div>
-                <span id="chk-stop-auto-retranscript-label" style="font-size: 12px; font-weight: 600; color: var(--md-sys-color-on-surface);">🔄 Re-transcript để tối ưu nội dung</span>
-                <div id="chk-stop-auto-retranscript-hint" style="margin-top: 4px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;">
+                <span id="chk-stop-auto-retranscript-label" style="font-size: 12px; font-weight: 600; color: var(--md-sys-color-on-surface);" data-i18n="modal.stop.retranscriptLabel">🔄 Re-transcript để tối ưu nội dung</span>
+                <div id="chk-stop-auto-retranscript-hint" style="margin-top: 4px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;" data-i18n="modal.stop.retranscriptHint">
                   Sử dụng file ghi âm để Gemini tạo lại Logs và bản dịch chuẩn xác hơn bản trực tiếp.
                 </div>
               </div>
@@ -1442,8 +1442,8 @@
             <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; user-select: none;">
               <input type="checkbox" id="chk-stop-auto-minutes" checked style="width: 16px; height: 16px; margin-top: 1px; accent-color: var(--md-sys-color-primary); cursor: pointer;" />
               <div>
-                <span id="chk-stop-auto-minutes-label" style="font-size: 12px; font-weight: 600; color: var(--md-sys-color-on-surface);">✨ Tạo Meeting Minutes sau khi lưu</span>
-                <div id="chk-stop-auto-minutes-hint" style="margin-top: 4px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;">
+                <span id="chk-stop-auto-minutes-label" style="font-size: 12px; font-weight: 600; color: var(--md-sys-color-on-surface);" data-i18n="modal.stop.minutesLabel">✨ Tạo Meeting Minutes sau khi lưu</span>
+                <div id="chk-stop-auto-minutes-hint" style="margin-top: 4px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;" data-i18n="modal.stop.minutesHint">
                   Tóm tắt theo template có sẵn
                 </div>
               </div>
@@ -1451,12 +1451,12 @@
           </div>
         </div>
 
-        <p class="modal-desc" style="margin-top:10px;">Phiên dịch sẽ dừng lại. Toàn bộ bản ghi âm, bản dịch và ghi chú sẽ được lưu vào tab 📚 Logs theo khách hàng, dự án và danh mục đã chọn.</p>
+        <p class="modal-desc" style="margin-top:10px;" data-i18n="modal.stop.desc">Phiên dịch sẽ dừng lại. Toàn bộ bản ghi âm, bản dịch và ghi chú sẽ được lưu vào tab 📚 Meeting Logs theo khách hàng, dự án và danh mục đã chọn.</p>
       </div>
       <div class="modal-footer">
-        <button type="button" id="btn-cancel-confirm-stop" class="secondary-btn modal-action-btn">Huỷ</button>
-        <button type="button" id="btn-discard-confirm-stop" class="danger-btn modal-action-btn">🗑 Xoá</button>
-        <button type="button" id="btn-agree-confirm-stop" class="primary-action-btn modal-action-btn">💾 Kết thúc & Lưu</button>
+        <button type="button" id="btn-cancel-confirm-stop" class="secondary-btn modal-action-btn" data-i18n="modal.cancel">Huỷ</button>
+        <button type="button" id="btn-discard-confirm-stop" class="danger-btn modal-action-btn" data-i18n="modal.stop.discard">🗑 Xoá</button>
+        <button type="button" id="btn-agree-confirm-stop" class="primary-action-btn modal-action-btn" data-i18n="modal.stop.save">💾 Kết thúc & Lưu</button>
       </div>
     </div>
   </div>
@@ -1465,8 +1465,8 @@
   <div id="modal-import-audio" class="modal-overlay" style="display:none">
     <div class="modal-card" style="max-width: 480px;">
       <div class="modal-header">
-        <h3>📥 Import file ghi âm cuộc họp</h3>
-        <button type="button" id="btn-close-import-audio" class="icon-btn close-btn" title="Đóng">×</button>
+        <h3 data-i18n="modal.importAudio.title">📥 Import file ghi âm cuộc họp</h3>
+        <button type="button" id="btn-close-import-audio" class="icon-btn close-btn" data-i18n-title="modal.close" title="Đóng">×</button>
       </div>
       <div class="modal-body">
         <!-- Selected File Card -->
@@ -1474,63 +1474,63 @@
           <div class="import-file-info">
             <span class="import-file-icon">🎵</span>
             <div class="import-file-text-wrap">
-              <div id="import-file-name" class="import-file-name">Chưa chọn file</div>
-              <div id="import-file-meta" class="import-file-meta">—</div>
+              <div id="import-file-name" class="import-file-name" data-i18n="modal.importAudio.noFile">Chưa chọn file</div>
+              <div id="import-file-meta" class="import-file-meta" data-i18n="modal.importAudio.dropOrBrowse">—</div>
             </div>
           </div>
-          <button type="button" id="btn-import-browse-file" class="btn-secondary small" style="white-space:nowrap; flex-shrink:0;">Chọn file local</button>
+          <button type="button" id="btn-import-browse-file" class="btn-secondary small" style="white-space:nowrap; flex-shrink:0;" data-i18n="modal.importAudio.browseBtn">Chọn file local</button>
         </div>
 
-        <div id="import-audio-dropzone" class="import-audio-dropzone" role="button" tabindex="0" aria-label="Kéo thả file ghi âm hoặc chọn file local">
+        <div id="import-audio-dropzone" class="import-audio-dropzone" role="button" tabindex="0" data-i18n-aria-label="modal.importAudio.dropzoneAria" aria-label="Kéo thả file ghi âm hoặc chọn file local">
           <span class="import-audio-dropzone-icon">📂</span>
-          <span><strong>Kéo thả file ghi âm vào đây</strong><br><small>hoặc bấm để chọn file local</small></span>
+          <span><strong data-i18n="modal.importAudio.dropzoneMain">Kéo thả file ghi âm vào đây</strong><br><small data-i18n="modal.importAudio.dropzoneSub">hoặc bấm để chọn file local</small></span>
         </div>
 
-        <label for="input-import-meeting-title" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tên cuộc họp (*):</label>
-        <input type="text" id="input-import-meeting-title" class="modal-input" placeholder="Nhập tên cuộc họp..." />
+        <label for="input-import-meeting-title" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.importAudio.meetingTitleLabel">Tên cuộc họp (*):</label>
+        <input type="text" id="input-import-meeting-title" class="modal-input" data-i18n-placeholder="modal.importAudio.meetingTitlePlaceholder" placeholder="Nhập tên cuộc họp..." />
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
           <div>
-            <label for="select-import-meeting-customer" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🤝 Khách hàng:</label>
+            <label for="select-import-meeting-customer" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.importAudio.customerLabel">🤝 Khách hàng:</label>
             <select id="select-import-meeting-customer" class="modal-input modal-select">
-              <option value="">(Không chọn KH)</option>
+              <option value="" data-i18n="modal.importAudio.noCustomer">(Không chọn KH)</option>
             </select>
           </div>
           <div>
-            <label for="select-import-meeting-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🚀 Dự án (Active):</label>
+            <label for="select-import-meeting-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.importAudio.projectLabel">🚀 Dự án (Active):</label>
             <select id="select-import-meeting-project" class="modal-input modal-select">
-              <option value="">(Không gán dự án)</option>
+              <option value="" data-i18n="modal.importAudio.noProject">(Không gán dự án)</option>
             </select>
           </div>
         </div>
 
         <div style="margin-top: 10px;">
-          <label for="select-import-meeting-category" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🗂️ Category cuộc họp:</label>
+          <label for="select-import-meeting-category" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.importAudio.categoryLabel">🗂️ Category cuộc họp:</label>
           <select id="select-import-meeting-category" class="modal-input modal-select">
-            <option value="">(Không chọn category)</option>
+            <option value="" data-i18n="modal.importAudio.noCategory">(Không chọn category)</option>
           </select>
         </div>
 
-        <label for="input-import-meeting-tags" class="field-label" style="margin-top:10px; margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🏷️ Thẻ (Tags):</label>
-        <input type="text" id="input-import-meeting-tags" class="modal-input" placeholder="#frontend, #api, #sprint-12 (cách nhau dấu phẩy)" />
+        <label for="input-import-meeting-tags" class="field-label" style="margin-top:10px; margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.importAudio.tagsLabel">🏷️ Thẻ (Tags):</label>
+        <input type="text" id="input-import-meeting-tags" class="modal-input" data-i18n-placeholder="modal.importAudio.tagsPlaceholder" placeholder="#frontend, #api, #sprint-12 (cách nhau dấu phẩy)" />
 
         <div style="margin-top: 12px; padding: 10px 12px; background: rgba(126, 62, 135, 0.08); border: 1px solid rgba(126, 62, 135, 0.2); border-radius: 8px;">
           <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
             <input type="checkbox" id="chk-import-auto-minutes" checked style="width: 16px; height: 16px; accent-color: var(--md-sys-color-primary); cursor: pointer;" />
-            <span style="font-size: 12px; font-weight: 600; color: var(--md-sys-color-on-surface);">✨ Tự động tạo Meeting Minutes sau khi import</span>
+            <span style="font-size: 12px; font-weight: 600; color: var(--md-sys-color-on-surface);" data-i18n="modal.importAudio.autoMinutesLabel">✨ Tự động tạo Meeting Minutes sau khi import</span>
           </label>
-          <div style="margin-top: 4px; margin-left: 24px; font-size: 11px; color: var(--md-sys-color-on-surface-variant);">
+          <div style="margin-top: 4px; margin-left: 24px; font-size: 11px; color: var(--md-sys-color-on-surface-variant);" data-i18n="modal.importAudio.autoMinutesHint">
             Tự động tạo biên bản theo ngôn ngữ phát biểu và bản dịch tiếng Việt.
           </div>
         </div>
 
-        <p class="modal-desc" style="margin-top:10px; font-size:11.5px; line-height:1.4;">
+        <p class="modal-desc" style="margin-top:10px; font-size:11.5px; line-height:1.4;" data-i18n="modal.importAudio.geminiHint">
           💡 Gemini sẽ tự động nhận diện ngôn ngữ nói, bóc băng chi tiết từng đoạn và tự động dịch sang Tiếng Việt nếu ngôn ngữ nói không phải Tiếng Việt.
         </p>
       </div>
       <div class="modal-footer">
-        <button type="button" id="btn-cancel-import-audio" class="secondary-btn modal-action-btn">Huỷ</button>
-        <button type="button" id="btn-confirm-import-audio" class="primary-action-btn modal-action-btn">📥 Bắt đầu Import</button>
+        <button type="button" id="btn-cancel-import-audio" class="secondary-btn modal-action-btn" data-i18n="modal.cancel">Huỷ</button>
+        <button type="button" id="btn-confirm-import-audio" class="primary-action-btn modal-action-btn" data-i18n="modal.importAudio.start">📥 Bắt đầu Import</button>
       </div>
     </div>
   </div>
@@ -1539,16 +1539,16 @@
   <div id="modal-rename-meeting" class="modal-overlay" style="display:none">
     <div class="modal-card">
       <div class="modal-header">
-        <h3><svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="16" height="16" style="margin-right:4px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>Đổi tên cuộc họp</h3>
-        <button type="button" id="btn-close-rename-meeting" class="icon-btn close-btn">×</button>
+        <h3><svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="16" height="16" style="margin-right:4px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg><span data-i18n="modal.rename.title">Đổi tên cuộc họp</span></h3>
+        <button type="button" id="btn-close-rename-meeting" class="icon-btn close-btn" data-i18n-title="modal.close" title="Đóng">×</button>
       </div>
       <div class="modal-body">
-        <label for="input-rename-meeting-title" class="field-label" style="margin-bottom:8px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tên mới:</label>
+        <label for="input-rename-meeting-title" class="field-label" style="margin-bottom:8px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.rename.newTitleLabel">Tên mới:</label>
         <input type="text" id="input-rename-meeting-title" class="modal-input" />
       </div>
       <div class="modal-footer">
-        <button type="button" id="btn-cancel-rename-meeting" class="secondary-btn">Hủy</button>
-        <button type="button" id="btn-confirm-rename-meeting" class="primary-action-btn">Lưu tên</button>
+        <button type="button" id="btn-cancel-rename-meeting" class="secondary-btn" data-i18n="modal.cancel">Hủy</button>
+        <button type="button" id="btn-confirm-rename-meeting" class="primary-action-btn" data-i18n="modal.rename.confirm">Lưu tên</button>
       </div>
     </div>
   </div>
@@ -1557,56 +1557,56 @@
   <div id="modal-edit-tags" class="modal-overlay" style="display:none">
     <div class="modal-card" style="max-width: 480px;">
       <div class="modal-header">
-        <h3><svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="16" height="16" style="margin-right:4px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>Sửa thông tin cuộc họp</h3>
-        <button type="button" id="btn-close-edit-tags" class="icon-btn close-btn">×</button>
+        <h3><svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="16" height="16" style="margin-right:4px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg><span data-i18n="modal.metadata.title">Sửa thông tin cuộc họp</span></h3>
+        <button type="button" id="btn-close-edit-tags" class="icon-btn close-btn" data-i18n-title="modal.close" title="Đóng">×</button>
       </div>
       <div class="modal-body">
         <div style="margin-bottom: 12px;">
-          <label class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Phạm vi cuộc họp:</label>
+          <label class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.metadata.scopeLabel">Phạm vi cuộc họp:</label>
           <div class="scope-choice-group" id="edit-session-scope-group" style="display:flex; gap:8px;">
             <label class="scope-radio-btn active" id="label-edit-scope-work">
               <input type="radio" name="edit-session-scope" value="work" checked />
-              <span>💼 Công việc</span>
+              <span data-i18n="scope.work">💼 Công việc</span>
             </label>
             <label class="scope-radio-btn" id="label-edit-scope-personal">
               <input type="radio" name="edit-session-scope" value="personal" />
-              <span>👤 Cá nhân</span>
+              <span data-i18n="scope.personal">👤 Cá nhân</span>
             </label>
           </div>
         </div>
 
-        <label for="input-edit-session-title" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">Tiêu đề cuộc họp:</label>
+        <label for="input-edit-session-title" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.metadata.titleLabel">Tiêu đề cuộc họp:</label>
         <input type="text" id="input-edit-session-title" class="modal-input" />
 
         <div id="edit-customer-project-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
           <div id="edit-customer-field-wrap">
-            <label for="select-edit-session-customer" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🤝 Khách hàng:</label>
+            <label for="select-edit-session-customer" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.metadata.customerLabel">🤝 Khách hàng:</label>
             <select id="select-edit-session-customer" class="modal-input modal-select">
-              <option value="">(Không chọn KH)</option>
+              <option value="" data-i18n="modal.importAudio.noCustomer">(Không chọn KH)</option>
             </select>
           </div>
           <div id="edit-project-field-wrap">
-            <label for="select-edit-session-project" id="label-edit-session-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🚀 Dự án:</label>
+            <label for="select-edit-session-project" id="label-edit-session-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.metadata.projectLabel">🚀 Dự án:</label>
             <select id="select-edit-session-project" class="modal-input modal-select">
-              <option value="">(Không gán dự án)</option>
+              <option value="" data-i18n="modal.importAudio.noProject">(Không gán dự án)</option>
             </select>
           </div>
         </div>
 
         <div style="margin-top: 10px;">
-          <label for="select-edit-session-category" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🗂️ Category:</label>
+          <label for="select-edit-session-category" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.metadata.categoryLabel">🗂️ Category:</label>
           <select id="select-edit-session-category" class="modal-input modal-select">
-            <option value="">(Không chọn category)</option>
+            <option value="" data-i18n="modal.importAudio.noCategory">(Không chọn category)</option>
           </select>
         </div>
 
-        <label for="input-edit-tags-value" class="field-label" style="margin-top:10px; margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);">🏷️ Thẻ (Tags):</label>
+        <label for="input-edit-tags-value" class="field-label" style="margin-top:10px; margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.metadata.tagsLabel">🏷️ Thẻ (Tags):</label>
         <input type="text" id="input-edit-tags-value" class="modal-input" placeholder="#frontend, #api" autocomplete="off" />
         <div id="edit-session-tags-suggestions" class="tag-suggestions-box" style="display:none"></div>
       </div>
       <div class="modal-footer">
-        <button type="button" id="btn-cancel-edit-tags" class="secondary-btn">Hủy</button>
-        <button type="button" id="btn-confirm-edit-tags" class="primary-action-btn">Lưu thay đổi</button>
+        <button type="button" id="btn-cancel-edit-tags" class="secondary-btn" data-i18n="modal.cancel">Hủy</button>
+        <button type="button" id="btn-confirm-edit-tags" class="primary-action-btn" data-i18n="modal.metadata.confirm">Lưu thay đổi</button>
       </div>
     </div>
   </div>
@@ -1618,7 +1618,7 @@
         <h3 id="confirm-delete-title" style="color: #ef4444; display: flex; align-items: center; gap: 6px;">
           <span id="confirm-delete-title-icon">🗑️</span> <span id="confirm-delete-title-text" data-i18n="modal.delete.title">Xác nhận xoá</span>
         </h3>
-        <button type="button" id="btn-close-confirm-delete" class="icon-btn close-btn">×</button>
+        <button type="button" id="btn-close-confirm-delete" class="icon-btn close-btn" data-i18n-title="modal.close" title="Đóng">×</button>
       </div>
       <div class="modal-body">
         <p id="confirm-delete-message" style="font-size: 13px; line-height: 1.5; color: var(--md-sys-color-on-surface); margin: 0;"></p>
@@ -1634,33 +1634,33 @@
   <div id="modal-edit-session-langs" class="modal-overlay" style="display:none">
     <div class="modal-card" style="max-width: 420px;">
       <div class="modal-header">
-        <h3>🌐 Ngôn ngữ của Logs</h3>
-        <button type="button" id="btn-close-edit-session-langs" class="icon-btn close-btn">×</button>
+        <h3 data-i18n="modal.sessionLangs.title">🌐 Ngôn ngữ của Logs</h3>
+        <button type="button" id="btn-close-edit-session-langs" class="icon-btn close-btn" data-i18n-title="modal.close" title="Đóng">×</button>
       </div>
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
-        <p style="font-size: 12px; line-height: 1.5; color: var(--md-sys-color-on-surface-variant); margin: 0;">Chạy lại Re-transcript từ file ghi âm theo cặp ngôn ngữ mới (mặc định: Nhật / Việt / Anh). Logs sẽ được transcript + dịch lại toàn bộ, Minutes tự tạo lại theo. Hủy/lỗi giữa chừng thì dữ liệu cũ còn nguyên.</p>
+        <p style="font-size: 12px; line-height: 1.5; color: var(--md-sys-color-on-surface-variant); margin: 0;" data-i18n="modal.sessionLangs.desc">Chạy lại Re-transcript từ file ghi âm theo cặp ngôn ngữ mới (mặc định: Nhật / Việt / Anh). Logs sẽ được transcript + dịch lại toàn bộ, Minutes tự tạo lại theo. Hủy/lỗi giữa chừng thì dữ liệu cũ còn nguyên.</p>
         <p id="edit-session-langs-current" style="font-size: 12px; color: var(--md-sys-color-on-surface-variant); margin: 0;"></p>
         <div>
-          <label class="field-label" for="select-edit-session-source-lang" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Ngôn ngữ nguồn:</label>
+          <label class="field-label" for="select-edit-session-source-lang" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.sessionLangs.sourceLabel">Ngôn ngữ nguồn:</label>
           <select id="select-edit-session-source-lang" class="modal-input modal-select">
-            <option value="ja">🇯🇵 Tiếng Nhật (日本語)</option>
-            <option value="vi">🇻🇳 Tiếng Việt</option>
-            <option value="en">🇬🇧 English</option>
+            <option value="ja" data-i18n="language.ja">🇯🇵 Tiếng Nhật (日本語)</option>
+            <option value="vi" data-i18n="language.vi">🇻🇳 Tiếng Việt</option>
+            <option value="en" data-i18n="language.en">🇬🇧 English</option>
           </select>
         </div>
         <div>
-          <label class="field-label" for="select-edit-session-target-lang" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;">Ngôn ngữ đích:</label>
+          <label class="field-label" for="select-edit-session-target-lang" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.sessionLangs.targetLabel">Ngôn ngữ đích:</label>
           <select id="select-edit-session-target-lang" class="modal-input modal-select">
-            <option value="ja">🇯🇵 Tiếng Nhật (日本語)</option>
-            <option value="vi">🇻🇳 Tiếng Việt</option>
-            <option value="en">🇬🇧 English</option>
-            <option value="none">🚫 Không dịch</option>
+            <option value="ja" data-i18n="language.ja">🇯🇵 Tiếng Nhật (日本語)</option>
+            <option value="vi" data-i18n="language.vi">🇻🇳 Tiếng Việt</option>
+            <option value="en" data-i18n="language.en">🇬🇧 English</option>
+            <option value="none" data-i18n="language.none">🚫 Không dịch</option>
           </select>
         </div>
       </div>
       <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
-        <button type="button" id="btn-cancel-edit-session-langs" class="secondary-btn">Huỷ</button>
-        <button type="button" id="btn-save-edit-session-langs" class="primary-action-btn">Re-transcript theo ngôn ngữ mới</button>
+        <button type="button" id="btn-cancel-edit-session-langs" class="secondary-btn" data-i18n="modal.cancel">Huỷ</button>
+        <button type="button" id="btn-save-edit-session-langs" class="primary-action-btn" data-i18n="modal.sessionLangs.confirm">Re-transcript theo ngôn ngữ mới</button>
       </div>
     </div>
   </div>
@@ -1670,7 +1670,7 @@
     <div class="modal-card" style="max-width: 460px;">
       <div class="modal-header">
         <h3 id="modal-cust-title">🤝 Thông tin Khách hàng</h3>
-        <button type="button" id="btn-close-add-customer" class="icon-btn close-btn">×</button>
+        <button type="button" id="btn-close-add-customer" class="icon-btn close-btn" data-i18n-title="common.close" title="Đóng">×</button>
       </div>
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
         <input type="hidden" id="input-modal-cust-id" value="" />
@@ -1716,7 +1716,7 @@
     <div class="modal-card" style="max-width: 460px;">
       <div class="modal-header">
         <h3 id="modal-proj-title">🚀 Thêm Dự án mới</h3>
-        <button type="button" id="btn-close-add-project" class="icon-btn close-btn">×</button>
+        <button type="button" id="btn-close-add-project" class="icon-btn close-btn" data-i18n-title="common.close" title="Đóng">×</button>
       </div>
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
         <input type="hidden" id="input-modal-proj-id" value="" />
@@ -1766,7 +1766,7 @@
     <div class="modal-card" style="max-width: 460px;">
       <div class="modal-header">
         <h3 id="modal-cat-title">🗂️ Chỉnh sửa Category</h3>
-        <button type="button" id="btn-close-edit-category" class="icon-btn close-btn">×</button>
+        <button type="button" id="btn-close-edit-category" class="icon-btn close-btn" data-i18n-title="common.close" title="Đóng">×</button>
       </div>
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
         <input type="hidden" id="input-modal-cat-id" value="" />
@@ -1810,7 +1810,7 @@
     <div class="modal-card" style="max-width: 400px;">
       <div class="modal-header">
         <h3 id="modal-tag-title">🏷️ Chỉnh sửa Tag</h3>
-        <button type="button" id="btn-close-edit-tag" class="icon-btn close-btn">×</button>
+        <button type="button" id="btn-close-edit-tag" class="icon-btn close-btn" data-i18n-title="common.close" title="Đóng">×</button>
       </div>
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
         <input type="hidden" id="input-modal-tag-old-name" value="" />

@@ -4846,8 +4846,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
   max-width: 115px;
 }
 #quick-select-target-lang {
-  min-width: 115px;
-  max-width: 145px !important;
+  min-width: 125px;
+  max-width: 215px !important;
+  flex-shrink: 0;
 }
 .quick-lang-select:focus {
   outline: none;
@@ -5078,7 +5079,7 @@ body:not(.activity-live) .floating-controls { display: none; }
 
 #select-view-mode {
   min-width: 124px;
-  max-width: 140px;
+  max-width: 230px;
 }
 
 .toolbar-source-label {

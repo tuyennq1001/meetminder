@@ -157,6 +157,9 @@ pub struct Settings {
     /// Whether handwritten notes should be used as source material for Meeting Minutes
     #[serde(default = "default_meeting_minutes_use_notes")]
     pub meeting_minutes_use_notes: bool,
+    /// Default language for generated meeting minutes
+    #[serde(default = "default_meeting_minutes_lang")]
+    pub meeting_minutes_lang: String,
     /// Custom template for Meeting Minutes - Vietnamese (Markdown)
     #[serde(default)]
     pub template_minutes_vi: Option<String>,
@@ -276,6 +279,7 @@ impl Default for Settings {
             inactivity_timeout_min: 10,
             template_notes: None,
             meeting_minutes_use_notes: true,
+            meeting_minutes_lang: default_meeting_minutes_lang(),
             template_minutes_vi: None,
             template_minutes_ja: None,
             template_minutes_en: None,
@@ -305,7 +309,7 @@ fn default_logs_scope_setting() -> String {
 }
 
 fn default_app_language() -> String {
-    "vi".to_string()
+    "en".to_string()
 }
 
 fn default_git_auto_commit() -> bool {
@@ -342,6 +346,10 @@ fn default_inactivity_timeout_min() -> u32 {
 
 fn default_meeting_minutes_use_notes() -> bool {
     true
+}
+
+fn default_meeting_minutes_lang() -> String {
+    "en".to_string()
 }
 
 fn default_note_font_size() -> u32 {
@@ -445,7 +453,7 @@ mod tests {
     #[test]
     fn test_default_settings() {
         let s = Settings::default();
-        assert_eq!(s.app_language, "vi");
+        assert_eq!(s.app_language, "en");
         assert_eq!(s.gemini_model, "models/gemini-3.5-transcribe-live");
         assert_eq!(s.source_language, "ja");
         assert_eq!(s.target_language, "vi");
@@ -470,6 +478,7 @@ mod tests {
         assert!(s.tts_auto_read);
         assert!(!s.tts_enabled);
         assert!(s.meeting_minutes_use_notes);
+        assert_eq!(s.meeting_minutes_lang, "en");
     }
 
     #[test]
@@ -491,6 +500,7 @@ mod tests {
         assert_eq!(s.endpoint_delay, 3000);
         assert_eq!(s.font_color, "#ffffff");
         assert!(s.meeting_minutes_use_notes);
+        assert_eq!(s.meeting_minutes_lang, "en");
     }
 
     #[test]
