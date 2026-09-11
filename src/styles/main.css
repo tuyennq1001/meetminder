@@ -4846,9 +4846,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
   max-width: 115px;
 }
 #quick-select-target-lang {
-  min-width: 125px;
-  max-width: 215px !important;
-  flex-shrink: 0;
+  min-width: 115px;
+  max-width: 170px;
 }
 .quick-lang-select:focus {
   outline: none;

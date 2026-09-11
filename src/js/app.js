@@ -4795,7 +4795,7 @@ class App {
 
         // Populate customer select
         if (selectCust) {
-            let custHtml = '<option value="">(Không chọn KH)</option>';
+            let custHtml = `<option value="">${this._esc(t('modal.importAudio.noCustomer'))}</option>`;
             for (const c of activeCustomers) {
                 custHtml += `<option value="${this._escAttr(c.id)}">🤝 ${this._esc(c.name)}</option>`;
             }
@@ -4838,7 +4838,7 @@ class App {
                     filteredProjs = filteredProjs.filter(p => p.customer_id === selectedCustomerId);
                 }
             }
-            let projHtml = '<option value="">(Không gán dự án)</option>';
+            let projHtml = `<option value="">${this._esc(t('modal.importAudio.noProject'))}</option>`;
             for (const p of filteredProjs) {
                 projHtml += `<option value="${this._escAttr(p.id)}">🚀 ${this._esc(p.name)}</option>`;
             }
@@ -4901,7 +4901,7 @@ class App {
         selectProj?.addEventListener('change', onProjChange);
 
         if (selectCat) {
-            let catHtml = '<option value="">(Không chọn category)</option>';
+            let catHtml = `<option value="">${this._esc(t('modal.importAudio.noCategory'))}</option>`;
             for (const c of (reg.categories || [])) {
                 catHtml += `<option value="${this._escAttr(c.name)}">🗂️ ${this._esc(c.name)}</option>`;
             }
@@ -4941,10 +4941,14 @@ class App {
         const chkAutoRetranscriptLabel = document.getElementById('chk-stop-auto-retranscript-label');
         if (chkAutoRetranscriptLabel) {
             if (this._hadNetworkIssueInSession) {
-                chkAutoRetranscriptLabel.innerHTML = '🔄 Re-transcript để tối ưu nội dung <span style="color:#f59e0b;font-size:11px;font-weight:normal;margin-left:4px;">(Khuyên dùng vì có đoạn mạng gián đoạn)</span>';
+                chkAutoRetranscriptLabel.innerHTML = `${this._esc(t('modal.stop.retranscriptLabel'))} <span style="color:#f59e0b;font-size:11px;font-weight:normal;margin-left:4px;">${this._esc(t('modal.stop.retranscriptRecommended'))}</span>`;
             } else {
-                chkAutoRetranscriptLabel.textContent = '🔄 Re-transcript để tối ưu nội dung';
+                chkAutoRetranscriptLabel.textContent = t('modal.stop.retranscriptLabel');
             }
+        }
+        const chkAutoRetranscriptHint = document.getElementById('chk-stop-auto-retranscript-hint');
+        if (chkAutoRetranscriptHint) {
+            chkAutoRetranscriptHint.textContent = t('modal.stop.retranscriptHint');
         }
 
         const chkAutoMinutesLabel = document.getElementById('chk-stop-auto-minutes-label');
@@ -5067,8 +5071,8 @@ class App {
 
             document.getElementById('btn-agree-confirm-stop')?.addEventListener('click', onConfirm);
             document.getElementById('btn-discard-confirm-stop')?.addEventListener('click', onDiscard);
-            document.getElementById('btn-cancel-confirm-stop')?.removeEventListener('click', onCancel);
-            document.getElementById('btn-close-confirm-stop')?.removeEventListener('click', onCancel);
+            document.getElementById('btn-cancel-confirm-stop')?.addEventListener('click', onCancel);
+            document.getElementById('btn-close-confirm-stop')?.addEventListener('click', onCancel);
             input?.addEventListener('keydown', onKeyDown);
             inputTags?.addEventListener('keydown', onKeyDown);
             window.addEventListener('keydown', onKeyDown);
