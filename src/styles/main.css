@@ -5270,6 +5270,12 @@ body:not(.activity-live) .floating-controls { display: none; }
   -webkit-app-region: no-drag;
 }
 
+.primary-action-btn *,
+.btn-stop-action *,
+.btn-notes-action * {
+  pointer-events: none;
+}
+
 .primary-action-btn svg,
 .btn-stop-action svg,
 .btn-notes-action svg {

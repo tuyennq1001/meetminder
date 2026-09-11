@@ -116,6 +116,19 @@ if (identifier) {
         devBundle,
       ], { stdio: 'inherit' });
       console.log(`[tauri-with-env] manually signed Dev bundle with "${signingIdentity}"`);
+      const installDest = `/Applications/${devName}.app`;
+      try {
+        execFileSync('/usr/bin/pkill', ['-f', `${devName}.app`], { stdio: 'ignore' });
+      } catch {
+        // Not running, ignore
+      }
+      execFileSync('/bin/sleep', ['0.5']);
+      execFileSync('/bin/rm', ['-rf', installDest], { stdio: 'inherit' });
+      execFileSync('/usr/bin/ditto', [devBundle, installDest], { stdio: 'inherit' });
+      console.log(`[tauri-with-env] installed "${devName}.app" to ${installDest}`);
+      execFileSync('/bin/sleep', ['0.5']);
+      execFileSync('/usr/bin/open', ['-a', installDest], { stdio: 'inherit' });
+      console.log(`[tauri-with-env] launched fresh instance of "${devName}.app"`);
     };
     run(args, 'tauri').then(signDevBundle).catch((err) => {
       console.error(err);

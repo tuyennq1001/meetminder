@@ -6,6 +6,7 @@ const { invoke } = window.__TAURI__.core;
 
 // Default settings shape
 const DEFAULT_SETTINGS = {
+  app_language: 'vi',
   soniox_api_key: '',
   openai_api_key: '',
   gemini_api_key: '',

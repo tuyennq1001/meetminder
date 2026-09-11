@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
 
 <head>
   <meta charset="UTF-8" />
@@ -19,19 +19,19 @@
       <div class="control-bar">
         <!-- Traffic lights window controls (Close, Minimize, Maximize) -->
         <div class="traffic-lights" data-tauri-drag-region="false">
-          <button id="btn-win-close" class="traffic-btn traffic-close" title="Đóng cửa sổ (⌘W / ⌘Q)" type="button">
+          <button id="btn-win-close" class="traffic-btn traffic-close" data-i18n-title="window.close" title="Đóng cửa sổ (⌘W / ⌘Q)" type="button">
             <svg viewBox="0 0 12 12" width="7" height="7"><path d="M2.5 2.5l7 7m0-7l-7 7" stroke="#4c0000" stroke-width="1.2" stroke-linecap="round"/></svg>
           </button>
-          <button id="btn-win-minimize" class="traffic-btn traffic-minimize" title="Thu nhỏ cửa sổ (⌘M)" type="button">
+          <button id="btn-win-minimize" class="traffic-btn traffic-minimize" data-i18n-title="window.minimize" title="Thu nhỏ cửa sổ (⌘M)" type="button">
             <svg viewBox="0 0 12 12" width="7" height="7"><path d="M2 6h8" stroke="#5a3d00" stroke-width="1.2" stroke-linecap="round"/></svg>
           </button>
-          <button id="btn-win-maximize" class="traffic-btn traffic-maximize" title="Phóng to / Thu nhỏ cửa sổ" type="button">
+          <button id="btn-win-maximize" class="traffic-btn traffic-maximize" data-i18n-title="window.maximize" title="Phóng to / Thu nhỏ cửa sổ" type="button">
             <svg viewBox="0 0 12 12" width="7" height="7"><polygon points="3,3 3,9 9,3" fill="#004d00" opacity="0.8"/><polygon points="9,9 9,3 3,9" fill="#004d00" opacity="0.8"/></svg>
           </button>
         </div>
 
         <!-- Settings button -->
-        <button id="btn-settings" class="icon-btn" title="Cài đặt (⌘,)" type="button" data-tauri-drag-region="false">
+        <button id="btn-settings" class="icon-btn" data-i18n-title="settings.open" title="Cài đặt (⌘,)" type="button" data-tauri-drag-region="false">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3" />
             <path
@@ -42,18 +42,18 @@
 
         <!-- Activity switcher (Live, Meeting Logs) -->
         <div class="activity-switcher">
-          <button class="activity-tab active" data-activity="live" title="Dịch trực tiếp (⌘L)" type="button">
-            🎙 <u>L</u>ive<span id="live-tab-badge" class="live-tab-badge state-waiting" title="Trạng thái chờ / đang dịch"></span>
+          <button class="activity-tab active" data-activity="live" data-i18n-title="nav.live.title" title="Dịch trực tiếp (⌘L)" type="button">
+            <span data-i18n="nav.live" data-i18n-html="true">🎙 <u>L</u>ive</span><span id="live-tab-badge" class="live-tab-badge state-waiting" title="Trạng thái chờ / đang dịch"></span>
           </button>
-          <button class="activity-tab" data-activity="library" title="Cuộc họp đã lưu (⌘O)" type="button">📚 L<u>o</u>gs</button>
+          <button class="activity-tab" data-activity="library" data-i18n-title="nav.logs.title" title="Cuộc họp đã lưu (⌘O)" type="button"><span data-i18n="nav.logs" data-i18n-html="true">📚 L<u>o</u>gs</span></button>
         </div>
 
         <div class="header-divider"></div>
 
         <!-- Live Header Controls: Actions · Languages · Timing · View · Audio · TTS · More -->
-        <div class="live-header-controls" id="live-header-controls">
+        <div class="live-header-controls" id="live-header-controls" data-tauri-drag-region="false">
           <!-- Main Start / Pause button -->
-          <button id="btn-start" class="primary-action-btn" title="Start / Pause (⌘S)">
+          <button id="btn-start" type="button" class="primary-action-btn" data-tauri-drag-region="false" data-i18n-title="button.start.title" title="Start / Pause (⌘S)">
             <svg id="icon-play" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5 3 19 12 5 21 5 3" />
             </svg>
@@ -61,11 +61,11 @@
               <rect x="6" y="4" width="4" height="16" rx="1" />
               <rect x="14" y="4" width="4" height="16" rx="1" />
             </svg>
-            <span id="btn-start-label"><u>S</u>tart</span>
+            <span id="btn-start-label" data-i18n="button.start" data-i18n-html="true"><u>S</u>tart</span>
           </button>
 
           <!-- Dynamic Stop / Save button -->
-          <button id="btn-stop" class="btn-stop-action" title="Kết thúc cuộc họp & Lưu (⌘T)" style="display:none">
+          <button id="btn-stop" type="button" class="btn-stop-action" data-tauri-drag-region="false" data-i18n-title="button.saveStop.title" title="Kết thúc cuộc họp & Lưu (⌘T)" style="display:none">
             <svg id="icon-stop-sq" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
               <rect x="4" y="4" width="16" height="16" rx="3" />
             </svg>
@@ -74,52 +74,52 @@
               <polyline points="17 21 17 13 7 13 7 21" />
               <polyline points="7 3 7 8 15 8" />
             </svg>
-            <span id="btn-stop-label">Save & S<u>t</u>op</span>
+            <span id="btn-stop-label" data-i18n="button.saveStop" data-i18n-html="true">Save &amp; S<u>t</u>op</span>
           </button>
 
           <!-- Live Meeting Duration -->
-          <div id="live-meeting-duration" class="live-duration-badge is-idle" title="Thời gian diễn ra cuộc họp">
+          <div id="live-meeting-duration" class="live-duration-badge is-idle" data-i18n-title="duration.default" title="Thời gian diễn ra cuộc họp">
             <span class="duration-dot"></span>
             <span id="live-duration-text">00:00:00</span>
           </div>
 
           <!-- Language Selector -->
-          <div class="quick-lang-wrap" title="Chọn ngôn ngữ trực tiếp trong khi dịch">
-            <span class="toolbar-setting-label">Ngôn ngữ</span>
-            <select id="quick-select-source-lang" class="source-select quick-lang-select" title="Ngôn ngữ nguồn (ngôn ngữ nói)">
-              <option value="auto">🌐 Auto</option>
-              <option value="vi">🇻🇳 Tiếng Việt</option>
-              <option value="ja">🇯🇵 日本語</option>
-              <option value="en">🇬🇧 English</option>
+          <div class="quick-lang-wrap" data-i18n-title="toolbar.language" title="Chọn ngôn ngữ trực tiếp trong khi dịch">
+            <span class="toolbar-setting-label" data-i18n="toolbar.language">Ngôn ngữ</span>
+            <select id="quick-select-source-lang" class="source-select quick-lang-select" data-i18n-title="toolbar.sourceLanguage" title="Ngôn ngữ nguồn (ngôn ngữ nói)">
+              <option value="auto" data-i18n="language.auto">🌐 Auto</option>
+              <option value="vi" data-i18n="language.vi">🇻🇳 Tiếng Việt</option>
+              <option value="ja" data-i18n="language.ja">🇯🇵 日本語</option>
+              <option value="en" data-i18n="language.en">🇬🇧 English</option>
             </select>
-            <button type="button" id="btn-quick-swap-lang" class="btn-swap-lang" title="Đổi chiều ngôn ngữ">⇄</button>
-            <select id="quick-select-target-lang" class="source-select quick-lang-select" title="Ngôn ngữ dịch (Đích)">
-              <option value="vi">🇻🇳 Tiếng Việt</option>
-              <option value="ja">🇯🇵 日本語</option>
-              <option value="en">🇬🇧 English</option>
-              <option value="none">🚫 Không dịch</option>
+            <button type="button" id="btn-quick-swap-lang" class="btn-swap-lang" data-i18n-title="toolbar.swapLanguage" title="Đổi chiều ngôn ngữ">⇄</button>
+            <select id="quick-select-target-lang" class="source-select quick-lang-select" data-i18n-title="toolbar.targetLanguage" title="Ngôn ngữ dịch (Đích)">
+              <option value="vi" data-i18n="language.vi">🇻🇳 Tiếng Việt</option>
+              <option value="ja" data-i18n="language.ja">🇯🇵 日本語</option>
+              <option value="en" data-i18n="language.en">🇬🇧 English</option>
+              <option value="none" data-i18n="language.none">🚫 Không dịch</option>
             </select>
           </div>
 
           <!-- View mode and audio source settings are separate pills. -->
-          <div class="toolbar-setting-pill toolbar-view-mode-pill" title="Chế độ hiển thị">
+          <div class="toolbar-setting-pill toolbar-view-mode-pill" data-i18n-title="toolbar.view.title" title="Chế độ hiển thị">
             <div class="toolbar-view-mode-wrap">
-              <span class="toolbar-setting-label">Cửa sổ</span>
-              <select id="select-view-mode" class="source-select" title="Chế độ hiển thị: Bản gốc + dịch, Bản gốc hoặc Bản dịch">
-                <option value="dual">📑 Bản gốc + dịch</option>
-                <option value="original">📝 Bản gốc</option>
-                <option value="translation">🌐 Bản dịch</option>
+              <span class="toolbar-setting-label" data-i18n="toolbar.view">Cửa sổ</span>
+              <select id="select-view-mode" class="source-select" data-i18n-title="toolbar.view.title" title="Chế độ hiển thị: Bản gốc + dịch, Bản gốc hoặc Bản dịch">
+                <option value="dual" data-i18n="view.dual">📑 Bản gốc + dịch</option>
+                <option value="original" data-i18n="view.original">📝 Bản gốc</option>
+                <option value="translation" data-i18n="view.translation">🌐 Bản dịch</option>
               </select>
             </div>
           </div>
 
-          <div class="toolbar-setting-pill toolbar-audio-source-pill" title="Nguồn âm thanh">
+          <div class="toolbar-setting-pill toolbar-audio-source-pill" data-i18n-title="toolbar.audio.title" title="Nguồn âm thanh">
             <div class="source-select-wrap">
-              <span class="toolbar-source-label">Nguồn</span>
-              <select id="select-audio-source" class="source-select" title="Nguồn âm thanh (⌘1/2/3)">
-                <option value="system">🔊 System</option>
-                <option value="microphone">🎤 Mic</option>
-                <option value="both">🔊+🎤 Cả 2</option>
+              <span class="toolbar-source-label" data-i18n="toolbar.audio">Nguồn</span>
+              <select id="select-audio-source" class="source-select" data-i18n-title="toolbar.audio.title" title="Nguồn âm thanh (⌘1/2/3)">
+                <option value="system" data-i18n="audio.system">🔊 System</option>
+                <option value="microphone" data-i18n="audio.microphone">🎤 Mic</option>
+                <option value="both" data-i18n="audio.both">🔊+🎤 Cả 2</option>
               </select>
               <div id="live-audio-meter" class="live-vu-meter" title="Mức âm lượng nhận được từ Mic/System">
                 <div class="vu-bar" data-orig-bg="#10b981" style="background: rgba(255,255,255,0.2);"></div>
@@ -138,7 +138,7 @@
 
         <!-- Right window control buttons -->
         <div class="window-controls">
-          <button id="btn-pin" class="icon-btn" title="Ghim cửa sổ trên cùng (⌘P)">
+          <button id="btn-pin" class="icon-btn" data-i18n-title="toolbar.pin" title="Ghim cửa sổ trên cùng (⌘P)">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 17v5" />
               <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76z" />
@@ -155,16 +155,16 @@
         <div class="network-alert-content">
           <span class="network-alert-icon" id="network-alert-icon">⚠️</span>
           <div class="network-alert-text-wrap">
-            <div class="network-alert-title" id="network-alert-title">Mạng gián đoạn — Bản dịch trực tiếp tạm dừng</div>
-            <div class="network-alert-desc" id="network-alert-desc">File ghi âm (.wav) &amp; ghi chú vẫn đang được lưu an toàn 100%.</div>
+            <div class="network-alert-title" id="network-alert-title" data-i18n="network.title">Mạng gián đoạn — Bản dịch trực tiếp tạm dừng</div>
+            <div class="network-alert-desc" id="network-alert-desc" data-i18n="network.description">File ghi âm (.wav) &amp; ghi chú vẫn đang được lưu an toàn 100%.</div>
           </div>
         </div>
         <div class="network-alert-actions">
-          <button type="button" id="btn-net-fallback-local" class="btn-net-action btn-net-primary" style="display: none;">🖥️ Dùng Local MLX</button>
-          <button type="button" id="btn-net-fallback-gemini" class="btn-net-action btn-net-primary" style="display: none;">✨ Chuyển về Gemini</button>
-          <button type="button" id="btn-net-fallback-notrans" class="btn-net-action btn-net-secondary">🚫 Chỉ chép lời</button>
-          <button type="button" id="btn-net-retry" class="btn-net-action btn-net-secondary">🔄 Thử lại</button>
-          <button type="button" id="btn-net-dismiss" class="btn-net-close" title="Đóng thông báo">✕</button>
+          <button type="button" id="btn-net-fallback-local" class="btn-net-action btn-net-primary" data-i18n="network.local" style="display: none;">🖥️ Dùng Local MLX</button>
+          <button type="button" id="btn-net-fallback-gemini" class="btn-net-action btn-net-primary" data-i18n="network.gemini" style="display: none;">✨ Chuyển về Gemini</button>
+          <button type="button" id="btn-net-fallback-notrans" class="btn-net-action btn-net-secondary" data-i18n="network.transcriptOnly">🚫 Chỉ chép lời</button>
+          <button type="button" id="btn-net-retry" class="btn-net-action btn-net-secondary" data-i18n="network.retry">🔄 Thử lại</button>
+          <button type="button" id="btn-net-dismiss" class="btn-net-close" data-i18n-title="network.dismiss" title="Đóng thông báo">✕</button>
         </div>
       </div>
 
@@ -178,23 +178,23 @@
               <line x1="12" y1="19" x2="12" y2="23" />
               <line x1="8" y1="23" x2="16" y2="23" />
             </svg>
-            <p>Press ▶ to start translating</p>
+            <p data-i18n="transcript.start">Press ▶ to start translating</p>
             <p class="shortcut-hint">⌘S</p>
           </div>
         </div>
-        <button type="button" id="live-jump-bottom-btn" class="live-jump-bottom-btn" aria-label="Cuộn xuống đoạn mới nhất" title="Cuộn xuống đoạn mới nhất">
+        <button type="button" id="live-jump-bottom-btn" class="live-jump-bottom-btn" data-i18n-aria-label="transcript.latest.title" data-i18n-title="transcript.latest.title" aria-label="Cuộn xuống đoạn mới nhất" title="Cuộn xuống đoạn mới nhất">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="4" x2="12" y2="19"></line>
             <polyline points="19 13 12 20 5 13"></polyline>
           </svg>
-          <span>Mới nhất</span>
+          <span data-i18n="transcript.latest">Mới nhất</span>
         </button>
       </div>
 
       <!-- Collapsible Horizontal Take Note Drawer -->
       <div id="live-notes-drawer" class="live-notes-drawer">
         <!-- Resize Handle for Take Note Drawer -->
-        <div id="live-notes-resizer" class="notes-resize-handle" title="Kéo để thay đổi độ cao ghi chú (Nhấp đúp để đặt lại)">
+        <div id="live-notes-resizer" class="notes-resize-handle" data-i18n-title="notes.resize.title" title="Kéo để thay đổi độ cao ghi chú (Nhấp đúp để đặt lại)">
           <div class="notes-resize-bar"></div>
         </div>
 
@@ -202,37 +202,37 @@
         <div class="notes-toolbar">
           <div class="notes-toolbar-main">
             <div class="notes-tools-left">
-              <button id="btn-toggle-notes" class="btn-notes-action active" type="button" title="Mở / thu gọn ghi chú (⌘N)" aria-pressed="true" aria-expanded="true">
+              <button id="btn-toggle-notes" class="btn-notes-action active" type="button" data-i18n-title="notes.toggle.open" title="Mở / thu gọn ghi chú (⌘N)" aria-pressed="true" aria-expanded="true">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                 </svg>
-                <span id="btn-notes-label">Take <u>N</u>ote</span>
+                <span id="btn-notes-label" data-i18n="notes.toggle" data-i18n-html="true">Take <u>N</u>ote</span>
               </button>
-              <input id="input-live-meeting-title" class="live-note-title-input" type="text" maxlength="200" placeholder="Tên cuộc họp" aria-label="Tên cuộc họp" title="Tên cuộc họp" autocomplete="off" />
+              <input id="input-live-meeting-title" class="live-note-title-input" type="text" maxlength="200" data-i18n-placeholder="notes.titlePlaceholder" data-i18n-aria-label="notes.titlePlaceholder" data-i18n-title="notes.titlePlaceholder" placeholder="Tên cuộc họp" aria-label="Tên cuộc họp" title="Tên cuộc họp" autocomplete="off" />
             </div>
             <div class="notes-tools-meta">
               <div class="notes-sep"></div>
-              <select id="select-note-scope" class="note-meta-select" title="Phạm vi: Công việc hoặc Cá nhân">
-                <option value="work">💼 Công việc</option>
-                <option value="personal">👤 Cá nhân</option>
+              <select id="select-note-scope" class="note-meta-select" data-i18n-title="notes.scope.title" title="Phạm vi: Công việc hoặc Cá nhân">
+                <option value="work" data-i18n="notes.work">💼 Công việc</option>
+                <option value="personal" data-i18n="notes.personal">👤 Cá nhân</option>
               </select>
-              <select id="select-note-customer" class="note-meta-select" title="Gán Khách hàng cho cuộc họp">
-                <option value="">🤝 Khách hàng...</option>
+              <select id="select-note-customer" class="note-meta-select" data-i18n-title="notes.customer.title" title="Gán Khách hàng cho cuộc họp">
+                <option value="" data-i18n="notes.customer">🤝 Khách hàng...</option>
               </select>
-              <select id="select-note-project" class="note-meta-select" title="Gán Dự án cho cuộc họp">
-                <option value="">🚀 Dự án...</option>
+              <select id="select-note-project" class="note-meta-select" data-i18n-title="notes.project.title" title="Gán Dự án cho cuộc họp">
+                <option value="" data-i18n="notes.project">🚀 Dự án...</option>
               </select>
-              <select id="select-note-category" class="note-meta-select" title="Category cuộc họp">
-                <option value="">🗂️ Category...</option>
+              <select id="select-note-category" class="note-meta-select" data-i18n-title="notes.category.title" title="Category cuộc họp">
+                <option value="" data-i18n="notes.category">🗂️ Category...</option>
               </select>
               <div class="note-tags-wrap">
-                <input type="text" id="input-note-tags" class="note-meta-input" placeholder="Tag" title="Chọn tag có sẵn hoặc nhập tag mới; nhiều tag cách nhau bởi dấu phẩy" aria-label="Tag cuộc họp" autocomplete="off" />
+                <input type="text" id="input-note-tags" class="note-meta-input" placeholder="Tag" data-i18n-title="notes.tags.title" data-i18n-aria-label="notes.tags.label" title="Chọn tag có sẵn hoặc nhập tag mới; nhiều tag cách nhau bởi dấu phẩy" aria-label="Tag cuộc họp" autocomplete="off" />
               </div>
             </div>
           </div>
           <div class="notes-toolbar-format">
-            <div class="notes-format-tools" aria-label="Định dạng ghi chú">
+            <div class="notes-format-tools" data-i18n-aria-label="notes.format.title" aria-label="Định dạng ghi chú">
               <button type="button" class="note-fmt-btn" data-fmt="bold" title="In đậm (Bold) **text**"><b>B</b></button>
               <button type="button" class="note-fmt-btn" data-fmt="italic" title="In nghiêng (Italic) *text*"><i>I</i></button>
               <button type="button" class="note-fmt-btn" data-fmt="h1" title="Tiêu đề H1 #">H1</button>
@@ -242,7 +242,7 @@
               <button type="button" class="note-fmt-btn" data-fmt="code" title="Mã code `code`"><code>&lt;/&gt;</code></button>
               <button type="button" class="note-fmt-btn" data-fmt="link" title="Gắn liên kết Markdown [text](url)">🔗 Link</button>
             </div>
-            <button type="button" id="btn-note-copy" class="note-copy-btn" title="Copy nội dung ghi chú">
+            <button type="button" id="btn-note-copy" class="note-copy-btn" data-i18n-title="notes.copy.title" title="Copy nội dung ghi chú">
               <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -263,23 +263,23 @@
       <!-- Session list -->
       <div id="sessions-list-panel" class="sessions-body">
         <div class="sessions-list-header-bar">
-          <span class="sessions-list-title">📚 Cuộc họp đã lưu</span>
+          <span class="sessions-list-title" data-i18n="library.title">📚 Cuộc họp đã lưu</span>
           <div class="sessions-list-toolbar-right">
-            <button type="button" id="btn-open-import-audio" class="btn-primary small btn-import-audio" title="Import file ghi âm cuộc họp (WAV, MP3, M4A, AAC, OGG, FLAC...)">
-              📥 Import file ghi âm
+            <button type="button" id="btn-open-import-audio" class="btn-primary small btn-import-audio" data-i18n-title="library.import" title="Import file ghi âm cuộc họp (WAV, MP3, M4A, AAC, OGG, FLAC...)">
+              <span data-i18n="library.import">📥 Import file ghi âm</span>
             </button>
           </div>
         </div>
 
         <div class="logs-folder-tab-bar folder-tab-bar" id="logs-scope-tabs" role="tablist">
           <button type="button" class="logs-scope-tab folder-tab-btn active" data-scope="work" id="scope-tab-work" title="Các cuộc họp công việc & khách hàng">
-            💼 Công việc (<span id="scope-count-work">0</span>)
+            <span data-i18n="scope.work">💼 Công việc</span> (<span id="scope-count-work">0</span>)
           </button>
           <button type="button" class="logs-scope-tab folder-tab-btn" data-scope="personal" id="scope-tab-personal" title="Các cuộc họp & ghi chép cá nhân">
-            👤 Cá nhân (<span id="scope-count-personal">0</span>)
+            <span data-i18n="scope.personal">👤 Cá nhân</span> (<span id="scope-count-personal">0</span>)
           </button>
           <button type="button" class="logs-scope-tab folder-tab-btn" data-scope="all" id="scope-tab-all" title="Toàn bộ danh sách cuộc họp">
-            📑 Tất cả (<span id="scope-count-all">0</span>)
+            <span data-i18n="scope.all">📑 Tất cả</span> (<span id="scope-count-all">0</span>)
           </button>
         </div>
 
@@ -291,7 +291,7 @@
       <!-- Session viewer (shown when a session is selected) -->
       <div id="session-viewer" class="sessions-body" style="display:none">
         <div class="session-viewer-header">
-          <button id="btn-session-back-to-list" class="icon-btn" title="Quay lại danh sách">
+          <button id="btn-session-back-to-list" class="icon-btn" data-i18n-title="session.back" title="Quay lại danh sách">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="19" y1="12" x2="5" y2="12" />
               <polyline points="12 19 5 12 12 5" />
@@ -299,12 +299,12 @@
           </button>
           <span id="session-viewer-title" class="session-viewer-title-text" title="Nhấp để sửa thông tin cuộc họp"></span>
           <div id="session-viewer-normal-actions" class="session-viewer-actions">
-            <button id="btn-session-edit-metadata" class="icon-btn small" title="Sửa thông tin cuộc họp">
+            <button id="btn-session-edit-metadata" class="icon-btn small" data-i18n-title="session.edit" title="Sửa thông tin cuộc họp">
               <svg class="icon-pencil-yellow" width="13" height="13" viewBox="0 0 20 20">
                 <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
               </svg>
             </button>
-            <button id="btn-session-delete-single" class="icon-btn small delete-btn-single" title="Xóa cuộc họp này">
+            <button id="btn-session-delete-single" class="icon-btn small delete-btn-single" data-i18n-title="session.delete" title="Xóa cuộc họp này">
               🗑
             </button>
           </div>
@@ -321,21 +321,21 @@
         <div class="session-nav-tabbar folder-tab-bar">
           <div class="session-nav-tab-group folder-tabs">
             <button type="button" class="session-nav-tab folder-tab-btn active" data-tab="minutes" id="tab-btn-minutes">
-              <span>📋</span> Meeting Minutes tự động
+              <span data-i18n="session.minutes">📋 Meeting Minutes tự động</span>
               <span id="tab-badge-minutes" class="session-tab-badge" style="display:none">✓</span>
             </button>
             <button type="button" class="session-nav-tab folder-tab-btn" data-tab="notes" id="tab-btn-notes">
-              <span>📝</span> Ghi chép bằng tay
+              <span data-i18n="session.notes">📝 Ghi chép bằng tay</span>
             </button>
             <button type="button" class="session-nav-tab folder-tab-btn" data-tab="logs" id="tab-btn-logs">
-              <span>📜</span> Logs
+              <span data-i18n="session.logs">📜 Logs</span>
             </button>
           </div>
 
           <!-- Metadata bar: Customer, Project, Category, Tags -->
           <div id="session-viewer-meta-bar" class="session-viewer-meta-bar">
             <div id="session-viewer-badges" class="session-viewer-badges"></div>
-            <button type="button" id="btn-session-add-metadata" class="session-meta-add-btn" style="display:none">+ Gán thông tin (KH, Dự án, Tag...)</button>
+            <button type="button" id="btn-session-add-metadata" class="session-meta-add-btn" data-i18n="session.addMetadata" style="display:none">+ Gán thông tin (KH, Dự án, Tag...)</button>
           </div>
         </div>
 
@@ -432,13 +432,13 @@
   <div id="settings-view" class="view">
     <div id="settings-drag" data-tauri-drag-region>
       <div class="settings-header">
-        <button id="btn-back" class="icon-btn" title="Đóng cài đặt">
+        <button id="btn-back" class="icon-btn" data-i18n-title="settings.close" title="Đóng cài đặt">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="19" y1="12" x2="5" y2="12" />
             <polyline points="12 19 5 12 12 5" />
           </svg>
         </button>
-        <h2>Cài đặt (Settings)</h2>
+        <h2 data-i18n="settings.header">Cài đặt (Settings)</h2>
         <div style="width: 32px;"></div>
       </div>
     </div>
@@ -447,50 +447,50 @@
       <!-- Left Sidebar -->
       <div class="settings-sidebar">
         <div class="settings-nav-group">
-          <div class="settings-nav-group-title">QUẢN TRỊ DỮ LIỆU</div>
+          <div class="settings-nav-group-title" data-i18n="settings.dataManagement">QUẢN TRỊ DỮ LIỆU</div>
           <button type="button" class="settings-nav-item active" data-screen="tab-customers">
             <span class="settings-nav-icon">🤝</span>
-            <span class="settings-nav-label">Khách hàng</span>
+            <span class="settings-nav-label" data-i18n="settings.customers">Khách hàng</span>
             <span class="settings-nav-badge" id="badge-nav-customers">0</span>
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-projects">
             <span class="settings-nav-icon">🚀</span>
-            <span class="settings-nav-label">Dự án</span>
+            <span class="settings-nav-label" data-i18n="settings.projects">Dự án</span>
             <span class="settings-nav-badge" id="badge-nav-projects">0</span>
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-categories">
             <span class="settings-nav-icon">🗂️</span>
-            <span class="settings-nav-label">Category</span>
+            <span class="settings-nav-label" data-i18n="settings.categories">Category</span>
             <span class="settings-nav-badge" id="badge-nav-categories">0</span>
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-tags">
             <span class="settings-nav-icon">🏷️</span>
-            <span class="settings-nav-label">Tag</span>
+            <span class="settings-nav-label" data-i18n="settings.tags">Tag</span>
             <span class="settings-nav-badge" id="badge-nav-tags">0</span>
           </button>
         </div>
 
         <div class="settings-nav-group">
-          <div class="settings-nav-group-title">CẤU HÌNH HỆ THỐNG</div>
+          <div class="settings-nav-group-title" data-i18n="settings.systemConfiguration">CẤU HÌNH HỆ THỐNG</div>
           <button type="button" class="settings-nav-item" data-screen="tab-translation">
             <span class="settings-nav-icon">🌐</span>
-            <span class="settings-nav-label">Engine & Dịch thuật</span>
+            <span class="settings-nav-label" data-i18n="settings.translation">Engine &amp; Dịch thuật</span>
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-display">
             <span class="settings-nav-icon">🎨</span>
-            <span class="settings-nav-label">Hiển thị & Giao diện</span>
+            <span class="settings-nav-label" data-i18n="settings.display">Hiển thị &amp; Giao diện</span>
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-templates">
             <span class="settings-nav-icon">📋</span>
-            <span class="settings-nav-label">Templates</span>
+            <span class="settings-nav-label" data-i18n="settings.templates">Templates</span>
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-storage">
             <span class="settings-nav-icon">📂</span>
-            <span class="settings-nav-label">Lưu trữ &amp; backup</span>
+            <span class="settings-nav-label" data-i18n="settings.storage">Lưu trữ &amp; backup</span>
           </button>
           <button type="button" class="settings-nav-item" data-screen="tab-about">
             <span class="settings-nav-icon">ℹ️</span>
-            <span class="settings-nav-label">Giới thiệu phần mềm</span>
+            <span class="settings-nav-label" data-i18n="settings.about">Giới thiệu phần mềm</span>
           </button>
         </div>
       </div>
@@ -500,9 +500,9 @@
         <!-- 1. Detail: Customers -->
         <div class="settings-tab-content active" id="tab-customers">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">🤝 Quản lý Khách hàng</h3>
+            <h3 class="settings-panel-title" data-i18n="settings.customerManagement">🤝 Quản lý Khách hàng</h3>
             <div class="settings-panel-actions">
-              <button type="button" id="btn-open-add-customer" class="btn-primary-small">+ Thêm khách hàng</button>
+              <button type="button" id="btn-open-add-customer" class="btn-primary-small" data-i18n="settings.addCustomer">+ Thêm khách hàng</button>
             </div>
           </div>
           <div id="settings-customers-list" class="mgr-items-list"></div>
@@ -511,9 +511,9 @@
         <!-- 2. Detail: Projects -->
         <div class="settings-tab-content" id="tab-projects">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">🚀 Quản lý Dự án</h3>
+            <h3 class="settings-panel-title" data-i18n="settings.projectManagement">🚀 Quản lý Dự án</h3>
             <div class="settings-panel-actions">
-              <button type="button" id="btn-open-add-project" class="btn-primary-small">+ Thêm dự án</button>
+              <button type="button" id="btn-open-add-project" class="btn-primary-small" data-i18n="settings.addProject">+ Thêm dự án</button>
             </div>
           </div>
 
@@ -537,9 +537,9 @@
         <!-- 3. Detail: Categories -->
         <div class="settings-tab-content" id="tab-categories">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">🗂️ Category cuộc họp</h3>
+            <h3 class="settings-panel-title" data-i18n="settings.categoryManagement">🗂️ Category cuộc họp</h3>
             <div class="settings-panel-actions">
-              <button type="button" id="btn-open-add-category" class="btn-primary-small">+ Thêm category</button>
+              <button type="button" id="btn-open-add-category" class="btn-primary-small" data-i18n="settings.addCategory">+ Thêm category</button>
             </div>
           </div>
 
@@ -563,9 +563,9 @@
         <!-- 4. Detail: Tags -->
         <div class="settings-tab-content" id="tab-tags">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">🏷️ Quản lý Tag</h3>
+            <h3 class="settings-panel-title" data-i18n="settings.tagManagement">🏷️ Quản lý Tag</h3>
             <div class="settings-panel-actions">
-              <button type="button" id="btn-open-add-tag" class="btn-primary-small">+ Thêm tag</button>
+              <button type="button" id="btn-open-add-tag" class="btn-primary-small" data-i18n="settings.addTag">+ Thêm tag</button>
             </div>
           </div>
 
@@ -589,7 +589,7 @@
         <!-- 5. Detail: Translation -->
         <div class="settings-tab-content" id="tab-translation">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">🌐 Engine & Dịch thuật</h3>
+            <h3 class="settings-panel-title" data-i18n="settings.translationTitle">🌐 Engine &amp; Dịch thuật</h3>
           </div>
           <div class="settings-section">
             <span class="field-label">Engine Dịch</span>
@@ -807,7 +807,17 @@
         <!-- 6. Detail: Display -->
         <div class="settings-tab-content" id="tab-display">
           <div class="settings-panel-header">
-            <h3 class="settings-panel-title">🎨 Hiển thị & Giao diện</h3>
+            <h3 class="settings-panel-title" data-i18n="settings.displayTitle">🎨 Hiển thị &amp; Giao diện</h3>
+          </div>
+
+          <div class="settings-section app-language-section">
+            <span class="field-label" data-i18n="settings.appLanguage">🌐 Ngôn ngữ ứng dụng</span>
+            <select id="select-app-language" class="source-select" data-i18n-title="settings.appLanguageTitle" title="Chọn ngôn ngữ hiển thị cho ứng dụng">
+              <option value="vi">🇻🇳 Tiếng Việt</option>
+              <option value="en">🇬🇧 English</option>
+              <option value="ja">🇯🇵 日本語</option>
+            </select>
+            <p class="hint" data-i18n="settings.appLanguageHint">Thay đổi ngôn ngữ của giao diện Meet Minder. Nội dung cuộc họp vẫn giữ nguyên ngôn ngữ gốc.</p>
           </div>
 
           <!-- System Menu & Navigation Display Settings -->
@@ -1122,6 +1132,7 @@
                     </label>
                   </div>
                 </div>
+              </div>
               <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:12px; flex-wrap:wrap;">
                 <button type="button" id="btn-git-backup-now" class="btn-primary-small">💾 Backup ngay</button>
               </div>

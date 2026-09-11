@@ -22,6 +22,9 @@ pub struct CustomContext {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct Settings {
+    /// UI language: "vi" | "en" | "ja"
+    #[serde(default = "default_app_language")]
+    pub app_language: String,
     /// Soniox API key
     pub soniox_api_key: String,
     /// OpenAI API key (for gpt-realtime-translate)
@@ -208,6 +211,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            app_language: default_app_language(),
             soniox_api_key: String::new(),
             openai_api_key: String::new(),
             gemini_api_key: String::new(),
@@ -282,6 +286,10 @@ impl Default for Settings {
 
 fn default_logs_scope_setting() -> String {
     "work".to_string()
+}
+
+fn default_app_language() -> String {
+    "vi".to_string()
 }
 
 fn default_git_auto_commit() -> bool {
@@ -421,6 +429,7 @@ mod tests {
     #[test]
     fn test_default_settings() {
         let s = Settings::default();
+        assert_eq!(s.app_language, "vi");
         assert_eq!(s.gemini_model, "models/gemini-3.5-transcribe-live");
         assert_eq!(s.source_language, "ja");
         assert_eq!(s.target_language, "vi");

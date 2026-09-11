@@ -148,6 +148,9 @@ Các quy tắc đã chứng minh hữu ích trong Meet Minder:
   ngữ cảnh thao tác hoặc cho phép retry.
 - Với tác vụ import/re-transcript dài, lỗi phải giữ nguyên trong progress dialog
   cho đến khi người dùng chủ động đóng; không tự biến mất như toast.
+- Với thao tác kết thúc/lưu quan trọng, phải mở dialog xác nhận ngay; dữ liệu
+  phụ như metadata, tag hoặc autocomplete chỉ được tải nền và không được khóa
+  action chính bằng một lời gọi async không có giới hạn thời gian.
 
 ## 6. Consistency: thuật ngữ, biểu tượng và thứ tự thông tin
 
