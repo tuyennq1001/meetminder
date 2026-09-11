@@ -717,6 +717,36 @@ fn record_file_for_read(dir: &Path, filename: &str) -> PathBuf {
     }
 }
 
+fn is_legacy_transcript_stem(stem: &str) -> bool {
+    let bytes = stem.as_bytes();
+    bytes.len() == 19
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes[10] == b'_'
+        && bytes[13] == b'-'
+        && bytes[16] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| matches!(index, 4 | 7 | 10 | 13 | 16) || byte.is_ascii_digit())
+}
+
+fn is_record_filename(name: &str) -> bool {
+    if let Some(stem) = name.strip_suffix(".json") {
+        return stem
+            .strip_prefix("session-")
+            .map(|id| validate_id(id).is_ok())
+            .unwrap_or(false);
+    }
+
+    let Some(stem) = name.strip_suffix(".md") else {
+        return false;
+    };
+    stem.strip_prefix("session-")
+        .map(|id| validate_id(id).is_ok())
+        .unwrap_or_else(|| is_legacy_transcript_stem(stem))
+}
+
 /// List direct record files in the canonical folder and then legacy files at
 /// the storage root. When both locations contain the same filename, the
 /// canonical `records/` copy wins.
@@ -743,6 +773,9 @@ pub fn record_files(root: &Path) -> Result<Vec<PathBuf>, String> {
                 continue;
             }
             let name = entry.file_name().to_string_lossy().to_string();
+            if !is_record_filename(&name) {
+                continue;
+            }
             if seen_names.insert(name) {
                 files.push(path);
             }
@@ -4533,6 +4566,48 @@ mod tests {
         let (audio_path, mime) = find_session_audio(&root, "test").unwrap();
         assert_eq!(audio_path, audio_dir(&root).join("session-test.mp3"));
         assert_eq!(mime, "audio/mp3");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn test_record_files_ignore_storage_metadata() {
+        let root = std::env::temp_dir().join(format!(
+            "meet-minder-record-file-filter-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(records_dir(&root)).unwrap();
+        fs::write(records_dir(&root).join("README.md"), b"storage instructions").unwrap();
+        fs::write(root.join("README.md"), b"storage instructions").unwrap();
+        fs::write(root.join("projects.json"), b"{}").unwrap();
+        fs::write(
+            root.join("2026-03-27_10-21-05.md"),
+            b"legacy transcript",
+        )
+        .unwrap();
+        fs::write(
+            records_dir(&root).join("session-test.md"),
+            b"session transcript",
+        )
+        .unwrap();
+        fs::write(
+            records_dir(&root).join("session-test.json"),
+            b"{}",
+        )
+        .unwrap();
+
+        let files = record_files(&root).unwrap();
+        let names: std::collections::HashSet<String> = files
+            .iter()
+            .filter_map(|path| path.file_name())
+            .map(|name| name.to_string_lossy().to_string())
+            .collect();
+
+        assert!(names.contains("2026-03-27_10-21-05.md"));
+        assert!(names.contains("session-test.md"));
+        assert!(names.contains("session-test.json"));
+        assert!(!names.contains("README.md"));
+        assert!(!names.contains("projects.json"));
 
         let _ = fs::remove_dir_all(root);
     }
