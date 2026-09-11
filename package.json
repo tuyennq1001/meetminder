@@ -10,6 +10,8 @@
     "dev:web": "npx serve src -p 3111",
     "build": "npm run build:editor && tauri build --bundles app",
     "build:dev": "npm run build:editor && node scripts/tauri-with-env.mjs build",
+    "build:release": "npm run build:editor && node scripts/tauri-with-env.mjs build:release",
+    "release:local": "npm run build:editor && node scripts/tauri-with-env.mjs build:release",
     "build:editor": "node scripts/build-editor.mjs",
     "lint": "cd src-tauri && cargo clippy",
     "format": "cd src-tauri && cargo fmt"

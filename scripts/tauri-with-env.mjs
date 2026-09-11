@@ -41,7 +41,14 @@ function readEnvValue(key) {
 }
 
 const args = process.argv.slice(2);
-const identifier = process.env.APP_IDENTIFIER || readEnvValue('APP_IDENTIFIER');
+const isReleaseLocal = args[0] === 'build:release' || process.env.APP_TARGET === 'release';
+if (isReleaseLocal) {
+  args[0] = 'build';
+}
+
+const identifier = isReleaseLocal
+  ? (readConfValue('identifier') || 'com.meetminder.desktop')
+  : (process.env.APP_IDENTIFIER || readEnvValue('APP_IDENTIFIER'));
 
 /** Read a top-level string field from src-tauri/tauri.conf.json. */
 function readConfValue(key) {
@@ -54,48 +61,46 @@ function readConfValue(key) {
 }
 
 if (identifier) {
-  // Dev override: distinct id + " Dev" product name + a stable signing identity. The
-  // release path (`npm run build` / `npm run tauri build`) does NOT use this wrapper, so it
-  // keeps the real identifier, product name, and Developer ID identity from tauri.conf.json.
+  // Dev or local-release override: stable signing identity, proper product name.
   const baseName = readConfValue('productName') || 'Meet Minder';
-  const devName = baseName.endsWith(' Dev') ? baseName : `${baseName} Dev`;
+  const targetAppName = isReleaseLocal
+    ? baseName
+    : (baseName.endsWith(' Dev') ? baseName : `${baseName} Dev`);
   // Ad-hoc signatures change on every rebuild, which makes macOS Screen-Recording and
   // Microphone permissions expire. Require an explicit stable certificate instead of
   // silently falling back to ad-hoc signing and creating a permission-reset trap.
   const signingIdentity = process.env.APP_SIGNING_IDENTITY || readEnvValue('APP_SIGNING_IDENTITY');
   if (!signingIdentity) {
     throw new Error(
-      '[tauri-with-env] APP_SIGNING_IDENTITY is required for Dev builds. ' +
-      'Configure a stable macOS code-signing certificate in .env (for example: Meet Minder Dev).'
+      `[tauri-with-env] APP_SIGNING_IDENTITY is required for ${isReleaseLocal ? 'Release' : 'Dev'} builds. ` +
+      'Configure a stable macOS code-signing certificate in .env (for example: Apple Development: ...).'
     );
   }
-  const manualDevSigning = args[0] === 'build';
+  const manualSigning = args[0] === 'build';
   const override = {
     identifier,
-    productName: devName,
+    productName: targetAppName,
     // Tauri's identity discovery does not find the local macOS identity in this
     // environment, although codesign can use it. Disable Tauri's signing for the
-    // Dev bundle and sign the completed app explicitly below.
-    bundle: { macOS: { signingIdentity: manualDevSigning ? null : signingIdentity } },
+    // bundle and sign the completed app explicitly below.
+    bundle: { macOS: { signingIdentity: manualSigning ? null : signingIdentity } },
   };
   args.push('--config', JSON.stringify(override));
-  // Enable the WebView inspector (DevTools) so JS/console errors are visible in the dev app.
-  if (!args.includes('--features')) {
+  // Enable the WebView inspector (DevTools) only in Dev builds.
+  if (!isReleaseLocal && !args.includes('--features')) {
     args.push('--features', 'devtools');
   }
-  // A local dev build only needs the runnable .app — skip the .dmg (distribution-only, and
-  // bundle_dmg.sh needs a full signing/mount setup). Only meaningful for `build`.
+  // A local build only needs the runnable .app — skip the .dmg (distribution-only).
   if (args[0] === 'build' && !args.includes('--bundles')) {
     args.push('--bundles', 'app');
   }
-  console.log(`[tauri-with-env] override: identifier=${identifier}, productName="${devName}", signing="${signingIdentity}", devtools=on`);
+  console.log(`[tauri-with-env] override: identifier=${identifier}, productName="${targetAppName}", signing="${signingIdentity}", devtools=${isReleaseLocal ? 'off' : 'on'}`);
 
-  if (manualDevSigning) {
-    // Keep the Dev identity stable across rebuilds so macOS permissions do not
-    // reset like they do with ad-hoc signatures.
-    const devBundle = join(repoRoot, 'src-tauri', 'target', 'release', 'bundle', 'macos', `${devName}.app`);
+  if (manualSigning) {
+    // Keep identity stable across rebuilds so macOS permissions do not reset.
+    const targetBundle = join(repoRoot, 'src-tauri', 'target', 'release', 'bundle', 'macos', `${targetAppName}.app`);
     const entitlements = join(repoRoot, 'src-tauri', 'Entitlements.plist');
-    const signDevBundle = () => {
+    const signTargetBundle = () => {
       execFileSync('/usr/bin/codesign', [
         '--deep',
         '--force',
@@ -106,31 +111,31 @@ if (identifier) {
         '--sign',
         signingIdentity,
         '--verbose',
-        devBundle,
+        targetBundle,
       ], { stdio: 'inherit' });
       execFileSync('/usr/bin/codesign', [
         '--verify',
         '--deep',
         '--strict',
         '--verbose=2',
-        devBundle,
+        targetBundle,
       ], { stdio: 'inherit' });
-      console.log(`[tauri-with-env] manually signed Dev bundle with "${signingIdentity}"`);
-      const installDest = `/Applications/${devName}.app`;
+      console.log(`[tauri-with-env] manually signed bundle with "${signingIdentity}"`);
+      const installDest = `/Applications/${targetAppName}.app`;
       try {
-        execFileSync('/usr/bin/pkill', ['-f', `${devName}.app`], { stdio: 'ignore' });
+        execFileSync('/usr/bin/pkill', ['-f', `/Applications/${targetAppName}.app/Contents/MacOS/meet-minder`], { stdio: 'ignore' });
       } catch {
         // Not running, ignore
       }
       execFileSync('/bin/sleep', ['0.5']);
       execFileSync('/bin/rm', ['-rf', installDest], { stdio: 'inherit' });
-      execFileSync('/usr/bin/ditto', [devBundle, installDest], { stdio: 'inherit' });
-      console.log(`[tauri-with-env] installed "${devName}.app" to ${installDest}`);
+      execFileSync('/usr/bin/ditto', [targetBundle, installDest], { stdio: 'inherit' });
+      console.log(`[tauri-with-env] installed "${targetAppName}.app" to ${installDest}`);
       execFileSync('/bin/sleep', ['0.5']);
       execFileSync('/usr/bin/open', ['-a', installDest], { stdio: 'inherit' });
-      console.log(`[tauri-with-env] launched fresh instance of "${devName}.app"`);
+      console.log(`[tauri-with-env] launched fresh instance of "${targetAppName}.app"`);
     };
-    run(args, 'tauri').then(signDevBundle).catch((err) => {
+    run(args, 'tauri').then(signTargetBundle).catch((err) => {
       console.error(err);
       process.exit(1);
     });
