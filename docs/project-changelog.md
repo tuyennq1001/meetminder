@@ -5,6 +5,33 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.0 - 2026-09-12
+
+### Highlights & New Features
+
+- **Meet Minder v1.0.0 Milestone Release**: Phiên bản chính thức đầu tiên đánh dấu bước chuyển mình toàn diện từ công cụ dịch thông thường thành **Trợ lý Cuộc họp Đa ngôn ngữ Bảo mật & Quản lý Biên bản Thông minh (Privacy-First Multilingual Meeting Assistant & AI Meeting Minutes)**.
+- **Google Gemini Live API làm Engine trọng tâm**:
+  - Kết nối WebSocket hai chiều thời gian thực (PCM audio streaming) với độ trễ cực thấp.
+  - Tận dụng gói **Free Tier hào phóng** từ Google AI Studio (hoàn toàn miễn phí API key).
+  - Cơ chế tự động phát hiện model khả dụng tối ưu nhất (`gemini-2.0-flash`, `gemini-2.5-flash`).
+  - Hỗ trợ từ điển và ngữ cảnh riêng theo dự án (Project Glossary & Translation Pairs).
+- **Chạy Ngoại tuyến Hoàn toàn với Local MLX**:
+  - Tận dụng sức mạnh Apple Silicon (M1-M4) để phiên dịch 100% offline, miễn phí vĩnh viễn, bảo mật tuyệt đối không cần internet.
+- **Tự động sao lưu qua Git (Auto Git Backup)**:
+  - Tự động tạo bản ghi commit và push lên kho lưu trữ từ xa sau mỗi cuộc họp.
+  - Hỗ trợ xem lịch sử 5 lần push gần nhất kèm mã hash commit và trạng thái đồng bộ.
+- **Quản lý Mẫu Biên bản Cuộc họp (Prompt Templates Manager)**:
+  - Tùy biến linh hoạt System Prompt và User Prompt cho từng loại cuộc họp (Họp hàng ngày, Kiến trúc kỹ thuật, Đề xuất khách hàng...).
+- **Giao diện Đa ngôn ngữ (English / 日本語 / Tiếng Việt)**:
+  - Bản địa hóa toàn bộ giao diện và thông báo theo 3 ngôn ngữ chính.
+- **Hệ thống phím tắt toàn diện (Keyboard Shortcuts)**:
+  - Thao tác nhanh: `⌘S` (Start/Pause), `⌘C` (Continue), `⌘T` (Save & Stop), `⌘N` (Take Note), `⌘L` (Live), `⌘O` (Meeting Logs), `⌘1/2/3` (Audio source), `⌘,` (Settings), `⌘M` (Minimize), `?` (Shortcut sheet).
+- **Mục Giới thiệu & Bản quyền (About & Authorship)**:
+  - Bổ sung thông tin tác giả và kênh hỗ trợ: Terry (`tuyennq1001@gmail.com`).
+  - Tự động hiển thị phiên bản động `v1.0.0`.
+- **Dọn dẹp mã nguồn & Bãi bỏ Chế độ Đọc cũ**:
+  - Xoá bỏ hoàn toàn Chế độ Đọc (TTS Reader) đã cũ để tập trung tối đa vào trải nghiệm cuộc họp trực tiếp và quản lý biên bản.
+
 ---
 
 ## v0.9.6 - 2026-09-07

@@ -121,6 +121,16 @@ if (!window.__TAURI__ && location.port === '3111') {
                     case 'tiktok_tts_speak':
                     case 'local_tts_speak':
                         return mockSilentWav;
+                    case 'get_local_models_info':
+                        return JSON.stringify({ ready: true, size_mb: 4800, models: ['whisper-small', 'gemma-2b-it'] });
+                    case 'check_mlx_setup':
+                        return JSON.stringify({ ready: true });
+                    case 'get_project_registry':
+                        return { customers: [], projects: [], categories: [], tags: [] };
+                    case 'list_sessions':
+                        return [];
+                    case 'get_git_backup_status':
+                        return { enabled: true, repo_path: '/Users/dev/MeetMinder_Vault', is_repo: true, last_pushes: [] };
                     case 'start_capture':
                     case 'stop_capture':
                     case 'start_mic_capture':

@@ -44,7 +44,7 @@ pub struct VoiceEntry {
 pub const RELEASE_BASE: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models";
 
 /// Base URL for this project's custom Vietnamese voices (self-contained tarballs
-/// with bundled espeak-ng-data). Contributed by @quanhieu (nghimestudio/nghitts).
+/// with bundled espeak-ng-data).
 pub const CUSTOM_VI_BASE: &str =
     "https://github.com/tuyennq1001/meetminder/releases/download/tts-models-vi";
 
@@ -91,8 +91,8 @@ pub const CATALOG: &[VoiceEntry] = &[
         approx_size_bytes: 67_230_653,
         sample_rate: 22_050,
     },
-    // Custom Vietnamese voices (nghimestudio/nghitts) — self-contained tarballs
-    // hosted on this repo's `tts-models-vi` release. Contributed by @quanhieu.
+    // Custom Vietnamese voices (self-contained tarballs
+    // hosted on this repo's `tts-models-vi` release).
     VoiceEntry {
         id: "adam1",
         display: "Tiếng Việt — Adam (custom)",

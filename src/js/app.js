@@ -13015,7 +13015,24 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         }
     }
 
-    _initAboutTab() {
+    async _initAboutTab() {
+        // App version
+        try {
+            const ver = await window.__TAURI__?.app?.getVersion?.();
+            const verEl = document.getElementById('about-version');
+            if (verEl && ver) {
+                verEl.textContent = `v${ver}`;
+            }
+        } catch {
+            // Keep HTML fallback v1.0.0
+        }
+
+        // Author contact
+        document.getElementById('link-author-email')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.__TAURI__?.opener?.openUrl('mailto:tuyennq1001@gmail.com');
+        });
+
         // GitHub links
         document.getElementById('link-github')?.addEventListener('click', (e) => {
             e.preventDefault();

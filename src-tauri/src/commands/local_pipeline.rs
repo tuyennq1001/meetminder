@@ -89,7 +89,10 @@ pub fn start_local_pipeline(
     ));
 
     // Use venv python if MLX setup is complete, otherwise fall back to system python
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/phucnt".to_string());
+    let home = dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .or_else(|| std::env::var("HOME").ok())
+        .unwrap_or_else(|| "/tmp".to_string());
     let venv_python = format!(
         "{}/Library/Application Support/Meet Minder/mlx-env/bin/python3",
         home
@@ -228,7 +231,10 @@ fn stop_local_pipeline_inner(state: &LocalPipelineState) {
 /// Check if MLX setup is complete
 #[tauri::command]
 pub fn check_mlx_setup() -> Result<String, String> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/phucnt".to_string());
+    let home = dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .or_else(|| std::env::var("HOME").ok())
+        .unwrap_or_else(|| "/tmp".to_string());
     let marker = format!(
         "{}/Library/Application Support/Meet Minder/mlx-env/.setup_complete",
         home

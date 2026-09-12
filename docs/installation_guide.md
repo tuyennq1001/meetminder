@@ -1,258 +1,163 @@
-# Installation Guide
+# Meet Minder Installation & Configuration Guide (macOS)
 
-Step-by-step guide to install and use **Meet Minder** on macOS.
-
----
-
-## Requirements
-
-- macOS 13 or later (Apple Silicon — M1/M2/M3/M4)
-- **Soniox mode** (recommended): [Soniox](https://soniox.com) API key (pay-per-use, ~$0.12/hour)
-- **OpenAI Realtime mode** (premium): [OpenAI](https://platform.openai.com) API key (~$4/hour — much pricier, but returns native translated voice)
-- **Local mode**: ~5 GB free disk space (for AI models, one-time download)
-- **TTS narration** (optional, text engines only): See [TTS Guide](tts_guide.md) for provider options
+Comprehensive step-by-step guide to installing, configuring, and using **Meet Minder v1.0** on macOS.
 
 ---
 
-## Step 1 — Download
+## 📌 System Requirements
 
-Download the latest `.dmg` from: [**Releases — macOS**](https://github.com/tuyennq1001/meetminder/releases/latest)
-
-Choose the right file:
-- `MeetMinder_x.x.x_aarch64.dmg` — Apple Silicon (M1/M2/M3/M4)
-- `MeetMinder_x.x.x_x64.dmg` — Intel Mac
-
----
-
-## Step 2 — Install
-
-1. Open the `.dmg` file
-2. Drag **Meet Minder** into the **Applications** folder
-3. Eject the DMG
+- **Operating System**: macOS 13.0 (Ventura) or later.
+- **Supported Hardware**:
+  - **Apple Silicon** (M1 / M2 / M3 / M4) — Recommended for peak performance and 100% offline Local MLX transcription.
+  - **Intel Mac** (i5 / i7 / i9) — Fully supported with all cloud engines (Gemini, Soniox, OpenAI, Qwen).
+- **Permissions**: **Screen & System Audio Recording** and **Microphone** permissions required to capture meeting audio.
 
 ---
 
-## Step 3 — First Launch
+## Step 1 — Download v1.0.0 Release
 
-Open Meet Minder from Applications.
+Visit [**GitHub Releases — Meet Minder**](https://github.com/tuyennq1001/meetminder/releases/latest) and download the file for your Mac architecture:
 
-> ✅ The app is signed and notarized — macOS should allow it without any security warnings.
+| Architecture | Installer File | Supported Devices |
+| :--- | :--- | :--- |
+| **Apple Silicon** | `MeetMinder_1.0.0_aarch64.dmg` | Apple M1, M2, M3, M4 (MacBook, Mac mini, iMac, Mac Studio) |
+| **Intel Mac** | `MeetMinder_1.0.0_x64.dmg` | All Intel Core-based Mac systems |
 
----
-
-## Step 4 — Grant Screen Recording Permission
-
-On first launch, macOS will ask for **Screen & System Audio Recording** permission:
-
-1. Click **Open System Settings** when prompted
-2. Find **Meet Minder** in the list
-3. **Toggle the switch ON**
-4. macOS will ask to **Quit & Reopen** — click that button
-
-> This permission is required for the app to capture system audio (YouTube, Zoom, podcasts, etc.)
+> [!TIP]
+> **Check your Mac architecture:**
+> Click the ** (Apple)** icon at top-left ➔ **About This Mac**:
+> - If you see **Chip: Apple M...** ➔ Choose **`aarch64`**.
+> - If you see **Processor: Intel Core...** ➔ Choose **`x64`**.
 
 ---
 
-## Step 5 — Get a Soniox API Key
+## Step 2 — Installation
 
-Soniox provides real-time speech recognition and translation.
-
-1. Go to [console.soniox.com](https://console.soniox.com) → create an account
-2. Add billing:
-   - Click **Billing** in the left sidebar
-   - Add a payment method
-   - Add funds ($10 minimum — lasts ~80+ hours at $0.12/hour)
-3. Create API key:
-   - Click **API Keys** in the left sidebar
-   - Click **Create API Key**
-   - Copy the key (format: `soniox_...`)
-
-> 💡 Soniox charges ~$0.12/hour of audio processed. $10 ≈ 80+ hours of translation.
-
-After pasting the Soniox key in Settings, the **Soniox** engine becomes the active option:
-
-![Settings — Soniox engine selected with API key](user_manual/setting_soniox.png)
+1. Double-click the downloaded `.dmg` file to mount it.
+2. Drag the **Meet Minder** icon into your **Applications** folder.
+3. Eject the DMG disk and open **Meet Minder** from Applications or Spotlight (`⌘ Space`).
 
 ---
 
-## Step 5b — Get an OpenAI API Key (Optional)
+## Step 3 — Grant Audio & Microphone Permissions
 
-Skip this step if you only plan to use Soniox or Local mode.
+On initial launch, macOS requires two permissions to capture meeting audio:
 
-OpenAI Realtime is the **premium** engine — it returns translated text **and** translated speech audio over a single stream, so no separate TTS provider is needed. The trade-off is cost: about **$4/hour** vs Soniox's $0.12/hour (~34× more expensive at provider list rates).
+1. **Screen & System Audio Recording**:
+   - Click **Open System Settings** when prompted.
+   - Locate **Meet Minder** in the list and toggle the switch to **ON**.
+   - Click **Quit & Reopen** when prompted for changes to take effect.
+   > *Note: Meet Minder strictly uses Apple's native ScreenCaptureKit API to capture output audio from applications (Zoom, Teams, Google Meet, YouTube). It never captures or records your screen video.*
 
-1. Go to [platform.openai.com](https://platform.openai.com) → create an account
-2. Add billing:
-   - Click **Settings → Billing**
-   - Add a payment method and add credits ($10 ≈ ~2.5 hours of translation)
-3. Create API key:
-   - Click **API keys** → **Create new secret key**
-   - Copy the key (format: `sk-...`)
-
-> ⚠️ **Cost warning**: OpenAI Realtime is roughly 34× pricier than Soniox. Use it for high-stakes meetings where translation quality and native voice matter. For general use, Soniox is the better default.
->
-> 📊 See [**OpenAI Realtime vs Soniox benchmark**](benchmark_openai_vs_soniox.md) for a real-world comparison.
-
-After pasting the OpenAI key in Settings, the **OpenAI Realtime** engine becomes selectable:
-
-![Settings — OpenAI Realtime engine selected with API key](user_manual/setting_openai.png)
+2. **Microphone**:
+   - On your first translation session, macOS will request microphone access. Click **OK / Allow** so the app can hear your voice.
 
 ---
 
-## Step 5c — Get a Qwen LiveTranslate Flash API Key (Optional, free preview)
+## Step 4 — Select & Configure AI Engines
 
-Qwen LiveTranslate Flash (Alibaba DashScope) is the **free preview** engine — fastest of the three (~4 s first token), supports **60+ languages**, returns translated text only (no native voice, no source-transcript panel).
+Meet Minder supports five cutting-edge speech translation engines:
 
-> ⚠️ **IMPORTANT — must pick Singapore region.** The app connects to the international endpoint `dashscope-intl.aliyuncs.com`. Keys created in other regions (China Beijing, Hong Kong, US Virginia, Germany Frankfurt) are rejected and the app raises `WebSocket error` the moment you press Start.
+![Meet Minder — Translation Engine Settings](user_manual/setting_gemini.png)
 
-1. Open <https://bailian.console.alibabacloud.com> (Alibaba Cloud Model Studio).
-2. **Before sign-in / sign-up**, click the region dropdown in the top-right and pick **Singapore**. If you've already signed in to another region, switch to Singapore — you may need to register a separate workspace for this region.
-3. Once inside the Console (top-right still shows "Singapore"), activate the **Model Studio (DashScope)** service if prompted.
-4. Go to **API Keys**, click **Create API Key**, name it anything.
-5. **Copy the key immediately** — it's only shown in full once.
-6. In Settings → pick the **Qwen LiveTranslate Flash** engine → paste the key.
+### 🥇 Choice 1 (Recommended): Google Gemini Multimodal Live API
 
-![Settings — Qwen LiveTranslate Flash engine selected with API key](user_manual/setting_qwen.png)
+> 🌟 **Primary Engine**: Ultra-low latency bidirectional WebSocket streaming, automatic model discovery (`gemini-2.0-flash`, `gemini-2.5-flash`), and **completely FREE** via Google AI Studio's generous Free Tier.
 
-> **Qwen Live Flash notes:**
-> - **Must pick a source language** before Start. Unlike Soniox/OpenAI which auto-detect, Qwen Live needs the source language up front — the source picker automatically hides "Auto-detect" when this engine is selected.
-> - **No dual-panel view** (the model returns translation only, no source transcript). Translation-only display.
-> - **No native voice output / custom TTS** — avoids the speaker → mic feedback loop.
-> - Currently in **free preview**. Pricing may change once it leaves preview — watch Alibaba Cloud announcements.
+- **Cost**: **$0 / Free** (Google AI Studio provides a free quota that easily covers daily meetings without entering a credit card).
+- **Key Features**:
+  - Direct 2-way PCM audio streaming with near-instant translation.
+  - Generates comprehensive **AI Meeting Minutes**: automatically extracts Executive Summary, Key Decisions, and Action Items.
+  - Automatically respects your custom **Project Glossary** and domain terms.
 
-### Troubleshooting `WebSocket error` with Qwen
-
-| Symptom | Common cause | Fix |
-| --- | --- | --- |
-| `WebSocket error` immediately on Start | Key created in a non-Singapore region | Recreate the key in Singapore (see step 2 above) |
-| Error after ~5–10 seconds | Right region but Qwen Live model not enabled | Model Studio → Model Square → enable `qwen3-livetranslate-flash-realtime` |
-| Translates one sentence then stalls | Source language left on "auto" | Settings → Source language → pick the actual language (e.g. Japanese) |
-| Flaky errors | Network blocks `dashscope-intl.aliyuncs.com` (corp firewall / VPN) | Try a different network (4G/5G) or disable VPN |
+**Get your Google Gemini API Key in 30 seconds:**
+1. Open [**Google AI Studio**](https://aistudio.google.com).
+2. Sign in with your Google account.
+3. Click **Get API key** in the left sidebar.
+4. Click **Create API key** and copy your secret key (starting with `AIzaSy...`).
+5. In Meet Minder: Open **Settings (`⌘ ,`)** ➔ **Translation Engine** ➔ Select **Google Gemini Live** ➔ Paste the API key ➔ Click **Test** to verify connection.
 
 ---
 
-## Step 6 — Configure the App
+### 🥈 Choice 2: Local MLX (100% Offline on Apple Silicon)
 
-1. Click ⚙️ (or press `⌘ ,`) to open **Settings**
-2. Go to the **General** tab
-3. Paste your **Soniox API key** and/or **OpenAI API key** (whichever engines you want enabled)
-   - A green dot ✓ next to each key field means the key format looks valid; click **Test** to ping the provider live
-   - Engines without a valid key are greyed out in the dropdown
-4. Choose translation type:
-   - **One-way**: Select Source language and Target language
-   - **Two-way**: Select Language A and Language B (for bilingual meetings — the app auto-detects and translates both directions). *Two-way is unavailable on OpenAI Realtime — use Soniox or Local for two-way.*
-5. Choose Translation Engine:
+> 🔒 **Ultimate Privacy**: Runs entirely on your Mac's Apple Silicon Neural Engine & GPU. No audio leaves your machine.
 
-| Mode | Speed | Quality | Cost | Voice output | Source transcript | Internet |
-|------|-------|---------|------|--------------|-------------------|----------|
-| ☁️ **Soniox** | ~2 s | 9/10 | ~$0.12/hr | Via TTS (free–$8/hr) | ✅ Yes (dual panel) | Required |
-| ⚡ **OpenAI Realtime** | ~1.5 s | 9.5/10, very idiomatic | **~$4/hr** | Off by default | ✅ Yes (dual panel) | Required |
-| 🌏 **Qwen LiveTranslate Flash** | ~4 s | 8/10, 60+ languages | **Free (preview)** | ❌ None | ❌ None (translation only) | Required |
-| 🖥️ **Local MLX** | ~10 s | 7/10 | Free | Via TTS | ✅ Yes | Not needed |
+- **Cost**: **Free forever**.
+- **Requirements**: Apple Silicon Mac (M1–M4), ~5 GB disk space (one-time download for Whisper + Gemma models).
+- **How to enable**:
+  1. Open **Settings (`⌘ ,`)** ➔ **Translation Engine** ➔ Select **Local MLX**.
+  2. Click **Install / Download Local MLX Models**. The app sets up the environment automatically.
+  3. Once installed, you can turn off Wi-Fi completely and conduct meetings with complete privacy.
 
-6. Click **Save & Close**
-
-> **Local MLX** requires Apple Silicon (M1+) and ~5 GB disk. Models are downloaded automatically on first use.
->
-> **OpenAI Realtime** supports 13 target languages: en, es, pt, fr, de, it, ru, hi, id, vi, ja, ko, zh. For Thai or other languages, use Soniox. The custom TTS toggle is automatically disabled while OpenAI Realtime is selected (audio comes from the model itself).
+![Meet Minder — Local MLX Setup](user_manual/setting_local_mlx.png)
 
 ---
 
-## Step 7 — Enable TTS Narration (Optional)
+### 🥉 Other Specialized Cloud Engines
 
-Want translations **read aloud**? Three TTS providers are available:
-
-| Provider | Cost | Quality | Setup |
-|----------|------|---------|-------|
-| 🎙️ **Edge TTS** | Free | Natural | None |
-| 🌐 **Google Chirp 3 HD** | Free 1M chars/mo | Near-human | Google Cloud API key |
-| ✨ **ElevenLabs** | ~$5/mo+ | Premium | ElevenLabs API key |
-
-### Quick setup (Edge TTS — free):
-
-1. Settings → **TTS** tab → Provider: **Edge TTS**
-2. Choose a voice → **Save & Close**
-3. On main screen, click the **TTS** button (or `⌘ T`) to enable
-
-### For Google or ElevenLabs:
-
-See [TTS Guide](tts_guide.md) for step-by-step API key instructions.
+- **Soniox Real-time STT (v5)**: Outstanding Japanese and multi-language transcription, ultra-low cost (~$0.12/audio hour), native speaker diarization. Obtain key at [console.soniox.com](https://console.soniox.com).
+- **OpenAI Realtime API**: High-end conversational speech-to-speech engine. Approx. $4.00/hour. Obtain key at [platform.openai.com](https://platform.openai.com).
+- **Qwen LiveTranslate Flash**: High-speed live translation on Alibaba DashScope (requires Singapore region key).
 
 ---
 
-## Step 8 — Start Translating!
+### 📊 AI Engine Comparison Matrix
 
-1. Go back to the main screen
-2. Click ▶ (or press `⌘ Enter`) to start
-3. Play any audio on your Mac (YouTube, Zoom, podcasts...)
-4. Translations appear in real-time!
-
-**View modes:**
-- **Single** (default): Translation text only
-- **Dual**: Source | Translation side-by-side (toggle with panel button, bottom-right)
-
-**Font size:** Use A-/A+ buttons (bottom-right on hover) to adjust
-
-### Choosing the translation mode
-
-If you have both a Soniox and an OpenAI key configured, the first time you start a session the app asks which engine to use:
-
-![Choose translation mode — Standard vs OpenAI Realtime](user_manual/openao_entry.png)
-
-You can switch any time from the engine pill in the toolbar.
-
-### Dual-panel view with OpenAI Realtime
-
-In **Dual** view the source transcript appears on the left and the translated text on the right — OpenAI's whisper transcription and translated output stream side-by-side:
-
-![Dual-panel translation running with OpenAI Realtime](user_manual/openai_translate.png)
+| Feature | 🌟 Google Gemini Live | 🖥️ Local MLX | ☁️ Soniox STT | ⚡ OpenAI Realtime | 🌏 Qwen Live |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Cost** | **Free (Free Tier)** | **Free forever** | Very cheap (~$0.12/h) | Premium (~$4.00/h) | Free preview |
+| **Latency** | Ultra-low (~1–2s) | Low (~2–3s) | Lowest (<1s) | Low (~1–2s) | Lowest (~1s) |
+| **Offline Mode** | Internet required | **Yes (100% Offline)**| Internet required | Internet required | Internet required |
+| **Meeting Minutes** | **Outstanding (Native)**| Basic | Via Gemini | Good | Not supported |
+| **Privacy** | Direct to Google | **Maximum (Local)** | Direct to Soniox | Direct to OpenAI | Direct to Alibaba |
+| **Platforms** | macOS & Windows | Apple Silicon (M1–M4) | macOS & Windows | macOS & Windows | macOS & Windows |
 
 ---
 
-## Keyboard Shortcuts
+## Step 5 — Auto Git Backup Configuration
 
-| Shortcut | Action |
-|----------|--------|
-| `⌘ Enter` | Start / Stop |
-| `⌘ ,` | Open Settings |
-| `Esc` | Close Settings |
-| `⌘ 1` | Switch to System Audio |
-| `⌘ 2` | Switch to Microphone |
-| `⌘ T` | Toggle TTS narration |
+Meet Minder features built-in **Auto Git Backup** to automatically version-control and synchronize all transcripts, Obsidian-style notes, and meeting minutes to your private Git repository:
 
----
+![Git Backup Settings](user_manual/setting_backup.png)
 
-## Troubleshooting
-
-### No translation text appears
-→ Check **Screen & System Audio Recording** is enabled in System Settings (see Step 4)
-
-### "No API key" error
-→ Open Settings (⚙️) and paste a Soniox key (Step 5) and/or an OpenAI key (Step 5b) for whichever engine you selected
-
-### OpenAI Realtime: engine option is greyed out
-→ The OpenAI key field is empty or the key format is invalid (must start with `sk-`). Paste a fresh key, then click **Test** to verify
-
-### OpenAI Realtime: "Two-way" toggle is hidden
-→ This is expected. Two-way mode is only available on Soniox and Local MLX. Switch engines if you need it
-
-### Translation cost is much higher than expected
-→ Confirm which engine you're using. OpenAI Realtime is ~$4/hour vs Soniox's ~$0.12/hour. The engine indicator shows under the dropdown in Settings
-
-### "No microphone found" error
-→ Mac Mini has no built-in microphone. Connect an external mic (USB, headset, AirPods)
-
-### TTS not working
-→ See [TTS Guide — Troubleshooting](tts_guide.md#troubleshooting)
+1. Open **Settings (`⌘ ,`)** ➔ click **Storage & Backup**.
+2. Toggle **Backup via Git** to **ON**.
+3. Check the desired automation options:
+   - **Commit & push after meeting ends**: Commits and pushes automatically when you stop a meeting (`⌘ T`).
+   - **Auto push to remote**: Periodically synchronizes commits to your GitHub / GitLab remote repository.
+4. Click **Backup Now** to trigger an immediate sync and inspect the push history table.
 
 ---
 
-## Updating
+## Step 6 — Live Meeting & Keyboard Shortcuts
 
-Meet Minder includes **auto-update**. When a new version is available:
+On the main Live Overlay window, click **Start** or use convenient hotkeys:
 
-1. A **green badge** appears on the ⚙️ settings icon
-2. Open Settings → **About** tab → click **Download & Install**
-3. The app will restart automatically with the new version
+![Meet Minder Live Meeting Overlay](user_manual/meetminder_live.png)
 
-No need to download DMG files manually for future updates!
+| Shortcut (macOS) | Action |
+| :--- | :--- |
+| <kbd>⌘</kbd> + <kbd>S</kbd> | **Start** / **Pause** live speech translation |
+| <kbd>⌘</kbd> + <kbd>C</kbd> | **Continue** session when paused |
+| <kbd>⌘</kbd> + <kbd>T</kbd> | **Save & Stop** meeting session |
+| <kbd>⌘</kbd> + <kbd>N</kbd> | **Toggle Take Note Drawer** (Obsidian Markdown editor) |
+| <kbd>⌘</kbd> + <kbd>L</kbd> | Switch to **Live Mode** |
+| <kbd>⌘</kbd> + <kbd>O</kbd> | Switch to **Meeting Logs & Library** |
+| <kbd>⌘</kbd> + <kbd>1</kbd> | Audio source: **System Audio (Speakers)** |
+| <kbd>⌘</kbd> + <kbd>2</kbd> | Audio source: **Microphone** |
+| <kbd>⌘</kbd> + <kbd>3</kbd> | Audio source: **Both System + Microphone (Recommended)** |
+| <kbd>⌘</kbd> + <kbd>,</kbd> | **Open Settings** |
+| <kbd>⌘</kbd> + <kbd>P</kbd> | Pin window always on top |
+| <kbd>⌘</kbd> + <kbd>M</kbd> | Minimize window |
+| <kbd>?</kbd> | Open keyboard shortcut sheet |
+| <kbd>Esc</kbd> | Close modal / Cancel edit / Return to live overlay |
+
+---
+
+## ℹ️ Author & Support
+
+- **Author & Developer**: **Terry**
+- **Support Email**: [tuyennq1001@gmail.com](mailto:tuyennq1001@gmail.com)
+- **GitHub Repository**: [https://github.com/tuyennq1001/meetminder](https://github.com/tuyennq1001/meetminder)
+- **Report Bugs & Issues**: [https://github.com/tuyennq1001/meetminder/issues](https://github.com/tuyennq1001/meetminder/issues)
