@@ -74,6 +74,7 @@ jobs:
           if [ -n "${APPLE_CERTIFICATE:-}" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
             npm run tauri build -- --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
           else
+            unset APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
             npm run tauri build -- --config src-tauri/tauri.release.conf.json
           fi
 
@@ -154,6 +155,7 @@ jobs:
           if [ -n "${APPLE_CERTIFICATE:-}" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
             npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
           else
+            unset APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
             npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json
           fi
 
