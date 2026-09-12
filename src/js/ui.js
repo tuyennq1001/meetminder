@@ -505,13 +505,13 @@ export class TranscriptUI {
                     if (text) {
                         try {
                             await navigator.clipboard.writeText(text);
-                            this.onToast?.('Đã copy bản gốc ✓', 'success');
+                            this.onToast?.(t('session.originalCopied'), 'success');
                             this._flashCopyButton(copySrc);
                         } catch (err) {
                             console.error('Copy source failed:', err);
                         }
                     } else {
-                        this.onToast?.('Chưa có nội dung bản gốc để copy', 'info');
+                        this.onToast?.(t('transcript.nothingToCopy'), 'info');
                     }
                     return;
                 }
@@ -523,13 +523,13 @@ export class TranscriptUI {
                     if (text) {
                         try {
                             await navigator.clipboard.writeText(text);
-                            this.onToast?.('Đã copy bản dịch ✓', 'success');
+                            this.onToast?.(t('session.translationCopied'), 'success');
                             this._flashCopyButton(copyTgt);
                         } catch (err) {
                             console.error('Copy translation failed:', err);
                         }
                     } else {
-                        this.onToast?.('Chưa có nội dung bản dịch để copy', 'info');
+                        this.onToast?.(t('transcript.nothingToCopy'), 'info');
                     }
                     return;
                 }
@@ -616,7 +616,7 @@ export class TranscriptUI {
                     html += `</div>`;
                 } else if (seg.status === 'translation_failed' && seg.original) {
                     html += `<div class="seg-block">`;
-                    html += `<div class="seg-translation-failed" title="Không thể dịch câu này sau nhiều lần thử">⚠️ Không thể dịch câu này</div>`;
+                    html += `<div class="seg-translation-failed" title="${this._esc(t('transcript.translationFailedTitle'))}">${this._esc(t('transcript.translationFailed'))}</div>`;
                     html += `</div>`;
                 }
             }
@@ -694,16 +694,16 @@ export class TranscriptUI {
             if (seg.status === 'translated' && seg.translation) {
                 const confidenceClass = (seg.confidence !== null && seg.confidence < 0.7) ? ' low-confidence' : '';
                 srcHtml += `${langHtml}<div class="seg-text" data-seg-idx="${i}">${this._esc(seg.original || '')}</div>`;
-                timeHtml += `<div class="segment-time clickable-time" data-seg-idx="${i}" title="Nhấp để cuộn cả 2 khung tới đoạn này">${this._formatSegmentTime(seg.createdAt)}</div>`;
+                timeHtml += `<div class="segment-time clickable-time" data-seg-idx="${i}" title="${this._esc(t('transcript.clickToSyncScroll'))}">${this._formatSegmentTime(seg.createdAt)}</div>`;
                 tgtHtml += `<div class="seg-text${confidenceClass}" data-seg-idx="${i}">${this._esc(seg.translation)}</div>`;
             } else if (seg.status === 'original' && seg.original) {
                 srcHtml += `${langHtml}<div class="seg-text" data-seg-idx="${i}">${this._esc(seg.original)}</div>`;
-                timeHtml += `<div class="segment-time clickable-time" data-seg-idx="${i}" title="Nhấp để cuộn cả 2 khung tới đoạn này">${this._formatSegmentTime(seg.createdAt)}</div>`;
-                tgtHtml += `<div class="seg-text pending" data-seg-idx="${i}" title="Đang chờ Gemini hoàn tất bản dịch">...</div>`;
+                timeHtml += `<div class="segment-time clickable-time" data-seg-idx="${i}" title="${this._esc(t('transcript.clickToSyncScroll'))}">${this._formatSegmentTime(seg.createdAt)}</div>`;
+                tgtHtml += `<div class="seg-text pending" data-seg-idx="${i}" title="${this._esc(t('transcript.waitingForTranslation'))}">...</div>`;
             } else if (seg.status === 'translation_failed' && seg.original) {
                 srcHtml += `${langHtml}<div class="seg-text" data-seg-idx="${i}">${this._esc(seg.original)}</div>`;
-                timeHtml += `<div class="segment-time clickable-time" data-seg-idx="${i}" title="Nhấp để cuộn cả 2 khung tới đoạn này">${this._formatSegmentTime(seg.createdAt)}</div>`;
-                tgtHtml += `<div class="seg-text translation-failed" data-seg-idx="${i}" title="Không thể dịch câu này sau nhiều lần thử">⚠️ Không thể dịch</div>`;
+                timeHtml += `<div class="segment-time clickable-time" data-seg-idx="${i}" title="${this._esc(t('transcript.clickToSyncScroll'))}">${this._formatSegmentTime(seg.createdAt)}</div>`;
+                tgtHtml += `<div class="seg-text translation-failed" data-seg-idx="${i}" title="${this._esc(t('transcript.translationFailedTitle'))}">${this._esc(t('transcript.cannotTranslate'))}</div>`;
             }
         }
 

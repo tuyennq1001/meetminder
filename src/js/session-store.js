@@ -7,6 +7,8 @@
 // ~15s autosave cadence while recording so a crash/force-quit loses at most one
 // autosave interval instead of the whole live chunk.
 
+import { t } from './i18n.js';
+
 const { invoke } = window.__TAURI__.core;
 
 const AUTOSAVE_MS = 15000;
@@ -440,20 +442,20 @@ export class SessionStore {
         const dur = this._formatDuration(this._totalDurationSec());
         const langPair = (this.sourceLang || '?') + ' → ' + (this.targetLang || '?');
         const metaExtras = [];
-        if (this.scope === 'personal') metaExtras.push('👤 Cá nhân');
+        if (this.scope === 'personal') metaExtras.push(t('export.personal'));
         if (this.category) metaExtras.push(`🗂️ Category: ${this.category}`);
-        if (this.tags && this.tags.length > 0) metaExtras.push(this.tags.map(t => `#${t}`).join(' '));
+        if (this.tags && this.tags.length > 0) metaExtras.push(this.tags.map(tag => `#${tag}`).join(' '));
         const extraStr = metaExtras.length > 0 ? ' · ' + metaExtras.join(' · ') : '';
 
         lines.push(`# ${title}`);
         lines.push('');
-        lines.push(`**Thông tin**: Engine ${this.engine || 'unknown'} · ${langPair} · ${this._formatDateTime(this.createdAt)} · ${dur}${extraStr}`);
+        lines.push(`**${t('export.info')}**: Engine ${this.engine || 'unknown'} · ${langPair} · ${this._formatDateTime(this.createdAt)} · ${dur}${extraStr}`);
         lines.push('');
         lines.push('---');
         lines.push('');
 
         if (this.meetingMinutesJa && this.meetingMinutesJa.trim()) {
-            lines.push('## 📋 Biên bản cuộc họp (Tiếng Nhật)');
+            lines.push(`## 📋 ${t('export.minutesJa')}`);
             lines.push('');
             lines.push(this.meetingMinutesJa.trim());
             lines.push('');
@@ -461,7 +463,7 @@ export class SessionStore {
             lines.push('');
         }
         if (this.meetingMinutesVi && this.meetingMinutesVi.trim()) {
-            lines.push('## 📋 Biên bản cuộc họp (Tiếng Việt)');
+            lines.push(`## 📋 ${t('export.minutesVi')}`);
             lines.push('');
             lines.push(this.meetingMinutesVi.trim());
             lines.push('');
@@ -491,24 +493,24 @@ export class SessionStore {
         }
 
         // Section 2: Original Transcript
-        lines.push('## 🗣️ 2. Bản gốc (Original)');
+        lines.push(`## 🗣️ ${t('export.original')}`);
         lines.push('');
         if (srcLines.length > 0) {
             lines.push(srcLines.join('\n'));
         } else {
-            lines.push('*(Không có nội dung bản gốc)*');
+            lines.push(`*(${t('export.noOriginal')})*`);
         }
         lines.push('');
         lines.push('---');
         lines.push('');
 
         // Section 3: Translation
-        lines.push('## 🌐 3. Bản dịch (Translation)');
+        lines.push(`## 🌐 ${t('export.translation')}`);
         lines.push('');
         if (tgtLines.length > 0) {
             lines.push(tgtLines.join('\n'));
         } else {
-            lines.push('*(Không có nội dung bản dịch)*');
+            lines.push(`*(${t('export.noTranslation')})*`);
         }
 
         return lines.join('\n');

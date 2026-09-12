@@ -783,22 +783,17 @@ class App {
         try {
             await this._runMlxSetup();
             await this._checkMlxReadiness();
-            this._showToast('Cài đặt mô hình Local MLX hoàn tất ✓', 'success');
+            this._showToast(t('settings.engine.mlxInstallSuccess'), 'success');
         } catch (err) {
             console.error('[App] MLX setup failed:', err);
-            this._showToast(`Cài đặt MLX không thành công: ${err?.message || err}`, 'error');
+            this._showToast(t('settings.engine.mlxInstallFailed', { error: err?.message || err }), 'error');
             await this._checkMlxReadiness();
         }
     }
 
     async _handleDeleteMlxClick() {
         const sizeFormatted = this._localMlxInfo?.size_formatted || 'khoảng 5.7 GB';
-        const confirmed = window.confirm(
-            `Bạn có chắc chắn muốn xoá toàn bộ mô hình Local AI và môi trường offline (${sizeFormatted}) để giải phóng ổ cứng?\n\n` +
-            `• Dung lượng sẽ được giải phóng: ${sizeFormatted}\n` +
-            `• Thư mục sẽ xoá: mlx-env và cache mô hình mlx-community\n\n` +
-            `Lưu ý: Sau khi xoá, nếu mất mạng app sẽ không tự động chuyển sang dịch offline được cho đến khi bạn cài đặt lại.`
-        );
+        const confirmed = window.confirm(t('settings.engine.mlxDeleteConfirm', { size: sizeFormatted }));
         if (!confirmed) return;
 
         const badge = document.getElementById('local-mlx-badge');
@@ -807,7 +802,7 @@ class App {
 
         if (badge) {
             badge.className = 'local-mlx-badge is-checking';
-            badge.textContent = 'Đang xoá mô hình...';
+            badge.textContent = t('settings.engine.mlxDeleting');
         }
         if (btnInstall) btnInstall.disabled = true;
         if (btnDelete) btnDelete.disabled = true;
@@ -821,17 +816,17 @@ class App {
                 const select = document.getElementById('select-translation-mode');
                 if (select) select.value = 'gemini';
                 this._updateModeUI('gemini');
-                this._showToast('Đã tự động chuyển sang engine Gemini Live', 'info');
+                this._showToast(t('settings.engine.switchedToGemini'), 'info');
             }
 
             const res = await invoke('delete_local_models');
             const data = typeof res === 'string' ? JSON.parse(res) : res;
             const freed = data?.freed_formatted || sizeFormatted;
 
-            this._showToast(`Đã xoá mô hình cục bộ và giải phóng ${freed} dung lượng ổ cứng ✓`, 'success');
+            this._showToast(t('settings.engine.mlxDeleteSuccess', { size: freed }), 'success');
         } catch (err) {
             console.error('[App] Failed to delete local models:', err);
-            this._showToast(`Lỗi khi xoá mô hình: ${err?.message || err}`, 'error');
+            this._showToast(t('settings.engine.mlxDeleteError', { error: err?.message || err }), 'error');
         } finally {
             if (btnInstall) btnInstall.disabled = false;
             if (btnDelete) btnDelete.disabled = false;
@@ -858,8 +853,8 @@ class App {
         const btnRetry = document.getElementById('btn-net-retry');
 
         if (icon) icon.textContent = '⚠️';
-        if (title) title.textContent = 'Mạng gián đoạn — Bản dịch trực tiếp tạm dừng';
-        if (desc) desc.textContent = 'File ghi âm (.wav) & ghi chú vẫn đang được lưu an toàn 100%.';
+        if (title) title.textContent = t('network.interruptedTitle');
+        if (desc) desc.textContent = t('network.interruptedDesc');
         if (btnGemini) btnGemini.style.display = 'none';
         if (btnRetry) btnRetry.style.display = 'inline-flex';
 
@@ -888,15 +883,15 @@ class App {
         const btnRetry = document.getElementById('btn-net-retry');
 
         if (icon) icon.textContent = '🌐';
-        if (title) title.textContent = 'Đã có kết nối mạng internet trở lại';
-        if (desc) desc.textContent = 'Bạn có thể chuyển về Google Gemini Live để tiếp tục phiên dịch trực tuyến.';
+        if (title) title.textContent = t('network.restoredTitle');
+        if (desc) desc.textContent = t('network.restoredDesc');
         if (btnLocal) btnLocal.style.display = 'none';
         if (btnGemini) btnGemini.style.display = 'inline-flex';
         if (btnNoTrans) btnNoTrans.style.display = 'none';
         if (btnRetry) btnRetry.style.display = 'none';
 
         banner.style.display = 'flex';
-        this._showToast('🌐 Đã có mạng internet trở lại. Có thể chuyển về Gemini Live.', 'info');
+        this._showToast(t('network.restoredToast'), 'info');
     }
 
     _hideNetworkAlertBanner() {
@@ -908,8 +903,8 @@ class App {
     async _hotSwapToEngine(newMode) {
         if (!this.isRunning) return;
         this._hideNetworkAlertBanner();
-        const modeLabel = newMode === 'local' ? 'Local MLX (Offline)' : (newMode === 'gemini' ? 'Google Gemini Live' : newMode);
-        this._showToast(`Đang chuyển sang ${modeLabel}...`, 'info');
+        const modeLabel = newMode === 'local' ? t('engine.localMlx') : (newMode === 'gemini' ? t('engine.geminiLive') : newMode);
+        this._showToast(t('engine.switchingTo', { mode: modeLabel }), 'info');
 
         // Completely stop previous engine, capture channel, and reconnect timers
         await this._stopTranslationEngine();
@@ -929,10 +924,10 @@ class App {
 
         try {
             await this._startTranslationEngine(settingsManager.get());
-            this._showToast(`Đã chuyển sang ${modeLabel} ✓`, 'success');
+            this._showToast(t('engine.switchedTo', { mode: modeLabel }), 'success');
         } catch (err) {
             console.error(`[App] Hot-swap to ${newMode} failed:`, err);
-            this._showToast(`Lỗi chuyển engine: ${err}`, 'error');
+            this._showToast(t('engine.switchFailed', { error: err }), 'error');
             this._showNetworkAlertBanner(newMode, String(err));
         }
     }
@@ -953,7 +948,7 @@ class App {
             this._handleQuickTargetLangChange('none');
         });
         document.getElementById('btn-net-retry')?.addEventListener('click', () => {
-            this._showToast('Đang thử kết nối lại...', 'info');
+            this._showToast(t('network.reconnecting'), 'info');
             this._restartLiveEngineForSettings();
         });
         document.getElementById('btn-net-dismiss')?.addEventListener('click', () => {
@@ -971,7 +966,7 @@ class App {
         // Offline / Online window events
         window.addEventListener('offline', () => {
             if (this.isRunning && this.translationMode !== 'local') {
-                this._showNetworkAlertBanner(this.translationMode, 'Mất kết nối mạng internet');
+                this._showNetworkAlertBanner(this.translationMode, t('network.lostConnection'));
             }
         });
         window.addEventListener('online', () => {
@@ -979,7 +974,7 @@ class App {
                 if (this.translationMode === 'local') {
                     this._showNetworkRestoredBanner();
                 } else if (this._networkAlertBannerVisible) {
-                    this._showToast('Đã có mạng trở lại. Đang tự động kết nối...', 'info');
+                    this._showToast(t('network.onlineReconnecting'), 'info');
                     this._restartLiveEngineForSettings();
                 }
             }
@@ -1228,7 +1223,7 @@ class App {
                 });
             } catch (err) {
                 console.error('[App] Failed to read session for edit:', err);
-                this._showToast(`Lỗi đọc thông tin: ${err}`, 'error');
+                this._showToast(t('session.readFailed', { error: err }), 'error');
             }
         };
 
@@ -1440,7 +1435,7 @@ class App {
                 }
             } catch (err) {
                 console.error('[App] Start/Pause error:', err);
-                this._showToast(`Lỗi: ${err}`, 'error');
+                this._showToast(t('common.error', { error: err }), 'error');
                 this.isRunning = false;
                 this.isPaused = false;
                 this._updateStartButton();
@@ -1478,9 +1473,9 @@ class App {
             const text = this.transcriptUI.getPlainText();
             if (text) {
                 await navigator.clipboard.writeText(text);
-                this._showToast('Copied to clipboard', 'success');
+                this._showToast(t('common.copiedToClipboard'), 'success');
             } else {
-                this._showToast('Nothing to copy', 'info');
+                this._showToast(t('transcript.nothingToCopy'), 'info');
             }
         });
 
@@ -1489,14 +1484,14 @@ class App {
             try {
                 await invoke('open_transcript_dir');
             } catch (err) {
-                this._showToast('Failed to open folder: ' + err, 'error');
+                this._showToast(t('settings.storage.openFolderFailed', { error: err }), 'error');
             }
         });
         document.getElementById('btn-open-transcripts')?.addEventListener('click', async () => {
             try {
                 await invoke('open_transcript_dir');
             } catch (err) {
-                this._showToast('Failed to open folder: ' + err, 'error');
+                this._showToast(t('settings.storage.openFolderFailed', { error: err }), 'error');
             }
         });
 
@@ -1506,7 +1501,7 @@ class App {
                 const path = await invoke('select_custom_transcripts_dir');
                 if (path) await this._changeStorageDirectory(path);
             } catch (err) {
-                this._showToast(`Đổi thư mục thất bại: ${err}`, 'error');
+                this._showToast(t('settings.storage.changeFailed', { error: err }), 'error');
             }
         });
 
@@ -2023,7 +2018,7 @@ class App {
                         }
                     } catch (err) {
                         console.error('[App] Keyboard start/pause error:', err);
-                        this._showToast(`Lỗi: ${err}`, 'error');
+                        this._showToast(t('common.error', { error: err }), 'error');
                         this.isRunning = false;
                         this.isPaused = false;
                         this._updateStartButton();
@@ -2071,7 +2066,7 @@ class App {
                         }
                     } catch (err) {
                         console.error('[App] Keyboard start/pause error:', err);
-                        this._showToast(`Lỗi: ${err}`, 'error');
+                        this._showToast(t('common.error', { error: err }), 'error');
                         this.isRunning = false;
                         this.isPaused = false;
                         this._updateStartButton();
@@ -3166,10 +3161,10 @@ class App {
             hintSoniox.classList.toggle('hint-warning', warn);
             if (localUnsupported) {
                 hintSoniox.textContent = this._platformOs === 'macos'
-                    ? '⚠️ Local MLX cần chip Apple Silicon — máy này không chạy được, hãy chọn engine khác.'
-                    : '⚠️ Local MLX chỉ chạy trên macOS Apple Silicon — trên máy này hãy chọn engine khác.';
+                    ? t('settings.engine.mlxChipWarningMac')
+                    : t('settings.engine.mlxChipWarningOther');
             } else if (missingKey) {
-                hintSoniox.textContent = `⚠️ ${missingKey} cần API key — nhập key bên dưới rồi mới bắt đầu được.`;
+                hintSoniox.textContent = t('settings.engine.missingKeyWarning', { name: missingKey });
             }
         }
         if (hintLocal) hintLocal.style.display = 'none';
@@ -3404,35 +3399,35 @@ class App {
         // Local MLX needs macOS Apple Silicon — block here (option is selectable
         // but can't actually run on other platforms) instead of crashing.
         if (this.translationMode === 'local' && !this.isAppleSilicon) {
-            this._showToast('Local MLX chỉ chạy trên macOS Apple Silicon. Hãy chọn engine khác trong Cài đặt.', 'error');
+            this._showToast(t('settings.engine.mlxSiliconOnly'), 'error');
             this._showView('settings');
             return;
         }
 
         // Check Soniox API key only for cloud mode
         if (this.translationMode === 'soniox' && !settings.soniox_api_key) {
-            this._showToast('Soniox API key is required. Add it in Settings.', 'error');
+            this._showToast(t('settings.engine.sonioxKeyRequired'), 'error');
             this._showView('settings');
             return;
         }
 
         // Check OpenAI API key for openai mode
         if (this.translationMode === 'openai' && !settings.openai_api_key) {
-            this._showToast('OpenAI API key is required. Add it in Settings.', 'error');
+            this._showToast(t('settings.engine.openaiKeyRequired'), 'error');
             this._showView('settings');
             return;
         }
 
         // Check Gemini API key for gemini mode
         if (this.translationMode === 'gemini' && !settings.gemini_api_key) {
-            this._showToast('Gemini API key is required. Add it in Settings.', 'error');
+            this._showToast(t('settings.engine.geminiKeyRequired'), 'error');
             this._showView('settings');
             return;
         }
 
         // Check Qwen API key for qwen mode
         if (this.translationMode === 'qwen' && !settings.qwen_api_key) {
-            this._showToast('Qwen (DashScope) API key is required. Add it in Settings.', 'error');
+            this._showToast(t('settings.engine.qwenKeyRequired'), 'error');
             this._showView('settings');
             return;
         }
@@ -3527,15 +3522,15 @@ class App {
             const state = status?.microphone || 'unknown';
             this._showToast(
                 state === 'denied' || state === 'restricted'
-                    ? 'Microphone bị từ chối. Hãy bật Meet Minder trong System Settings → Privacy & Security → Microphone.'
-                    : `Không xác định được quyền microphone (trạng thái: ${state}).`,
+                    ? t('permission.micDeniedPrompt')
+                    : t('permission.micUnknownPrompt', { state }),
                 'error',
             );
             this._updateStatus('error');
             return false;
         } catch (err) {
             console.error('[App] Microphone permission check failed:', err);
-            this._showToast(`Không kiểm tra được quyền microphone: ${err}`, 'error');
+            this._showToast(t('permission.micCheckFailed', { error: err }), 'error');
             return false;
         }
     }
@@ -3550,7 +3545,7 @@ class App {
                 if (!this.isRunning) return;
                 const micSamples = status?.microphone_received_samples ?? status?.received_samples ?? 0;
                 if (micSamples === 0) {
-                    this._showToast('Microphone stream đã mở nhưng không nhận được sample. Hãy kiểm tra thiết bị input và quyền Microphone.', 'error');
+                    this._showToast(t('permission.micNoSamplesPrompt'), 'error');
                 } else {
                     // RMS=0 can be legitimate while nobody is speaking. The
                     // explicit 3-second recording test reports silence; live
@@ -3805,7 +3800,7 @@ class App {
                 console.error('Failed to start audio capture:', err);
                 const errStr = String(err);
                 if (errStr.includes('Screen Recording') || errStr.includes('TCC') || errStr.includes('shareable content')) {
-                    this._showToast('Vui lòng bật quyền Screen & System Audio trong System Settings', 'error');
+                    this._showToast(t('permission.screenAudioRequired'), 'error');
                     try {
                         await invoke('request_screen_capture_permission');
                     } catch {}
@@ -4031,8 +4026,8 @@ class App {
             const status = JSON.parse(checkResult);
             if (!status.ready) {
                 if (!navigator.onLine) {
-                    this._showToast('Mô hình Local MLX chưa tải và máy đang mất mạng.', 'error');
-                    this.transcriptUI.showStatusMessage('Chưa có mô hình offline. Cần có internet để tải mô hình lần đầu.');
+                    this._showToast(t('engine.mlxNotReadyOffline'), 'error');
+                    this.transcriptUI.showStatusMessage(t('engine.mlxNeedInternetFirst'));
                     this._updateStatus('error');
                     this.isRunning = false;
                     this._updateStartButton();
@@ -4506,7 +4501,7 @@ class App {
                 const removeBtn = document.createElement('button');
                 removeBtn.type = 'button';
                 removeBtn.className = 'tag-chip-remove';
-                removeBtn.title = 'Xoá thẻ';
+                removeBtn.title = t('modal.tag.removeTag');
                 removeBtn.tabIndex = -1;
                 removeBtn.innerHTML = '×';
                 removeBtn.addEventListener('click', (e) => {
@@ -4589,11 +4584,11 @@ class App {
 
             if (currentSuggestions.length === 0) {
                 if (selectedTags.length > 0 && availableKnown.length === 0 && !rawQuery) {
-                    dropdown.innerHTML = `<div class="tag-tokenize-empty">Đã chọn tất cả thẻ có sẵn</div>`;
+                    dropdown.innerHTML = `<div class="tag-tokenize-empty">${this._esc(t('modal.tag.allSelected'))}</div>`;
                 } else if (rawQuery) {
-                    dropdown.innerHTML = `<div class="tag-tokenize-empty">Nhấn Enter để thêm thẻ mới "<b>${this._esc(rawQuery)}</b>"</div>`;
+                    dropdown.innerHTML = `<div class="tag-tokenize-empty">${t('modal.tag.pressEnterToAdd', { tag: this._esc(rawQuery) })}</div>`;
                 } else {
-                    dropdown.innerHTML = `<div class="tag-tokenize-empty">Gõ để tìm hoặc tạo thẻ mới</div>`;
+                    dropdown.innerHTML = `<div class="tag-tokenize-empty">${this._esc(t('modal.tag.typeToSearchOrCreate'))}</div>`;
                 }
                 dropdown.style.display = 'block';
                 isDropdownOpen = true;
@@ -4612,7 +4607,7 @@ class App {
                 if (item.type === 'existing') {
                     itemEl.innerHTML = `<span>#${highlightMatch(item.tag, rawQuery)}</span>`;
                 } else {
-                    itemEl.innerHTML = `<span>➕ Tạo thẻ mới: <b>#${this._esc(item.tag)}</b></span><span style="font-size:10px;opacity:0.7">Enter</span>`;
+                    itemEl.innerHTML = `<span>${t('modal.tag.createNew', { tag: this._esc(item.tag) })}</span><span style="font-size:10px;opacity:0.7">Enter</span>`;
                 }
 
                 itemEl.addEventListener('mouseenter', () => {
@@ -5107,15 +5102,15 @@ class App {
         }
 
         if (!hadData) {
-            this._showToast('Không có dữ liệu cuộc họp để lưu', 'info');
+            this._showToast(t('session.noDataToSave'), 'info');
             this._hasUnsavedMeetingData = false;
         } else {
             const result = await sessionStore.endSession();
             if (result === 'failed') {
-                this._showToast('Lưu thất bại — dữ liệu được giữ tạm trong bộ nhớ', 'error');
+                this._showToast(t('session.saveFailed'), 'error');
             } else {
                 this._hasUnsavedMeetingData = false;
-                this._showToast(`💾 Đã kết thúc & lưu: ${sessionStore.title || 'Cuộc họp'} ✓`, 'success');
+                this._showToast(t('session.endedAndSaved', { title: sessionStore.title || t('session.defaultTitle') }), 'success');
             }
         }
 
@@ -5196,7 +5191,7 @@ class App {
                         const apiKey = settings.gemini_api_key?.trim();
 
                         if (!apiKey) {
-                            this._showToast('Không thể tự động re-transcript: Cần Gemini API Key trong Cài đặt', 'warning');
+                            this._showToast(t('session.retranscriptNeedGeminiKey'), 'warning');
                             if (stopAction.autoGenerateMinutes) {
                                 this._switchSessionTab('minutes');
                                 await this._generateMeetingMinutesForSession(savedId, stopAction.minutesLang || 'en');
@@ -5205,7 +5200,7 @@ class App {
                             this._retranscribeSession(savedId, false, {
                                 generateMinutes: stopAction.autoGenerateMinutes,
                                 minutesLang: null,
-                                customTitle: 'Re-transcript để tối ưu nội dung'
+                                customTitle: t('modal.stop.retranscriptLabel')
                             }).catch(err => {
                                 console.error('[App] Auto retranscript error:', err);
                             });
@@ -5229,7 +5224,7 @@ class App {
             }
         } catch (err) {
             console.error('[App] Stop session error:', err);
-            this._showToast(`Lỗi kết thúc: ${err}`, 'error');
+            this._showToast(t('session.stopError', { error: err }), 'error');
         } finally {
             this._isStoppingSession = false;
             if (btnStop) {
@@ -5260,9 +5255,9 @@ class App {
 
         try {
             await sessionStore.discard();
-            this._showToast('🗑 Đã kết thúc và bỏ cuộc họp', 'info');
+            this._showToast(t('session.discardSuccess'), 'info');
         } catch (err) {
-            this._showToast(`Không thể bỏ cuộc họp: ${err}`, 'error');
+            this._showToast(t('session.discardError', { error: err }), 'error');
             return;
         }
 
@@ -5336,7 +5331,7 @@ class App {
                 && now - this._lastQuitShortcutAt <= 2000;
             this._lastQuitShortcutAt = now;
             if (!confirmed) {
-                this._showToast('Nhấn ⌘Q lần nữa trong 2 giây để thoát', 'warning');
+                this._showToast(t('app.quitConfirm'), 'warning');
                 return;
             }
 
@@ -5358,7 +5353,7 @@ class App {
                 this._lastCloseRequestAt = now;
                 if (!confirmed) {
                     event.preventDefault();
-                    this._showToast('Nhấn ⌘Q lần nữa trong 2 giây để thoát', 'warning');
+                    this._showToast(t('app.quitConfirm'), 'warning');
                     return;
                 }
             } else {
@@ -5376,7 +5371,7 @@ class App {
         });
 
         await this.appWindow.listen('app-quit-confirmation-needed', () => {
-            this._showToast('Nhấn ⌘Q lần nữa trong 2 giây để thoát', 'warning');
+            this._showToast(t('app.quitConfirm'), 'warning');
         });
 
         await this.appWindow.listen('app-exit-requested', async () => {
@@ -5397,7 +5392,7 @@ class App {
             const percent = Number.isFinite(Number(payload.percent))
                 ? Math.max(0, Math.min(98, Number(payload.percent)))
                 : active.percent;
-            const message = String(payload.message || active.text || 'Đang xử lý file ghi âm...');
+            const message = String(payload.message || active.text || t('retranscript.modal.prepAudio'));
             active.backendProgress = true;
             active.progressBaseText = message;
             this._setRetranscriptProgress(stage, message, percent, active.customTitle);
@@ -5412,7 +5407,7 @@ class App {
             const completed = Number(payload.completed_files || 0);
             const total = Number(payload.total_files || 0);
             const percent = Math.max(0, Math.min(100, Number(payload.percent || 0)));
-            const message = String(payload.message || 'Đang di chuyển dữ liệu...');
+            const message = String(payload.message || t('settings.storage.migratingData'));
             statusEl.style.display = 'block';
             statusEl.classList.remove('is-error');
             statusEl.textContent = total > 0
@@ -5447,7 +5442,7 @@ class App {
         if (!this.sessionStartTime) {
             badge.className = 'live-duration-badge is-idle';
             text.textContent = '00:00:00';
-            badge.title = 'Thời gian diễn ra cuộc họp';
+            badge.title = t('duration.default');
             return;
         }
 
@@ -5460,13 +5455,13 @@ class App {
 
         if (this.isRunning) {
             badge.className = 'live-duration-badge is-running';
-            badge.title = `Cuộc họp đang diễn ra: ${text.textContent}`;
+            badge.title = t('duration.running', { time: text.textContent });
         } else if (this.isPaused) {
             badge.className = 'live-duration-badge is-paused';
-            badge.title = `Cuộc họp đang tạm dừng: ${text.textContent}`;
+            badge.title = t('duration.paused', { time: text.textContent });
         } else {
             badge.className = 'live-duration-badge is-idle';
-            badge.title = 'Thời gian diễn ra cuộc họp';
+            badge.title = t('duration.default');
         }
     }
 
@@ -5499,7 +5494,7 @@ class App {
                 if (iconStopSq) iconStopSq.style.display = 'block';
                 if (iconSaveFloppy) iconSaveFloppy.style.display = 'none';
                 if (labelStop) labelStop.innerHTML = 'Save & S<u>t</u>op';
-                btnStop.title = 'Kết thúc cuộc họp & Lưu (⌘T)';
+                btnStop.title = t('button.saveStop.title');
             }
         } else if (this.isPaused) {
             // Paused -> "Tiếp tục"
@@ -5515,7 +5510,7 @@ class App {
                 if (iconStopSq) iconStopSq.style.display = 'block';
                 if (iconSaveFloppy) iconSaveFloppy.style.display = 'none';
                 if (labelStop) labelStop.innerHTML = 'Save & S<u>t</u>op';
-                btnStop.title = 'Kết thúc cuộc họp & Lưu (⌘T)';
+                btnStop.title = t('button.saveStop.title');
             }
         } else if (this._hasUnsavedMeetingData) {
             // Stopped with data -> Start btn resets to "Bắt đầu", Stop btn transitions to "Lưu Log"
@@ -5530,8 +5525,8 @@ class App {
                 btnStop.className = 'action-btn btn-stop-action is-save-log';
                 if (iconStopSq) iconStopSq.style.display = 'none';
                 if (iconSaveFloppy) iconSaveFloppy.style.display = 'block';
-                if (labelStop) labelStop.textContent = 'Lưu Log';
-                btnStop.title = 'Lưu / Đổi tên cuộc họp này (⌘T)';
+                if (labelStop) labelStop.textContent = t('button.saveLog');
+                btnStop.title = t('button.saveLog.title');
             }
         } else {
             // Idle (Initial / No data) -> "Bắt đầu", Stop button hidden
@@ -5662,7 +5657,7 @@ class App {
         localStorage.setItem('is_pinned', this.isPinned ? 'true' : 'false');
         const btn = document.getElementById('btn-pin');
         if (btn) btn.classList.toggle('active', this.isPinned);
-        this._showToast(this.isPinned ? '📌 Đã ghim trên cùng' : 'Đã bỏ ghim — cửa sổ có thể ẩn phía sau', 'success');
+        this._showToast(this.isPinned ? t('toolbar.pinned') : t('toolbar.unpinned'), 'success');
     }
 
     // ─── Compact Mode ───────────────────────────────
@@ -5965,7 +5960,7 @@ class App {
         const selectTiming = document.getElementById('select-translation-timing');
         if (selectTiming) selectTiming.value = timing;
         await settingsManager.save(s);
-        this._showToast(timing === 'realtime' ? '⚡ Kiểu dịch: Dịch ngay lập tức' : '⏳ Kiểu dịch: Dịch khi hết câu', 'info');
+        this._showToast(timing === 'realtime' ? t('toolbar.timingRealtime') : t('toolbar.timingSentence'), 'info');
     }
 
     _adjustFontSize(delta) {
@@ -6000,7 +5995,7 @@ class App {
         const filteredIds = new Set((this._filteredSessions || []).map(s => s.id));
         const selectedInFiltered = [...this._selectedSessionIds].filter(id => filteredIds.has(id)).length;
 
-        if (countEl) countEl.textContent = `${count} log đã chọn`;
+        if (countEl) countEl.textContent = t('logsTable.selectedCount', { count });
         if (batchBtn) batchBtn.disabled = count === 0;
         if (selectAllChk) {
             selectAllChk.checked = filteredIds.size > 0 && selectedInFiltered === filteredIds.size;
@@ -6062,7 +6057,7 @@ class App {
                     } catch {}
                 }
                 modal.style.display = 'none';
-                this._showToast(`💾 Đã lưu: ${chosenTitle}`, 'success');
+                this._showToast(t('session.savedTitle', { title: chosenTitle }), 'success');
                 resolve(chosenTitle);
             };
             const onCancel = () => {
@@ -6173,13 +6168,13 @@ class App {
                 this._sessionAudioId = null;
                 this._resetSessionPlayerUI();
                 if (wasPlayingSame) {
-                    this._showToast('Đã dừng phát ghi âm', 'info');
+                    this._showToast(t('session.audioPlaybackStopped'), 'info');
                     return;
                 }
             }
 
             if (isLegacy) {
-                this._showToast('Cuộc họp cũ này không có file ghi âm âm thanh', 'info');
+                this._showToast(t('session.audioLegacyNoAudio'), 'info');
                 return;
             }
 
@@ -6210,14 +6205,14 @@ class App {
             }
 
             if (!audioUrl) {
-                this._showToast('Không có file ghi âm cho cuộc họp này', 'info');
-                if (btn) btn.innerHTML = '🔊 Nghe lại';
+                this._showToast(t('session.audioNoRecording'), 'info');
+                if (btn) btn.innerHTML = `🔊 ${t('session.playAudio')}`;
                 return;
             }
 
             const sizeMb = audioInfo?.file_size ? Math.round(audioInfo.file_size / 1024 / 1024) : null;
             this._showToast(
-                sizeMb ? `🔊 Đang tải bản ghi âm (${sizeMb} MB)...` : '🔊 Đang tải bản ghi âm...',
+                sizeMb ? `🔊 ${t('session.audioLoading')} (${sizeMb} MB)...` : `🔊 ${t('session.audioLoading')}...`,
                 'info',
             );
 
@@ -6236,18 +6231,18 @@ class App {
                 this._resetSessionPlayerUI();
             };
             audio.oncanplay = () => {
-                this._showToast('🔊 Đang phát lại bản ghi âm cuộc họp...', 'info');
+                this._showToast(t('session.audioPlaying'), 'info');
             };
             audio.onerror = () => {
                 const mediaError = audio.error;
                 console.error('[App] Audio playback error:', mediaError?.code, mediaError?.message);
                 const reason = mediaError?.code === 3
-                    ? 'file không thể giải mã hoặc codec không được hỗ trợ'
+                    ? 'decode error'
                     : mediaError?.code === 4
-                        ? 'định dạng file không được hỗ trợ'
-                        : 'không thể đọc file';
-                this._showToast(`Lỗi khi phát file ghi âm: ${reason}.`, 'error', {
-                    label: 'Thử lại',
+                        ? 'unsupported format'
+                        : 'read error';
+                this._showToast(t('session.audioPlayError', { reason }), 'error', {
+                    label: t('network.retry'),
                     onClick: () => this._playSessionTTS(id, false),
                 });
                 this._sessionAudioElement = null;
@@ -6257,7 +6252,7 @@ class App {
             await audio.play();
             this._setSessionPlayerUI(id, true);
         } catch (err) {
-            this._showToast(`Lỗi phát âm thanh: ${err}`, 'error');
+            this._showToast(t('session.audioPlayFailed', { error: err }), 'error');
             this._resetSessionPlayerUI();
         } finally {
             this._setSessionPlayerLoading(id, false);
@@ -6285,7 +6280,7 @@ class App {
                 player.classList.add('is-active');
                 if (toggle) {
                     toggle.textContent = playing ? '❚❚' : '▶';
-                    toggle.title = playing ? 'Tạm dừng' : 'Tiếp tục phát';
+                    toggle.title = playing ? t('session.audioPause') : t('session.audioResume');
                 }
             } else if (!id) {
                 player.classList.remove('is-active');
@@ -6293,7 +6288,7 @@ class App {
         });
         const detailBtn = document.getElementById('btn-session-tts-play');
         if (detailBtn && this._currentViewedSession?.id === id) {
-            detailBtn.innerHTML = playing ? '⏸ Tạm dừng' : '🔊 Nghe lại';
+            detailBtn.innerHTML = playing ? `⏸ ${t('session.audioPause')}` : `🔊 ${t('session.playAudio')}`;
         }
     }
 
@@ -6307,7 +6302,7 @@ class App {
                 toggle.disabled = loading;
                 if (loading) {
                     toggle.textContent = '…';
-                    toggle.title = 'Đang tải bản ghi âm';
+                    toggle.title = t('session.audioLoading');
                 }
             }
             if (timeline) timeline.disabled = loading;
@@ -6315,7 +6310,7 @@ class App {
         const detailBtn = document.getElementById('btn-session-tts-play');
         if (detailBtn && this._currentViewedSession?.id === id) {
             detailBtn.disabled = loading;
-            if (loading) detailBtn.innerHTML = '⏳ Đang tải...';
+            if (loading) detailBtn.innerHTML = `⏳ ${t('common.processing')}`;
         }
     }
 
@@ -6345,7 +6340,7 @@ class App {
             const disabled = player.dataset.legacy === '1';
             if (toggle) {
                 toggle.textContent = '▶';
-                toggle.title = 'Phát bản ghi âm';
+                toggle.title = t('session.playAudio');
                 toggle.disabled = disabled;
             }
             if (timeline) {
@@ -6360,7 +6355,7 @@ class App {
             if (duration) duration.textContent = '0:00';
         });
         const detailBtn = document.getElementById('btn-session-tts-play');
-        if (detailBtn) detailBtn.innerHTML = '🔊 Nghe lại';
+        if (detailBtn) detailBtn.innerHTML = `🔊 ${t('session.playAudio')}`;
     }
 
     _bindSessionPlayer(player) {
@@ -6394,7 +6389,7 @@ class App {
         const select = document.getElementById('select-session-customer-filter');
         if (!select) return;
         const customers = this._projectRegistry?.customers || [];
-        let html = '<option value="" disabled>🤝 Khách hàng</option>';
+        let html = `<option value="" disabled>${this._esc(t('modal.metadata.customerLabel').replace(/:$/, ''))}</option>`;
         for (const c of customers) {
             const statusIcon = c.status === 'active' ? '🟢' : '⚪';
             const selected = this._activeCustomerFilter.includes(c.id) ? 'selected' : '';
@@ -6407,7 +6402,7 @@ class App {
         const select = document.getElementById('select-session-project-filter');
         if (!select) return;
         const projects = this._projectRegistry?.projects || [];
-        let html = '<option value="" disabled>🚀 Dự án</option>';
+        let html = `<option value="" disabled>${this._esc(t('modal.metadata.projectLabel').replace(/:$/, ''))}</option>`;
         for (const p of projects) {
             const statusIcon = p.status === 'active' ? '🟢' : '⚪';
             const selected = this._activeProjectFilter.includes(p.id) ? 'selected' : '';
@@ -6420,7 +6415,7 @@ class App {
         const select = document.getElementById('select-session-category-filter');
         if (!select) return;
         const categories = this._projectRegistry?.categories || [];
-        let html = '<option value="" disabled>🗂️ Category</option>';
+        let html = `<option value="" disabled>${this._esc(t('modal.metadata.categoryLabel').replace(/:$/, ''))}</option>`;
         for (const c of categories) {
             const selected = this._activeCategoryFilter.includes(c.name) ? 'selected' : '';
             html += `<option value="${this._escAttr(c.name)}" ${selected}>🗂️ ${this._esc(c.name)}</option>`;
@@ -6927,7 +6922,7 @@ class App {
                 this._showToast(t('logsTable.copySuccess'), 'success');
             }
         } catch (err) {
-            this._showToast(`Lỗi copy: ${err}`, 'error');
+            this._showToast(t('session.copyFailed', { error: err }), 'error');
         }
     }
 
@@ -7097,7 +7092,7 @@ class App {
                         setTimeout(() => { if (btn) btn.innerHTML = orig; }, 1500);
                     }
                 } catch (err) {
-                    this._showToast(`Lỗi copy: ${err}`, 'error');
+                    this._showToast(t('session.copyFailed', { error: err }), 'error');
                 }
             });
         });
@@ -8030,7 +8025,7 @@ class App {
             `;
         } catch (err) {
             console.error('Failed to get storage info:', err);
-            statsEl.textContent = `Lỗi tải thông tin lưu trữ: ${err}`;
+            statsEl.textContent = t('common.error', { error: err });
         }
         this._renderGitBackupSettingsUI();
         this._renderGitBackupStatus();
@@ -8071,7 +8066,7 @@ class App {
     async _getCurrentStoragePath() {
         const info = await invoke('get_storage_info');
         const path = String(info.current_path || '').trim();
-        if (!path) throw new Error('Không xác định được thư mục lưu trữ hiện tại');
+        if (!path) throw new Error(t('settings.storage.pathUnknown'));
         return path;
     }
 
@@ -8126,7 +8121,7 @@ class App {
             this._configureGitBackupScheduler(settingsManager.get());
             await this._renderGitBackupStatus();
         } catch (err) {
-            this._showToast(`Lưu cài đặt Git thất bại: ${err}`, 'error');
+            this._showToast(t('settings.gitSaveFailed', { error: err }), 'error');
         }
     }
 
@@ -8183,7 +8178,7 @@ class App {
         }).join('');
     }
 
-    _recordGitPushHistory(storagePath, { result = null, source = 'Theo lịch', error = null } = {}) {
+    _recordGitPushHistory(storagePath, { result = null, source = 'Schedule', error = null } = {}) {
         if (!storagePath) return;
         const changedPaths = Array.isArray(result?.changed_paths) ? result.changed_paths : [];
         const entry = {
@@ -8233,7 +8228,7 @@ class App {
     async _runGitBackup({ manual = false, push = false, reason = 'schedule' } = {}) {
         const s = settingsManager.get();
         if (!s.git_backup_enabled) {
-            if (manual) this._showToast('Hãy bật backup Git trước', 'warning');
+            if (manual) this._showToast(t('settings.gitEnableFirst'), 'warning');
             return;
         }
         if (!manual && reason === 'schedule' && !s.git_backup_auto_commit) return;
@@ -8244,7 +8239,7 @@ class App {
         try {
             repo = await this._getCurrentStoragePath();
         } catch (err) {
-            if (manual) this._showToast(`Không đọc được thư mục lưu trữ: ${err}`, 'error');
+            if (manual) this._showToast(t('settings.gitDirReadError', { error: err }), 'error');
             return;
         }
         this._gitBackupBusy = true;
@@ -8259,7 +8254,7 @@ class App {
             if (push) {
                 this._recordGitPushHistory(repo, {
                     result,
-                    source: manual ? 'Backup ngay' : 'Theo lịch',
+                    source: manual ? 'Manual' : 'Schedule',
                 });
             }
             if (manual) this._showToast(result.message, result.warning ? 'warning' : 'success');
@@ -8268,15 +8263,15 @@ class App {
             if (reason === 'schedule') localStorage.setItem(this._gitBackupStorageKey(repo, 'commit'), String(Date.now()));
             if (push) {
                 this._recordGitPushHistory(repo, {
-                    source: manual ? 'Backup ngay' : 'Theo lịch',
+                    source: manual ? 'Manual' : 'Schedule',
                     error: String(err),
                 });
             }
-            if (manual) this._showToast(`Backup Git thất bại: ${err}`, 'error');
+            if (manual) this._showToast(t('settings.gitBackupFailed', { error: err }), 'error');
             const statusEl = document.getElementById('git-backup-status');
             if (statusEl) {
                 statusEl.classList.add('is-error');
-                statusEl.textContent = `Backup thất bại: ${err}`;
+                statusEl.textContent = t('settings.gitBackupFailed', { error: err });
             }
         } finally {
             this._gitBackupBusy = false;
@@ -8297,7 +8292,7 @@ class App {
         this._gitBackupBusy = true;
         try {
             const result = await invoke('git_backup_push');
-            this._recordGitPushHistory(repo, { result, source: 'Theo lịch' });
+            this._recordGitPushHistory(repo, { result, source: 'Schedule' });
             localStorage.setItem(this._gitBackupStorageKey(repo, 'push'), String(Date.now()));
             if (result.warning) {
                 const statusEl = document.getElementById('git-backup-status');
@@ -8310,11 +8305,11 @@ class App {
             await this._renderGitBackupStatus();
         } catch (err) {
             localStorage.setItem(this._gitBackupStorageKey(repo, 'push'), String(Date.now()));
-            this._recordGitPushHistory(repo, { source: 'Theo lịch', error: String(err) });
+            this._recordGitPushHistory(repo, { source: 'Schedule', error: String(err) });
             const statusEl = document.getElementById('git-backup-status');
             if (statusEl) {
                 statusEl.classList.add('is-error');
-                statusEl.textContent = `Push thất bại: ${err}`;
+                statusEl.textContent = t('settings.gitPushFailed', { error: err });
             }
         } finally {
             this._gitBackupBusy = false;
@@ -8538,14 +8533,14 @@ class App {
                 const id = btn.dataset.id;
                 try {
                     const newStatus = await invoke('toggle_customer_status', { id });
-                    this._showToast(`Đã chuyển khách hàng sang: ${newStatus === 'active' ? 'Đang chạy' : 'Đã dừng'}`, 'success');
+                    this._showToast(t('settings.customerStatusChanged', { status: newStatus === 'active' ? t('common.active') : t('common.stopped') }), 'success');
                     await this._loadProjectRegistry();
                     this._renderSettingsCustomersTab();
                     this._renderCustomerFilterBar();
                     this._updateSidebarBadges();
                     await this._showSessions();
                 } catch (err) {
-                    this._showToast(`Lỗi: ${err}`, 'error');
+                    this._showToast(t('common.error', { error: err }), 'error');
                 }
             });
         });
@@ -8554,23 +8549,23 @@ class App {
         listEl.querySelectorAll('.btn-del-cust').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const id = btn.dataset.id;
-                const name = btn.dataset.name || 'khách hàng';
+                const name = btn.dataset.name || t('modal.cust.defaultName');
                 const agreed = await this._promptConfirmDelete({
-                    title: 'Xoá khách hàng',
-                    message: `Bạn có chắc muốn xoá khách hàng "${name}"?\nCác dự án liên kết sẽ được huỷ gán khách hàng này. Meeting log đã ghi được giữ nguyên.`,
-                    confirmText: 'Xoá khách hàng'
+                    title: t('settings.customerDeleteTitle'),
+                    message: t('settings.customerDeleteMessage', { name }),
+                    confirmText: t('settings.customerDeleteTitle')
                 });
                 if (!agreed) return;
                 try {
                     await invoke('delete_customer', { id });
-                    this._showToast('Đã xóa khách hàng', 'success');
+                    this._showToast(t('settings.customerDeleted'), 'success');
                     await this._loadProjectRegistry();
                     this._renderSettingsCustomersTab();
                     this._renderCustomerFilterBar();
                     this._updateSidebarBadges();
                     await this._showSessions();
                 } catch (err) {
-                    this._showToast(`Lỗi: ${err}`, 'error');
+                    this._showToast(t('common.error', { error: err }), 'error');
                 }
             });
         });
@@ -8863,14 +8858,14 @@ class App {
                 const id = btn.dataset.id;
                 try {
                     const newStatus = await invoke('toggle_project_status', { id });
-                    this._showToast(`Đã chuyển dự án sang: ${newStatus === 'active' ? 'Đang chạy' : 'Đã dừng'}`, 'success');
+                    this._showToast(t('settings.projectStatusChanged', { status: newStatus === 'active' ? t('common.active') : t('common.stopped') }), 'success');
                     await this._loadProjectRegistry();
                     this._renderSettingsProjectsTab();
                     this._renderProjectFilterBar();
                     this._updateSidebarBadges();
                     await this._showSessions();
                 } catch (err) {
-                    this._showToast(`Lỗi: ${err}`, 'error');
+                    this._showToast(t('common.error', { error: err }), 'error');
                 }
             });
         });
@@ -8879,23 +8874,23 @@ class App {
         listEl.querySelectorAll('.btn-del-proj').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const id = btn.dataset.id;
-                const name = btn.dataset.name || 'dự án';
+                const name = btn.dataset.name || t('modal.proj.defaultName');
                 const agreed = await this._promptConfirmDelete({
-                    title: 'Xoá dự án',
-                    message: `Bạn có chắc muốn xoá dự án "${name}"?\nToàn bộ meeting log đã ghi trước đây vẫn được giữ nguyên an toàn.`,
-                    confirmText: 'Xoá dự án'
+                    title: t('settings.projectDeleteTitle'),
+                    message: t('settings.projectDeleteMessage', { name }),
+                    confirmText: t('settings.projectDeleteTitle')
                 });
                 if (!agreed) return;
                 try {
                     await invoke('delete_project', { id });
-                    this._showToast('Đã xóa dự án', 'success');
+                    this._showToast(t('settings.projectDeleted'), 'success');
                     await this._loadProjectRegistry();
                     this._renderSettingsProjectsTab();
                     this._renderProjectFilterBar();
                     this._updateSidebarBadges();
                     await this._showSessions();
                 } catch (err) {
-                    this._showToast(`Lỗi: ${err}`, 'error');
+                    this._showToast(t('common.error', { error: err }), 'error');
                 }
             });
         });
@@ -9242,23 +9237,23 @@ class App {
         listEl.querySelectorAll('.btn-del-cat').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const id = btn.dataset.id;
-                const name = btn.dataset.name || 'category';
+                const name = btn.dataset.name || t('modal.cat.defaultName');
                 const agreed = await this._promptConfirmDelete({
-                    title: 'Xoá category',
-                    message: `Bạn có chắc muốn xoá category "${name}" khỏi hệ thống?`,
-                    confirmText: 'Xoá category'
+                    title: t('settings.categoryDeleteTitle'),
+                    message: t('settings.categoryDeleteMessage', { name }),
+                    confirmText: t('settings.categoryDeleteTitle')
                 });
                 if (!agreed) return;
                 try {
                     await invoke('delete_category', { id });
-                    this._showToast('Đã xóa category', 'success');
+                    this._showToast(t('settings.categoryDeleted'), 'success');
                     await this._loadProjectRegistry();
                     this._renderSettingsCategoriesTab();
                     this._renderCategoryFilterSelect();
                     this._updateSidebarBadges();
                     await this._showSessions();
                 } catch (err) {
-                    this._showToast(`Lỗi: ${err}`, 'error');
+                    this._showToast(t('common.error', { error: err }), 'error');
                 }
             });
         });
@@ -9514,21 +9509,21 @@ class App {
             btn.addEventListener('click', async () => {
                 const tag = btn.dataset.tag;
                 const agreed = await this._promptConfirmDelete({
-                    title: 'Xoá tag',
-                    message: `Bạn có chắc muốn xoá tag #${tag} khỏi hệ thống?`,
-                    confirmText: 'Xoá tag'
+                    title: t('settings.tagDeleteTitle'),
+                    message: t('settings.tagDeleteMessage', { tag }),
+                    confirmText: t('settings.tagDeleteTitle')
                 });
                 if (!agreed) return;
                 try {
                     await invoke('delete_tag', { tag });
-                    this._showToast(`Đã xóa tag #${tag}`, 'success');
+                    this._showToast(t('settings.tagDeleted', { tag }), 'success');
                     await this._loadProjectRegistry();
                     this._renderSettingsTagsTab();
                     this._renderTagFilterSelect();
                     this._updateSidebarBadges();
                     await this._showSessions();
                 } catch (err) {
-                    this._showToast(`Lỗi: ${err}`, 'error');
+                    this._showToast(t('common.error', { error: err }), 'error');
                 }
             });
         });
@@ -9614,7 +9609,7 @@ class App {
         const templateSelect = document.getElementById('select-new-cat-template');
         const name = nameInput?.value.trim();
         if (!name) {
-            this._showToast('Vui lòng nhập tên category', 'error');
+            this._showToast(t('settings.categoryNameRequired'), 'error');
             return;
         }
         const color = colorInput?.value || '#10b981';
@@ -9633,14 +9628,14 @@ class App {
             if (nameInput) nameInput.value = '';
             if (scopeSelect) scopeSelect.value = '';
             if (templateSelect) templateSelect.value = '';
-            this._showToast(`Đã thêm category "${name}" ✓`, 'success');
+            this._showToast(t('settings.categoryAdded', { name }), 'success');
             await this._loadProjectRegistry();
             this._renderSettingsCategoriesTab();
             this._renderCategoryFilterSelect();
             this._updateSidebarBadges();
             await this._showSessions();
         } catch (err) {
-            this._showToast(`Thêm category thất bại: ${err}`, 'error');
+            this._showToast(t('settings.categoryAddFailed', { error: err }), 'error');
         }
     }
 
@@ -9649,21 +9644,21 @@ class App {
         const scopeSelect = document.getElementById('select-new-tag-scope');
         const tag = tagInput?.value.trim().replace(/^#+/, '');
         if (!tag) {
-            this._showToast('Vui lòng nhập tên tag', 'error');
+            this._showToast(t('settings.tagNameRequired'), 'error');
             return;
         }
         const scope = scopeSelect?.value || this._tagScopeFilter || 'work';
         try {
             await invoke('save_tag', { tag, scope });
             if (tagInput) tagInput.value = '';
-            this._showToast(`Đã thêm tag #${tag} ✓`, 'success');
+            this._showToast(t('settings.tagAdded', { tag }), 'success');
             await this._loadProjectRegistry();
             this._renderSettingsTagsTab();
             this._renderTagFilterSelect();
             this._updateSidebarBadges();
             await this._showSessions();
         } catch (err) {
-            this._showToast(`Thêm thẻ thất bại: ${err}`, 'error');
+            this._showToast(t('settings.tagAddFailed', { error: err }), 'error');
         }
     }
 
@@ -9682,9 +9677,9 @@ class App {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             await navigator.clipboard.writeText(text);
-            this._showToast(`Đã xuất & copy ${ids.length} cuộc họp ✓`, 'success');
+            this._showToast(t('settings.exportSuccess', { count: ids.length }), 'success');
         } catch (err) {
-            this._showToast(`Xuất thất bại: ${err}`, 'error');
+            this._showToast(t('settings.exportFailed', { error: err }), 'error');
         }
     }
 
@@ -9704,7 +9699,7 @@ class App {
             contentEl.style.display = 'none';
             contentEl.textContent = '';
         }
-        if (titleEl) titleEl.textContent = `✨ Tổng hợp ${ids.length} cuộc họp (AI Digest)`;
+        if (titleEl) titleEl.textContent = t('session.batchAiDigestTitle', { count: ids.length });
 
         const settings = settingsManager.get();
         const geminiKey = settings.gemini_api_key?.trim();
@@ -9720,10 +9715,10 @@ class App {
         }
 
         try {
-            if (loadingText) loadingText.textContent = `Đang đọc nội dung ${ids.length} cuộc họp...`;
+            if (loadingText) loadingText.textContent = t('session.batchAiDigestReading', { count: ids.length });
             const combinedMd = await invoke('export_batch_sessions_md', { ids });
 
-            if (loadingText) loadingText.textContent = `Đang phân tích & móc nối quyết định, việc cần làm bằng AI...`;
+            if (loadingText) loadingText.textContent = t('session.batchAiDigestAnalyzing');
 
             const prompt = `Bạn là trợ lý quản lý dự án và phân tích cuộc họp thông minh.
 Dưới đây là biên bản ghi chép chi tiết của ${ids.length} cuộc họp thuộc cùng một dự án/chuỗi chủ đề:
@@ -9781,7 +9776,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (loadingEl) loadingEl.style.display = 'none';
             if (contentEl) {
                 contentEl.style.display = 'block';
-                contentEl.textContent = `Lỗi tổng hợp AI: ${err.message || err}`;
+                contentEl.textContent = t('session.batchAiDigestError', { error: err.message || err });
             }
         }
     }
@@ -10043,7 +10038,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 const md = this._sessionMinutesEditor.getContent();
                 if (md) {
                     await navigator.clipboard.writeText(md);
-                    this._showToast('Đã copy Markdown Meeting Minutes ✓', 'success');
+                    this._showToast(t('session.copyMinutesMdSuccess'), 'success');
                 }
             }
         });
@@ -10068,7 +10063,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 const notes = this._sessionNotesEditor.getContent();
                 if (notes) {
                     await navigator.clipboard.writeText(notes);
-                    this._showToast('Đã copy Markdown ghi chú ✓', 'success');
+                    this._showToast(t('session.copyNotesMdSuccess'), 'success');
                 }
             }
         });
@@ -10197,7 +10192,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             this._sessionMinutesEditor.mount(minCont, {
                 initialContent: '',
                 readOnly: true,
-                placeholderText: 'Biên bản cuộc họp (Meeting Minutes)...',
+                placeholderText: t('session.minutesPlaceholder'),
                 onSave: () => {
                     if (this._isMinutesEditing) this._saveMinutesEdit();
                 },
@@ -10214,7 +10209,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 initialContent: '',
                 imageAssets: [],
                 readOnly: true,
-                placeholderText: 'Ghi chú cuộc họp...',
+                placeholderText: t('session.notesPlaceholder'),
                 onSave: () => {
                     if (this._isNotesEditing) this._saveNotesEdit();
                 },
@@ -10277,9 +10272,12 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (this._activeRetranscribe && this._activeRetranscribe.id === json?.id) {
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = '<span class="retranscript-spinner-inline"></span> Đang transcript...';
+                btn.innerHTML = `<span class="retranscript-spinner-inline"></span> ${t('retranscript.progress.inlineBtn')}`;
             }
-            status.textContent = `⏳ Đang Re-transcript: ${this._activeRetranscribe.text || 'Đang xử lý...'} (${this._activeRetranscribe.percent || 15}%)`;
+            status.textContent = t('retranscript.progress.runningStatus', {
+                text: this._activeRetranscribe.text || t('retranscript.floating.processing'),
+                percent: this._activeRetranscribe.percent || 15
+            });
             status.style.display = '';
             status.classList.add('is-running');
             return;
@@ -10405,17 +10403,17 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const isTranslation = button.dataset.copySessionLog === 'translation';
             const text = segments.map(segment => (isTranslation ? segment.tgt : segment.src) || '').filter(Boolean).join('\n');
             if (!text) {
-                this._showToast(isTranslation ? 'Chưa có bản dịch để copy' : 'Chưa có bản gốc để copy', 'info');
+                this._showToast(isTranslation ? t('session.noTranslationToCopy') : t('session.noOriginalToCopy'), 'info');
                 return;
             }
             try {
                 await navigator.clipboard.writeText(text);
-                this._showToast(isTranslation ? 'Đã copy bản dịch ✓' : 'Đã copy bản gốc ✓', 'success');
+                this._showToast(isTranslation ? t('session.translationCopied') : t('session.originalCopied'), 'success');
                 const orig = button.innerHTML;
                 button.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
                 setTimeout(() => { if (button) button.innerHTML = orig; }, 1500);
             } catch (err) {
-                this._showToast(`Không thể copy: ${err}`, 'error');
+                this._showToast(t('session.copyFailed', { error: err }), 'error');
             }
         }));
     }
@@ -10996,21 +10994,21 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
     async _retranscribeSession(id, isLegacy = false, options = {}) {
         if (isLegacy) {
-            this._showToast('Log định dạng cũ không có file ghi âm để re-transcript', 'info');
+            this._showToast(t('retranscript.legacyNoAudio'), 'info');
             return;
         }
         if (id === sessionStore.id && (this.isRunning || this.isPaused)) {
-            this._showToast('Hãy kết thúc cuộc họp đang ghi trước khi re-transcript', 'info');
+            this._showToast(t('retranscript.activeMeetingWarning'), 'info');
             return;
         }
         if (this._activeRetranscribe) {
-            this._showToast('Đang có tiến trình re-transcript khác đang chạy', 'info');
+            this._showToast(t('retranscript.alreadyRunning'), 'info');
             return;
         }
         const settings = settingsManager.get();
         const apiKey = settings.gemini_api_key?.trim();
         if (!apiKey) {
-            this._showToast('Cần Gemini API Key trong Cài đặt để re-transcript', 'error');
+            this._showToast(t('retranscript.needGeminiKey'), 'error');
             return;
         }
 
@@ -11231,7 +11229,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (window.__TAURI_INTERNALS__) return;
             const file = event.dataTransfer?.files?.[0];
             if (file?.path) await this._inspectDroppedAudioPath(file.path);
-            else this._showToast('Không lấy được đường dẫn file. Hãy bấm “Chọn file local”.', 'warning');
+            else this._showToast(t('modal.importAudio.cannotGetPath'), 'warning');
         });
 
         // Tauri's native drag-drop event provides the real local path even
@@ -12073,14 +12071,14 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (loadingEl) loadingEl.style.display = 'flex';
             if (emptyEl) emptyEl.style.display = 'none';
             if (editorContainer) editorContainer.style.display = 'none';
-            if (loadingText) loadingText.textContent = `Đang phân tích & soạn thảo Meeting Minutes (${this._minutesLangName(lang)})...`;
+            if (loadingText) loadingText.textContent = t('session.minutesAnalyzingLang', { lang: this._minutesLangName(lang) });
             if (regenBtn) {
                 regenBtn.disabled = true;
-                regenBtn.innerHTML = '<span class="retranscript-spinner-inline"></span> Đang tạo...';
+                regenBtn.innerHTML = `<span class="retranscript-spinner-inline"></span> ${t('session.minutesGeneratingBtn')}`;
             }
             if (emptyBtn) {
                 emptyBtn.disabled = true;
-                emptyBtn.innerHTML = '<span class="retranscript-spinner-inline"></span> Đang tạo...';
+                emptyBtn.innerHTML = `<span class="retranscript-spinner-inline"></span> ${t('session.minutesGeneratingBtn')}`;
             }
         }
 
@@ -12614,7 +12612,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const statusText = document.getElementById('update-status-text');
         const actions = document.getElementById('update-actions');
         if (statusEl) statusEl.classList.add('has-update');
-        if (statusText) statusText.textContent = `🆕 Có bản cập nhật v${version}`;
+        if (statusText) statusText.textContent = t('updater.updateAvailable', { version });
         if (actions) actions.style.display = '';
 
         // 3. Tự động tải ngầm bản cập nhật (Phương án 3)
@@ -12637,9 +12635,9 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const statusText = document.getElementById('update-status-text');
 
         if (btn) btn.disabled = true;
-        if (btnText) btnText.textContent = 'Đang tải ngầm...';
+        if (btnText) btnText.textContent = t('updater.downloadingBackground');
         if (progressDiv) progressDiv.style.display = '';
-        if (statusText) statusText.textContent = `⏳ Đang tải ngầm bản v${version}...`;
+        if (statusText) statusText.textContent = t('updater.downloadingVersion', { version });
 
         try {
             console.log(`[Updater] Downloading v${version} in background...`);
@@ -12649,7 +12647,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                     if (progressFill) progressFill.style.width = `${pct}%`;
                     if (progressPct) progressPct.textContent = `${pct}%`;
                     if (btnText && this._isDownloadingUpdate) {
-                        btnText.textContent = `Đang tải ${pct}%...`;
+                        btnText.textContent = t('updater.downloadingPct', { pct });
                     }
                 }
             });
@@ -12662,8 +12660,8 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._isDownloadingUpdate = false;
             console.warn('[Updater] Background download failed:', err);
             if (btn) btn.disabled = false;
-            if (btnText) btnText.textContent = 'Tải & Cài đặt lại';
-            if (statusText) statusText.textContent = `⚠️ Tải bản cập nhật thất bại: ${err?.message || err}`;
+            if (btnText) btnText.textContent = t('updater.retryDownload');
+            if (statusText) statusText.textContent = t('updater.downloadFailed', { error: err?.message || err });
         }
     }
 
@@ -12678,9 +12676,9 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             btn.disabled = false;
             btn.classList.add('btn-ready-relaunch');
         }
-        if (btnText) btnText.textContent = '🚀 Khởi động lại app';
+        if (btnText) btnText.textContent = t('updater.restartApp');
         if (progressDiv) progressDiv.style.display = 'none';
-        if (statusText) statusText.textContent = `✅ Đã tải xong bản v${version} — Khởi động lại để áp dụng`;
+        if (statusText) statusText.textContent = t('updater.downloadComplete', { version });
 
         // Nếu người dùng đang họp, hoãn hiển thị banner cho đến khi kết thúc họp
         if (this.isRunning) {
@@ -12710,13 +12708,13 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         banner.innerHTML = `
           <div class="update-banner-icon">🚀</div>
           <div class="update-banner-content">
-            <div class="update-banner-title">Meet Minder v${version} đã sẵn sàng</div>
-            <div class="update-banner-subtitle">Khởi động lại app để áp dụng bản cập nhật mới</div>
+            <div class="update-banner-title">${this._esc(t('updater.bannerTitle', { version }))}</div>
+            <div class="update-banner-subtitle">${this._esc(t('updater.bannerSubtitle'))}</div>
           </div>
           <div class="update-banner-actions">
-            <button id="btn-banner-relaunch" class="btn-update-relaunch" type="button">Khởi động lại</button>
-            <button id="btn-banner-later" class="btn-update-later" type="button">Để sau</button>
-            <button id="btn-banner-close" class="btn-update-close" title="Đóng thông báo (Esc)" type="button" aria-label="Đóng thông báo">
+            <button id="btn-banner-relaunch" class="btn-update-relaunch" type="button">${this._esc(t('updater.bannerRelaunch'))}</button>
+            <button id="btn-banner-later" class="btn-update-later" type="button">${this._esc(t('updater.bannerLater'))}</button>
+            <button id="btn-banner-close" class="btn-update-close" title="${this._escAttr(t('updater.bannerCloseTitle'))}" type="button" aria-label="${this._escAttr(t('updater.bannerCloseTitle'))}">
               <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2l8 8m0-8l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
             </button>
           </div>
@@ -12765,7 +12763,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
     async _relaunchApp() {
         if (this.isRunning) {
-            const ok = confirm('Cuộc họp đang diễn ra. Bạn có chắc chắn muốn kết thúc và khởi động lại Meet Minder ngay bây giờ?');
+            const ok = confirm(t('app.restartDuringMeetingConfirm'));
             if (!ok) return;
         }
 
@@ -12782,10 +12780,10 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             }
         } catch (restartErr) {
             console.warn('[Update] Restart failed, update is installed:', restartErr);
-            if (btnText) btnText.textContent = '✅ Đã cập nhật! Hãy mở lại app';
+            if (btnText) btnText.textContent = t('updater.restartApp');
             const statusText = document.getElementById('update-status-text');
-            if (statusText) statusText.textContent = '✅ Bản cập nhật đã sẵn sàng — hãy đóng và mở lại ứng dụng';
-            this._showToast('✅ Cập nhật hoàn tất. Vui lòng khởi động lại Meet Minder.', 'success');
+            if (statusText) statusText.textContent = t('updater.downloadComplete', { version: this._updateReadyVersion || '' });
+            this._showToast(t('app.updateCompleteRestart'), 'success');
         }
     }
 
@@ -12910,7 +12908,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         if (this._isLiveMonitoring) {
             this._isLiveMonitoring = false;
             const btnLive = document.getElementById('btn-test-mic-live');
-            if (btnLive) btnLive.innerHTML = '🔊 Bật Live Monitor';
+            if (btnLive) btnLive.innerHTML = t('settings.engine.audioTestLive');
             try { await invoke('stop_capture'); } catch {}
             await new Promise(r => setTimeout(r, 100));
         }
@@ -13000,8 +12998,8 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             }
         } catch (err) {
             console.error('[Audio Test] Error:', err);
-            if (statusEl) statusEl.textContent = `❌ Lỗi: ${err}`;
-            this._showToast(`Lỗi thu âm: ${err}`, 'error');
+            if (statusEl) statusEl.textContent = `❌ ${t('common.error', { error: err })}`;
+            this._showToast(t('common.error', { error: err }), 'error');
             try { await invoke('stop_capture'); } catch {}
         } finally {
             if (btnRec && !btnRec.innerHTML.includes('play') && !btnRec.innerHTML.includes('phát lại') && !btnRec.innerHTML.includes('再生')) {
@@ -13049,9 +13047,9 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             });
         } catch (err) {
             this._isLiveMonitoring = false;
-            if (btnLive) btnLive.innerHTML = '🔊 Bật Live Monitor';
-            if (statusEl) statusEl.textContent = `❌ Lỗi: ${err}`;
-            this._showToast(`Lỗi Monitor: ${err}`, 'error');
+            if (btnLive) btnLive.innerHTML = t('settings.engine.audioTestLive');
+            if (statusEl) statusEl.textContent = `❌ ${t('common.error', { error: err })}`;
+            this._showToast(t('common.error', { error: err }), 'error');
         }
     }
 
@@ -13088,7 +13086,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
         if (editorContainer && !this._liveNotesEditor) {
             this._liveNotesEditor = new NotesEditor({
-                onImagePasteError: (message) => this._showToast(message, 'warning'),
+                onImagePasteError: () => this._showToast(t('editor.imageTooLarge'), 'warning'),
                 onImagePaste: (asset) => {
                     sessionStore.noteImages = [
                         ...(sessionStore.noteImages || []).filter((item) => item.id !== asset.id),
@@ -13522,7 +13520,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             const copyBtn = document.createElement('button');
             copyBtn.type = 'button';
             copyBtn.className = 'toast-copy-btn';
-            copyBtn.title = 'Copy thông báo lỗi';
+            copyBtn.title = t('retranscript.modal.copyError');
             const copySvg = `<svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
             const checkSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#85e0a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
             copyBtn.innerHTML = copySvg;

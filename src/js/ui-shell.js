@@ -8,6 +8,8 @@
  * dispatched from here.
  */
 
+import { t } from './i18n.js';
+
 const ACTIVITIES = ['live', 'library'];
 
 let currentActivity = 'live';
@@ -130,7 +132,7 @@ export async function applyWindowMode(mode) {
         applyingMode = false;
     }
     const btn = document.getElementById('btn-window-mode');
-    if (btn) btn.title = mode === 'expanded' ? 'Thu về overlay nhỏ' : 'Mở rộng cửa sổ';
+    if (btn) btn.title = mode === 'expanded' ? t('window.collapseOverlay') : t('window.expandWindow');
 }
 
 export async function toggleWindowMode() {

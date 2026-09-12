@@ -43,7 +43,7 @@
         <!-- Activity switcher (Live, Meeting Logs) -->
         <div class="activity-switcher">
           <button class="activity-tab active" data-activity="live" data-i18n-title="nav.live.title" title="Dịch trực tiếp (⌘L)" type="button">
-            <span data-i18n="nav.live" data-i18n-html="true">🎙 <u>L</u>ive</span><span id="live-tab-badge" class="live-tab-badge state-waiting" title="Trạng thái chờ / đang dịch"></span>
+            <span data-i18n="nav.live" data-i18n-html="true">🎙 <u>L</u>ive</span><span id="live-tab-badge" class="live-tab-badge state-waiting" data-i18n-title="live.statusWaiting" title="Trạng thái chờ / đang dịch"></span>
           </button>
           <button class="activity-tab" data-activity="library" data-i18n-title="nav.logs.title" title="Cuộc họp đã lưu (⌘O)" type="button"><span data-i18n="nav.logs" data-i18n-html="true">📚 Meeting L<u>o</u>gs</span></button>
         </div>
@@ -121,7 +121,7 @@
                 <option value="microphone" data-i18n="audio.microphone">🎤 Mic</option>
                 <option value="both" data-i18n="audio.both">🔊+🎤 Cả 2</option>
               </select>
-              <div id="live-audio-meter" class="live-vu-meter" title="Mức âm lượng nhận được từ Mic/System">
+              <div id="live-audio-meter" class="live-vu-meter" data-i18n-title="live.audioMeterTitle" title="Mức âm lượng nhận được từ Mic/System">
                 <div class="vu-bar" data-orig-bg="#10b981" style="background: rgba(255,255,255,0.2);"></div>
                 <div class="vu-bar" data-orig-bg="#10b981" style="background: rgba(255,255,255,0.2);"></div>
                 <div class="vu-bar" data-orig-bg="#f59e0b" style="background: rgba(255,255,255,0.2);"></div>
@@ -297,7 +297,7 @@
               <polyline points="12 19 5 12 12 5" />
             </svg>
           </button>
-          <span id="session-viewer-title" class="session-viewer-title-text" title="Nhấp để sửa thông tin cuộc họp"></span>
+          <span id="session-viewer-title" class="session-viewer-title-text" data-i18n-title="session.edit" title="Nhấp để sửa thông tin cuộc họp"></span>
           <div id="session-viewer-normal-actions" class="session-viewer-actions">
             <button id="btn-session-edit-metadata" class="icon-btn small" data-i18n-title="session.edit" title="Sửa thông tin cuộc họp">
               <svg class="icon-pencil-yellow" width="13" height="13" viewBox="0 0 20 20">
