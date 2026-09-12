@@ -7,7 +7,7 @@
 // ~15s autosave cadence while recording so a crash/force-quit loses at most one
 // autosave interval instead of the whole live chunk.
 
-import { t } from './i18n.js';
+import { t, formatDateTime } from './i18n.js';
 
 const { invoke } = window.__TAURI__.core;
 
@@ -422,9 +422,7 @@ export class SessionStore {
 
     _formatDateTime(iso) {
         if (!iso) return '';
-        const d = new Date(iso);
-        const p = n => String(n).padStart(2, '0');
-        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+        return formatDateTime(iso);
     }
 
     _formatDuration(sec) {

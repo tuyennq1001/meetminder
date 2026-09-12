@@ -10,7 +10,7 @@ import { updater } from './updater.js';
 import { sessionStore, SessionStore } from './session-store.js';
 import { QWEN_LANGS } from './qwen-langs.js';
 import { NotesEditor } from './notes-editor.js';
-import { applyLocale, normalizeLocale, t } from './i18n.js';
+import { applyLocale, normalizeLocale, t, formatDateTime, formatDate } from './i18n.js';
 import {
     initShell, setActivity, getActivity, setLiveBadge, bindMenu, initWindowModes,
 } from './ui-shell.js';
@@ -1000,6 +1000,7 @@ class App {
             }
             if (this._currentSessionJson) {
                 this._renderSessionViewerMetadata(this._currentSessionJson);
+                this._updateRetranscriptStatus(this._currentSessionJson);
             }
             this._populateNoteMetadataSelectors?.();
             try {
@@ -1016,6 +1017,7 @@ class App {
                 }
                 if (this._currentSessionJson) {
                     this._renderSessionViewerMetadata(this._currentSessionJson);
+                    this._updateRetranscriptStatus(this._currentSessionJson);
                 }
                 this._populateNoteMetadataSelectors?.();
                 this._showToast(t('settings.saveFailed', { error: err }), 'error');
@@ -6752,14 +6754,13 @@ class App {
     }
 
     _formatSessionDate(iso) {
-        // Display session created_at (ISO UTC) as local dd/MM/yyyy HH:mm.
+        // Display session created_at (ISO UTC) formatted according to current locale.
         // Falls back to the raw value when parsing fails.
         try {
             if (!iso) return '<span class="logs-empty-value">—</span>';
             const d = new Date(iso);
             if (Number.isNaN(d.getTime())) return this._esc(String(iso).slice(0, 16));
-            const p = n => String(n).padStart(2, '0');
-            return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+            return this._esc(formatDateTime(d));
         } catch (_) {
             return this._esc(String(iso || '').slice(0, 16));
         }
@@ -7185,7 +7186,7 @@ class App {
 
     _renderSessionItem(s) {
         const title = this._esc(s.title || t('logsTable.untitled'));
-        const created = this._esc(s.created_at || '').slice(0, 16);
+        const created = s.created_at ? this._esc(formatDateTime(s.created_at)) : '—';
         const duration = this._formatSeconds(s.duration_sec || 0);
         const engine = s.engine || 'unknown';
         const engineBadge = s.has_legacy_only
@@ -8228,7 +8229,7 @@ class App {
                 return;
             }
             const commit = String(info.last_commit || '').split('\0');
-            const lastCommit = commit[0] ? new Date(commit[0]).toLocaleString() : t('settings.storage.gitNoCommit');
+            const lastCommit = commit[0] ? formatDateTime(commit[0]) : t('settings.storage.gitNoCommit');
             const remote = info.remote ? ` · Remote: ${this._esc(info.remote)}` : t('settings.storage.gitNoRemote');
             statusEl.innerHTML = `${t('settings.storage.gitRepoValid', { branch: this._esc(info.branch || 'detached'), remote })}<br>`
                 + t('settings.storage.gitPendingChanges', { count: Number(info.dirty_files || 0), lastCommit: this._esc(lastCommit) });
@@ -8280,7 +8281,7 @@ class App {
         wrapEl.style.display = '';
         bodyEl.innerHTML = history.map((item) => {
             const paths = Array.isArray(item.changed_paths) ? item.changed_paths : [];
-            const date = item.at ? new Date(item.at).toLocaleString() : '—';
+            const date = item.at ? formatDateTime(item.at) : '—';
             const success = item.success === true;
             const noChange = success && paths.length === 0;
             const resultLabel = success ? (noChange ? t('settings.storage.pushNoChange') : t('settings.storage.pushSuccess')) : t('settings.storage.pushFailed');
@@ -10429,8 +10430,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (Number.isNaN(date.getTime())) {
             formatted = json.retranscribed_at;
         } else {
-            const p = n => String(n).padStart(2, '0');
-            formatted = `${p(date.getDate())}/${p(date.getMonth() + 1)}/${date.getFullYear()} ${p(date.getHours())}:${p(date.getMinutes())}`;
+            formatted = formatDateTime(date);
         }
         status.textContent = t('session.retranscribedAt', { date: formatted });
         status.style.display = '';
@@ -13777,7 +13777,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     _getNoteTemplate() {
         const now = new Date();
         const p = n => String(n).padStart(2, '0');
-        const dateStr = `${now.getFullYear()}/${p(now.getMonth() + 1)}/${p(now.getDate())}`;
+        const dateStr = formatDate(now);
         const timeStr = `${p(now.getHours())}:${p(now.getMinutes())}`;
         const s = settingsManager.get();
         const raw = (s.template_notes && s.template_notes.trim()) ? s.template_notes : t('notes.defaultTemplate');

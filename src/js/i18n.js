@@ -2821,3 +2821,70 @@ export function applyLocale(locale = currentLocale) {
         element.setAttribute('aria-label', t(element.dataset.i18nAriaLabel));
     });
 }
+
+/**
+ * Format a date or ISO string into localized date & time:
+ * - vi: DD/MM/YYYY HH:mm (ngày / tháng / năm)
+ * - ja: MM/DD/YYYY HH:mm (tháng / ngày / năm theo yêu cầu)
+ * - en: MM/DD/YYYY HH:mm (tháng / ngày / năm)
+ */
+export function formatDateTime(isoOrDate, locale = currentLocale) {
+    if (!isoOrDate) return '';
+    const d = (isoOrDate instanceof Date)
+        ? isoOrDate
+        : (typeof isoOrDate === 'number' || /^\d+$/.test(String(isoOrDate).trim())
+            ? new Date(Number(isoOrDate))
+            : new Date(isoOrDate));
+    if (Number.isNaN(d.getTime())) return String(isoOrDate);
+
+    const norm = normalizeLocale(locale);
+    const p = n => String(n).padStart(2, '0');
+    const day = p(d.getDate());
+    const month = p(d.getMonth() + 1);
+    const year = d.getFullYear();
+    const hours = p(d.getHours());
+    const minutes = p(d.getMinutes());
+    const timeStr = `${hours}:${minutes}`;
+
+    switch (norm) {
+        case 'vi':
+            return `${day}/${month}/${year} ${timeStr}`;
+        case 'ja':
+        case 'en':
+            return `${month}/${day}/${year} ${timeStr}`;
+        default:
+            return `${day}/${month}/${year} ${timeStr}`;
+    }
+}
+
+/**
+ * Format a date or ISO string into localized date only:
+ * - vi: DD/MM/YYYY (ngày / tháng / năm)
+ * - ja: MM/DD/YYYY (tháng / ngày / năm theo yêu cầu)
+ * - en: MM/DD/YYYY (tháng / ngày / năm)
+ */
+export function formatDate(isoOrDate, locale = currentLocale) {
+    if (!isoOrDate) return '';
+    const d = (isoOrDate instanceof Date)
+        ? isoOrDate
+        : (typeof isoOrDate === 'number' || /^\d+$/.test(String(isoOrDate).trim())
+            ? new Date(Number(isoOrDate))
+            : new Date(isoOrDate));
+    if (Number.isNaN(d.getTime())) return String(isoOrDate);
+
+    const norm = normalizeLocale(locale);
+    const p = n => String(n).padStart(2, '0');
+    const day = p(d.getDate());
+    const month = p(d.getMonth() + 1);
+    const year = d.getFullYear();
+
+    switch (norm) {
+        case 'vi':
+            return `${day}/${month}/${year}`;
+        case 'ja':
+        case 'en':
+            return `${month}/${day}/${year}`;
+        default:
+            return `${day}/${month}/${year}`;
+    }
+}
