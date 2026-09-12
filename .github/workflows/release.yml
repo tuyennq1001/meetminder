@@ -26,11 +26,15 @@ jobs:
           fi
 
       - name: Install Apple Certificate
-        if: ${{ secrets.APPLE_CERTIFICATE != '' }}
         env:
           CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
+          if [ -z "${CERTIFICATE:-}" ]; then
+            echo "APPLE_CERTIFICATE is not configured. Skipping certificate installation."
+            exit 0
+          fi
+
           CERT_PATH=$RUNNER_TEMP/certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 
@@ -61,13 +65,14 @@ jobs:
 
       - name: Build Tauri app
         env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [ -n "${{ secrets.APPLE_CERTIFICATE }}" ] && [ -n "${{ secrets.APPLE_SIGNING_IDENTITY }}" ]; then
-            npm run tauri build -- --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${{ secrets.APPLE_SIGNING_IDENTITY }}\"}}}"
+          if [ -n "${APPLE_CERTIFICATE:-}" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            npm run tauri build -- --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
           else
             npm run tauri build -- --config src-tauri/tauri.release.conf.json
           fi
@@ -99,11 +104,15 @@ jobs:
           fi
 
       - name: Install Apple Certificate
-        if: ${{ secrets.APPLE_CERTIFICATE != '' }}
         env:
           CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
+          if [ -z "${CERTIFICATE:-}" ]; then
+            echo "APPLE_CERTIFICATE is not configured. Skipping certificate installation."
+            exit 0
+          fi
+
           CERT_PATH=$RUNNER_TEMP/certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 
@@ -136,13 +145,14 @@ jobs:
 
       - name: Build Tauri app (Intel)
         env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [ -n "${{ secrets.APPLE_CERTIFICATE }}" ] && [ -n "${{ secrets.APPLE_SIGNING_IDENTITY }}" ]; then
-            npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${{ secrets.APPLE_SIGNING_IDENTITY }}\"}}}"
+          if [ -n "${APPLE_CERTIFICATE:-}" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
           else
             npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json
           fi
