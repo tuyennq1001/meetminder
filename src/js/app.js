@@ -1855,6 +1855,7 @@ class App {
 
         // Context and profile fields
         document.getElementById('input-user-profile-name')?.addEventListener('input', () => this._debouncedAutoSave());
+        document.getElementById('input-user-profile-nickname')?.addEventListener('input', () => this._debouncedAutoSave());
         document.getElementById('input-user-profile-company')?.addEventListener('input', () => this._debouncedAutoSave());
         document.getElementById('input-context-terms')?.addEventListener('input', () => this._debouncedAutoSave());
         document.getElementById('input-context-text')?.addEventListener('input', () => this._debouncedAutoSave());
@@ -1878,11 +1879,6 @@ class App {
         // Add translation term row
         document.getElementById('btn-add-term')?.addEventListener('click', () => {
             this._addTermRow('', '');
-        });
-
-        // Add general context row
-        document.getElementById('btn-add-general')?.addEventListener('click', () => {
-            this._addGeneralRow('', '');
         });
 
         // Wire Soniox callbacks. Soniox emits original + translation as
@@ -2718,18 +2714,13 @@ class App {
         // Profile fields
         const profileNameInput = document.getElementById('input-user-profile-name');
         if (profileNameInput) profileNameInput.value = s.user_profile_name || '';
+        const profileNicknameInput = document.getElementById('input-user-profile-nickname');
+        if (profileNicknameInput) profileNicknameInput.value = s.user_profile_nickname || '';
         const profileCompanyInput = document.getElementById('input-user-profile-company');
         if (profileCompanyInput) profileCompanyInput.value = s.user_profile_company || '';
 
         // Custom context (rich format)
         const ctx = s.custom_context;
-        // General context rows
-        const generalList = document.getElementById('context-general-list');
-        if (generalList) {
-            generalList.innerHTML = '';
-            const generalPairs = ctx?.general || [];
-            generalPairs.forEach(g => this._addGeneralRow(g.key, g.value));
-        }
         // Transcription terms
         const termsInput = document.getElementById('input-context-terms');
         if (termsInput) {
@@ -2747,6 +2738,7 @@ class App {
             const terms = ctx?.translation_terms || [];
             terms.forEach(t => this._addTermRow(t.source, t.target));
         }
+        this._updateContextEmptyStates();
         } catch (err) {
             console.error('[App] _populateSettingsForm error:', err);
         }
@@ -2800,18 +2792,12 @@ class App {
             show_original: document.getElementById('check-show-original')?.checked !== false,
             default_logs_scope: document.getElementById('select-default-logs-scope')?.value || 'work',
             user_profile_name: document.getElementById('input-user-profile-name')?.value.trim() || '',
+            user_profile_nickname: document.getElementById('input-user-profile-nickname')?.value.trim() || '',
             user_profile_company: document.getElementById('input-user-profile-company')?.value.trim() || '',
             custom_context: null,
         };
 
-        // Parse custom context (rich format)
-        const generalPairs = [];
-        document.querySelectorAll('#context-general-list .general-row').forEach(row => {
-            const key = row.querySelector('.general-key')?.value.trim();
-            const value = row.querySelector('.general-value')?.value.trim();
-            if (key && value) generalPairs.push({ key, value });
-        });
-
+        // Parse custom context
         const termsRaw = document.getElementById('input-context-terms')?.value.trim() || '';
         const terms = termsRaw ? termsRaw.split('\n').map(t => t.trim()).filter(Boolean) : [];
         const contextText = document.getElementById('input-context-text')?.value.trim() || '';
@@ -2823,9 +2809,9 @@ class App {
             if (source && target) translationTerms.push({ source, target });
         });
 
-        if (generalPairs.length > 0 || terms.length > 0 || contextText || translationTerms.length > 0) {
+        if (terms.length > 0 || contextText || translationTerms.length > 0) {
             settings.custom_context = {
-                general: generalPairs,
+                general: [],
                 terms: terms,
                 text: contextText || null,
                 translation_terms: translationTerms,
@@ -2991,28 +2977,32 @@ class App {
         }
     }
 
+    _updateContextEmptyStates() {
+        const transList = document.getElementById('translation-terms-list');
+        const transEmpty = document.getElementById('translation-terms-empty');
+        if (transList && transEmpty) {
+            transEmpty.style.display = transList.children.length === 0 ? 'block' : 'none';
+        }
+    }
+
     _addTermRow(source = '', target = '') {
         const list = document.getElementById('translation-terms-list');
         if (!list) return;
         const row = document.createElement('div');
         row.className = 'term-row';
-        row.innerHTML = `<input type="text" class="term-source" value="${source}" placeholder="Source" />` +
-            `<input type="text" class="term-target" value="${target}" placeholder="Target" />` +
+        row.innerHTML = `<input type="text" class="term-source" value="${this._escAttr(source)}" placeholder="Source (VD: 要件定義)" />` +
+            `<input type="text" class="term-target" value="${this._escAttr(target)}" placeholder="Target (VD: Định nghĩa yêu cầu)" />` +
             `<button type="button" class="btn-remove-term" title="Remove">×</button>`;
-        row.querySelector('.btn-remove-term').addEventListener('click', () => row.remove());
+        row.querySelector('.btn-remove-term').addEventListener('click', () => {
+            row.remove();
+            this._updateContextEmptyStates();
+            this._debouncedAutoSave();
+        });
+        row.querySelectorAll('input').forEach(inp => {
+            inp.addEventListener('input', () => this._debouncedAutoSave());
+        });
         list.appendChild(row);
-    }
-
-    _addGeneralRow(key = '', value = '') {
-        const list = document.getElementById('context-general-list');
-        if (!list) return;
-        const row = document.createElement('div');
-        row.className = 'general-row';
-        row.innerHTML = `<input type="text" class="general-key" value="${this._escAttr(key)}" placeholder="Key (e.g. domain)" />` +
-            `<input type="text" class="general-value" value="${this._escAttr(value)}" placeholder="Value (e.g. Medical)" />` +
-            `<button type="button" class="btn-remove-general" title="Remove">×</button>`;
-        row.querySelector('.btn-remove-general').addEventListener('click', () => row.remove());
-        list.appendChild(row);
+        this._updateContextEmptyStates();
     }
 
     _escAttr(str) {
@@ -12202,9 +12192,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (effCtx) {
                 const contextLines = [];
                 const s = settingsManager.get();
-                if (s.user_profile_name || s.user_profile_company) {
+                if (s.user_profile_name || s.user_profile_nickname || s.user_profile_company) {
                     const parts = [];
                     if (s.user_profile_name) parts.push(`ユーザー名: ${s.user_profile_name}`);
+                    if (s.user_profile_nickname) parts.push(`通称/ニックネーム: ${s.user_profile_nickname}`);
                     if (s.user_profile_company) parts.push(`所属・会社: ${s.user_profile_company}`);
                     contextLines.push(`【ユーザー・組織プロファイル】\n- ${parts.join('\n- ')}`);
                 }
@@ -12280,9 +12271,10 @@ ${template}
             if (effCtx) {
                 const contextLines = [];
                 const s = settingsManager.get();
-                if (s.user_profile_name || s.user_profile_company) {
+                if (s.user_profile_name || s.user_profile_nickname || s.user_profile_company) {
                     const parts = [];
                     if (s.user_profile_name) parts.push(`User Name: ${s.user_profile_name}`);
+                    if (s.user_profile_nickname) parts.push(`Nickname: ${s.user_profile_nickname}`);
                     if (s.user_profile_company) parts.push(`Company / Organization: ${s.user_profile_company}`);
                     contextLines.push(`【USER PROFILE & ORGANIZATION】\n- ${parts.join('\n- ')}`);
                 }
@@ -12361,9 +12353,10 @@ Note: use a formal, clear, professional business tone.`;
         if (effCtx) {
             const contextLines = [];
             const s = settingsManager.get();
-            if (s.user_profile_name || s.user_profile_company) {
+            if (s.user_profile_name || s.user_profile_nickname || s.user_profile_company) {
                 const parts = [];
                 if (s.user_profile_name) parts.push(`Họ tên: ${s.user_profile_name}`);
+                if (s.user_profile_nickname) parts.push(`Biệt danh / Tên gọi: ${s.user_profile_nickname}`);
                 if (s.user_profile_company) parts.push(`Đơn vị / Công ty: ${s.user_profile_company}`);
                 contextLines.push(`【HỒ SƠ NGƯỜI DÙNG & ĐƠN VỊ】\n- ${parts.join('\n- ')}`);
             }
@@ -13818,6 +13811,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     _getEffectiveContext(projectId = null) {
         const s = settingsManager.get();
         const userName = s.user_profile_name?.trim() || '';
+        const userNickname = s.user_profile_nickname?.trim() || '';
         const userCompany = s.user_profile_company?.trim() || '';
         const ctx = s.custom_context || {};
         const globalGeneral = ctx.general || [];
@@ -13836,9 +13830,10 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
         // Build context prompt
         const promptParts = [];
-        if (userName || userCompany) {
+        if (userName || userNickname || userCompany) {
             const profileBits = [];
             if (userName) profileBits.push(`User Name: ${userName}`);
+            if (userNickname) profileBits.push(`Nickname / Call Name: ${userNickname}`);
             if (userCompany) profileBits.push(`Company / Organization: ${userCompany}`);
             promptParts.push(`【USER PROFILE & ORGANIZATION】\n${profileBits.join('\n')}`);
         }
@@ -13859,10 +13854,15 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         }
         const contextPrompt = promptParts.length > 0 ? promptParts.join('\n\n') : null;
 
-        // Deduplicate terms (project terms first)
+        // Deduplicate terms (project terms first, then user nickname/name, then global terms)
         const termsSet = new Set();
         const mergedTerms = [];
-        const allTerms = [...(project?.terms || []), ...(globalTerms || [])];
+        const allTerms = [
+            ...(project?.terms || []),
+            ...(userNickname ? [userNickname] : []),
+            ...(userName ? [userName] : []),
+            ...(globalTerms || [])
+        ];
         for (const t of allTerms) {
             const clean = (t || '').trim();
             const lower = clean.toLowerCase();

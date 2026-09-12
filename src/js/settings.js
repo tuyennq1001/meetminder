@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS = {
   inactivity_timeout_min: 10,
   template_notes: '',
   user_profile_name: '',
+  user_profile_nickname: '',
   user_profile_company: '',
   meeting_minutes_use_notes: true,
   meeting_minutes_use_project_context: true,
