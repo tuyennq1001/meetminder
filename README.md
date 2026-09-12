@@ -114,7 +114,6 @@ Download pre-built installers directly from [**GitHub Releases**](https://github
   - Technical Architecture Discussions
   - Client Proposals & Contract Negotiations
   - Executive 1-on-1 Sessions
-- **Smart Variable Interpolation**: Incorporate dynamic placeholders: `{TRANSCRIPT}`, `{TITLE}`, `{DATE}`, `{CUSTOMER}`, `{PROJECT}`.
 - **One-Click Re-generation**: Re-synthesize minutes instantly if meeting notes or requirements change.
 
 ---
@@ -127,7 +126,17 @@ Download pre-built installers directly from [**GitHub Releases**](https://github
 
 ---
 
-### 5. Multi-Language User Interface (i18n)
+### 5. Audio Recording Import (Transcribe & Generate Minutes from Audio)
+
+- **Universal Format Support**: Import existing recordings in `.mp3`, `.m4a`, `.wav`, `.aac`, `.ogg`, and `.flac`.
+- **Drag & Drop Workflow**: Drag audio files directly into the import dialog or browse local folders.
+- **Rich Metadata Organization**: Tag meetings by Customer, Project, Category, Custom Tags, and Scope (Work vs. Personal).
+- **Automated AI Minutes**: Automatically transcribes speech in the background and generates structured meeting minutes with action items.
+- **Full Meeting Archive**: Creates a complete session identical to live recordings, complete with interactive audio player, speaker timeline, notes, and meeting minutes.
+
+---
+
+### 6. Multi-Language User Interface (i18n)
 
 Meet Minder features full internationalization across all views, modals, and notifications:
 - 🇺🇸 **English** (`en`) — Default

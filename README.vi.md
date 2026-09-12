@@ -114,7 +114,6 @@ Tải phiên bản mới nhất từ trang [**GitHub Releases**](https://github.
   - Thảo luận Kiến trúc kỹ thuật & Giải pháp
   - Đề xuất giải pháp & Thương thảo hợp đồng với Khách hàng
   - Họp 1-on-1 định kỳ
-- **Biến nội suy thông minh**: Hỗ trợ chèn tự động `{TRANSCRIPT}`, `{TITLE}`, `{DATE}`, `{CUSTOMER}`, `{PROJECT}`.
 - **Tạo lại biên bản với 1 cú click**: Dễ dàng tổng hợp lại biên bản khi có bổ sung ghi chú mới.
 
 ---
@@ -127,12 +126,22 @@ Tải phiên bản mới nhất từ trang [**GitHub Releases**](https://github.
 
 ---
 
-### 5. Giao diện Đa ngôn ngữ (Multi-Language UI)
+### 5. Import File Ghi Âm Cuộc Họp (Transcribe & Tự Động Tạo Biên Bản)
+
+- **Hỗ trợ đa dạng định dạng âm thanh**: Nhập file ghi âm từ điện thoại, máy ghi âm hoặc phần mềm họp online: `.mp3`, `.m4a`, `.wav`, `.aac`, `.ogg`, `.flac`.
+- **Kéo thả tiện lợi**: Kéo thả trực tiếp file âm thanh vào hộp thoại Import hoặc duyệt chọn từ ổ đĩa.
+- **Gán Metadata quản lý chuyên nghiệp**: Phân loại theo Khách hàng, Dự án, Category cuộc họp, Thẻ (Tags) và Phân vùng (Công việc / Cá nhân).
+- **Tự động nhận diện & Tạo Meeting Minutes**: Hệ thống tự động chuyển đổi âm thanh thành văn bản chạy ngầm và gọi Google Gemini tổng hợp biên bản với danh sách việc cần làm.
+- **Lưu trữ phiên họp đầy đủ**: Phiên họp import sở hữu đầy đủ thanh phát âm thanh đồng bộ, timeline phát biểu từng câu, ghi chú và biên bản tương tự như cuộc họp trực tiếp.
+
+---
+
+### 6. Giao diện Đa ngôn ngữ (Multi-Language UI)
 
 Meet Minder hỗ trợ bản địa hóa giao diện 3 ngôn ngữ:
-- 🇺🇸 **English** (Tiếng Anh)
-- 🇯🇵 **日本語** (Tiếng Nhật)
-- 🇻🇳 **Tiếng Việt** (Vietnamese)
+- 🇺🇸 **English** (`en`) — Tiếng Anh
+- 🇯🇵 **日本語** (`ja`) — Tiếng Nhật
+- 🇻🇳 **Tiếng Việt** (`vi`) — Tiếng Việt
 
 ---
 

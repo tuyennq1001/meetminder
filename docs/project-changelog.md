@@ -7,30 +7,40 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ## v1.0.0 - 2026-09-12
 
-### Highlights & New Features
+### Highlights & Key Features
 
-- **Meet Minder v1.0.0 Milestone Release**: Phiên bản chính thức đầu tiên đánh dấu bước chuyển mình toàn diện từ công cụ dịch thông thường thành **Trợ lý Cuộc họp Đa ngôn ngữ Bảo mật & Quản lý Biên bản Thông minh (Privacy-First Multilingual Meeting Assistant & AI Meeting Minutes)**.
-- **Google Gemini Live API làm Engine trọng tâm**:
-  - Kết nối WebSocket hai chiều thời gian thực (PCM audio streaming) với độ trễ cực thấp.
-  - Tận dụng gói **Free Tier hào phóng** từ Google AI Studio (hoàn toàn miễn phí API key).
-  - Cơ chế tự động phát hiện model khả dụng tối ưu nhất (`gemini-2.0-flash`, `gemini-2.5-flash`).
-  - Hỗ trợ từ điển và ngữ cảnh riêng theo dự án (Project Glossary & Translation Pairs).
-- **Chạy Ngoại tuyến Hoàn toàn với Local MLX**:
-  - Tận dụng sức mạnh Apple Silicon (M1-M4) để phiên dịch 100% offline, miễn phí vĩnh viễn, bảo mật tuyệt đối không cần internet.
-- **Tự động sao lưu qua Git (Auto Git Backup)**:
-  - Tự động tạo bản ghi commit và push lên kho lưu trữ từ xa sau mỗi cuộc họp.
-  - Hỗ trợ xem lịch sử 5 lần push gần nhất kèm mã hash commit và trạng thái đồng bộ.
-- **Quản lý Mẫu Biên bản Cuộc họp (Prompt Templates Manager)**:
-  - Tùy biến linh hoạt System Prompt và User Prompt cho từng loại cuộc họp (Họp hàng ngày, Kiến trúc kỹ thuật, Đề xuất khách hàng...).
-- **Giao diện Đa ngôn ngữ (English / 日本語 / Tiếng Việt)**:
-  - Bản địa hóa toàn bộ giao diện và thông báo theo 3 ngôn ngữ chính.
-- **Hệ thống phím tắt toàn diện (Keyboard Shortcuts)**:
-  - Thao tác nhanh: `⌘S` (Start/Pause), `⌘C` (Continue), `⌘T` (Save & Stop), `⌘N` (Take Note), `⌘L` (Live), `⌘O` (Meeting Logs), `⌘1/2/3` (Audio source), `⌘,` (Settings), `⌘M` (Minimize), `?` (Shortcut sheet).
-- **Mục Giới thiệu & Bản quyền (About & Authorship)**:
-  - Bổ sung thông tin tác giả và kênh hỗ trợ: Terry (`tuyennq1001@gmail.com`).
-  - Tự động hiển thị phiên bản động `v1.0.0`.
-- **Dọn dẹp mã nguồn & Bãi bỏ Chế độ Đọc cũ**:
-  - Xoá bỏ hoàn toàn Chế độ Đọc (TTS Reader) đã cũ để tập trung tối đa vào trải nghiệm cuộc họp trực tiếp và quản lý biên bản.
+- **Meet Minder v1.0.0 Milestone Release**: First official stable release, evolving Meet Minder into a **Privacy-First, Cross-Platform AI Meeting Assistant & Smart Minutes Hub**.
+- **Google Gemini Live API as Flagship Engine**:
+  - Ultra-low latency bidirectional real-time streaming over WebSockets (raw PCM audio).
+  - High-quality speech-to-text & translation powered by **Google AI Studio generous Free Tier** (no paid subscription required).
+  - Dynamic model discovery with automatic fallback (`gemini-2.0-flash`, `gemini-2.5-flash`).
+  - Project-specific glossary and custom vocabulary pairing support.
+- **100% Offline with Local MLX**:
+  - Fully offline, zero-network, privacy-preserving transcription and translation running locally on Apple Silicon (M1–M4). Free forever with no API keys needed.
+- **Audio Recording File Import (Transcribe & Minutes from Audio)**:
+  - Import existing meeting recordings in standard formats: `.mp3`, `.m4a`, `.wav`, `.aac`, `.ogg`, `.flac`.
+  - Drag-and-drop or browse local files.
+  - Automatic background speech recognition and optional automatic AI Meeting Minutes generation.
+  - Generates a full meeting session with synced waveform audio player, timeline, notes, and meeting minutes.
+- **Automatic Git Backup & Cloud Sync**:
+  - Seamless Git integration for your meeting archive folder.
+  - Auto-commits meeting minutes, notes, and metadata on meeting finish (`⌘ T`).
+  - Scheduled background push to private Git remotes (GitHub, GitLab, Bitbucket) with in-app audit history of the last 5 syncs.
+- **Customizable Prompt Templates Manager**:
+  - Tailor System and User prompts for diverse meeting types (Daily Standups, Tech Architecture, Client Proposals, 1-on-1s).
+  - One-click re-generation of meeting minutes.
+- **Obsidian-Style 3-Tab Session Hub**:
+  - **Tab 1: AI Meeting Minutes**: Executive summary, key decisions, action items.
+  - **Tab 2: Markdown Notes (CodeMirror 6)**: Live preview, formatting toolbar, interactive checklists (`[ ]` / `[x]`), and quick drawer (`⌘ N`).
+  - **Tab 3: Timeline & Synced Audio Scrubber**: Speaker-differentiated timeline, inline transcript editing, and jump-to-audio sentence scrubber.
+- **Multi-Language User Interface (i18n)**:
+  - Complete localization across English, Japanese (日本語), and Vietnamese (Tiếng Việt).
+- **Keyboard Shortcuts**:
+  - Fast keyboard navigation: `⌘S` (Start/Pause), `⌘C` (Continue), `⌘T` (Save & Stop), `⌘N` (Take Note), `⌘L` (Live view), `⌘O` (Logs), `⌘1/2/3` (Audio source), `⌘,` (Settings), `?` (Shortcuts cheat sheet).
+- **Authorship & Support**:
+  - Created & developed by Terry ([tuyennq1001@gmail.com](mailto:tuyennq1001@gmail.com)).
+- **Cleaned Codebase**:
+  - Removed deprecated TTS Read Mode to focus 100% on live meeting transcription and intelligence.
 
 ---
 
