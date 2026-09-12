@@ -155,6 +155,19 @@ Trên màn hình chính (Live Overlay), nhấp nút **Start** hoặc dùng các 
 
 ---
 
+## Bước 7 — Xem lại Cuộc họp đã lưu, Biên bản AI & Audio
+
+Nhấn <kbd>⌘</kbd> + <kbd>O</kbd> hoặc click **📚 Meeting Logs** để mở giao diện quản lý phiên họp 3 thẻ:
+
+![Biên bản cuộc họp AI](user_manual/session_minutes.png)
+
+- **Biên bản cuộc họp AI**: Tóm tắt mục tiêu, quyết định chính và việc cần làm (hỗ trợ tiếng Anh, Nhật, Việt).
+- **Nhật ký cuộc họp song ngữ**: Đối chiếu lời thoại song ngữ, nhấp câu thoại để tua audio, hỗ trợ Re-transcript và xuất phụ đề `.srt` / `.txt`:
+
+![Nhật ký cuộc họp song ngữ & Audio Scrubber](user_manual/session_logs.png)
+
+---
+
 ## ℹ️ Thông tin Tác giả & Hỗ trợ kỹ thuật
 
 - **Tác giả & Phát triển**: **Terry**

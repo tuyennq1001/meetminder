@@ -120,9 +120,17 @@
 
 ### 4. 3タブ・セッション管理（議事録 • メモ • ログ＆プレイヤー）
 
-- **タブ 1: AI議事録 (Meeting Minutes)**: サマリー、決定事項、ToDoリストを自動整理。二言語併記（日越・英越）または単一言語に対応。
+- **タブ 1: AI議事録 (Meeting Minutes)**: サマリー、決定事項、ToDoリストを自動整理。日本語、英語、ベトナム語に対応。
+
+![AI議事録](docs/user_manual/session_minutes_ja.png)
+
 - **タブ 2: Obsidian風メモ (Take Notes)**: CodeMirror 6搭載のMarkdownエディタ。リアルタイムプレビュー、書式ツールバー、チェックリスト対応。
-- **タブ 3: 会議ログ ＆ 音声同期プレイヤー**: 話者ごとの発話タイムライン、インライン編集機能、クリックした発言箇所へ即座にスキップできる音声再生バー。
+
+![Obsidian風Markdownメモ](docs/user_manual/session_notes.png)
+
+- **タブ 3: 会議ログ ＆ 音声同期プレイヤー**: 話者ごとの発話タイムライン、二言語対訳表示、クリックした発言箇所へ即座にスキップできる音声再生バー、Re-transcriptおよび `.srt` / `.txt` 出力に対応。
+
+![会議ログと音声プレイヤー同期](docs/user_manual/session_logs.png)
 
 ---
 

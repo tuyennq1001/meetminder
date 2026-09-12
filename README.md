@@ -120,9 +120,17 @@ Download pre-built installers directly from [**GitHub Releases**](https://github
 
 ### 4. 3-Tab Session Hub (Minutes • Notes • Logs)
 
-- **Tab 1: AI Meeting Minutes**: Markdown report with executive summary, key decisions, and actionable task lists. Supports bilingual (JA/VI, EN/VI) or monolingual modes.
+- **Tab 1: AI Meeting Minutes**: Structured Markdown report with executive summary, key decisions, and actionable task lists generated in seconds. Multi-language output (English, Japanese, Vietnamese).
+
+![AI Meeting Minutes](docs/user_manual/session_minutes.png)
+
 - **Tab 2: Obsidian-Style Notes (CodeMirror 6)**: Full-featured Markdown editor with live preview, formatting toolbar, task checklists (`[ ]` / `[x]`), and quick meeting drawer (`⌘ N`).
-- **Tab 3: Meeting Logs & Synchronized Audio Player**: Speaker-labeled transcript lines, inline editing for corrections, and audio waveform scrubber that syncs to any clicked sentence.
+
+![Obsidian-Style Markdown Notes](docs/user_manual/session_notes.png)
+
+- **Tab 3: Meeting Logs & Synchronized Audio Player**: Speaker-labeled transcript lines, timeline-synced bilingual columns, inline editing for corrections, and audio waveform scrubber that syncs to any clicked sentence. Includes one-click `.srt` and `.txt` export.
+
+![Meeting Logs & Synchronized Audio Player](docs/user_manual/session_logs.png)
 
 ---
 

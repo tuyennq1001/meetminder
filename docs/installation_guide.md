@@ -155,6 +155,19 @@ On the main Live Overlay window, click **Start** or use convenient hotkeys:
 
 ---
 
+## Step 7 — Review Saved Meetings, AI Minutes & Audio Logs
+
+Press <kbd>⌘</kbd> + <kbd>O</kbd> or click **📚 Meeting Logs** to review past meetings, read structured AI meeting minutes, and playback synchronized audio:
+
+![AI Meeting Minutes](user_manual/session_minutes.png)
+
+- **AI Meeting Minutes**: Executive summaries, key decisions, and actionable task lists in English, Japanese, and Vietnamese.
+- **Meeting Logs**: Word-by-word bilingual transcript synchronized with interactive audio playback scrubber and one-click `.srt` / `.txt` export:
+
+![Meeting Logs & Audio Scrubber](user_manual/session_logs.png)
+
+---
+
 ## ℹ️ Author & Support
 
 - **Author & Developer**: **Terry**

@@ -120,9 +120,17 @@ Tải phiên bản mới nhất từ trang [**GitHub Releases**](https://github.
 
 ### 4. Trình quản lý phiên họp 3 Thẻ (3-Tab Session Viewer)
 
-- **Thẻ 1: Biên bản cuộc họp (Meeting Minutes)**: AI tự động phân tích mục tiêu, quyết định đã chốt và danh sách việc cần làm. Hỗ trợ song ngữ (JA/VI, EN/VI) hoặc đơn ngữ.
+- **Thẻ 1: Biên bản cuộc họp (Meeting Minutes)**: AI tự động phân tích mục tiêu, quyết định đã chốt và danh sách việc cần làm (hỗ trợ tiếng Anh, Nhật, Việt).
+
+![Biên bản cuộc họp AI](docs/user_manual/session_minutes.png)
+
 - **Thẻ 2: Ghi chú thông minh (Take Notes - Phong cách Obsidian)**: Soạn thảo Markdown mượt mà với CodeMirror 6, Live Preview tức thì, toolbar định dạng đầy đủ, checklist việc cần làm (`[ ]` / `[x]`).
-- **Thẻ 3: Nhật ký hội thoại & Thanh phát lại âm thanh**: Phân tách người nói rõ ràng, hỗ trợ chỉnh sửa trực tiếp nội dung (Inline Edit) và đồng bộ vị trí nghe âm thanh theo từng câu thoại.
+
+![Ghi chép Markdown](docs/user_manual/session_notes.png)
+
+- **Thẻ 3: Nhật ký hội thoại & Thanh phát lại âm thanh**: Hiển thị song ngữ thời gian thực, đồng bộ vị trí nghe âm thanh theo từng câu thoại, hỗ trợ gõ lại (Re-transcript) và xuất định dạng phụ đề `.srt` / `.txt`.
+
+![Nhật ký cuộc họp song ngữ & Audio Scrubber](docs/user_manual/session_logs.png)
 
 ---
 
