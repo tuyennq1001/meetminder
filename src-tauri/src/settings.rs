@@ -237,10 +237,13 @@ pub struct Settings {
     /// Push interval in minutes when automatic push is enabled.
     #[serde(default = "default_git_push_interval")]
     pub git_backup_push_interval_min: u32,
-    /// User profile name (e.g. "Nguyen Quoc Tuyen")
+    /// User profile name (e.g. "Terry", "Nguyen Quoc Tuyen")
     #[serde(default)]
     pub user_profile_name: String,
-    /// User company/organization name (e.g. "Acme Corp")
+    /// User profile nickname / display name (e.g. "Terry")
+    #[serde(default)]
+    pub user_profile_nickname: String,
+    /// User company/organization name (e.g. "Relipa")
     #[serde(default)]
     pub user_profile_company: String,
     /// Whether project context and glossary should be used for Meeting Minutes
@@ -326,6 +329,7 @@ impl Default for Settings {
             git_backup_auto_push: false,
             git_backup_push_interval_min: 60,
             user_profile_name: String::new(),
+            user_profile_nickname: String::new(),
             user_profile_company: String::new(),
             meeting_minutes_use_project_context: true,
         }
@@ -594,7 +598,8 @@ mod tests {
     fn test_custom_context_deserialization() {
         let json_str = r#"{
             "user_profile_name": "Nguyen Quoc Tuyen",
-            "user_profile_company": "Acme Corp",
+            "user_profile_nickname": "Terry",
+            "user_profile_company": "Relipa",
             "meeting_minutes_use_project_context": true,
             "custom_context": {
                 "domain": "medical",
@@ -610,7 +615,8 @@ mod tests {
         }"#;
         let s: Settings = serde_json::from_str(json_str).expect("should parse custom context");
         assert_eq!(s.user_profile_name, "Nguyen Quoc Tuyen");
-        assert_eq!(s.user_profile_company, "Acme Corp");
+        assert_eq!(s.user_profile_nickname, "Terry");
+        assert_eq!(s.user_profile_company, "Relipa");
         assert!(s.meeting_minutes_use_project_context);
         assert!(s.custom_context.is_some());
         let ctx = s.custom_context.unwrap();

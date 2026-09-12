@@ -1627,12 +1627,144 @@ body:not(.activity-live) .header-divider {
   display: block;
 }
 
-/* Translation terms */
+/* ─── Profile & Global Context Settings ───────────────── */
+.profile-settings-card {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.profile-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.profile-section-hint {
+  margin-top: 2px;
+  margin-bottom: 12px;
+  line-height: 1.45;
+}
+
+.profile-fields-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.profile-field-full {
+  grid-column: 1 / -1;
+}
+
+.profile-field-item {
+  min-width: 0;
+}
+
+.profile-field-item label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.profile-field-item input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.profile-field-item input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px rgba(126, 62, 135, 0.18);
+}
+
+.global-context-card {
+  margin-top: 4px;
+}
+
+.global-context-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: block;
+}
+
+.field-sublabel {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+}
+
+.block-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+/* Context subsections & textareas */
+.context-subsection {
+  margin-bottom: 14px;
+}
+
+.context-subsection textarea,
+.context-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 48px;
+  margin-top: 4px;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.context-subsection textarea:focus,
+.context-textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px rgba(126, 62, 135, 0.18);
+}
+
 .terms-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 12px;
   margin-bottom: 6px;
+}
+
+.terms-empty-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+  margin-top: 4px;
+  line-height: 1.4;
 }
 
 .btn-icon-sm {
@@ -1649,6 +1781,7 @@ body:not(.activity-live) .header-divider {
   align-items: center;
   justify-content: center;
   transition: background var(--transition-fast);
+  flex-shrink: 0;
 }
 .btn-icon-sm:hover {
   background: var(--bg-hover);
@@ -1656,13 +1789,25 @@ body:not(.activity-live) .header-divider {
 
 .term-row {
   display: flex;
-  gap: 6px;
-  margin-bottom: 4px;
+  gap: 8px;
+  margin-bottom: 6px;
   align-items: center;
 }
 .term-row input {
   flex: 1;
   min-width: 0;
+  box-sizing: border-box;
+  height: 34px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+}
+.term-row input:focus {
+  border-color: var(--border-focus);
 }
 .term-row .btn-remove-term {
   width: 22px;
@@ -1683,56 +1828,11 @@ body:not(.activity-live) .header-divider {
   background: rgba(248, 113, 113, 0.1);
 }
 
-/* General context rows — key/value pairs */
-.general-row {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 4px;
-  align-items: center;
-}
-.general-row input {
-  flex: 1;
-  min-width: 0;
-}
-.general-row .general-key {
-  flex: 0.4;
-}
-.general-row .general-value {
-  flex: 0.6;
-}
-.general-row .btn-remove-general {
-  width: 22px;
-  height: 22px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 14px;
-  cursor: pointer;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.general-row .btn-remove-general:hover {
-  color: var(--error);
-  background: rgba(248, 113, 113, 0.1);
-}
 
-/* Context subsections */
-.context-subsection {
-  margin-bottom: 10px;
-}
-.context-subsection textarea {
-  width: 100%;
-  resize: vertical;
-  min-height: 36px;
-  margin-top: 4px;
-}
 
 /* Dim hint text */
 .hint-dim {
-  opacity: 0.5;
+  opacity: 0.65;
   font-size: 0.9em;
 }
 
