@@ -31,6 +31,9 @@ export class GeminiRealtimeClient {
                     source_language: cfg.sourceLanguage || 'auto',
                     target_language: cfg.targetLanguage || 'vi',
                     model: cfg.model || null,
+                    context_prompt: cfg.contextPrompt || null,
+                    terms: cfg.terms || [],
+                    translation_terms: cfg.translationTerms || [],
                 },
                 onEvent: this.channel,
             });
@@ -64,6 +67,21 @@ export class GeminiRealtimeClient {
             console.log('[Gemini Realtime] Switched target language to:', targetLang);
         } catch (e) {
             console.warn('[Gemini Realtime] failed to set target language:', e);
+        }
+    }
+
+    async setContext(contextPrompt, terms = [], translationTerms = []) {
+        if (!this.isConnected || this.sessionId == null) return;
+        try {
+            await invoke('gemini_realtime_set_context', {
+                sessionId: this.sessionId,
+                contextPrompt: contextPrompt || null,
+                terms: terms || [],
+                translationTerms: translationTerms || [],
+            });
+            console.log('[Gemini Realtime] Hot-reloaded live context and glossary');
+        } catch (e) {
+            console.warn('[Gemini Realtime] failed to set live context:', e);
         }
     }
 

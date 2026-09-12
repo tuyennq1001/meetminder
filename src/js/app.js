@@ -1137,6 +1137,23 @@ class App {
             await this._handleSaveProjectFromModal();
         });
 
+        // Project Modal tab switcher
+        document.querySelectorAll('#modal-proj-tab-bar .modal-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this._setModalProjTab(btn.dataset.tab);
+            });
+        });
+
+        // Project Modal add translation term row button
+        document.getElementById('btn-add-modal-proj-trans-term')?.addEventListener('click', () => {
+            this._addModalProjTransTermRow('', '');
+        });
+
+        // Project Modal terms input update badge
+        document.getElementById('input-modal-proj-terms')?.addEventListener('input', () => {
+            this._updateModalProjTermsBadge();
+        });
+
         // Add Project Modal Scope radios
         const onModalProjScopeChange = () => {
             const chosen = document.querySelector('input[name="modal-proj-scope"]:checked')?.value || 'work';
@@ -1834,7 +1851,9 @@ class App {
             this._autoSaveSettingsFromForm();
         });
 
-        // Context fields
+        // Context and profile fields
+        document.getElementById('input-user-profile-name')?.addEventListener('input', () => this._debouncedAutoSave());
+        document.getElementById('input-user-profile-company')?.addEventListener('input', () => this._debouncedAutoSave());
         document.getElementById('input-context-terms')?.addEventListener('input', () => this._debouncedAutoSave());
         document.getElementById('input-context-text')?.addEventListener('input', () => this._debouncedAutoSave());
 
@@ -2330,6 +2349,20 @@ class App {
             }
         });
 
+        document.getElementById('check-meeting-minutes-use-project-context')?.addEventListener('change', async (event) => {
+            const checkbox = event.currentTarget;
+            const enabled = checkbox.checked;
+            const previous = settingsManager.get().meeting_minutes_use_project_context !== false;
+            settingsManager.settings.meeting_minutes_use_project_context = enabled;
+            try {
+                await settingsManager.save({ meeting_minutes_use_project_context: enabled });
+            } catch (err) {
+                settingsManager.settings.meeting_minutes_use_project_context = previous;
+                checkbox.checked = previous;
+                this._showToast(t('settings.template.saveFailed', { error: err }), 'error');
+            }
+        });
+
         // Presets selector buttons
         document.querySelectorAll('#templates-preset-bar .templates-preset-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -2388,6 +2421,8 @@ class App {
         }
         const useNotesCheckbox = document.getElementById('check-meeting-minutes-use-notes');
         if (useNotesCheckbox) useNotesCheckbox.checked = s.meeting_minutes_use_notes !== false;
+        const useProjCtxCheckbox = document.getElementById('check-meeting-minutes-use-project-context');
+        if (useProjCtxCheckbox) useProjCtxCheckbox.checked = s.meeting_minutes_use_project_context !== false;
         if (this._templateDrafts.standard_vi === undefined) {
             this._templateDrafts = {
                 standard_vi: (s.template_minutes_vi !== undefined && s.template_minutes_vi !== null && s.template_minutes_vi !== '') ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI,
@@ -2507,6 +2542,7 @@ class App {
                 template_minutes_personal_ja: this._templateDrafts.personal_ja,
                 template_minutes_personal_en: this._templateDrafts.personal_en,
                 meeting_minutes_use_notes: document.getElementById('check-meeting-minutes-use-notes')?.checked !== false,
+                meeting_minutes_use_project_context: document.getElementById('check-meeting-minutes-use-project-context')?.checked !== false,
             });
             this._showToast(t('settings.template.saved'), 'success');
         } catch (err) {
@@ -2677,6 +2713,12 @@ class App {
         const defLogsScopeSelect = document.getElementById('select-default-logs-scope');
         if (defLogsScopeSelect) defLogsScopeSelect.value = s.default_logs_scope || 'work';
 
+        // Profile fields
+        const profileNameInput = document.getElementById('input-user-profile-name');
+        if (profileNameInput) profileNameInput.value = s.user_profile_name || '';
+        const profileCompanyInput = document.getElementById('input-user-profile-company');
+        if (profileCompanyInput) profileCompanyInput.value = s.user_profile_company || '';
+
         // Custom context (rich format)
         const ctx = s.custom_context;
         // General context rows
@@ -2755,6 +2797,8 @@ class App {
             max_lines: parseInt(document.getElementById('input-max-lines')?.value || 5),
             show_original: document.getElementById('check-show-original')?.checked !== false,
             default_logs_scope: document.getElementById('select-default-logs-scope')?.value || 'work',
+            user_profile_name: document.getElementById('input-user-profile-name')?.value.trim() || '',
+            user_profile_company: document.getElementById('input-user-profile-company')?.value.trim() || '',
             custom_context: null,
         };
 
@@ -3186,10 +3230,9 @@ class App {
         if (sectionGeminiKey) sectionGeminiKey.style.display = isGemini ? '' : 'none';
         if (sectionQwenKey) sectionQwenKey.style.display = isQwen ? '' : 'none';
 
-        // Soniox-only features: Custom context, Strict language detection,
-        // Endpoint delay. The realtime engines manage these internally.
+        // Global Profile & Context applies across engines and meeting minutes
         const sectionContext = document.getElementById('section-soniox-context');
-        if (sectionContext) sectionContext.style.display = isSoniox ? '' : 'none';
+        if (sectionContext) sectionContext.style.display = '';
         const sectionStrictLang = document.getElementById('section-strict-lang');
         if (sectionStrictLang) sectionStrictLang.style.display = isSoniox ? '' : 'none';
         const sectionEndpointDelay = document.getElementById('section-endpoint-delay');
@@ -3813,12 +3856,16 @@ class App {
         }
 
         // 2. Connect to Gemini Realtime WebSocket
+        const effCtx = this._getEffectiveContext(sessionStore.projectId);
         try {
             await this.geminiClient.connect({
                 apiKey: settings.gemini_api_key,
                 sourceLanguage: settings.source_language || 'ja',
                 targetLanguage: settings.target_language || 'vi',
                 model: settings.gemini_model || 'models/gemini-3.5-transcribe-live',
+                contextPrompt: effCtx.contextPrompt,
+                terms: effCtx.terms,
+                translationTerms: effCtx.translationTerms,
             });
         } catch (err) {
             console.error('[Gemini Realtime] connect error:', err);
@@ -7697,6 +7744,50 @@ class App {
         }
     }
 
+    _setModalProjTab(tabName) {
+        document.querySelectorAll('#modal-proj-tab-bar .modal-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tabName);
+        });
+        const generalPane = document.getElementById('modal-proj-pane-general');
+        const glossaryPane = document.getElementById('modal-proj-pane-glossary');
+        if (generalPane) generalPane.style.display = tabName === 'general' ? 'flex' : 'none';
+        if (glossaryPane) glossaryPane.style.display = tabName === 'glossary' ? 'flex' : 'none';
+    }
+
+    _updateModalProjTermsBadge() {
+        const termsRaw = document.getElementById('input-modal-proj-terms')?.value.trim() || '';
+        const termsCount = termsRaw ? termsRaw.split('\n').map(t => t.trim()).filter(Boolean).length : 0;
+        const transCount = document.querySelectorAll('#modal-proj-trans-terms-list .term-row').length;
+        const total = termsCount + transCount;
+        const badge = document.getElementById('badge-modal-proj-terms-count');
+        if (badge) {
+            badge.textContent = String(total);
+            badge.style.display = total > 0 ? 'inline-flex' : 'none';
+        }
+    }
+
+    _addModalProjTransTermRow(source = '', target = '') {
+        const list = document.getElementById('modal-proj-trans-terms-list');
+        if (!list) return;
+        const row = document.createElement('div');
+        row.className = 'term-row';
+        row.innerHTML = `
+            <input type="text" class="modal-input modal-proj-term-source" placeholder="${this._escAttr(t('modal.proj.sourceTermPlaceholder'))}" value="${this._escAttr(source)}" />
+            <span style="color: var(--md-sys-color-on-surface-variant); font-size: 13px; flex-shrink: 0; padding: 0 2px;">→</span>
+            <input type="text" class="modal-input modal-proj-term-target" placeholder="${this._escAttr(t('modal.proj.targetTermPlaceholder'))}" value="${this._escAttr(target)}" />
+            <button type="button" class="btn-remove-term" title="${this._escAttr(t('modal.proj.removeTerm'))}">✕</button>
+        `;
+        row.querySelector('.btn-remove-term')?.addEventListener('click', () => {
+            row.remove();
+            this._updateModalProjTermsBadge();
+        });
+        row.querySelectorAll('input').forEach(inp => {
+            inp.addEventListener('input', () => this._updateModalProjTermsBadge());
+        });
+        list.appendChild(row);
+        this._updateModalProjTermsBadge();
+    }
+
     async _openAddProjectModal() {
         const modal = document.getElementById('modal-add-project');
         if (!modal) return;
@@ -7746,6 +7837,14 @@ class App {
         if (nameInput) nameInput.value = '';
         if (colorInput) colorInput.value = '#431A46';
         if (descInput) descInput.value = '';
+
+        this._setModalProjTab('general');
+        const termsInput = document.getElementById('input-modal-proj-terms');
+        if (termsInput) termsInput.value = '';
+        const transList = document.getElementById('modal-proj-trans-terms-list');
+        if (transList) transList.innerHTML = '';
+        this._updateModalProjTermsBadge();
+
         modal.style.display = 'flex';
         setTimeout(() => nameInput?.focus(), 50);
     }
@@ -7799,6 +7898,16 @@ class App {
             custSelect.innerHTML = html;
         }
 
+        this._setModalProjTab('general');
+        const termsInput = document.getElementById('input-modal-proj-terms');
+        if (termsInput) termsInput.value = (project.terms || []).join('\n');
+        const transList = document.getElementById('modal-proj-trans-terms-list');
+        if (transList) {
+            transList.innerHTML = '';
+            (project.translation_terms || []).forEach(t => this._addModalProjTransTermRow(t.source, t.target));
+        }
+        this._updateModalProjTermsBadge();
+
         modal.style.display = 'flex';
         setTimeout(() => nameInput?.focus(), 50);
     }
@@ -7824,6 +7933,14 @@ class App {
         const customer_id = scope === 'personal' ? null : (custSelect?.value || null);
         const color = colorInput?.value || '#431A46';
         const description = descInput?.value.trim() || '';
+        const termsRaw = document.getElementById('input-modal-proj-terms')?.value.trim() || '';
+        const terms = termsRaw ? termsRaw.split('\n').map(t => t.trim()).filter(Boolean) : [];
+        const translation_terms = [];
+        document.querySelectorAll('#modal-proj-trans-terms-list .term-row').forEach(row => {
+            const source = row.querySelector('.modal-proj-term-source')?.value.trim();
+            const target = row.querySelector('.modal-proj-term-target')?.value.trim();
+            if (source && target) translation_terms.push({ source, target });
+        });
         try {
             await invoke('save_project', {
                 project: {
@@ -7836,6 +7953,8 @@ class App {
                     created_at: '',
                     updated_at: '',
                     scope,
+                    terms,
+                    translation_terms,
                 }
             });
             this._closeAddProjectModal();
@@ -7844,6 +7963,11 @@ class App {
             this._renderSettingsProjectsTab();
             this._renderProjectFilterBar();
             this._updateSidebarBadges();
+            this._updateNoteProjectGlossaryBadge();
+            if (this.isRunning && this.geminiClient && this.translationMode === 'gemini' && sessionStore.projectId === id) {
+                const effCtx = this._getEffectiveContext(id);
+                await this.geminiClient.setContext(effCtx.contextPrompt, effCtx.terms, effCtx.translationTerms);
+            }
             await this._showSessions();
         } catch (err) {
             this._showToast(t('modal.proj.saveFailed', { error: err }), 'error');
@@ -8664,6 +8788,11 @@ class App {
                         ? `<button type="button" class="session-customer-badge btn-jump-to-customer" data-cust-id="${this._escAttr(cust.id)}" style="border-color:${this._escAttr(cust.color || '#431A46')}44; color:${this._escAttr(cust.color || '#D9B0DE')}; background:${this._escAttr(cust.color || '#431A46')}1a; cursor:pointer;" title="${t('settings.custTable.jumpLogs', { name: cust.name })}">🤝 ${this._esc(cust.name)} ↗</button>`
                         : `<span style="font-size:11px; opacity:0.4;">${t('settings.projTable.unassignedCustomer')}</span>`);
 
+                const termCount = (p.terms?.length || 0) + (p.translation_terms?.length || 0);
+                const glossaryBadge = termCount > 0
+                    ? `<span class="project-glossary-pill" title="${this._escAttr(t('project.glossary.termsCount', { count: termCount }))}">📚 ${termCount}</span>`
+                    : '';
+
                 rowsHtml += `
                   <tr>
                     <td style="text-align: center; color: var(--md-sys-color-on-surface-variant); font-size: 11px;">${idx + 1}</td>
@@ -8671,6 +8800,7 @@ class App {
                       <div style="display:flex; align-items:center; gap:8px; font-weight:600;">
                         <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${this._escAttr(p.color || '#431A46')}; flex-shrink:0;"></span>
                         <button type="button" class="settings-metadata-link btn-jump-to-proj-logs" data-id="${this._escAttr(p.id)}" data-scope="${this._escAttr(pScope)}" title="${t('settings.projTable.jumpLogs', { name: p.name })}">${this._esc(p.name)}</button>
+                        ${glossaryBadge}
                       </div>
                     </td>
                     ${isAllScopeTab ? `<td style="text-align: center;">${scopeBadge}</td>` : ''}
@@ -11840,7 +11970,9 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const createdAt = sessionData.created_at || '';
         const durationMin = Math.round((sessionData.duration_sec || 0) / 60);
         const useNotes = settingsManager.get().meeting_minutes_use_notes !== false;
+        const useProjectContext = settingsManager.get().meeting_minutes_use_project_context !== false;
         const notes = useNotes ? (sessionData.notes?.trim() || '(Không có ghi chú riêng)') : '';
+        const effCtx = useProjectContext ? this._getEffectiveContext(sessionData.project_id) : null;
 
         const logLines = [];
         for (const chunk of (sessionData.chunks || [])) {
@@ -11868,6 +12000,38 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 .replace(/\{\{duration\}\}/g, String(durationMin))
                 .replace(/\{\{participants\}\}/g, '(発言ログやメモから判明する参加者・発言者、または想定される担当者)');
 
+            let contextSectionJa = '';
+            if (effCtx) {
+                const contextLines = [];
+                const s = settingsManager.get();
+                if (s.user_profile_name || s.user_profile_company) {
+                    const parts = [];
+                    if (s.user_profile_name) parts.push(`ユーザー名: ${s.user_profile_name}`);
+                    if (s.user_profile_company) parts.push(`所属・会社: ${s.user_profile_company}`);
+                    contextLines.push(`【ユーザー・組織プロファイル】\n- ${parts.join('\n- ')}`);
+                }
+                if (effCtx.project) {
+                    const projParts = [`プロジェクト名: ${effCtx.project.name}`];
+                    if (effCtx.customer) projParts.push(`クライアント/顧客: ${effCtx.customer.name}`);
+                    if (effCtx.project.description) projParts.push(`概要: ${effCtx.project.description}`);
+                    contextLines.push(`【プロジェクト・パートナー情報】\n- ${projParts.join('\n- ')}`);
+                }
+                if (effCtx.terms.length > 0 || effCtx.translationTerms.length > 0) {
+                    const termLines = [];
+                    if (effCtx.terms.length > 0) {
+                        termLines.push(`- 専門用語・キーワード: ${effCtx.terms.join(', ')}`);
+                    }
+                    if (effCtx.translationTerms.length > 0) {
+                        termLines.push(`- 対訳ルール: ${effCtx.translationTerms.map(t => `${t.source} → ${t.target}`).join('; ')}`);
+                    }
+                    termLines.push('※上記の専門用語および対訳ルールを議事録内で正確に反映してください。');
+                    contextLines.push(`【専門用語集・対訳ルール (GLOSSARY)】\n${termLines.join('\n')}`);
+                }
+                if (contextLines.length > 0) {
+                    contextSectionJa = `\n${contextLines.join('\n\n')}\n`;
+                }
+            }
+
             const sourceTextJa = useNotes
                 ? '会議情報、ユーザーの手書きメモ、および会議のリアルタイム発言ログ'
                 : '会議情報と会議のリアルタイム発言ログのみ（手書きメモは使用しない）';
@@ -11890,7 +12054,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 - 会議名: ${title}
 - 日時: ${createdAt}
 - 所要時間: 約 ${durationMin} 分
-
+${contextSectionJa}
 ${notesSectionJa}
 
 【発言・翻訳ログ】
@@ -11913,6 +12077,38 @@ ${template}
                 .replace(/\{\{date\}\}/g, createdAt)
                 .replace(/\{\{duration\}\}/g, String(durationMin))
                 .replace(/\{\{participants\}\}/g, '(Participants/speakers identified from the logs or notes)');
+
+            let contextSectionEn = '';
+            if (effCtx) {
+                const contextLines = [];
+                const s = settingsManager.get();
+                if (s.user_profile_name || s.user_profile_company) {
+                    const parts = [];
+                    if (s.user_profile_name) parts.push(`User Name: ${s.user_profile_name}`);
+                    if (s.user_profile_company) parts.push(`Company / Organization: ${s.user_profile_company}`);
+                    contextLines.push(`【USER PROFILE & ORGANIZATION】\n- ${parts.join('\n- ')}`);
+                }
+                if (effCtx.project) {
+                    const projParts = [`Project: ${effCtx.project.name}`];
+                    if (effCtx.customer) projParts.push(`Client / Customer: ${effCtx.customer.name}`);
+                    if (effCtx.project.description) projParts.push(`Description: ${effCtx.project.description}`);
+                    contextLines.push(`【PROJECT & PARTNER CONTEXT】\n- ${projParts.join('\n- ')}`);
+                }
+                if (effCtx.terms.length > 0 || effCtx.translationTerms.length > 0) {
+                    const termLines = [];
+                    if (effCtx.terms.length > 0) {
+                        termLines.push(`- Domain Keywords: ${effCtx.terms.join(', ')}`);
+                    }
+                    if (effCtx.translationTerms.length > 0) {
+                        termLines.push(`- Translation Rules: ${effCtx.translationTerms.map(t => `${t.source} → ${t.target}`).join('; ')}`);
+                    }
+                    termLines.push('* Strictly adhere to these domain terms and translation pairs throughout the minutes.');
+                    contextLines.push(`【DOMAIN GLOSSARY & TRANSLATION RULES】\n${termLines.join('\n')}`);
+                }
+                if (contextLines.length > 0) {
+                    contextSectionEn = `\n${contextLines.join('\n\n')}\n`;
+                }
+            }
 
             const sourceTextEn = useNotes
                 ? "the meeting info, the participant's handwritten notes, and the full dialogue/translation log"
@@ -11941,7 +12137,7 @@ ${template}
 - Title: ${title}
 - Started at: ${createdAt}
 - Duration: about ${durationMin} minutes
-
+${contextSectionEn}
 ${notesSectionEn}
 
 【DIALOGUE & TRANSLATION LOG】
@@ -11962,6 +12158,38 @@ Note: use a formal, clear, professional business tone.`;
             .replace(/\{\{date\}\}/g, createdAt)
             .replace(/\{\{duration\}\}/g, String(durationMin))
             .replace(/\{\{participants\}\}/g, '(Tổng hợp tên người nói hoặc các bên tham gia dựa theo hội thoại/ghi chú)');
+
+        let contextSectionVi = '';
+        if (effCtx) {
+            const contextLines = [];
+            const s = settingsManager.get();
+            if (s.user_profile_name || s.user_profile_company) {
+                const parts = [];
+                if (s.user_profile_name) parts.push(`Họ tên: ${s.user_profile_name}`);
+                if (s.user_profile_company) parts.push(`Đơn vị / Công ty: ${s.user_profile_company}`);
+                contextLines.push(`【HỒ SƠ NGƯỜI DÙNG & ĐƠN VỊ】\n- ${parts.join('\n- ')}`);
+            }
+            if (effCtx.project) {
+                const projParts = [`Dự án: ${effCtx.project.name}`];
+                if (effCtx.customer) projParts.push(`Khách hàng / Đối tác: ${effCtx.customer.name}`);
+                if (effCtx.project.description) projParts.push(`Mô tả: ${effCtx.project.description}`);
+                contextLines.push(`【BỐI CẢNH DỰ ÁN & ĐỐI TÁC】\n- ${projParts.join('\n- ')}`);
+            }
+            if (effCtx.terms.length > 0 || effCtx.translationTerms.length > 0) {
+                const termLines = [];
+                if (effCtx.terms.length > 0) {
+                    termLines.push(`- Thuật ngữ chuyên ngành: ${effCtx.terms.join(', ')}`);
+                }
+                if (effCtx.translationTerms.length > 0) {
+                    termLines.push(`- Quy tắc dịch thuật ngữ: ${effCtx.translationTerms.map(t => `${t.source} → ${t.target}`).join('; ')}`);
+                }
+                termLines.push('※ Tuân thủ chính xác các thuật ngữ và quy tắc dịch trên khi tóm tắt và giải thích.');
+                contextLines.push(`【TỪ ĐIỂN & THUẬT NGỮ CHUYÊN NGÀNH (GLOSSARY)】\n${termLines.join('\n')}`);
+            }
+            if (contextLines.length > 0) {
+                contextSectionVi = `\n${contextLines.join('\n\n')}\n`;
+            }
+        }
 
         const sourceTextVi = useNotes
             ? 'thông tin cuộc họp, ghi chú viết tay của người tham gia và toàn bộ dữ liệu đối thoại/bản dịch'
@@ -11990,7 +12218,7 @@ Note: use a formal, clear, professional business tone.`;
 - Tiêu đề: ${title}
 - Thời gian bắt đầu: ${createdAt}
 - Thời lượng: khoảng ${durationMin} phút
-
+${contextSectionVi}
 ${notesSectionVi}
 
 【LỊCH SỬ THOẠI & BẢN DỊCH】
@@ -13179,7 +13407,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             }
         });
 
-        selectProj?.addEventListener('change', () => {
+        selectProj?.addEventListener('change', async () => {
             const projId = selectProj.value || null;
             sessionStore.projectId = projId;
             sessionStore._mutations++;
@@ -13192,6 +13420,17 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                     selectCust.classList.add('has-value');
                     sessionStore.customerId = foundProj.customer_id;
                     this._updateNoteProjectsDropdown(foundProj.customer_id, projId, sessionStore.scope || 'work');
+                }
+            }
+            this._updateNoteProjectGlossaryBadge(projId);
+
+            // Hot-reload context and glossary into running Gemini engine
+            if (this.isRunning && this.geminiClient && this.translationMode === 'gemini') {
+                const effCtx = this._getEffectiveContext(projId);
+                await this.geminiClient.setContext(effCtx.contextPrompt, effCtx.terms, effCtx.translationTerms);
+                const projName = effCtx.project?.name || projId;
+                if (projId) {
+                    this._showToast(t('notes.project.contextSwitched', { name: projName }), 'info');
                 }
             }
         });
@@ -13243,6 +13482,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         }
 
         this._updateNoteProjectsDropdown(selectCust?.value || sessionStore.customerId, sessionStore.projectId);
+        this._updateNoteProjectGlossaryBadge(sessionStore.projectId);
 
         if (selectCat) {
             const curCat = selectCat.value || sessionStore.category || '';
@@ -13305,6 +13545,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             selectProj.value = '';
         }
         selectProj.classList.toggle('has-value', Boolean(selectProj.value));
+        this._updateNoteProjectGlossaryBadge(selectProj.value);
     }
 
     _resetNoteMetadataSelectors() {
@@ -13327,6 +13568,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._updateNoteProjectsDropdown(null, null, 'work');
             selectProj.value = '';
             selectProj.classList.remove('has-value');
+            this._updateNoteProjectGlossaryBadge(null);
         }
         if (selectCat) {
             selectCat.value = '';
@@ -13337,6 +13579,109 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             inputTags.classList.remove('has-value');
         }
         this._refreshNoteTagsAutocomplete();
+    }
+
+    _updateNoteProjectGlossaryBadge(projId = null) {
+        const badge = document.getElementById('note-project-glossary-badge');
+        if (!badge) return;
+        const currentId = projId || sessionStore.projectId || document.getElementById('select-note-project')?.value;
+        if (!currentId) {
+            badge.style.display = 'none';
+            return;
+        }
+        const p = (this._projectRegistry?.projects || []).find(x => x.id === currentId);
+        const count = (p?.terms?.length || 0) + (p?.translation_terms?.length || 0);
+        if (count > 0) {
+            badge.textContent = `📚 ${count}`;
+            badge.title = t('notes.project.glossaryActive', { count });
+            badge.style.display = 'inline-flex';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    _getEffectiveContext(projectId = null) {
+        const s = settingsManager.get();
+        const userName = s.user_profile_name?.trim() || '';
+        const userCompany = s.user_profile_company?.trim() || '';
+        const ctx = s.custom_context || {};
+        const globalGeneral = ctx.general || [];
+        const globalTerms = ctx.terms || [];
+        const globalText = ctx.text?.trim() || '';
+        const globalTranslationTerms = ctx.translation_terms || [];
+
+        let project = null;
+        let projectCustomer = null;
+        if (projectId) {
+            project = (this._projectRegistry?.projects || []).find(p => p.id === projectId);
+            if (project?.customer_id) {
+                projectCustomer = (this._projectRegistry?.customers || []).find(c => c.id === project.customer_id);
+            }
+        }
+
+        // Build context prompt
+        const promptParts = [];
+        if (userName || userCompany) {
+            const profileBits = [];
+            if (userName) profileBits.push(`User Name: ${userName}`);
+            if (userCompany) profileBits.push(`Company / Organization: ${userCompany}`);
+            promptParts.push(`【USER PROFILE & ORGANIZATION】\n${profileBits.join('\n')}`);
+        }
+        if (project) {
+            const projBits = [`Project Name: ${project.name}`];
+            if (projectCustomer) projBits.push(`Customer / Client: ${projectCustomer.name}`);
+            if (project.description) projBits.push(`Project Description: ${project.description}`);
+            promptParts.push(`【PROJECT CONTEXT】\n${projBits.join('\n')}`);
+        }
+        if (globalText) {
+            promptParts.push(`【BACKGROUND CONTEXT】\n${globalText}`);
+        }
+        if (globalGeneral.length > 0) {
+            const genLines = globalGeneral.filter(g => g.key && g.value).map(g => `- ${g.key}: ${g.value}`);
+            if (genLines.length > 0) {
+                promptParts.push(`【ADDITIONAL DETAILS】\n${genLines.join('\n')}`);
+            }
+        }
+        const contextPrompt = promptParts.length > 0 ? promptParts.join('\n\n') : null;
+
+        // Deduplicate terms (project terms first)
+        const termsSet = new Set();
+        const mergedTerms = [];
+        const allTerms = [...(project?.terms || []), ...(globalTerms || [])];
+        for (const t of allTerms) {
+            const clean = (t || '').trim();
+            const lower = clean.toLowerCase();
+            if (clean && !termsSet.has(lower)) {
+                termsSet.add(lower);
+                mergedTerms.push(clean);
+            }
+        }
+
+        // Translation pairs (project overrides global)
+        const transMap = new Map();
+        for (const t of (globalTranslationTerms || [])) {
+            const src = (t.source || '').trim();
+            const tgt = (t.target || '').trim();
+            if (src && tgt) {
+                transMap.set(src.toLowerCase(), { source: src, target: tgt });
+            }
+        }
+        for (const t of (project?.translation_terms || [])) {
+            const src = (t.source || '').trim();
+            const tgt = (t.target || '').trim();
+            if (src && tgt) {
+                transMap.set(src.toLowerCase(), { source: src, target: tgt });
+            }
+        }
+        const mergedTranslationTerms = Array.from(transMap.values());
+
+        return {
+            contextPrompt,
+            terms: mergedTerms,
+            translationTerms: mergedTranslationTerms,
+            project,
+            customer: projectCustomer,
+        };
     }
 
     _initNotesResize() {

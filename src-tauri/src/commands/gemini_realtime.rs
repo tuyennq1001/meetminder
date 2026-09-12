@@ -14,6 +14,8 @@ use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
+use crate::commands::session_store::TranslationTermPair;
+
 const GEMINI_LIVE_WS_HOST: &str = "generativelanguage.googleapis.com";
 const DEFAULT_GEMINI_MODEL: &str = "models/gemini-3.5-transcribe-live";
 const TRANSLATION_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
@@ -23,7 +25,7 @@ const TRANSLATION_MAX_ATTEMPTS: usize = 5;
 // worker below that limit without imposing a per-utterance delay.
 const TRANSLATION_PACE_DELAY: std::time::Duration = std::time::Duration::from_secs(4);
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct GeminiRealtimeConfig {
     pub api_key: String,
     /// BCP-47-ish code (e.g. "en", "ja", "auto")
@@ -33,6 +35,19 @@ pub struct GeminiRealtimeConfig {
     pub model: Option<String>,
     #[serde(default)]
     pub diarization: bool,
+    #[serde(default, alias = "contextPrompt")]
+    pub context_prompt: Option<String>,
+    #[serde(default)]
+    pub terms: Vec<String>,
+    #[serde(default, alias = "translationTerms")]
+    pub translation_terms: Vec<TranslationTermPair>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct GeminiLiveContext {
+    pub context_prompt: Option<String>,
+    pub terms: Vec<String>,
+    pub translation_terms: Vec<TranslationTermPair>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -77,6 +92,7 @@ struct Session {
     audio_tx: mpsc::UnboundedSender<Vec<u8>>,
     stop_tx: mpsc::UnboundedSender<()>,
     target_lang: Arc<tokio::sync::RwLock<String>>,
+    live_context: Arc<tokio::sync::RwLock<GeminiLiveContext>>,
     done_rx: Option<oneshot::Receiver<()>>,
 }
 
@@ -115,6 +131,12 @@ pub async fn gemini_realtime_start(
     };
 
     let target_lang = Arc::new(tokio::sync::RwLock::new(config.target_language.clone()));
+    let initial_context = GeminiLiveContext {
+        context_prompt: config.context_prompt.clone(),
+        terms: config.terms.clone(),
+        translation_terms: config.translation_terms.clone(),
+    };
+    let live_context = Arc::new(tokio::sync::RwLock::new(initial_context));
     let (audio_tx, audio_rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let (stop_tx, stop_rx) = mpsc::unbounded_channel::<()>();
     let (done_tx, done_rx) = oneshot::channel::<()>();
@@ -123,6 +145,7 @@ pub async fn gemini_realtime_start(
         audio_tx,
         stop_tx,
         target_lang: target_lang.clone(),
+        live_context: live_context.clone(),
         done_rx: Some(done_rx),
     };
     state.sessions.lock().unwrap().insert(session_id, session);
@@ -142,6 +165,7 @@ pub async fn gemini_realtime_start(
         if let Err(e) = run_session(
             config,
             target_lang,
+            live_context,
             audio_rx,
             stop_rx,
             event_ch.clone(),
@@ -184,6 +208,33 @@ pub async fn gemini_realtime_set_target_lang(
         Ok(())
     } else {
         Err("Session not found".into())
+    }
+}
+
+#[tauri::command]
+pub async fn gemini_realtime_set_context(
+    session_id: u64,
+    context_prompt: Option<String>,
+    terms: Vec<String>,
+    translation_terms: Vec<TranslationTermPair>,
+    state: State<'_, GeminiState>,
+) -> Result<(), String> {
+    let context_lock = {
+        let guard = state.sessions.lock().unwrap();
+        guard.get(&session_id).map(|s| s.live_context.clone())
+    };
+    if let Some(lock) = context_lock {
+        let mut w = lock.write().await;
+        *w = GeminiLiveContext {
+            context_prompt,
+            terms,
+            translation_terms,
+        };
+        // Invalidate phrase cache so subsequent identical lines re-translate using the updated glossary
+        state.translation_cache.lock().await.clear();
+        Ok(())
+    } else {
+        Err(format!("Session {} not found", session_id))
     }
 }
 
@@ -237,6 +288,7 @@ pub async fn gemini_realtime_stop(
 async fn run_session(
     cfg: GeminiRealtimeConfig,
     target_lang_ref: Arc<tokio::sync::RwLock<String>>,
+    live_context_ref: Arc<tokio::sync::RwLock<GeminiLiveContext>>,
     mut audio_rx: mpsc::UnboundedReceiver<Vec<u8>>,
     mut stop_rx: mpsc::UnboundedReceiver<()>,
     event_ch: Channel<GeminiEvent>,
@@ -288,6 +340,7 @@ async fn run_session(
     let translation_event_ch = event_ch.clone();
     let translation_api_key = cfg.api_key.clone();
     let translation_target_lang = target_lang_ref.clone();
+    let translation_live_context = live_context_ref.clone();
     let translation_http = http_client.clone();
     let translation_models = available_models.clone();
     let translation_cooldowns = cooldowns.clone();
@@ -309,13 +362,14 @@ async fn run_session(
             let models = translation_models.clone();
             let cd = translation_cooldowns.clone();
             let cache = translation_cache_ref.clone();
+            let live_ctx = translation_live_context.read().await.clone();
 
             if batch.len() == 1 {
                 let job = batch.remove(0);
-                let event = translate_job(http, api_key, target_lang, job, models, cd, cache).await;
+                let event = translate_job(http, api_key, target_lang, job, models, cd, cache, &live_ctx).await;
                 let _ = translation_event_ch.send(event);
             } else {
-                let events = translate_batch_jobs(http, api_key, target_lang, batch, models, cd, cache).await;
+                let events = translate_batch_jobs(http, api_key, target_lang, batch, models, cd, cache, &live_ctx).await;
                 for event in events {
                     let _ = translation_event_ch.send(event);
                 }
@@ -422,6 +476,7 @@ async fn translate_job(
     models_ref: std::sync::Arc<tokio::sync::RwLock<Vec<String>>>,
     cooldowns_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
     cache_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, String>>>,
+    live_context: &GeminiLiveContext,
 ) -> GeminiEvent {
     let target_lang = target_lang_ref.read().await.clone();
     let is_no_translate = target_lang == "none" || target_lang == "off" || target_lang.is_empty();
@@ -455,6 +510,7 @@ async fn translate_job(
                     &target_lang,
                     &models,
                     &cooldowns_ref,
+                    live_context,
                 )
                 .await;
                 if result.as_ref().is_some_and(|text| !text.trim().is_empty()) {
@@ -587,6 +643,18 @@ fn build_setup_message(cfg: &GeminiRealtimeConfig) -> String {
             format!("You are an automated live speech transcription engine. Accurately transcribe all audio and translate directly to {}.", target_name)
         }
     };
+
+    let mut sys_instruction = sys_instruction;
+    if let Some(ctx) = &cfg.context_prompt {
+        if !ctx.trim().is_empty() {
+            sys_instruction.push_str("\n\nContext & Background:\n");
+            sys_instruction.push_str(ctx.trim());
+        }
+    }
+    if !cfg.terms.is_empty() {
+        sys_instruction.push_str("\n\nDomain terminology & keywords to recognize accurately:\n");
+        sys_instruction.push_str(&cfg.terms.join(", "));
+    }
 
     let mut input_audio_transcription = serde_json::json!({});
     if let Some(bcp47) = map_bcp47(&src) {
@@ -1266,6 +1334,29 @@ async fn translate_raw_prompt(
     None
 }
 
+fn format_glossary_instructions(live_context: &GeminiLiveContext) -> String {
+    let mut instructions = String::new();
+    if !live_context.translation_terms.is_empty() {
+        instructions.push_str("\n\nGlossary & Terminology translation rules (strictly respect these mappings):\n");
+        for pair in &live_context.translation_terms {
+            if !pair.source.trim().is_empty() && !pair.target.trim().is_empty() {
+                instructions.push_str(&format!("- \"{}\" => \"{}\"\n", pair.source.trim(), pair.target.trim()));
+            }
+        }
+    }
+    if !live_context.terms.is_empty() {
+        instructions.push_str("\nDomain terms & keywords to keep in mind:\n");
+        instructions.push_str(&live_context.terms.join(", "));
+        instructions.push('\n');
+    }
+    if let Some(ctx) = &live_context.context_prompt {
+        if !ctx.trim().is_empty() {
+            instructions.push_str(&format!("\nProject & conversation context:\n{}\n", ctx.trim()));
+        }
+    }
+    instructions
+}
+
 async fn translate_text_rest(
     client: &reqwest::Client,
     api_key: &str,
@@ -1273,12 +1364,17 @@ async fn translate_text_rest(
     target_lang: &str,
     models: &[String],
     cooldowns_ref: &Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
+    live_context: &GeminiLiveContext,
 ) -> Option<String> {
     let target_name = map_lang_name(target_lang);
-    let prompt = format!(
+    let mut prompt = format!(
         "Translate the following speech accurately and naturally into {target_name}. Output ONLY the translated text in {target_name} without repeating the source language, and without notes or quotes:\n{}",
         text.trim()
     );
+    let glossary_hints = format_glossary_instructions(live_context);
+    if !glossary_hints.is_empty() {
+        prompt.push_str(&glossary_hints);
+    }
     translate_raw_prompt(client, api_key, &prompt, models, cooldowns_ref).await
 }
 
@@ -1359,6 +1455,7 @@ async fn translate_batch_jobs(
     models_ref: std::sync::Arc<tokio::sync::RwLock<Vec<String>>>,
     cooldowns_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
     cache_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, String>>>,
+    live_context: &GeminiLiveContext,
 ) -> Vec<GeminiEvent> {
     let target_lang = target_lang_ref.read().await.clone();
     let is_no_translate = target_lang == "none" || target_lang == "off" || target_lang.is_empty();
@@ -1417,6 +1514,7 @@ async fn translate_batch_jobs(
             models_ref,
             cooldowns_ref,
             cache_ref,
+            live_context,
         )
         .await;
         if let GeminiEvent::Segment { id, translation, .. } = &event {
@@ -1442,10 +1540,14 @@ async fn translate_batch_jobs(
     }
 
     let target_name = map_lang_name(&target_lang);
-    let prompt = format!(
+    let mut prompt = format!(
         "Translate the following numbered speech items accurately and naturally into {target_name}. Output ONLY the numbered translations in order, without notes, quotes, or repeating source text:\n{}",
         prompt_items.trim()
     );
+    let glossary_hints = format_glossary_instructions(live_context);
+    if !glossary_hints.is_empty() {
+        prompt.push_str(&glossary_hints);
+    }
 
     let models = models_ref.read().await.clone();
     let mut batch_text_opt = None;
@@ -1499,6 +1601,7 @@ async fn translate_batch_jobs(
                 models_ref.clone(),
                 cooldowns_ref.clone(),
                 cache_ref.clone(),
+                live_context,
             )
             .await;
             if let GeminiEvent::Segment { id, translation, .. } = event {
@@ -1543,6 +1646,9 @@ mod tests {
             target_language: "none".into(),
             model: None,
             diarization: false,
+            context_prompt: None,
+            terms: vec![],
+            translation_terms: vec![],
         };
         let msg = build_setup_message(&cfg);
         let parsed: serde_json::Value = serde_json::from_str(&msg).unwrap();
@@ -1551,6 +1657,44 @@ mod tests {
             .unwrap();
         assert_eq!(lang_codes.len(), 1);
         assert_eq!(lang_codes[0].as_str(), Some("vi-VN"));
+    }
+
+    #[test]
+    fn test_build_setup_message_with_glossary_and_context() {
+        let cfg = GeminiRealtimeConfig {
+            api_key: "test_key".into(),
+            source_language: "ja".into(),
+            target_language: "vi".into(),
+            model: None,
+            diarization: false,
+            context_prompt: Some("Dự án AI Translator của công ty Acme".into()),
+            terms: vec!["Kubernetes".into(), "Microservices".into()],
+            translation_terms: vec![],
+        };
+        let msg = build_setup_message(&cfg);
+        let parsed: serde_json::Value = serde_json::from_str(&msg).unwrap();
+        let instruction = parsed["setup"]["systemInstruction"]["parts"][0]["text"]
+            .as_str()
+            .unwrap();
+        assert!(instruction.contains("Dự án AI Translator của công ty Acme"));
+        assert!(instruction.contains("Kubernetes, Microservices"));
+    }
+
+    #[test]
+    fn test_format_glossary_instructions() {
+        let ctx = GeminiLiveContext {
+            context_prompt: Some("Core Banking System".into()),
+            terms: vec!["gRPC".into(), "Kafka".into()],
+            translation_terms: vec![TranslationTermPair {
+                source: "要件定義".into(),
+                target: "Định nghĩa yêu cầu".into(),
+            }],
+        };
+        let formatted = format_glossary_instructions(&ctx);
+        assert!(formatted.contains("要件定義"));
+        assert!(formatted.contains("Định nghĩa yêu cầu"));
+        assert!(formatted.contains("gRPC, Kafka"));
+        assert!(formatted.contains("Core Banking System"));
     }
 
     #[test]

@@ -220,9 +220,12 @@
               <select id="select-note-customer" class="note-meta-select" data-i18n-title="notes.customer.title" title="Gán Khách hàng cho cuộc họp">
                 <option value="" data-i18n="notes.customer">🤝 Khách hàng...</option>
               </select>
-              <select id="select-note-project" class="note-meta-select" data-i18n-title="notes.project.title" title="Gán Dự án cho cuộc họp">
-                <option value="" data-i18n="notes.project">🚀 Dự án...</option>
-              </select>
+              <div class="note-project-select-wrap" style="display:inline-flex; align-items:center; gap:4px;">
+                <select id="select-note-project" class="note-meta-select" data-i18n-title="notes.project.title" title="Gán Dự án cho cuộc họp">
+                  <option value="" data-i18n="notes.project">🚀 Dự án...</option>
+                </select>
+                <span id="note-project-glossary-badge" class="note-project-glossary-badge" style="display:none;" title="Từ điển dự án được kích hoạt">📚 0</span>
+              </div>
               <select id="select-note-category" class="note-meta-select" data-i18n-title="notes.category.title" title="Category cuộc họp">
                 <option value="" data-i18n="notes.category">🗂️ Category...</option>
               </select>
@@ -769,13 +772,28 @@
         </div>
 
         <div class="settings-section" id="section-soniox-context">
-          <span class="field-label">Context <span class="optional-badge">Optional</span></span>
-          <p class="hint" style="margin-bottom: 8px;">Provide context to improve transcription and translation accuracy.</p>
+          <div style="margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border-light);">
+            <span class="field-label" style="font-size: 13px; font-weight: 700;" data-i18n="settings.profile.title">👤 Hồ sơ người dùng &amp; Đơn vị</span>
+            <p class="hint" style="margin-top: 4px; margin-bottom: 10px;" data-i18n="settings.profile.hint">Thông tin này giúp AI xưng hô chuẩn xác và hiểu rõ bối cảnh công ty/cá nhân khi dịch và tạo Meeting Minutes.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div>
+                <label class="field-label" for="input-user-profile-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="settings.profile.userName">Họ và tên của bạn:</label>
+                <input type="text" id="input-user-profile-name" class="modal-input" data-i18n-placeholder="settings.profile.userNamePlaceholder" placeholder="VD: Nguyễn Quý Tuyến, Ken, Alex..." />
+              </div>
+              <div>
+                <label class="field-label" for="input-user-profile-company" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="settings.profile.company">Tên Công ty / Cơ quan:</label>
+                <input type="text" id="input-user-profile-company" class="modal-input" data-i18n-placeholder="settings.profile.companyPlaceholder" placeholder="VD: VTI Corporation, FPT Software, CMC Global..." />
+              </div>
+            </div>
+          </div>
+
+          <span class="field-label" style="font-size: 13px; font-weight: 700;" data-i18n="settings.globalContext.title">🌐 Bối cảnh chung &amp; Từ điển mặc định (Global Context)</span>
+          <p class="hint" style="margin-top: 4px; margin-bottom: 8px;" data-i18n="settings.globalContext.hint">Áp dụng xuyên suốt cho tất cả cuộc họp khi chưa gán dự án riêng biệt.</p>
 
           <!-- General context (key-value pairs) -->
           <div class="context-subsection">
             <div class="terms-header">
-              <span class="hint" style="margin:0;">General context</span>
+              <span class="hint" style="margin:0;" data-i18n="settings.globalContext.generalLabel">Thông tin bổ trợ (General context)</span>
               <button type="button" id="btn-add-general" class="btn-icon-sm" title="Add context pair">+</button>
             </div>
             <div id="context-general-list"></div>
@@ -783,20 +801,20 @@
 
           <!-- Transcription terms -->
           <div class="context-subsection">
-            <span class="hint">Transcription terms <span class="hint-dim">(one per line — domain-specific words)</span></span>
-            <textarea id="input-context-terms" rows="2" placeholder="e.g.&#10;angioplasty&#10;echocardiogram"></textarea>
+            <span class="hint" data-i18n="settings.globalContext.termsLabel">Thuật ngữ nhận diện mặc định (Transcription terms) <span class="hint-dim" data-i18n="settings.globalContext.termsHint">(mỗi từ một dòng)</span></span>
+            <textarea id="input-context-terms" rows="2" data-i18n-placeholder="settings.globalContext.termsPlaceholder" placeholder="VD:&#10;angioplasty&#10;echocardiogram"></textarea>
           </div>
 
           <!-- Background text -->
           <div class="context-subsection">
-            <span class="hint">Background text <span class="hint-dim">(meeting notes, prior context)</span></span>
-            <textarea id="input-context-text" rows="2" placeholder="e.g. This is a follow-up meeting about Q3 results..."></textarea>
+            <span class="hint" data-i18n="settings.globalContext.textLabel">Nội dung bối cảnh nền (Background text)</span>
+            <textarea id="input-context-text" rows="2" data-i18n-placeholder="settings.globalContext.textPlaceholder" placeholder="VD: Cuộc họp định kỳ về tiến độ Q3..."></textarea>
           </div>
 
           <!-- Translation terms -->
           <div class="context-subsection">
             <div class="terms-header">
-              <span class="hint" style="margin:0;">Translation terms <span class="hint-dim">(source → target)</span></span>
+              <span class="hint" style="margin:0;" data-i18n="settings.globalContext.transLabel">Thuật ngữ dịch mặc định (Translation terms) <span class="hint-dim" data-i18n="settings.globalContext.transHint">(gốc → đích)</span></span>
               <button type="button" id="btn-add-term" class="btn-icon-sm" title="Add term">+</button>
             </div>
             <div id="translation-terms-list"></div>
@@ -1003,6 +1021,17 @@
               </div>
               <p class="hint template-source-hint" data-i18n="settings.template.sourceHint">
                 Bật để AI kết hợp ghi chép bằng tay với transcript. Tắt để AI chỉ sử dụng nội dung transcript.
+              </p>
+
+              <div class="settings-grid-row template-source-setting" style="margin-top: 6px;">
+                <span class="field-label" data-i18n="settings.template.projectContextLabel">Ngữ cảnh &amp; Từ điển</span>
+                <label class="checkbox-option" for="check-meeting-minutes-use-project-context">
+                  <input type="checkbox" id="check-meeting-minutes-use-project-context" checked />
+                  <span class="checkbox-label" data-i18n="settings.template.projectContextCheckbox">Nạp Bối cảnh &amp; Từ điển Dự án (Glossary) khi tạo biên bản</span>
+                </label>
+              </div>
+              <p class="hint template-source-hint" data-i18n="settings.template.projectContextHint">
+                Bật để AI dịch và giải thích chuẩn xác thuật ngữ chuyên ngành dựa theo từ điển dự án và thông tin đối tác/công ty.
               </p>
 
               <div class="templates-preset-bar folder-tab-bar" id="templates-preset-bar" role="tablist">
@@ -1713,46 +1742,79 @@
 
   <!-- ═══════════════════ ADD / EDIT PROJECT MODAL ═══════════════════ -->
   <div id="modal-add-project" class="modal-overlay" style="display:none">
-    <div class="modal-card" style="max-width: 460px;">
+    <div class="modal-card" style="max-width: 520px;">
       <div class="modal-header">
         <h3 id="modal-proj-title">🚀 Thêm Dự án mới</h3>
         <button type="button" id="btn-close-add-project" class="icon-btn close-btn" data-i18n-title="common.close" title="Đóng">×</button>
       </div>
+      <div class="modal-tab-bar" id="modal-proj-tab-bar" role="tablist">
+        <button type="button" class="modal-tab-btn active" data-tab="general" id="btn-modal-proj-tab-general" data-i18n="modal.proj.tabGeneral">ℹ️ Thông tin chung</button>
+        <button type="button" class="modal-tab-btn" data-tab="glossary" id="btn-modal-proj-tab-glossary">
+          <span data-i18n="modal.proj.tabGlossary">📚 Từ điển &amp; Thuật ngữ</span>
+          <span id="badge-modal-proj-terms-count" class="modal-tab-badge" style="display:none;">0</span>
+        </button>
+      </div>
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
         <input type="hidden" id="input-modal-proj-id" value="" />
-        <div>
-          <label class="field-label" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.scopeLabel">Phạm vi dự án:</label>
-          <div class="scope-choice-group" id="modal-proj-scope-group" style="display:flex; gap:8px;">
-            <label class="scope-radio-btn active" id="label-modal-proj-scope-work">
-              <input type="radio" name="modal-proj-scope" value="work" checked />
-              <span data-i18n="scope.work">💼 Công việc</span>
-            </label>
-            <label class="scope-radio-btn" id="label-modal-proj-scope-personal">
-              <input type="radio" name="modal-proj-scope" value="personal" />
-              <span data-i18n="scope.personal">👤 Cá nhân</span>
-            </label>
-          </div>
-        </div>
-        <div id="modal-proj-customer-wrap">
-          <label class="field-label" for="select-modal-proj-customer" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.customerLabel">Khách hàng trực thuộc:</label>
-          <select id="select-modal-proj-customer" class="modal-input modal-select">
-            <option value="" data-i18n="modal.proj.customerDefault">(Không chọn KH / Dự án nội bộ)</option>
-          </select>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: flex-end;">
+
+        <!-- Tab Pane 1: General Info -->
+        <div id="modal-proj-pane-general" style="display: flex; flex-direction: column; gap: 12px;">
           <div>
-            <label class="field-label" for="input-modal-proj-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.nameLabel">Tên dự án (*):</label>
-            <input type="text" id="input-modal-proj-name" class="modal-input" data-i18n-placeholder="modal.proj.namePlaceholder" placeholder="VD: Core Banking V2, AI Translator..." />
+            <label class="field-label" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.scopeLabel">Phạm vi dự án:</label>
+            <div class="scope-choice-group" id="modal-proj-scope-group" style="display:flex; gap:8px;">
+              <label class="scope-radio-btn active" id="label-modal-proj-scope-work">
+                <input type="radio" name="modal-proj-scope" value="work" checked />
+                <span data-i18n="scope.work">💼 Công việc</span>
+              </label>
+              <label class="scope-radio-btn" id="label-modal-proj-scope-personal">
+                <input type="radio" name="modal-proj-scope" value="personal" />
+                <span data-i18n="scope.personal">👤 Cá nhân</span>
+              </label>
+            </div>
+          </div>
+          <div id="modal-proj-customer-wrap">
+            <label class="field-label" for="select-modal-proj-customer" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.customerLabel">Khách hàng trực thuộc:</label>
+            <select id="select-modal-proj-customer" class="modal-input modal-select">
+              <option value="" data-i18n="modal.proj.customerDefault">(Không chọn KH / Dự án nội bộ)</option>
+            </select>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: flex-end;">
+            <div>
+              <label class="field-label" for="input-modal-proj-name" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.nameLabel">Tên dự án (*):</label>
+              <input type="text" id="input-modal-proj-name" class="modal-input" data-i18n-placeholder="modal.proj.namePlaceholder" placeholder="VD: Core Banking V2, AI Translator..." />
+            </div>
+            <div>
+              <label class="field-label" for="input-modal-proj-color" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.colorLabel">Màu nhận diện:</label>
+              <input type="color" id="input-modal-proj-color" value="#431A46" class="color-picker-input" data-i18n-title="modal.proj.colorTitle" title="Chọn màu" />
+            </div>
           </div>
           <div>
-            <label class="field-label" for="input-modal-proj-color" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.colorLabel">Màu nhận diện:</label>
-            <input type="color" id="input-modal-proj-color" value="#431A46" class="color-picker-input" data-i18n-title="modal.proj.colorTitle" title="Chọn màu" />
+            <label class="field-label" for="input-modal-proj-desc" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.descLabel">Mô tả dự án:</label>
+            <textarea id="input-modal-proj-desc" class="modal-input" rows="2" data-i18n-placeholder="modal.proj.descPlaceholder" placeholder="Mô tả mục tiêu dự án (tuỳ chọn)..." style="resize: none;"></textarea>
           </div>
         </div>
-        <div>
-          <label class="field-label" for="input-modal-proj-desc" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.descLabel">Mô tả dự án:</label>
-          <textarea id="input-modal-proj-desc" class="modal-input" rows="2" data-i18n-placeholder="modal.proj.descPlaceholder" placeholder="Mô tả mục tiêu dự án (tuỳ chọn)..." style="resize: none;"></textarea>
+
+        <!-- Tab Pane 2: Glossary & Terms -->
+        <div id="modal-proj-pane-glossary" style="display: none; flex-direction: column; gap: 12px;">
+          <p class="hint" style="margin: 0; line-height: 1.45;" data-i18n="modal.proj.glossaryHint">
+            Các thuật ngữ và quy tắc dịch này sẽ được nạp tự động vào AI (Gemini/Soniox) khi bạn chọn dự án này trong cuộc họp, giúp nhận diện và dịch thuật ngữ chuyên ngành chuẩn xác.
+          </p>
+
+          <div>
+            <label class="field-label" for="input-modal-proj-terms" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.termsLabel">Thuật ngữ nhận diện âm thanh (Speech-to-Text):</label>
+            <p class="hint" style="margin-top: 0; margin-bottom: 4px; font-size: 11px;" data-i18n="modal.proj.termsHint">Mỗi thuật ngữ một dòng (VD: Microservices, Kubernetes, gRPC, API Gateway...)</p>
+            <textarea id="input-modal-proj-terms" class="modal-input" rows="4" data-i18n-placeholder="modal.proj.termsPlaceholder" placeholder="Microservices&#10;Kubernetes&#10;gRPC&#10;API Gateway" style="resize: vertical; font-family: monospace; font-size: 12px;"></textarea>
+          </div>
+
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="field-label" style="margin: 0; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.transTermsLabel">Quy tắc dịch thuật ngữ (Thuật ngữ gốc → Bản dịch chuẩn):</label>
+              <button type="button" id="btn-add-modal-proj-trans-term" class="btn-secondary-small" style="padding: 2px 8px; font-size: 11px;" data-i18n="modal.proj.addTransTerm">+ Thêm thuật ngữ dịch</button>
+            </div>
+            <div id="modal-proj-trans-terms-list" style="max-height: 160px; overflow-y: auto; padding-right: 2px; display: flex; flex-direction: column; gap: 4px;"></div>
+          </div>
         </div>
+
       </div>
       <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
         <button type="button" id="btn-cancel-add-project" class="secondary-btn" data-i18n="common.cancel">Huỷ</button>
