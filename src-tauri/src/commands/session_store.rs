@@ -250,6 +250,25 @@ pub struct SessionListItem {
 }
 
 #[derive(Serialize, Debug)]
+pub struct SessionSearchMatch {
+    /// "title" | "logs" | "notes"
+    pub kind: String,
+    /// "source" | "translation" for logs; None for title/notes.
+    pub variant: Option<String>,
+    pub timestamp: Option<String>,
+    pub segment_index: Option<usize>,
+    pub note_line: Option<usize>,
+    pub snippet: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct SessionSearchResult {
+    pub session: SessionListItem,
+    pub matches: Vec<SessionSearchMatch>,
+    pub match_count: usize,
+}
+
+#[derive(Serialize, Debug)]
 pub struct SessionReadResult {
     pub md: String,
     pub json: SessionData,
@@ -1861,39 +1880,169 @@ pub fn export_session_txt(app: AppHandle, id: String) -> Result<String, String> 
     Ok(build_session_txt(&data))
 }
 
+fn search_line_matches(text: &str, query: &str) -> bool {
+    !text.trim().is_empty() && text.to_lowercase().contains(query)
+}
+
+fn push_search_match(
+    matches: &mut Vec<SessionSearchMatch>,
+    kind: &str,
+    variant: Option<&str>,
+    timestamp: Option<&str>,
+    segment_index: Option<usize>,
+    note_line: Option<usize>,
+    snippet: &str,
+    query: &str,
+) {
+    let trimmed = snippet.trim();
+    if !search_line_matches(trimmed, query) {
+        return;
+    }
+
+    matches.push(SessionSearchMatch {
+        kind: kind.to_string(),
+        variant: variant.map(str::to_string),
+        timestamp: timestamp.map(str::to_string),
+        segment_index,
+        note_line,
+        snippet: trimmed.to_string(),
+    });
+}
+
+fn search_session_data(data: &SessionData, query: &str) -> Vec<SessionSearchMatch> {
+    let mut matches = Vec::new();
+
+    push_search_match(
+        &mut matches,
+        "title",
+        None,
+        None,
+        None,
+        None,
+        &data.title,
+        query,
+    );
+
+    let mut segment_index = 0usize;
+    for chunk in &data.chunks {
+        for segment in &chunk.segments {
+            push_search_match(
+                &mut matches,
+                "logs",
+                Some("source"),
+                Some(&segment.ts),
+                Some(segment_index),
+                None,
+                &segment.src,
+                query,
+            );
+            push_search_match(
+                &mut matches,
+                "logs",
+                Some("translation"),
+                Some(&segment.ts),
+                Some(segment_index),
+                None,
+                &segment.tgt,
+                query,
+            );
+            segment_index += 1;
+        }
+    }
+
+    if let Some(notes) = data.notes.as_deref() {
+        for (line_index, line) in notes.lines().enumerate() {
+            push_search_match(
+                &mut matches,
+                "notes",
+                None,
+                None,
+                None,
+                Some(line_index + 1),
+                line,
+                query,
+            );
+        }
+    }
+
+    matches
+}
+
 #[tauri::command]
-pub fn search_sessions(app: AppHandle, query: String) -> Result<Vec<SessionListItem>, String> {
+pub fn search_sessions(app: AppHandle, query: String) -> Result<Vec<SessionSearchResult>, String> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {
-        return list_sessions(app);
+        return Ok(Vec::new());
     }
-    let tag_match = q.strip_prefix('#').unwrap_or(&q);
+
     let all = list_sessions(app.clone())?;
     let dir = sessions_dir(&app)?;
-    let mut hits: Vec<SessionListItem> = Vec::new();
+    let mut hits: Vec<SessionSearchResult> = Vec::new();
+
     for item in all {
-        if item.has_legacy_only {
-            // Match against title + raw md content
+        let matches = if item.has_legacy_only {
             let path = record_file_for_read(&dir, &format!("{}.md", item.id));
-            if let Ok(body) = fs::read_to_string(&path) {
-                if body.to_lowercase().contains(&q) || item.title.to_lowercase().contains(&q) {
-                    hits.push(item);
-                }
-            }
-            continue;
-        }
-        if session_item_matches_metadata(&item, &q, tag_match) {
-            hits.push(item);
-            continue;
-        }
-        let (_, json_path) = session_paths_for_read(&dir, &item.id);
-        let Ok(json_str) = fs::read_to_string(&json_path) else {
-            continue;
+            fs::read_to_string(&path)
+                .map(|body| {
+                    let mut legacy_matches = Vec::new();
+                    push_search_match(
+                        &mut legacy_matches,
+                        "title",
+                        None,
+                        None,
+                        None,
+                        None,
+                        &item.title,
+                        &q,
+                    );
+                    for (line_index, line) in body.lines().enumerate() {
+                        push_search_match(
+                            &mut legacy_matches,
+                            "logs",
+                            Some("source"),
+                            None,
+                            None,
+                            Some(line_index + 1),
+                            line,
+                            &q,
+                        );
+                    }
+                    legacy_matches
+                })
+                .unwrap_or_default()
+        } else {
+            let (_, json_path) = session_paths_for_read(&dir, &item.id);
+            let Ok(json_str) = fs::read_to_string(&json_path) else {
+                continue;
+            };
+            let Ok(data) = serde_json::from_str::<SessionData>(&json_str) else {
+                continue;
+            };
+            search_session_data(&data, &q)
         };
-        if json_str.to_lowercase().contains(&q) {
-            hits.push(item);
+
+        if matches.is_empty() {
+            continue;
         }
+
+        hits.push(SessionSearchResult {
+            session: item,
+            match_count: matches.len(),
+            matches,
+        });
     }
+
+    // Search results favor a title hit, then the number of matching snippets,
+    // and finally the existing newest-first session order.
+    hits.sort_by(|a, b| {
+        let a_title = a.matches.iter().any(|m| m.kind == "title");
+        let b_title = b.matches.iter().any(|m| m.kind == "title");
+        b_title
+            .cmp(&a_title)
+            .then_with(|| b.match_count.cmp(&a.match_count))
+            .then_with(|| b.session.created_at.cmp(&a.session.created_at))
+    });
+
     Ok(hits)
 }
 

@@ -26048,6 +26048,28 @@ var NotesEditor = class {
       }
     });
   }
+  revealSearchMatch(query, lineNumber = null) {
+    if (!this.view || !String(query || "").trim()) return false;
+    const needle = String(query).trim().toLocaleLowerCase();
+    const { state } = this.view;
+    const totalLines = state.doc.lines;
+    const requestedLine = Number(lineNumber);
+    const candidateLines = Number.isInteger(requestedLine) && requestedLine >= 1 && requestedLine <= totalLines ? [requestedLine] : Array.from({ length: totalLines }, (_, index) => index + 1);
+    for (const currentLine of candidateLines) {
+      const line = state.doc.line(currentLine);
+      const column = line.text.toLocaleLowerCase().indexOf(needle);
+      if (column < 0) continue;
+      const from = line.from + column;
+      const matchedText = line.text.slice(column, column + String(query).trim().length);
+      this.view.dispatch({
+        selection: { anchor: from, head: from + matchedText.length },
+        effects: EditorView.scrollIntoView(from, { y: "center" })
+      });
+      this.view.focus();
+      return true;
+    }
+    return false;
+  }
   insertText(text) {
     if (!this.view) return;
     const { main } = this.view.state.selection;

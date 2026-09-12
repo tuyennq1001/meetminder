@@ -268,6 +268,9 @@
         <div class="sessions-list-header-bar">
           <span class="sessions-list-title" data-i18n="library.title">📚 Cuộc họp đã lưu</span>
           <div class="sessions-list-toolbar-right">
+            <button type="button" id="btn-open-session-search" class="btn-secondary small" data-i18n-title="search.openTitle" title="Tìm kiếm trong tên, Logs và ghi chú">
+              <span data-i18n="search.open">🔎 Search</span>
+            </button>
             <button type="button" id="btn-open-import-audio" class="btn-primary small btn-import-audio" data-i18n-title="library.import" title="Import file ghi âm cuộc họp (WAV, MP3, M4A, AAC, OGG, FLAC...)">
               <span data-i18n="library.import">📥 Import file ghi âm</span>
             </button>
@@ -291,14 +294,70 @@
         </div>
       </div>
 
+      <!-- Independent full-text search view. The Logs table stays mounted and
+           keeps its own filters/state while this view is open. -->
+      <div id="session-search-panel" class="sessions-body session-search-panel" style="display:none" role="region" aria-labelledby="session-search-title">
+        <div class="session-search-header">
+          <div class="session-search-heading">
+            <span class="session-search-heading-icon" aria-hidden="true">🔎</span>
+            <div>
+              <h2 id="session-search-title" data-i18n="search.title">Tìm kiếm cuộc họp</h2>
+              <p data-i18n="search.description">Tìm trong tên cuộc họp, Logs và ghi chú đã lưu.</p>
+            </div>
+          </div>
+          <div class="session-search-toolbar">
+            <label class="session-search-input-wrap" for="input-session-content-search">
+              <span class="session-search-input-icon" aria-hidden="true">🔎</span>
+              <input id="input-session-content-search" type="search" autocomplete="off" spellcheck="false" data-i18n-placeholder="search.placeholder" data-i18n-aria-label="search.inputAria" placeholder="Tìm trong tên, Logs và ghi chú..." aria-label="Tìm trong tên, Logs và ghi chú" />
+              <button type="button" id="btn-session-search-clear" class="session-search-clear" data-i18n-title="search.clearTitle" data-i18n-aria-label="search.clearTitle" title="Xoá từ khoá" aria-label="Xoá từ khoá" style="display:none">×</button>
+            </label>
+            <label class="session-search-select-wrap">
+              <span data-i18n="search.scopeLabel">Phạm vi</span>
+              <select id="select-session-search-scope" data-i18n-aria-label="search.scopeAria" aria-label="Phạm vi tìm kiếm">
+                <option value="all" data-i18n="scope.all">📑 Tất cả</option>
+                <option value="work" data-i18n="scope.work">💼 Công việc</option>
+                <option value="personal" data-i18n="scope.personal">👤 Cá nhân</option>
+              </select>
+            </label>
+            <label class="session-search-select-wrap">
+              <span data-i18n="search.contentLabel">Nội dung</span>
+              <select id="select-session-search-content" data-i18n-aria-label="search.contentAria" aria-label="Loại nội dung tìm kiếm">
+                <option value="all" data-i18n="search.contentAll">Tất cả</option>
+                <option value="title" data-i18n="search.contentTitle">Tên cuộc họp</option>
+                <option value="logs" data-i18n="search.contentLogs">Logs</option>
+                <option value="notes" data-i18n="search.contentNotes">Ghi chú</option>
+              </select>
+            </label>
+          </div>
+          <button type="button" id="btn-session-search-close" class="icon-btn" data-i18n-title="search.closeTitle" data-i18n-aria-label="search.closeTitle" title="Đóng tìm kiếm" aria-label="Đóng tìm kiếm">×</button>
+        </div>
+
+        <div id="session-search-status" class="session-search-status" aria-live="polite"></div>
+        <div id="session-search-results" class="session-search-results"></div>
+        <div id="session-search-pagination" class="session-pagination" style="display:none">
+          <span id="session-search-pagination-count" class="session-pagination-count"></span>
+          <label><span data-i18n="logsTable.pageSizeDisplay">Hiển thị</span> <select id="session-search-page-size" aria-label="Số kết quả mỗi trang">
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+          </select> <span data-i18n="logsTable.pageSizePer">/ trang</span></label>
+          <div class="session-pagination-actions">
+            <button type="button" id="btn-session-search-prev" data-i18n-title="search.previousTitle" title="Kết quả trước">‹</button>
+            <span id="session-search-pagination-page" class="session-pagination-page-text">1 / 1</span>
+            <button type="button" id="btn-session-search-next" data-i18n-title="search.nextTitle" title="Kết quả tiếp theo">›</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Session viewer (shown when a session is selected) -->
       <div id="session-viewer" class="sessions-body" style="display:none">
         <div class="session-viewer-header">
-          <button id="btn-session-back-to-list" class="icon-btn" data-i18n-title="session.back" title="Quay lại danh sách">
+          <button id="btn-session-back-to-list" class="icon-btn session-back-button" data-i18n-title="session.back" data-i18n-aria-label="session.back" aria-label="Quay lại danh sách" title="Quay lại danh sách">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="19" y1="12" x2="5" y2="12" />
               <polyline points="12 19 5 12 12 5" />
             </svg>
+            <span id="session-back-context-label" class="session-back-context-label" data-i18n="session.back" hidden>Quay lại danh sách</span>
           </button>
           <span id="session-viewer-title" class="session-viewer-title-text" data-i18n-title="session.edit" title="Nhấp để sửa thông tin cuộc họp"></span>
           <div id="session-viewer-normal-actions" class="session-viewer-actions">

@@ -490,6 +490,23 @@ class App {
         this._minutesDismissTimeout = null;
         this._suppressNextShowSessions = false;
         this._sessionNameQuery = '';
+        // Independent full-text search state. It intentionally does not reuse
+        // the Logs table filters, sort, selection, or pagination state.
+        this._sessionSearchOpen = false;
+        this._sessionSearchQuery = '';
+        this._sessionSearchResults = [];
+        this._sessionSearchScope = 'all';
+        this._sessionSearchContent = 'all';
+        this._sessionSearchPage = 1;
+        this._sessionSearchPageSize = 10;
+        this._sessionSearchRequestId = 0;
+        this._sessionSearchDebounce = null;
+        this._sessionSearchLoading = false;
+        this._sessionSearchError = '';
+        this._sessionSearchOpener = null;
+        this._sessionSearchScrollTop = 0;
+        this._sessionReturnToSearch = false;
+        this._sessionSearchTargets = new Map();
         // Logs table sort: default newest first, restore the user's last choice.
         this._sessionSort = { field: 'created_at', dir: 'desc' };
         try {
@@ -1040,9 +1057,74 @@ class App {
         // Back from session viewer to session list
         document.getElementById('btn-session-back-to-list')?.addEventListener('click', () => {
             this._exitSessionEditMode();
+            if (this._sessionReturnToSearch) {
+                this._returnToSessionSearch();
+                return;
+            }
             document.getElementById('sessions-list-panel').style.display = '';
             document.getElementById('session-viewer').style.display = 'none';
             this._showSessions();
+        });
+
+        // Independent full-text search — separate from the Logs table filters.
+        document.getElementById('btn-open-session-search')?.addEventListener('click', (event) => {
+            this._openSessionSearch(event.currentTarget);
+        });
+        document.getElementById('btn-session-search-close')?.addEventListener('click', () => {
+            this._closeSessionSearch();
+        });
+        document.getElementById('btn-session-search-clear')?.addEventListener('click', () => {
+            const input = document.getElementById('input-session-content-search');
+            if (input) {
+                input.value = '';
+                input.focus();
+            }
+            this._sessionSearchQuery = '';
+            this._sessionSearchPage = 1;
+            this._sessionSearchRequestId += 1;
+            this._sessionSearchResults = [];
+            this._renderSessionSearchResults();
+        });
+        document.getElementById('input-session-content-search')?.addEventListener('input', (event) => {
+            clearTimeout(this._sessionSearchDebounce);
+            this._sessionSearchQuery = event.target.value;
+            this._sessionSearchPage = 1;
+            this._sessionSearchDebounce = setTimeout(() => this._runSessionSearch(), 220);
+            this._renderSessionSearchResults();
+        });
+        document.getElementById('input-session-content-search')?.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                this._closeSessionSearch();
+            }
+        });
+        document.getElementById('select-session-search-scope')?.addEventListener('change', (event) => {
+            this._sessionSearchScope = event.target.value || 'all';
+            this._sessionSearchPage = 1;
+            this._renderSessionSearchResults();
+        });
+        document.getElementById('select-session-search-content')?.addEventListener('change', (event) => {
+            this._sessionSearchContent = event.target.value || 'all';
+            this._sessionSearchPage = 1;
+            this._renderSessionSearchResults();
+        });
+        document.getElementById('session-search-page-size')?.addEventListener('change', (event) => {
+            const nextSize = Number(event.target.value);
+            if (![10, 20, 50].includes(nextSize)) return;
+            this._sessionSearchPageSize = nextSize;
+            this._sessionSearchPage = 1;
+            this._renderSessionSearchResults();
+        });
+        document.getElementById('btn-session-search-prev')?.addEventListener('click', () => {
+            if (this._sessionSearchPage <= 1) return;
+            this._sessionSearchPage -= 1;
+            this._renderSessionSearchResults();
+        });
+        document.getElementById('btn-session-search-next')?.addEventListener('click', () => {
+            const totalPages = this._getSessionSearchTotalPages();
+            if (this._sessionSearchPage >= totalPages) return;
+            this._sessionSearchPage += 1;
+            this._renderSessionSearchResults();
         });
 
         // Log name filter (debounced)
@@ -2011,6 +2093,13 @@ class App {
             if (hasModifier && !isTyping && (e.key === 'o' || e.key === 'O')) {
                 e.preventDefault();
                 setActivity('library');
+                return;
+            }
+            if (hasModifier && !isTyping && (e.key === 'k' || e.key === 'K')
+                && getActivity() === 'library'
+                && document.getElementById('sessions-list-panel')?.style.display !== 'none') {
+                e.preventDefault();
+                this._openSessionSearch(document.getElementById('btn-open-session-search'));
                 return;
             }
 
@@ -6489,7 +6578,331 @@ class App {
         select.innerHTML = html;
     }
 
+    _openSessionSearch(opener = null) {
+        const panel = document.getElementById('session-search-panel');
+        const listPanel = document.getElementById('sessions-list-panel');
+        const viewer = document.getElementById('session-viewer');
+        const input = document.getElementById('input-session-content-search');
+        if (!panel) return;
+
+        this._sessionSearchOpen = true;
+        this._sessionReturnToSearch = false;
+        this._sessionSearchOpener = opener || document.getElementById('btn-open-session-search');
+        if (listPanel) listPanel.style.display = 'none';
+        if (viewer) viewer.style.display = 'none';
+        panel.style.display = '';
+
+        if (input) {
+            input.value = this._sessionSearchQuery;
+            requestAnimationFrame(() => {
+                input.focus();
+                input.setSelectionRange(input.value.length, input.value.length);
+            });
+        }
+        this._renderSessionSearchResults();
+        if (this._sessionSearchQuery.trim()) this._runSessionSearch();
+    }
+
+    _closeSessionSearch({ restoreList = true, restoreFocus = true } = {}) {
+        clearTimeout(this._sessionSearchDebounce);
+        this._sessionSearchRequestId += 1;
+        this._sessionSearchLoading = false;
+        this._sessionSearchError = '';
+        this._sessionSearchOpen = false;
+
+        const panel = document.getElementById('session-search-panel');
+        const listPanel = document.getElementById('sessions-list-panel');
+        const viewer = document.getElementById('session-viewer');
+        if (panel) panel.style.display = 'none';
+        if (restoreList && listPanel) listPanel.style.display = '';
+        if (restoreList && viewer) viewer.style.display = 'none';
+
+        if (restoreFocus) {
+            this._sessionSearchOpener?.focus?.();
+        }
+    }
+
+    _setSessionBackContext(fromSearch = false) {
+        const button = document.getElementById('btn-session-back-to-list');
+        const label = document.getElementById('session-back-context-label');
+        if (!button) return;
+
+        const titleKey = fromSearch ? 'search.backTitle' : 'session.back';
+        const labelKey = fromSearch ? 'search.back' : 'session.back';
+        button.dataset.i18nTitle = titleKey;
+        button.dataset.i18nAriaLabel = titleKey;
+        button.dataset.tooltip = fromSearch ? t(titleKey) : '';
+        button.title = t(titleKey);
+        button.setAttribute('aria-label', t(titleKey));
+        button.classList.toggle('is-search-return', fromSearch);
+        if (label) {
+            label.dataset.i18n = labelKey;
+            label.textContent = t(labelKey);
+            // Keep the visible control compact; the contextual copy is exposed
+            // through the hover/focus tooltip and the button's aria-label.
+            label.hidden = true;
+        }
+    }
+
+    _returnToSessionSearch() {
+        const panel = document.getElementById('session-search-panel');
+        const listPanel = document.getElementById('sessions-list-panel');
+        const viewer = document.getElementById('session-viewer');
+        const input = document.getElementById('input-session-content-search');
+        if (!panel) return;
+
+        this._sessionReturnToSearch = false;
+        this._sessionSearchOpen = true;
+        if (listPanel) listPanel.style.display = 'none';
+        if (viewer) viewer.style.display = 'none';
+        panel.style.display = '';
+        panel.scrollTop = this._sessionSearchScrollTop;
+        this._setSessionBackContext(false);
+        this._renderSessionSearchResults();
+        requestAnimationFrame(() => {
+            panel.scrollTop = this._sessionSearchScrollTop;
+            input?.focus();
+            if (input) input.setSelectionRange(input.value.length, input.value.length);
+        });
+    }
+
+    async _runSessionSearch() {
+        const query = this._sessionSearchQuery.trim();
+        const requestId = ++this._sessionSearchRequestId;
+        this._sessionSearchError = '';
+
+        if (!query) {
+            this._sessionSearchLoading = false;
+            this._sessionSearchResults = [];
+            this._renderSessionSearchResults();
+            return;
+        }
+
+        this._sessionSearchLoading = true;
+        this._renderSessionSearchResults();
+        try {
+            const results = await invoke('search_sessions', { query });
+            if (requestId !== this._sessionSearchRequestId) return;
+            this._sessionSearchResults = Array.isArray(results) ? results : [];
+        } catch (err) {
+            if (requestId !== this._sessionSearchRequestId) return;
+            this._sessionSearchResults = [];
+            this._sessionSearchError = String(err);
+        } finally {
+            if (requestId === this._sessionSearchRequestId) {
+                this._sessionSearchLoading = false;
+                this._renderSessionSearchResults();
+            }
+        }
+    }
+
+    _getFilteredSessionSearchResults() {
+        const scope = this._sessionSearchScope || 'all';
+        const content = this._sessionSearchContent || 'all';
+        return (this._sessionSearchResults || [])
+            .map(result => {
+                const session = result?.session || {};
+                const matches = (result?.matches || []).filter(match => {
+                    const scopeMatches = scope === 'all' || (session.scope || 'work') === scope;
+                    const contentMatches = content === 'all' || match.kind === content;
+                    return scopeMatches && contentMatches;
+                });
+                return { ...result, matches };
+            })
+            .filter(result => result.matches.length > 0);
+    }
+
+    _getSessionSearchTotalPages() {
+        return Math.max(1, Math.ceil(this._getFilteredSessionSearchResults().length / this._sessionSearchPageSize));
+    }
+
+    _highlightSearchText(text, query) {
+        const source = String(text || '');
+        const needle = String(query || '').trim();
+        if (!source || !needle) return this._esc(source);
+
+        let pattern;
+        try {
+            const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            pattern = new RegExp(escaped, 'giu');
+        } catch (_) {
+            return this._esc(source);
+        }
+
+        let html = '';
+        let lastIndex = 0;
+        let match;
+        while ((match = pattern.exec(source)) !== null) {
+            const index = match.index;
+            html += this._esc(source.slice(lastIndex, index));
+            html += `<mark>${this._esc(match[0])}</mark>`;
+            lastIndex = index + match[0].length;
+            if (!match[0].length) pattern.lastIndex += 1;
+        }
+        return html + this._esc(source.slice(lastIndex));
+    }
+
+    _sessionSearchMatchLabel(match) {
+        if (match.kind === 'title') return t('search.matchTitle');
+        if (match.kind === 'notes') {
+            return match.note_line ? t('search.notesLine', { line: match.note_line }) : t('search.matchNotes');
+        }
+        if (match.variant === 'translation') {
+            return match.timestamp
+                ? t('search.logsTimestamp', { timestamp: match.timestamp }) + ` · ${t('search.matchLogsTranslation')}`
+                : t('search.matchLogsTranslation');
+        }
+        return match.timestamp
+            ? t('search.logsTimestamp', { timestamp: match.timestamp }) + ` · ${t('search.matchLogsSource')}`
+            : t('search.matchLogsSource');
+    }
+
+    _renderSessionSearchResults() {
+        const panel = document.getElementById('session-search-panel');
+        const resultsEl = document.getElementById('session-search-results');
+        const statusEl = document.getElementById('session-search-status');
+        const pagination = document.getElementById('session-search-pagination');
+        const countEl = document.getElementById('session-search-pagination-count');
+        const pageEl = document.getElementById('session-search-pagination-page');
+        const prevBtn = document.getElementById('btn-session-search-prev');
+        const nextBtn = document.getElementById('btn-session-search-next');
+        const clearBtn = document.getElementById('btn-session-search-clear');
+        const pageSizeSelect = document.getElementById('session-search-page-size');
+        if (!panel || !resultsEl || !statusEl) return;
+
+        const query = this._sessionSearchQuery.trim();
+        if (clearBtn) clearBtn.style.display = query ? '' : 'none';
+        if (pageSizeSelect) pageSizeSelect.value = String(this._sessionSearchPageSize);
+        this._sessionSearchTargets = new Map();
+
+        if (this._sessionSearchLoading) {
+            statusEl.textContent = t('search.searching');
+            resultsEl.innerHTML = '<div class="session-search-state"><span class="spinner-ring"></span></div>';
+            if (pagination) pagination.style.display = 'none';
+            return;
+        }
+
+        if (this._sessionSearchError) {
+            statusEl.textContent = t('common.error', { error: this._sessionSearchError });
+            resultsEl.innerHTML = '';
+            if (pagination) pagination.style.display = 'none';
+            return;
+        }
+
+        if (!query) {
+            statusEl.textContent = t('search.startHint');
+            resultsEl.innerHTML = '';
+            if (pagination) pagination.style.display = 'none';
+            return;
+        }
+
+        const filtered = this._getFilteredSessionSearchResults();
+        const totalPages = Math.max(1, Math.ceil(filtered.length / this._sessionSearchPageSize));
+        this._sessionSearchPage = Math.min(Math.max(1, this._sessionSearchPage), totalPages);
+        const pageStart = (this._sessionSearchPage - 1) * this._sessionSearchPageSize;
+        const pageItems = filtered.slice(pageStart, pageStart + this._sessionSearchPageSize);
+
+        statusEl.textContent = filtered.length
+            ? t('search.resultCount', { count: filtered.length })
+            : t('search.noResults', { query });
+
+        if (!pageItems.length) {
+            resultsEl.innerHTML = `<div class="session-search-state"><div class="session-search-state-icon">⌕</div><p>${this._esc(t('search.noResults', { query }))}</p></div>`;
+        } else {
+            resultsEl.innerHTML = pageItems.map((result, resultIndex) => {
+                const session = result.session || {};
+                const sessionKey = `session-${pageStart + resultIndex}`;
+                const isPersonal = session.scope === 'personal';
+                const scopeLabel = isPersonal ? t('scope.personal') : t('scope.work');
+                const metadata = [session.customer_name, session.project_name, session.category].filter(Boolean).join(' · ');
+                const visibleMatches = result.matches.slice(0, 8);
+                const hiddenCount = Math.max(0, result.matches.length - visibleMatches.length);
+                const matchHtml = visibleMatches.map((match, matchIndex) => {
+                    const targetKey = `${sessionKey}-match-${matchIndex}`;
+                    this._sessionSearchTargets.set(targetKey, { session, match });
+                    return `<button type="button" class="session-search-match" data-search-target="${targetKey}" aria-label="${this._escAttr(this._sessionSearchMatchLabel(match))}">
+                        <span class="session-search-match-meta">${this._esc(this._sessionSearchMatchLabel(match))}</span>
+                        <span class="session-search-match-snippet">${this._highlightSearchText(match.snippet, query)}</span>
+                    </button>`;
+                }).join('');
+                const moreHtml = hiddenCount > 0
+                    ? `<div class="session-search-more">${this._esc(t('search.moreMatches', { count: hiddenCount }))}</div>`
+                    : '';
+                return `<article class="session-search-result">
+                    <div class="session-search-result-header">
+                        <button type="button" class="session-search-result-title" data-search-session-id="${this._escAttr(session.id)}" data-search-session-legacy="${session.has_legacy_only ? '1' : '0'}" title="${this._escAttr(t('search.openResult'))}">${this._esc(session.title || t('logsTable.untitled'))}</button>
+                        <span class="session-search-result-date">${this._formatSessionDate(session.created_at)}</span>
+                    </div>
+                    <div class="session-search-result-context"><span class="session-search-scope">${this._esc(scopeLabel)}</span>${metadata ? `<span>${this._esc(metadata)}</span>` : ''}<span>${this._esc(t('search.matchCount', { count: result.matches.length }))}</span></div>
+                    <div class="session-search-match-list">${matchHtml}${moreHtml}</div>
+                </article>`;
+            }).join('');
+        }
+
+        if (pagination) pagination.style.display = filtered.length ? 'flex' : 'none';
+        if (countEl) countEl.textContent = t('search.resultCount', { count: filtered.length });
+        if (pageEl) pageEl.textContent = `${this._sessionSearchPage} / ${totalPages}`;
+        if (prevBtn) prevBtn.disabled = this._sessionSearchPage <= 1;
+        if (nextBtn) nextBtn.disabled = this._sessionSearchPage >= totalPages;
+
+        resultsEl.querySelectorAll('[data-search-target]').forEach(button => {
+            button.addEventListener('click', () => this._openSessionFromSearchTarget(button.dataset.searchTarget));
+        });
+        resultsEl.querySelectorAll('[data-search-session-id]').forEach(button => {
+            button.addEventListener('click', () => this._openSessionFromSearchTarget(null, {
+                session: {
+                    id: button.dataset.searchSessionId,
+                    has_legacy_only: button.dataset.searchSessionLegacy === '1',
+                },
+                match: null,
+            }));
+        });
+    }
+
+    async _openSessionFromSearchTarget(targetKey, fallbackTarget = null) {
+        const target = targetKey ? this._sessionSearchTargets.get(targetKey) : fallbackTarget;
+        if (!target?.session?.id) return;
+
+        const session = target.session;
+        const match = target.match;
+        const panel = document.getElementById('session-search-panel');
+        this._sessionSearchScrollTop = panel?.scrollTop || 0;
+        this._closeSessionSearch({ restoreList: false, restoreFocus: false });
+        await this._openSession(session.id, !!session.has_legacy_only, { fromSearch: true });
+
+        if (!match) return;
+        const tab = match.kind === 'notes' ? 'notes' : 'logs';
+        this._switchSessionTab(tab);
+        this._focusSessionSearchMatch(match);
+    }
+
+    _focusSessionSearchMatch(match) {
+        requestAnimationFrame(() => {
+            if (match.kind === 'notes') {
+                this._sessionNotesEditor?.revealSearchMatch?.(this._sessionSearchQuery, match.note_line);
+                return;
+            }
+            if (match.kind !== 'logs' || match.segment_index === null || match.segment_index === undefined) return;
+
+            const container = document.getElementById('session-logs-editor-container');
+            if (!container) return;
+            const selector = `[data-segment-index="${Number(match.segment_index)}"]`;
+            const sourceLine = container.querySelector(`[data-log-panel="source"] ${selector}`) || container.querySelector(`.session-log-scroll ${selector}`);
+            const targetLine = container.querySelector(`[data-log-panel="translation"] ${selector}`);
+            const timelineLine = container.querySelector(`[data-log-panel="timeline"] ${selector}`);
+            const activeLines = match.variant === 'translation' ? [targetLine, timelineLine] : [sourceLine, timelineLine];
+            activeLines.forEach(line => {
+                line?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                line?.classList.add('session-search-match-active');
+            });
+            setTimeout(() => activeLines.forEach(line => line?.classList.remove('session-search-match-active')), 3000);
+        });
+    }
+
     async _showSessions(query) {
+        if (this._sessionSearchOpen) {
+            this._closeSessionSearch({ restoreList: true, restoreFocus: false });
+        }
         if (this._sessionAudioElement) {
             this._sessionAudioElement.pause();
             this._sessionAudioElement = null;
@@ -10462,7 +10875,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const targetName = this._getQuickLangName(json?.target_lang || '');
         const esc = (value) => this._esc(value || '');
         const copyButton = (kind, title, extraClass = '') => `<button type="button" class="panel-copy-btn ${extraClass}" data-copy-session-log="${kind}" title="${title}"><svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>`;
-        const singleRow = (segment, text) => `<div class="session-log-line"><span class="session-log-time">${esc(segment.ts || '')}</span><span>${esc(text)}</span></div>`;
+        const singleRow = (segment, index, text) => `<div class="session-log-line" data-segment-index="${index}"><span class="session-log-time">${esc(segment.ts || '')}</span><span>${esc(text)}</span></div>`;
         const dualRow = (index, text) => `<div class="session-log-line session-log-dual-line" data-segment-index="${index}">${esc(text)}</div>`;
         const timelineRow = (index, segment) => `<button type="button" class="session-log-timeline-row" data-segment-index="${index}" title="${this._escAttr(t('session.timelineRowTooltip'))}">${esc(segment.ts || '--:--')}</button>`;
 
@@ -10474,7 +10887,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const jumpBottomButton = `<button type="button" class="live-jump-bottom-btn session-log-scroll-bottom" aria-label="${this._escAttr(t('session.scrollBottomTooltip'))}" title="${this._escAttr(t('session.scrollBottomTooltip'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="4" x2="12" y2="19"></line><polyline points="19 13 12 20 5 13"></polyline></svg><span>${this._esc(t('session.latest'))}</span></button>`;
 
         if (!hasTranslation) {
-            container.innerHTML = `<div class="session-logs-live session-logs-single"><section class="session-log-column"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', this._escAttr(t('session.copySourceTooltip')), 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map(segment => singleRow(segment, segment.src)).join('')}</div></section>${jumpBottomButton}</div>`;
+            container.innerHTML = `<div class="session-logs-live session-logs-single"><section class="session-log-column"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', this._escAttr(t('session.copySourceTooltip')), 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map((segment, index) => singleRow(segment, index, segment.src)).join('')}</div></section>${jumpBottomButton}</div>`;
             const singleScroll = container.querySelector('.session-log-scroll');
             const scrollBottom = container.querySelector('.session-log-scroll-bottom');
             const updateScrollButton = () => {
@@ -12722,7 +13135,9 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         }
     }
 
-    async _openSession(id, isLegacy = false) {
+    async _openSession(id, isLegacy = false, { fromSearch = false } = {}) {
+        this._sessionReturnToSearch = fromSearch;
+        this._setSessionBackContext(fromSearch);
         this._exitSessionEditMode();
         this._exitMinutesEditMode();
         this._exitNotesEditMode();
