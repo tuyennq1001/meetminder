@@ -103,25 +103,31 @@ class LocalPipeline:
         # --- ASR Model ---
         if self.asr_model_type == "whisper":
             log("Loading Whisper-large-v3-turbo (MLX)...")
-            emit({"type": "status", "message": "Loading Whisper-large-v3-turbo..."})
             t = time.time()
             import mlx_whisper
             import numpy as np
             # Pre-load by running a tiny transcription (numpy array to bypass ffmpeg)
             dummy_audio = np.zeros(1600, dtype=np.float32)  # 0.1s silence
-            mlx_whisper.transcribe(
-                dummy_audio,
-                path_or_hf_repo="mlx-community/whisper-large-v3-turbo",
-                language="ja",
-            )
+            try:
+                mlx_whisper.transcribe(
+                    dummy_audio,
+                    path_or_hf_repo="mlx-community/whisper-large-v3-turbo",
+                    language="ja",
+                )
+            except Exception as e:
+                log(f"Failed to load Whisper model: {e}")
+                raise RuntimeError(f"Whisper model load failed: {e}. Please install/re-download models in Settings.")
             self.asr_model = "mlx-community/whisper-large-v3-turbo"
             log(f"Whisper loaded in {time.time()-t:.1f}s")
         elif self.asr_model_type == "qwen":
             log("Loading Qwen3-ASR-0.6B...")
-            emit({"type": "status", "message": "Loading Qwen3-ASR-0.6B..."})
             t = time.time()
             from mlx_audio.stt import load_model
-            self.asr_model = load_model("Qwen/Qwen3-ASR-0.6B")
+            try:
+                self.asr_model = load_model("Qwen/Qwen3-ASR-0.6B")
+            except Exception as e:
+                log(f"Failed to load Qwen model: {e}")
+                raise RuntimeError(f"Qwen model load failed: {e}. Please install/re-download models in Settings.")
             log(f"Qwen ASR loaded in {time.time()-t:.1f}s")
         else:
             raise ValueError(f"Unknown ASR model: {self.asr_model_type}")
@@ -129,15 +135,17 @@ class LocalPipeline:
         # --- LLM Translator ---
         if self.target_lang not in ("none", "off", ""):
             log("Loading Gemma-3-4B translator...")
-            emit({"type": "status", "message": "Loading Gemma-3-4B translator..."})
             t = time.time()
             from mlx_lm import load
-            self.llm_model, self.llm_tokenizer = load("mlx-community/gemma-3-4b-it-qat-4bit")
+            try:
+                self.llm_model, self.llm_tokenizer = load("mlx-community/gemma-3-4b-it-qat-4bit")
+            except Exception as e:
+                log(f"Failed to load Gemma translator: {e}")
+                raise RuntimeError(f"Gemma model load failed: {e}. Please install/re-download models in Settings.")
             log(f"LLM loaded in {time.time()-t:.1f}s")
 
             # Warm up LLM
             log("Warming up LLM...")
-            emit({"type": "status", "message": "Warming up translator..."})
             self._translate("テスト")
         else:
             log("Target language is none - skipping LLM translator load")
@@ -446,6 +454,7 @@ class LocalPipeline:
 
 def main():
     import argparse
+    import traceback
 
     parser = argparse.ArgumentParser(description="Local translation pipeline")
     parser.add_argument("--asr-model", default="whisper", choices=["whisper", "qwen"],
@@ -458,44 +467,50 @@ def main():
     parser.add_argument("--test-file", default="/tmp/test_japanese.wav", help="Test audio file")
     args = parser.parse_args()
 
-    if args.test:
-        # Test mode: process a file directly
-        pipeline = LocalPipeline(
-            asr_model=args.asr_model,
-            source_lang=args.source_lang,
-            target_lang=args.target_lang,
-            chunk_seconds=args.chunk_seconds,
-            stride_seconds=args.stride_seconds,
-        )
+    try:
+        if args.test:
+            # Test mode: process a file directly
+            pipeline = LocalPipeline(
+                asr_model=args.asr_model,
+                source_lang=args.source_lang,
+                target_lang=args.target_lang,
+                chunk_seconds=args.chunk_seconds,
+                stride_seconds=args.stride_seconds,
+            )
 
-        log(f"Test mode: processing {args.test_file}")
-        with wave.open(args.test_file, "r") as wf:
-            pcm = wf.readframes(wf.getnframes())
+            log(f"Test mode: processing {args.test_file}")
+            with wave.open(args.test_file, "r") as wf:
+                pcm = wf.readframes(wf.getnframes())
 
-        # Simulate streaming: feed chunks
-        chunk_bytes = args.chunk_seconds * 16000 * 2
-        stride_bytes = args.stride_seconds * 16000 * 2
-        pos = 0
-        while pos + chunk_bytes <= len(pcm):
-            chunk = pcm[pos : pos + chunk_bytes]
-            pipeline._process_chunk(chunk)
-            pos += stride_bytes
+            # Simulate streaming: feed chunks
+            chunk_bytes = args.chunk_seconds * 16000 * 2
+            stride_bytes = args.stride_seconds * 16000 * 2
+            pos = 0
+            while pos + chunk_bytes <= len(pcm):
+                chunk = pcm[pos : pos + chunk_bytes]
+                pipeline._process_chunk(chunk)
+                pos += stride_bytes
 
-        # Remaining
-        if pos < len(pcm) and len(pcm) - pos > 16000 * 2:
-            pipeline._process_chunk(pcm[pos:])
+            # Remaining
+            if pos < len(pcm) and len(pcm) - pos > 16000 * 2:
+                pipeline._process_chunk(pcm[pos:])
 
-        emit({"type": "done"})
-    else:
-        # Normal mode: read from stdin
-        pipeline = LocalPipeline(
-            asr_model=args.asr_model,
-            source_lang=args.source_lang,
-            target_lang=args.target_lang,
-            chunk_seconds=args.chunk_seconds,
-            stride_seconds=args.stride_seconds,
-        )
-        pipeline.run()
+            emit({"type": "done"})
+        else:
+            # Normal mode: read from stdin
+            pipeline = LocalPipeline(
+                asr_model=args.asr_model,
+                source_lang=args.source_lang,
+                target_lang=args.target_lang,
+                chunk_seconds=args.chunk_seconds,
+                stride_seconds=args.stride_seconds,
+            )
+            pipeline.run()
+    except Exception as e:
+        err_msg = str(e)
+        log(f"Fatal error in local pipeline: {err_msg}\n{traceback.format_exc()}")
+        emit({"type": "error", "message": err_msg})
+        sys.exit(1)
 
 
 if __name__ == "__main__":

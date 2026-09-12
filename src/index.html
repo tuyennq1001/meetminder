@@ -1525,18 +1525,32 @@
           <span><strong data-i18n="modal.importAudio.dropzoneMain">Kéo thả file ghi âm vào đây</strong><br><small data-i18n="modal.importAudio.dropzoneSub">hoặc bấm để chọn file local</small></span>
         </div>
 
+        <div style="margin-top: 10px; margin-bottom: 12px;">
+          <label class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.stop.scopeLabel">Phạm vi cuộc họp:</label>
+          <div class="scope-choice-group" id="import-meeting-scope-group" style="display:flex; gap:8px;">
+            <label class="scope-radio-btn active" id="label-import-scope-work">
+              <input type="radio" name="import-meeting-scope" value="work" checked />
+              <span data-i18n="scope.work">💼 Công việc</span>
+            </label>
+            <label class="scope-radio-btn" id="label-import-scope-personal">
+              <input type="radio" name="import-meeting-scope" value="personal" />
+              <span data-i18n="scope.personal">👤 Cá nhân</span>
+            </label>
+          </div>
+        </div>
+
         <label for="input-import-meeting-title" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.importAudio.meetingTitleLabel">Tên cuộc họp (*):</label>
         <input type="text" id="input-import-meeting-title" class="modal-input" data-i18n-placeholder="modal.importAudio.meetingTitlePlaceholder" placeholder="Nhập tên cuộc họp..." />
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-          <div>
+        <div id="import-customer-project-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+          <div id="import-customer-field-wrap">
             <label for="select-import-meeting-customer" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.importAudio.customerLabel">🤝 Khách hàng:</label>
             <select id="select-import-meeting-customer" class="modal-input modal-select">
               <option value="" data-i18n="modal.importAudio.noCustomer">(Không chọn KH)</option>
             </select>
           </div>
-          <div>
-            <label for="select-import-meeting-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.importAudio.projectLabel">🚀 Dự án (Active):</label>
+          <div id="import-project-field-wrap">
+            <label for="select-import-meeting-project" id="label-import-meeting-project" class="field-label" style="margin-bottom:4px; display:block; font-size:12px; font-weight:600; color:var(--md-sys-color-on-surface);" data-i18n="modal.importAudio.projectLabel">🚀 Dự án (Active):</label>
             <select id="select-import-meeting-project" class="modal-input modal-select">
               <option value="" data-i18n="modal.importAudio.noProject">(Không gán dự án)</option>
             </select>

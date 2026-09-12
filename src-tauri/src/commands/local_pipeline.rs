@@ -26,6 +26,37 @@ fn chrono_now() -> String {
     format!("{}", now)
 }
 
+pub fn check_hf_model_dir(hub_dir: &std::path::Path, repo_id: &str) -> bool {
+    let folder_name = format!("models--{}", repo_id.replace('/', "--"));
+    let model_path = hub_dir.join(folder_name);
+    let snapshots = model_path.join("snapshots");
+    if !snapshots.is_dir() {
+        return false;
+    }
+    if let Ok(entries) = std::fs::read_dir(&snapshots) {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                if let Ok(mut files) = std::fs::read_dir(entry.path()) {
+                    if files.next().is_some() {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+pub fn are_local_models_installed(home: &str) -> (bool, bool) {
+    let hub_dir = std::path::PathBuf::from(home).join(".cache/huggingface/hub");
+    if !hub_dir.exists() {
+        return (false, false);
+    }
+    let has_whisper = check_hf_model_dir(&hub_dir, "mlx-community/whisper-large-v3-turbo");
+    let has_gemma = check_hf_model_dir(&hub_dir, "mlx-community/gemma-3-4b-it-qat-4bit");
+    (has_whisper, has_gemma)
+}
+
 /// Start the local translation pipeline (Python sidecar)
 #[tauri::command]
 pub fn start_local_pipeline(
@@ -39,8 +70,18 @@ pub fn start_local_pipeline(
         source_lang, target_lang
     ));
 
-    // Send status to frontend
-    let _ = channel.send(r#"{"type":"status","message":"Stopping old pipeline..."}"#.to_string());
+    let home = dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .or_else(|| std::env::var("HOME").ok())
+        .unwrap_or_else(|| "/tmp".to_string());
+
+    let (has_whisper, has_gemma) = are_local_models_installed(&home);
+    if !has_whisper || !has_gemma {
+        let err_msg = "Local MLX models are missing or incomplete. Please install them in Settings.".to_string();
+        log_to_file(&err_msg);
+        let _ = channel.send(format!(r#"{{"type":"error","message":"{}"}}"#, err_msg));
+        return Err(err_msg);
+    }
 
     // Stop existing pipeline
     stop_local_pipeline_inner(&state);
@@ -51,8 +92,6 @@ pub fn start_local_pipeline(
         .output();
 
     std::thread::sleep(std::time::Duration::from_millis(100));
-
-    let _ = channel.send(r#"{"type":"status","message":"Finding pipeline script..."}"#.to_string());
 
     // Find the Python script — try multiple locations
     let script_path = {
@@ -84,15 +123,8 @@ pub fn start_local_pipeline(
     };
 
     log_to_file(&format!("Using script: {:?}", script_path));
-    let _ = channel.send(format!(
-        r#"{{"type":"status","message":"Starting Python pipeline..."}}"#
-    ));
 
     // Use venv python if MLX setup is complete, otherwise fall back to system python
-    let home = dirs::home_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .or_else(|| std::env::var("HOME").ok())
-        .unwrap_or_else(|| "/tmp".to_string());
     let venv_python = format!(
         "{}/Library/Application Support/Meet Minder/mlx-env/bin/python3",
         home
@@ -135,18 +167,21 @@ pub fn start_local_pipeline(
         })?;
 
     log_to_file(&format!("Python process spawned, PID={}", child.id()));
-    let _ = channel.send(format!(
-        r#"{{"type":"status","message":"Python started (PID={}), loading models..."}}"#,
-        child.id()
-    ));
 
     // Read stdout in a background thread and forward JSON to frontend
     let stdout = child.stdout.take().ok_or("Failed to get stdout")?;
-
     let stderr = child.stderr.take().ok_or("Failed to get stderr")?;
 
-    // Forward stdout (JSON results) to frontend
+    let is_ready = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let has_errored = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let recent_stderr = std::sync::Arc::new(Mutex::new(std::collections::VecDeque::<String>::new()));
+
+    let is_ready_stdout = is_ready.clone();
+    let has_errored_stdout = has_errored.clone();
+    let recent_stderr_stdout = recent_stderr.clone();
     let channel_clone = channel.clone();
+
+    // Forward stdout (JSON results) to frontend
     std::thread::spawn(move || {
         use std::io::BufRead;
         let reader = std::io::BufReader::new(stdout);
@@ -154,6 +189,12 @@ pub fn start_local_pipeline(
             match line {
                 Ok(line) if !line.is_empty() => {
                     log_to_file(&format!("stdout: {}", &line));
+                    if line.contains(r#""type":"ready""#) || line.contains(r#""type": "ready""#) {
+                        is_ready_stdout.store(true, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    if line.contains(r#""type":"error""#) || line.contains(r#""type": "error""#) {
+                        has_errored_stdout.store(true, std::sync::atomic::Ordering::SeqCst);
+                    }
                     let _ = channel_clone.send(line);
                 }
                 Err(e) => {
@@ -164,9 +205,31 @@ pub fn start_local_pipeline(
             }
         }
         log_to_file("stdout reader ended");
+
+        // If stdout ended before receiving 'ready' and no error was sent yet:
+        if !is_ready_stdout.load(std::sync::atomic::Ordering::SeqCst)
+            && !has_errored_stdout.load(std::sync::atomic::Ordering::SeqCst)
+        {
+            let last_err = {
+                let guard = recent_stderr_stdout.lock().unwrap();
+                let lines: Vec<String> = guard.iter().cloned().collect();
+                lines.join("\n")
+            };
+            let summary = if last_err.is_empty() {
+                "Local pipeline process stopped unexpectedly during initialization.".to_string()
+            } else {
+                format!("Local pipeline error:\n{}", last_err)
+            };
+            let escaped = summary
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\n', "\\n");
+            let _ = channel_clone.send(format!(r#"{{"type":"error","message":"{}"}}"#, escaped));
+        }
     });
 
-    // Log stderr for debugging (do not forward raw stderr to frontend)
+    // Log stderr for debugging and keep recent lines for error reporting
+    let recent_stderr_writer = recent_stderr.clone();
     std::thread::spawn(move || {
         use std::io::BufRead;
         let reader = std::io::BufReader::new(stderr);
@@ -174,6 +237,12 @@ pub fn start_local_pipeline(
             match line {
                 Ok(line) => {
                     log_to_file(&format!("stderr: {}", line));
+                    if let Ok(mut guard) = recent_stderr_writer.lock() {
+                        if guard.len() >= 15 {
+                            guard.pop_front();
+                        }
+                        guard.push_back(line);
+                    }
                 }
                 Err(_) => break,
             }
@@ -244,7 +313,12 @@ pub fn check_mlx_setup() -> Result<String, String> {
         home
     );
 
-    if std::path::Path::new(&marker).exists() && std::path::Path::new(&venv_python).exists() {
+    let (has_whisper, has_gemma) = are_local_models_installed(&home);
+    let has_models = has_whisper && has_gemma;
+    let marker_path = std::path::Path::new(&marker);
+    let venv_path = std::path::Path::new(&venv_python);
+
+    if marker_path.exists() && venv_path.exists() && has_models {
         // Read marker to get details
         let content = std::fs::read_to_string(&marker).unwrap_or_default();
         Ok(format!(
@@ -252,6 +326,10 @@ pub fn check_mlx_setup() -> Result<String, String> {
             venv_python, content
         ))
     } else {
+        // If marker exists but models/venv are missing, remove stale marker
+        if marker_path.exists() && (!has_models || !venv_path.exists()) {
+            let _ = std::fs::remove_file(marker_path);
+        }
         Ok(r#"{"ready":false}"#.to_string())
     }
 }
@@ -378,22 +456,27 @@ pub fn get_local_models_info() -> Result<String, String> {
     let env_path = std::path::PathBuf::from(&home).join("Library/Application Support/Meet Minder/mlx-env");
     let marker = env_path.join(".setup_complete");
     let venv_python = env_path.join("bin/python3");
-    let ready = marker.exists() && venv_python.exists();
+    let has_env = venv_python.exists();
+
+    let (has_whisper, has_gemma) = are_local_models_installed(&home);
+    let has_models = has_whisper && has_gemma;
+    let ready = marker.exists() && has_env && has_models;
+
+    if marker.exists() && (!has_env || !has_models) {
+        let _ = std::fs::remove_file(&marker);
+    }
 
     let mut total_bytes = 0u64;
-    let has_env = env_path.exists();
-    if has_env {
+    if env_path.exists() {
         total_bytes += dir_size(&env_path);
     }
 
-    let mut has_models = false;
     let hf_hub = std::path::PathBuf::from(&home).join(".cache/huggingface/hub");
     if hf_hub.exists() {
         if let Ok(entries) = std::fs::read_dir(&hf_hub) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if name.starts_with("models--mlx-community--") {
-                    has_models = true;
                     total_bytes += dir_size(&entry.path());
                 }
             }

@@ -36,14 +36,58 @@ def get_marker_path(env_dir):
     return os.path.join(env_dir, ".setup_complete")
 
 
+def check_model_downloaded(model_id):
+    """Check if model snapshot exists in Hugging Face Hub cache."""
+    hub_dir = os.path.expanduser("~/.cache/huggingface/hub")
+    folder_name = f"models--{model_id.replace('/', '--')}"
+    snapshots_dir = os.path.join(hub_dir, folder_name, "snapshots")
+    if not os.path.isdir(snapshots_dir):
+        return False
+    try:
+        snapshots = os.listdir(snapshots_dir)
+        for s in snapshots:
+            s_path = os.path.join(snapshots_dir, s)
+            if os.path.isdir(s_path) and len(os.listdir(s_path)) > 0:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def are_packages_installed(env_dir):
+    """Check if required packages are already working in the venv."""
+    venv_python = os.path.join(env_dir, "bin", "python3")
+    if not os.path.exists(venv_python):
+        return False
+    check_code = "import numpy, mlx, mlx_lm, mlx_whisper; print('OK')"
+    try:
+        res = subprocess.run(
+            [venv_python, "-c", check_code],
+            capture_output=True, text=True, timeout=15
+        )
+        return res.returncode == 0
+    except Exception:
+        return False
+
+
 def is_setup_complete(env_dir):
-    """Check if MLX setup is already done."""
+    """Check if MLX setup is already done and all models exist."""
     marker = get_marker_path(env_dir)
     if not os.path.exists(marker):
         return False
     # Check venv python exists
     venv_python = os.path.join(env_dir, "bin", "python3")
     if not os.path.exists(venv_python):
+        return False
+    # Check packages
+    if not are_packages_installed(env_dir):
+        return False
+    # Check models exist
+    if not check_model_downloaded("mlx-community/whisper-large-v3-turbo") or not check_model_downloaded("mlx-community/gemma-3-4b-it-qat-4bit"):
+        try:
+            os.remove(marker)
+        except OSError:
+            pass
         return False
     # Check marker version
     try:
@@ -147,6 +191,15 @@ def download_models(env_dir):
 
     total = len(models)
     for i, (model_id, desc) in enumerate(models):
+        if check_model_downloaded(model_id):
+            emit({
+                "type": "progress",
+                "step": "models",
+                "message": f"{desc} already downloaded ✓",
+                "progress": ((i + 1) / total) * 100,
+            })
+            continue
+
         emit({
             "type": "progress",
             "step": "models",
@@ -224,11 +277,19 @@ def main():
 
         emit({"type": "progress", "step": "check", "message": f"Found Python {python_version} at {python_path} ✓"})
 
-        # Step 2: Create venv
-        create_venv(python_path, env_dir)
-
-        # Step 3: Install packages
-        install_packages(env_dir)
+        # Step 2 & 3: Check or create venv + packages
+        if are_packages_installed(env_dir):
+            emit({"type": "progress", "step": "venv", "message": "Python environment already exists ✓", "done": True})
+            emit({
+                "type": "progress",
+                "step": "packages",
+                "message": "All packages already installed ✓",
+                "progress": 100,
+                "done": True,
+            })
+        else:
+            create_venv(python_path, env_dir)
+            install_packages(env_dir)
 
         # Step 4: Download models
         download_models(env_dir)

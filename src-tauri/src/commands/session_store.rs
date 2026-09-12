@@ -3360,12 +3360,21 @@ pub async fn import_audio_session(
     project_id: Option<String>,
     category: Option<String>,
     tags: Vec<String>,
+    scope: Option<String>,
     api_key: String,
 ) -> Result<SessionReadResult, String> {
     validate_id(&id)?;
     if api_key.trim().is_empty() {
         return Err("Gemini API key is empty".into());
     }
+    let clean_scope = scope.and_then(|s| {
+        let trimmed = s.trim().to_string();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    });
     let src_path = PathBuf::from(file_path.trim());
     if !src_path.exists() {
         return Err("File ghi âm không tồn tại".into());
@@ -3541,7 +3550,7 @@ pub async fn import_audio_session(
             customer_id,
             project_id,
             category,
-            scope: None,
+            scope: clean_scope.clone(),
             meeting_minutes: None,
             meeting_minutes_lang: None,
             meeting_minutes_ja: None,
@@ -3907,7 +3916,7 @@ start_sec must be the approximate offset in seconds.";
         customer_id,
         project_id,
         category,
-        scope: None,
+        scope: clean_scope.clone(),
         meeting_minutes: None,
         meeting_minutes_lang: None,
         meeting_minutes_ja: None,

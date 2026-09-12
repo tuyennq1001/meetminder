@@ -4094,12 +4094,10 @@ class App {
 
         // Step 2: Start pipeline FIRST (independent of audio)
         try {
-            this._showToast('Starting local pipeline...', 'success');
-
             this.localPipelineChannel = new window.__TAURI__.core.Channel();
             this.localPipelineReady = false;
 
-            this.localPipelineChannel.onmessage = (msg) => {
+            this.localPipelineChannel.onmessage = async (msg) => {
                 let data;
                 try {
                     data = (typeof msg === 'string') ? JSON.parse(msg) : msg;
@@ -4108,7 +4106,7 @@ class App {
                     return;
                 }
                 try {
-                    this._handleLocalPipelineResult(data);
+                    await this._handleLocalPipelineResult(data);
                 } catch (e) {
                     console.error('[Local] Handler error for type:', data?.type, e);
                 }
@@ -4168,14 +4166,13 @@ class App {
         }
     }
 
-    _handleLocalPipelineResult(data) {
+    async _handleLocalPipelineResult(data) {
         switch (data.type) {
             case 'ready':
                 this.localPipelineReady = true;
                 this._updateStatus('connected');
                 this.transcriptUI.removeStatusMessage();
                 this.transcriptUI.showListening();
-                this._showToast('Local models ready!', 'success');
                 break;
             case 'result':
                 // Chase effect: show original first (gray), then translation (white)
@@ -4194,20 +4191,20 @@ class App {
                 sessionStore.addSegment(data.original || '', data.translated || '');
                 break;
             case 'status':
-                const msg = data.message || 'Loading...';
-                // Status bar: show compact message (strip [pipeline] prefix)
-                const statusText = document.getElementById('status-text');
-                if (statusText) {
-                    const compact = msg.replace(/^\[pipeline\]\s*/, '');
-                    statusText.textContent = compact;
-                }
-                // Transcript area: only show loading/starting messages, not debug logs
-                if (!msg.startsWith('[pipeline]')) {
-                    this.transcriptUI.showStatusMessage(msg);
+                // Internal logging only; do not inject text into transcript UI or header to prevent UI shifts
+                if (data.message) {
+                    console.log('[Local Pipeline]', data.message);
                 }
                 break;
             case 'done':
                 this._updateStatus('disconnected');
+                break;
+            case 'error':
+                console.error('[Local Pipeline Error]', data.message);
+                this.localPipelineReady = false;
+                this._updateStatus('error');
+                this._showToast(`MLX Error: ${data.message || 'Failed to run local pipeline'}`, 'error');
+                await this.pause();
                 break;
         }
     }
@@ -4852,14 +4849,23 @@ class App {
         const personalRadio = document.querySelector('input[name="stop-meeting-scope"][value="personal"]');
         const custWrap = document.getElementById('stop-customer-field-wrap');
 
+        const labelStopProj = document.getElementById('label-stop-meeting-project');
         if (stopScope === 'personal') {
             if (personalRadio) personalRadio.checked = true;
             if (workRadio) workRadio.checked = false;
             if (custWrap) custWrap.style.display = 'none';
+            if (labelStopProj) {
+                labelStopProj.dataset.i18n = 'modal.stop.personalProjectLabel';
+                labelStopProj.textContent = t('modal.stop.personalProjectLabel');
+            }
         } else {
             if (workRadio) workRadio.checked = true;
             if (personalRadio) personalRadio.checked = false;
             if (custWrap) custWrap.style.display = '';
+            if (labelStopProj) {
+                labelStopProj.dataset.i18n = 'modal.stop.projectLabel';
+                labelStopProj.textContent = t('modal.stop.projectLabel');
+            }
         }
         document.querySelectorAll('#stop-meeting-scope-group .scope-radio-btn').forEach(btn => {
             const rad = btn.querySelector('input[type="radio"]');
@@ -4904,6 +4910,11 @@ class App {
             });
             if (custWrap) {
                 custWrap.style.display = curScope === 'personal' ? 'none' : '';
+            }
+            if (labelStopProj) {
+                const i18nKey = curScope === 'personal' ? 'modal.stop.personalProjectLabel' : 'modal.stop.projectLabel';
+                labelStopProj.dataset.i18n = i18nKey;
+                labelStopProj.textContent = t(i18nKey);
             }
             if (curScope === 'personal' && selectCust) {
                 selectCust.value = '';
@@ -7308,14 +7319,23 @@ class App {
         const personalRadio = document.querySelector('input[name="edit-session-scope"][value="personal"]');
         const custWrap = document.getElementById('edit-customer-field-wrap');
 
+        const labelEditProj = document.getElementById('label-edit-session-project');
         if (currentScope === 'personal') {
             if (personalRadio) personalRadio.checked = true;
             if (workRadio) workRadio.checked = false;
             if (custWrap) custWrap.style.display = 'none';
+            if (labelEditProj) {
+                labelEditProj.dataset.i18n = 'modal.metadata.personalProjectLabel';
+                labelEditProj.textContent = t('modal.metadata.personalProjectLabel');
+            }
         } else {
             if (workRadio) workRadio.checked = true;
             if (personalRadio) personalRadio.checked = false;
             if (custWrap) custWrap.style.display = '';
+            if (labelEditProj) {
+                labelEditProj.dataset.i18n = 'modal.metadata.projectLabel';
+                labelEditProj.textContent = t('modal.metadata.projectLabel');
+            }
         }
         document.querySelectorAll('#edit-session-scope-group .scope-radio-btn').forEach(btn => {
             const rad = btn.querySelector('input[type="radio"]');
@@ -7381,6 +7401,11 @@ class App {
             });
             if (custWrap) {
                 custWrap.style.display = curScope === 'personal' ? 'none' : '';
+            }
+            if (labelEditProj) {
+                const i18nKey = curScope === 'personal' ? 'modal.metadata.personalProjectLabel' : 'modal.metadata.projectLabel';
+                labelEditProj.dataset.i18n = i18nKey;
+                labelEditProj.textContent = t(i18nKey);
             }
             if (curScope === 'personal' && selectCust) {
                 selectCust.value = '';
@@ -11332,10 +11357,19 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     }
 
     _initImportAudioDropZone() {
+        const modal = document.getElementById('modal-import-audio');
         const dropzone = document.getElementById('import-audio-dropzone');
-        if (!dropzone) return;
+        const modalCard = modal?.querySelector('.modal-card');
+        if (!dropzone || !modal) return;
 
-        const setDragState = (active) => dropzone.classList.toggle('is-dragover', active);
+        let dragCounter = 0;
+
+        const setDragState = (active) => {
+            dropzone.classList.toggle('is-dragover', active);
+            modalCard?.classList.toggle('is-dragover', active);
+            modal.classList.toggle('is-dragover', active);
+        };
+
         const openPicker = () => this._browseAudioFileForImport();
 
         dropzone.addEventListener('click', openPicker);
@@ -11346,42 +11380,110 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             }
         });
 
-        // This fallback is useful in browser-only development and for hosts
-        // that expose the dropped path on DataTransfer files.
-        dropzone.addEventListener('dragover', (event) => {
+        const isModalOpen = () => modal.style.display !== 'none';
+
+        // Drag events on the entire modal popup & modal-card
+        const onDragEnter = (event) => {
+            if (!isModalOpen()) return;
             event.preventDefault();
+            dragCounter++;
             setDragState(true);
-        });
-        dropzone.addEventListener('dragleave', () => setDragState(false));
-        dropzone.addEventListener('drop', async (event) => {
+        };
+
+        const onDragOver = (event) => {
+            if (!isModalOpen()) return;
             event.preventDefault();
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = 'copy';
+            }
+            setDragState(true);
+        };
+
+        const onDragLeave = (event) => {
+            if (!isModalOpen()) return;
+            dragCounter = Math.max(0, dragCounter - 1);
+            if (dragCounter === 0) {
+                setDragState(false);
+            }
+        };
+
+        const onDrop = async (event) => {
+            if (!isModalOpen()) return;
+            event.preventDefault();
+            dragCounter = 0;
             setDragState(false);
-            if (window.__TAURI_INTERNALS__) return;
+
             const file = event.dataTransfer?.files?.[0];
-            if (file?.path) await this._inspectDroppedAudioPath(file.path);
-            else this._showToast(t('modal.importAudio.cannotGetPath'), 'warning');
+            if (file?.path) {
+                await this._inspectDroppedAudioPath(file.path);
+            }
+        };
+
+        [modal, modalCard, dropzone].forEach((el) => {
+            if (!el) return;
+            el.addEventListener('dragenter', onDragEnter);
+            el.addEventListener('dragover', onDragOver);
+            el.addEventListener('dragleave', onDragLeave);
+            el.addEventListener('drop', onDrop);
         });
 
-        // Tauri's native drag-drop event provides the real local path even
-        // when WebView's DataTransfer object intentionally hides it.
+        // Window-level dragover to ensure WebView doesn't reject drag when hovering inside modal
+        window.addEventListener('dragover', (event) => {
+            if (!isModalOpen()) return;
+            event.preventDefault();
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = 'copy';
+            }
+        });
+
+        window.addEventListener('drop', (event) => {
+            if (!isModalOpen()) return;
+            event.preventDefault();
+            dragCounter = 0;
+            setDragState(false);
+        });
+
+        // Tauri native drag-drop event gives real local path on macOS
+        const handleTauriDragDrop = async ({ payload }) => {
+            if (!isModalOpen()) return;
+            if (payload.type === 'enter' || payload.type === 'over') {
+                setDragState(true);
+            } else if (payload.type === 'leave') {
+                dragCounter = 0;
+                setDragState(false);
+            } else if (payload.type === 'drop') {
+                dragCounter = 0;
+                setDragState(false);
+                const path = payload.paths?.[0];
+                if (path) await this._inspectDroppedAudioPath(path);
+            }
+        };
+
         if (typeof this.appWindow?.onDragDropEvent === 'function') {
-            this._importAudioDropUnlisten = this.appWindow.onDragDropEvent(async ({ payload }) => {
-                const modal = document.getElementById('modal-import-audio');
-                if (!modal || modal.style.display === 'none') return;
-                if (payload.type === 'enter' || payload.type === 'over') {
-                    setDragState(true);
-                } else if (payload.type === 'leave') {
-                    setDragState(false);
-                } else if (payload.type === 'drop') {
-                    setDragState(false);
-                    const path = payload.paths?.[0];
-                    if (path) await this._inspectDroppedAudioPath(path);
-                }
-            }).catch((err) => console.warn('[App] Import drag-drop listener failed:', err));
+            this._importAudioDropUnlisten = this.appWindow.onDragDropEvent(handleTauriDragDrop)
+                .catch((err) => console.warn('[App] Window drag-drop listener failed:', err));
         }
+
+        try {
+            const { getCurrentWebview } = window.__TAURI__?.webview || {};
+            if (typeof getCurrentWebview === 'function') {
+                const webview = getCurrentWebview();
+                if (typeof webview?.onDragDropEvent === 'function') {
+                    webview.onDragDropEvent(handleTauriDragDrop)
+                        .catch((err) => console.warn('[App] Webview drag-drop listener failed:', err));
+                }
+            }
+        } catch {}
     }
 
     async _inspectDroppedAudioPath(path) {
+        if (!path) return;
+        if (this._lastInspectedPath === path && (Date.now() - (this._lastInspectedTime || 0)) < 1000) {
+            return;
+        }
+        this._lastInspectedPath = path;
+        this._lastInspectedTime = Date.now();
+
         try {
             const fileInfo = await invoke('inspect_audio_file', { path });
             if (!fileInfo) return;
@@ -11445,6 +11547,29 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const activeCustomers = (reg.customers || []).filter(c => c.status === 'active');
         const activeProjects = (reg.projects || []).filter(p => p.status === 'active');
 
+        const initialScope = (this._activeLogsScopeFilter === 'personal') ? 'personal' : 'work';
+        const workRadio = document.querySelector('input[name="import-meeting-scope"][value="work"]');
+        const personalRadio = document.querySelector('input[name="import-meeting-scope"][value="personal"]');
+        const custWrap = document.getElementById('import-customer-field-wrap');
+        const custProjContainer = document.getElementById('import-customer-project-container');
+        const labelProj = document.getElementById('label-import-meeting-project');
+
+        if (initialScope === 'personal') {
+            if (personalRadio) personalRadio.checked = true;
+            if (workRadio) workRadio.checked = false;
+        } else {
+            if (workRadio) workRadio.checked = true;
+            if (personalRadio) personalRadio.checked = false;
+        }
+        document.querySelectorAll('#import-meeting-scope-group .scope-radio-btn').forEach(btn => {
+            const rad = btn.querySelector('input[type="radio"]');
+            btn.classList.toggle('active', !!(rad && rad.checked));
+        });
+
+        const getCurrentChosenImportScope = () => {
+            return document.querySelector('input[name="import-meeting-scope"]:checked')?.value || 'work';
+        };
+
         if (selectCust) {
             let custHtml = `<option value="">${this._esc(t('modal.importAudio.noCustomer'))}</option>`;
             for (const c of activeCustomers) {
@@ -11454,11 +11579,17 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             selectCust.value = '';
         }
 
-        const updateProjectsDropdown = (selectedCustomerId) => {
+        const updateProjectsDropdown = (selectedCustomerId, scope) => {
             if (!selectProj) return;
-            const filteredProjs = selectedCustomerId
-                ? activeProjects.filter(p => p.customer_id === selectedCustomerId)
-                : activeProjects;
+            let filteredProjs = activeProjects;
+            if (scope === 'personal') {
+                filteredProjs = activeProjects.filter(p => p.scope === 'personal');
+            } else {
+                filteredProjs = activeProjects.filter(p => (p.scope || 'work') === 'work');
+                if (selectedCustomerId) {
+                    filteredProjs = filteredProjs.filter(p => p.customer_id === selectedCustomerId);
+                }
+            }
             let projHtml = `<option value="">${this._esc(t('modal.importAudio.noProject'))}</option>`;
             for (const p of filteredProjs) {
                 projHtml += `<option value="${this._escAttr(p.id)}">🚀 ${this._esc(p.name)}</option>`;
@@ -11467,29 +11598,83 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             selectProj.value = '';
         };
 
-        updateProjectsDropdown('');
-
-        selectCust.onchange = () => updateProjectsDropdown(selectCust.value);
-        selectProj.onchange = () => {
-            const pId = selectProj.value;
-            if (pId) {
-                const foundProj = activeProjects.find(p => p.id === pId);
-                if (foundProj && foundProj.customer_id && selectCust) {
-                    selectCust.value = foundProj.customer_id;
-                    updateProjectsDropdown(foundProj.customer_id);
-                    selectProj.value = pId;
+        const updateCategoriesDropdown = (scope) => {
+            if (!selectCat) return;
+            const availableCategories = (reg.categories || []).filter(c => {
+                if (scope === 'personal') {
+                    return c.scope === 'personal' || c.scope === 'all';
                 }
-            }
-        };
-
-        if (selectCat) {
+                return (c.scope || 'work') === 'work' || c.scope === 'all';
+            });
             let catHtml = `<option value="">${this._esc(t('modal.importAudio.noCategory'))}</option>`;
-            for (const c of (reg.categories || [])) {
+            for (const c of availableCategories) {
                 catHtml += `<option value="${this._escAttr(c.name)}">🗂️ ${this._esc(c.name)}</option>`;
             }
             selectCat.innerHTML = catHtml;
             selectCat.value = '';
+        };
+
+        const applyScopeLayout = (scope) => {
+            const isPersonal = scope === 'personal';
+            if (custWrap) custWrap.style.display = isPersonal ? 'none' : '';
+            if (custProjContainer) custProjContainer.style.gridTemplateColumns = isPersonal ? '1fr' : '1fr 1fr';
+            if (labelProj) {
+                const i18nKey = isPersonal ? 'modal.importAudio.personalProjectLabel' : 'modal.importAudio.projectLabel';
+                labelProj.dataset.i18n = i18nKey;
+                labelProj.textContent = t(i18nKey);
+            }
+            if (isPersonal && selectCust) {
+                selectCust.value = '';
+            }
+            updateProjectsDropdown(selectCust?.value, scope);
+            updateCategoriesDropdown(scope);
+        };
+
+        const onScopeChange = () => {
+            const curScope = getCurrentChosenImportScope();
+            document.querySelectorAll('#import-meeting-scope-group .scope-radio-btn').forEach(btn => {
+                const rad = btn.querySelector('input[type="radio"]');
+                btn.classList.toggle('active', !!(rad && rad.checked));
+            });
+            applyScopeLayout(curScope);
+        };
+
+        const onScopeBtnClick = (e) => {
+            const label = e.currentTarget;
+            const rad = label.querySelector('input[type="radio"]');
+            if (rad && !rad.checked) {
+                rad.checked = true;
+                onScopeChange();
+            }
+        };
+
+        document.querySelectorAll('#import-meeting-scope-group .scope-radio-btn').forEach(btn => {
+            btn.onclick = onScopeBtnClick;
+        });
+
+        document.querySelectorAll('input[name="import-meeting-scope"]').forEach(r => {
+            r.onchange = onScopeChange;
+        });
+
+        if (selectCust) {
+            selectCust.onchange = () => updateProjectsDropdown(selectCust.value, getCurrentChosenImportScope());
         }
+
+        if (selectProj) {
+            selectProj.onchange = () => {
+                const pId = selectProj.value;
+                if (pId) {
+                    const foundProj = activeProjects.find(p => p.id === pId);
+                    if (foundProj && foundProj.customer_id && selectCust) {
+                        selectCust.value = foundProj.customer_id;
+                        updateProjectsDropdown(foundProj.customer_id, getCurrentChosenImportScope());
+                        selectProj.value = pId;
+                    }
+                }
+            };
+        }
+
+        applyScopeLayout(initialScope);
 
         if (chkAutoMinutes) {
             chkAutoMinutes.checked = true;
@@ -11506,7 +11691,11 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
     _closeImportAudioModal() {
         const modal = document.getElementById('modal-import-audio');
-        if (modal) modal.style.display = 'none';
+        if (modal) {
+            modal.style.display = 'none';
+            modal.classList.remove('is-dragover');
+            modal.querySelector('.modal-card')?.classList.remove('is-dragover');
+        }
         document.getElementById('import-audio-dropzone')?.classList.remove('is-dragover');
         this._pendingImportFile = null;
     }
@@ -11524,8 +11713,9 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const inputTags = document.getElementById('input-import-meeting-tags');
         const chkAutoMinutes = document.getElementById('chk-import-auto-minutes');
 
+        const scope = document.querySelector('input[name="import-meeting-scope"]:checked')?.value || 'work';
         const title = (inputTitle?.value || '').trim() || fileInfo.file_name.replace(/\.[^/.]+$/, '');
-        const customerId = selectCust?.value || null;
+        const customerId = scope === 'personal' ? null : (selectCust?.value || null);
         const projectId = selectProj?.value || null;
         const category = selectCat?.value || null;
         const rawTags = (inputTags?.value || '').trim();
@@ -11547,10 +11737,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
 
         this._closeImportAudioModal();
-        await this._startAudioImport({ fileInfo, title, customerId, projectId, category, tags, autoMinutes, apiKey });
+        await this._startAudioImport({ fileInfo, title, customerId, projectId, category, tags, autoMinutes, apiKey, scope });
     }
 
-    async _startAudioImport({ fileInfo, title, customerId, projectId, category, tags, autoMinutes, apiKey }) {
+    async _startAudioImport({ fileInfo, title, customerId, projectId, category, tags, autoMinutes, apiKey, scope }) {
         if (this._activeRetranscribe) {
             this._showToast(t('modal.importAudio.busy'), 'info');
             return;
@@ -11633,6 +11823,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 projectId,
                 category,
                 tags,
+                scope: scope || 'work',
                 apiKey,
             });
 
@@ -11671,6 +11862,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
             this._showRetranscriptCompleted(id, t('retranscript.floating.doneImport', { title }));
             this._showToast(t('retranscript.toast.doneImport'), 'success');
+            if (scope && this._activeLogsScopeFilter !== 'all' && this._activeLogsScopeFilter !== scope) {
+                this._activeLogsScopeFilter = scope;
+                this._sessionPage = 1;
+                if (scope === 'personal') {
+                    this._activeCustomerFilter = [];
+                }
+            }
             await this._showSessions();
         } catch (err) {
             clearInterval(progressInterval);
