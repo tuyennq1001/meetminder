@@ -58,7 +58,7 @@
       "entitlements": "Entitlements.plist",
       "frameworks": [],
       "minimumSystemVersion": "13.0",
-      "signingIdentity": "Apple Development: tuyennq1001@gmail.com (DGWT97FSZ4)",
+      "signingIdentity": "-",
       "infoPlist": "Info.plist"
     },
     "createUpdaterArtifacts": false

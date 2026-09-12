@@ -26,17 +26,13 @@ jobs:
           fi
 
       - name: Install Apple Certificate
+        if: ${{ secrets.APPLE_CERTIFICATE != '' }}
         env:
           CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
           CERT_PATH=$RUNNER_TEMP/certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
-          if [ -z "${CERTIFICATE:-}" ]; then
-            echo "::error::APPLE_CERTIFICATE is not configured in repository secrets."
-            exit 1
-          fi
 
           echo -n "$CERTIFICATE" | base64 --decode -o $CERT_PATH
 
@@ -63,21 +59,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Tauri app (signed + notarized)
+      - name: Build Tauri app
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          npm run tauri build -- --config src-tauri/tauri.release.conf.json
+          if [ -n "${{ secrets.APPLE_CERTIFICATE }}" ] && [ -n "${{ secrets.APPLE_SIGNING_IDENTITY }}" ]; then
+            npm run tauri build -- --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${{ secrets.APPLE_SIGNING_IDENTITY }}\"}}}"
+          else
+            npm run tauri build -- --config src-tauri/tauri.release.conf.json
+          fi
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-build
           path: |
-            src-tauri/target/release/bundle/macos/*.app
             src-tauri/target/release/bundle/macos/*.app.tar.gz
             src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
             src-tauri/target/release/bundle/dmg/*.dmg
@@ -100,17 +99,13 @@ jobs:
           fi
 
       - name: Install Apple Certificate
+        if: ${{ secrets.APPLE_CERTIFICATE != '' }}
         env:
           CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
           CERT_PATH=$RUNNER_TEMP/certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
-          if [ -z "${CERTIFICATE:-}" ]; then
-            echo "::error::APPLE_CERTIFICATE is not configured in repository secrets."
-            exit 1
-          fi
 
           echo -n "$CERTIFICATE" | base64 --decode -o $CERT_PATH
 
@@ -139,14 +134,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Tauri app (Intel, signed + notarized)
+      - name: Build Tauri app (Intel)
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json
+          if [ -n "${{ secrets.APPLE_CERTIFICATE }}" ] && [ -n "${{ secrets.APPLE_SIGNING_IDENTITY }}" ]; then
+            npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${{ secrets.APPLE_SIGNING_IDENTITY }}\"}}}"
+          else
+            npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json
+          fi
 
       - name: Upload macOS Intel artifacts
         uses: actions/upload-artifact@v4
