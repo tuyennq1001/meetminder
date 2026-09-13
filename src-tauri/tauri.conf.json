@@ -19,8 +19,14 @@
         "minHeight": 240,
         "maximized": true,
         "center": true,
-        "transparent": false,
-        "decorations": false,
+        "transparent": true,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "trafficLightPosition": {
+          "x": 8,
+          "y": 24
+        },
+        "hiddenTitle": true,
         "alwaysOnTop": false,
         "resizable": true,
         "skipTaskbar": false

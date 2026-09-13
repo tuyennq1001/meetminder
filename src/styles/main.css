@@ -180,7 +180,9 @@ summary,
 #drag-region,
 #settings-drag,
 [data-tauri-drag-region] {
-  cursor: grab;
+  /* Keep the native macOS traffic-light hit area from inheriting a web
+     button cursor when title-bar overlay falls through to the webview. */
+  cursor: default;
 }
 
 #drag-region:active,
@@ -259,6 +261,18 @@ summary,
   gap: 6px;
   flex-wrap: nowrap;
   white-space: nowrap;
+}
+
+/* Native macOS traffic lights overlay the first toolbar row. Keep the first
+   app control clear of them without adding a second title-bar row. */
+.platform-macos .control-bar {
+  padding-left: 72px;
+}
+
+/* The Settings back button has its own title-bar row. Keep it outside the
+   native traffic-light hit area while preserving the centered page title. */
+.platform-macos .settings-header #btn-back {
+  transform: translateX(72px);
 }
 
 .header-divider {
@@ -1585,7 +1599,7 @@ body:not(.activity-live) .header-divider {
 .settings-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   margin-bottom: 16px;
   padding-bottom: 10px;
@@ -1750,7 +1764,7 @@ body:not(.activity-live) .header-divider {
 .terms-header {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   margin-bottom: 6px;
 }
@@ -5377,61 +5391,6 @@ body:not(.activity-live) .floating-controls { display: none; }
 
 .live-action-row {
   display: none;
-}
-
-/* ─── macOS Traffic Light Window Controls ──────────────────── */
-.traffic-lights {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px 0 2px;
-  -webkit-app-region: no-drag;
-  flex-shrink: 0;
-}
-
-.traffic-btn {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  padding: 0;
-  margin: 0;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  transition: transform 0.1s ease, filter 0.15s ease;
-  -webkit-app-region: no-drag;
-}
-
-.traffic-btn:active {
-  transform: scale(0.9);
-}
-
-.traffic-close {
-  background: #ff5f56;
-  border-color: #e0443e;
-}
-
-.traffic-minimize {
-  background: #ffbd2e;
-  border-color: #dea125;
-}
-
-.traffic-maximize {
-  background: #27c93f;
-  border-color: #1aab29;
-}
-
-.traffic-btn svg {
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  pointer-events: none;
-}
-
-.traffic-lights:hover .traffic-btn svg {
-  opacity: 1;
 }
 
 .primary-action-btn,

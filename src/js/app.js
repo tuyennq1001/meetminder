@@ -691,6 +691,8 @@ class App {
                 navigator.userAgent.includes('Mac OS X');
         }
 
+        document.body.classList.toggle('platform-macos', this._platformOs === 'macos');
+
         if (!this.isAppleSilicon) {
             // Keep Local MLX SELECTABLE — don't hard-block. We highlight a warning
             // when the user picks it (see _updateModeUI) and stop them at Start
@@ -1457,19 +1459,6 @@ class App {
         document.getElementById('btn-minutes-floating-close')?.addEventListener('click', (e) => {
             e.stopPropagation();
             this._hideMinutesProgress();
-        });
-
-        // macOS Traffic Light Window Controls
-        document.getElementById('btn-win-close')?.addEventListener('click', async () => {
-            this._immediateCloseRequested = true;
-            await this._saveWindowPosition();
-            await this.appWindow.close();
-        });
-        document.getElementById('btn-win-minimize')?.addEventListener('click', async () => {
-            await this.appWindow.minimize();
-        });
-        document.getElementById('btn-win-maximize')?.addEventListener('click', async () => {
-            await this.appWindow.toggleMaximize();
         });
 
         // Close button (overlay / legacy)
@@ -4281,6 +4270,13 @@ class App {
             case 'error':
                 console.error('[Local Pipeline Error]', data.message);
                 this.localPipelineReady = false;
+
+                // Stopping a still-loading MLX process is expected to close
+                // its stdout before it can emit `ready`. The Python resource
+                // tracker may then print a semaphore warning, which must not
+                // be presented as a new MLX failure after the user paused.
+                if (!this.isRunning) break;
+
                 this._updateStatus('error');
                 this._showToast(`MLX Error: ${data.message || 'Failed to run local pipeline'}`, 'error');
                 await this.pause();

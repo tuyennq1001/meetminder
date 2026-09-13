@@ -5,6 +5,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Meet Minder</title>
+  <script>
+    if (/Macintosh|Mac OS X/.test(navigator.userAgent) || navigator.platform === 'MacIntel') {
+      document.documentElement.classList.add('platform-macos');
+    }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -14,22 +19,9 @@
 <body class="activity-live">
   <!-- ═══════════════════ OVERLAY VIEW ═══════════════════ -->
   <div id="overlay-view" class="view active">
-    <!-- Unified Single Top Bar (Activity Switcher + Live Toolbar + Window Controls) -->
+    <!-- Unified Single Top Bar (Activity Switcher + Live Toolbar) -->
     <div id="drag-region">
       <div class="control-bar">
-        <!-- Traffic lights window controls (Close, Minimize, Maximize) -->
-        <div class="traffic-lights" data-tauri-drag-region="false">
-          <button id="btn-win-close" class="traffic-btn traffic-close" data-i18n-title="window.close" title="Đóng cửa sổ (⌘W / ⌘Q)" type="button">
-            <svg viewBox="0 0 12 12" width="7" height="7"><path d="M2.5 2.5l7 7m0-7l-7 7" stroke="#4c0000" stroke-width="1.2" stroke-linecap="round"/></svg>
-          </button>
-          <button id="btn-win-minimize" class="traffic-btn traffic-minimize" data-i18n-title="window.minimize" title="Thu nhỏ cửa sổ (⌘M)" type="button">
-            <svg viewBox="0 0 12 12" width="7" height="7"><path d="M2 6h8" stroke="#5a3d00" stroke-width="1.2" stroke-linecap="round"/></svg>
-          </button>
-          <button id="btn-win-maximize" class="traffic-btn traffic-maximize" data-i18n-title="window.maximize" title="Phóng to / Thu nhỏ cửa sổ" type="button">
-            <svg viewBox="0 0 12 12" width="7" height="7"><polygon points="3,3 3,9 9,3" fill="#004d00" opacity="0.8"/><polygon points="9,9 9,3 3,9" fill="#004d00" opacity="0.8"/></svg>
-          </button>
-        </div>
-
         <!-- Settings button -->
         <button id="btn-settings" class="icon-btn" data-i18n-title="settings.open" title="Cài đặt (⌘,)" type="button" data-tauri-drag-region="false">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
