@@ -568,6 +568,7 @@ class App {
         try {
             // UI Shell tabs (must be initialized first so tabs work immediately)
             this._initShellAndMenus();
+            this._reorderTranslationCredentialSections();
 
             // Load settings
             await settingsManager.load();
@@ -705,9 +706,9 @@ class App {
                 // Platform-accurate label: Mac Intel needs Apple Silicon;
                 // Windows/Linux aren't supported at all.
                 const reason = this._platformOs === 'macos'
-                    ? ' — cần chip Apple Silicon'
-                    : ' — chỉ hỗ trợ macOS Apple Silicon';
-                localOption.textContent += reason;
+                    ? t('settings.engine.localChipRequiredMac')
+                    : t('settings.engine.localChipRequiredOther');
+                localOption.textContent = `${t('settings.engine.local')}${reason}`;
             }
 
             // Force soniox mode if user had local selected
@@ -2224,6 +2225,25 @@ class App {
         }
     }
 
+    // Keep the credentials users need to start translation close to the engine
+    // picker. The individual sections remain hidden/shown by _updateModeUI.
+    _reorderTranslationCredentialSections() {
+        const tab = document.getElementById('tab-translation');
+        const timingSection = document.getElementById('select-translation-timing')
+            ?.closest('.settings-section');
+        if (!tab || !timingSection) return;
+
+        [
+            'section-api-key',
+            'section-openai-key',
+            'section-gemini-key',
+            'section-qwen-key',
+        ].forEach((id) => {
+            const section = document.getElementById(id);
+            if (section) tab.insertBefore(section, timingSection);
+        });
+    }
+
     /** Show one settings screen (sidebar item selected) inside the 2-column settings view. */
     async _showSettingsScreen(id) {
         if (!id || (!document.getElementById(id) && id !== 'tab-notes-template')) id = 'tab-customers';
@@ -2633,15 +2653,18 @@ class App {
         const customModelSection = document.getElementById('section-gemini-custom-model');
         const customModelInput = document.getElementById('input-gemini-custom-model');
         if (geminiModelSelect) {
-            const savedModel = s.gemini_model || 'models/gemini-3.5-live-translate-preview';
+            const savedModel = s.gemini_model || 'auto';
             const standardOptions = Array.from(geminiModelSelect.options).map(o => o.value);
             if (standardOptions.includes(savedModel)) {
                 geminiModelSelect.value = savedModel;
                 if (customModelSection) customModelSection.style.display = 'none';
             } else {
-                geminiModelSelect.value = 'custom';
-                if (customModelSection) customModelSection.style.display = 'block';
-                if (customModelInput) customModelInput.value = savedModel;
+                // Older builds allowed arbitrary model IDs. Keep the UI on a
+                // known-compatible option instead of exposing an unsupported
+                // value that the Live Translate pipeline cannot use.
+                geminiModelSelect.value = 'auto';
+                if (customModelSection) customModelSection.style.display = 'none';
+                if (customModelInput) customModelInput.value = '';
             }
         }
         const qwenKeyInput = document.getElementById('input-qwen-key');
@@ -2752,9 +2775,9 @@ class App {
             gemini_model: (() => {
                 const sel = document.getElementById('select-gemini-model')?.value;
                 if (sel === 'custom') {
-                    return document.getElementById('input-gemini-custom-model')?.value.trim() || 'models/gemini-3.5-live-translate-preview';
+                    return document.getElementById('input-gemini-custom-model')?.value.trim() || 'auto';
                 }
-                return sel || 'models/gemini-3.5-live-translate-preview';
+                return sel || 'auto';
             })(),
             qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
             source_language: document.getElementById('quick-select-source-lang')?.value || settingsManager.get().source_language || 'ja',
@@ -3110,11 +3133,11 @@ class App {
         const hintGemini = document.getElementById('hint-mode-gemini');
         const hintQwen = document.getElementById('hint-mode-qwen');
         const ENGINE_HINTS = {
-            soniox: 'Cloud · 70+ languages · ~$0.12/hr',
-            local: 'Offline · free · ~3–4s delay',
-            openai: 'Cloud · 13 languages · text-only captions',
-            gemini: 'Cloud · Gemini 2.0 Flash · free on Google AI Studio · 100+ languages',
-            qwen: 'Cloud · 60+ languages · text-only · free preview · pick a source language',
+            soniox: t('settings.engine.sonioxHint'),
+            local: t('settings.engine.localHint'),
+            openai: t('settings.engine.openaiHint'),
+            gemini: t('settings.engine.geminiHint'),
+            qwen: t('settings.engine.qwenHint'),
         };
         if (hintSoniox) {
             hintSoniox.textContent = ENGINE_HINTS[mode] || '';
@@ -3243,6 +3266,7 @@ class App {
         const sonioxKey = document.getElementById('input-api-key')?.value?.trim() || '';
         const openaiKey = document.getElementById('input-openai-key')?.value?.trim() || '';
         const geminiKey = document.getElementById('input-gemini-key')?.value?.trim() || '';
+        const qwenKey = document.getElementById('input-qwen-key')?.value?.trim() || '';
 
         // Soniox keys are opaque hex-like strings, ~32+ chars. Be lenient.
         const sonioxOk = sonioxKey.length >= 20;
@@ -3250,6 +3274,7 @@ class App {
         const openaiOk = /^sk-[A-Za-z0-9_\-]{20,}$/.test(openaiKey);
         // Gemini API keys start with AIzaSy and are ~39 chars.
         const geminiOk = geminiKey.length >= 20;
+        const qwenOk = qwenKey.length >= 20;
 
         const sonioxStatus = document.getElementById('key-status-soniox');
         if (sonioxStatus) {
@@ -3276,17 +3301,30 @@ class App {
             const sonioxOpt = select.querySelector('option[value="soniox"]');
             const openaiOpt = select.querySelector('option[value="openai"]');
             const geminiOpt = select.querySelector('option[value="gemini"]');
+            const qwenOpt = select.querySelector('option[value="qwen"]');
             if (sonioxOpt) {
                 sonioxOpt.disabled = false;
-                sonioxOpt.textContent = sonioxOk ? '☁️ Soniox' : '☁️ Soniox — cần nhập key';
+                sonioxOpt.textContent = sonioxOk
+                    ? t('settings.engine.soniox')
+                    : t('settings.engine.sonioxMissingKey');
             }
             if (openaiOpt) {
                 openaiOpt.disabled = false;
-                openaiOpt.textContent = openaiOk ? '⚡ OpenAI Realtime' : '⚡ OpenAI Realtime — cần nhập key';
+                openaiOpt.textContent = openaiOk
+                    ? t('settings.engine.openai')
+                    : t('settings.engine.openaiMissingKey');
             }
             if (geminiOpt) {
                 geminiOpt.disabled = false;
-                geminiOpt.textContent = geminiOk ? '✨ Google Gemini Live' : '✨ Google Gemini Live — cần nhập key';
+                geminiOpt.textContent = geminiOk
+                    ? t('settings.engine.gemini')
+                    : t('settings.engine.geminiMissingKey');
+            }
+            if (qwenOpt) {
+                qwenOpt.disabled = false;
+                qwenOpt.textContent = qwenOk
+                    ? t('settings.engine.qwen')
+                    : t('settings.engine.qwenMissingKey');
             }
         }
     }
@@ -3645,7 +3683,9 @@ class App {
         this._updateStatus('connecting');
         const { GeminiRealtimeClient } = await import('./gemini-realtime-client.js');
 
-        const usesLiveTranslate = (settings.gemini_model || '').includes('live-translate');
+        const usesLiveTranslate = !settings.gemini_model
+            || settings.gemini_model === 'auto'
+            || settings.gemini_model.includes('live-translate');
         this.transcriptUI.provider = usesLiveTranslate ? 'gemini-live' : 'gemini';
 
         this.geminiClient = new GeminiRealtimeClient();
@@ -3816,7 +3856,7 @@ class App {
                 apiKey: settings.gemini_api_key,
                 sourceLanguage: settings.source_language || 'ja',
                 targetLanguage: settings.target_language || 'vi',
-                model: settings.gemini_model || 'models/gemini-3.5-live-translate-preview',
+                model: settings.gemini_model || 'auto',
             });
         } catch (err) {
             console.error('[Gemini Realtime] connect error:', err);

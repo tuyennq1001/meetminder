@@ -15,6 +15,7 @@ use tokio::sync::oneshot;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 const GEMINI_LIVE_WS_HOST: &str = "generativelanguage.googleapis.com";
+const AUTO_GEMINI_MODEL: &str = "auto";
 const LIVE_TRANSLATE_MODEL: &str = "models/gemini-3.5-live-translate-preview";
 const FALLBACK_TRANSCRIBE_MODEL: &str = "models/gemini-3.5-transcribe-live";
 const DEFAULT_GEMINI_MODEL: &str = LIVE_TRANSLATE_MODEL;
@@ -787,7 +788,10 @@ fn normalized_model(cfg: &GeminiRealtimeConfig) -> String {
         .as_deref()
         .map(str::trim)
         .filter(|model| !model.is_empty())
-        .unwrap_or(DEFAULT_GEMINI_MODEL);
+        .unwrap_or(AUTO_GEMINI_MODEL);
+    if raw_model.eq_ignore_ascii_case(AUTO_GEMINI_MODEL) {
+        return DEFAULT_GEMINI_MODEL.to_string();
+    }
     if raw_model.starts_with("models/") {
         raw_model.to_string()
     } else {
@@ -1909,6 +1913,23 @@ mod tests {
         assert!(parsed["setup"].get("inputAudioTranscription").is_some());
         assert!(parsed["setup"].get("outputAudioTranscription").is_some());
         assert!(parsed["setup"].get("systemInstruction").is_none());
+    }
+
+    #[test]
+    fn test_auto_model_resolves_to_live_translate() {
+        let cfg = GeminiRealtimeConfig {
+            api_key: "test_key".into(),
+            source_language: "ja".into(),
+            target_language: "vi".into(),
+            model: Some(AUTO_GEMINI_MODEL.into()),
+            diarization: false,
+        };
+
+        assert_eq!(normalized_model(&cfg), LIVE_TRANSLATE_MODEL);
+        assert!(uses_live_translate(&cfg));
+        let parsed: serde_json::Value =
+            serde_json::from_str(&build_setup_message(&cfg)).unwrap();
+        assert_eq!(parsed["setup"]["model"], LIVE_TRANSLATE_MODEL);
     }
 
     #[test]

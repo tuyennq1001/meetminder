@@ -10,7 +10,7 @@ const DEFAULT_SETTINGS = {
   soniox_api_key: '',
   openai_api_key: '',
   gemini_api_key: '',
-  gemini_model: 'models/gemini-3.5-live-translate-preview',
+  gemini_model: 'auto',
   qwen_api_key: '',
   source_language: 'ja',
   target_language: 'vi',

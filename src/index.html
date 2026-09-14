@@ -646,17 +646,17 @@
             <span class="field-label" data-i18n="settings.engine.label">Engine Dịch</span>
             <select id="select-translation-mode">
               <option value="gemini" selected data-i18n="settings.engine.gemini">✨ Google Gemini Live (Khuyên dùng)</option>
+              <option value="local" data-i18n="settings.engine.local">🖥️ Local MLX</option>
               <option value="openai" data-i18n="settings.engine.openai">⚡ OpenAI Realtime</option>
               <option value="qwen" data-i18n="settings.engine.qwen">🌏 Qwen LiveTranslate Flash</option>
               <option value="soniox" data-i18n="settings.engine.soniox">☁️ Soniox</option>
-              <option value="local" data-i18n="settings.engine.local">🖥️ Local MLX</option>
             </select>
-            <p class="hint" id="hint-mode-gemini">Cloud · Gemini 2.0 Flash · free on Google AI Studio · 100+ languages</p>
+            <p class="hint" id="hint-mode-gemini" data-i18n="settings.engine.geminiHint">Cloud · Live speech translation · Free Tier (quota applies)</p>
             <p class="hint" id="hint-mode-soniox" style="display:none">Cloud · 70+ languages · ~$0.12/hr</p>
             <p class="hint" id="hint-mode-local" style="display:none">Offline · free · ~3–4s delay</p>
             <p class="hint" id="hint-mode-openai" style="display:none">Cloud · 13 languages · text-only captions</p>
             <p class="hint" id="hint-mode-qwen" style="display:none">Cloud · 60+ languages · text-only · free preview · pick a source language</p>
-            <div id="openai-cost-warning" class="cost-warning" style="display:none">
+            <div id="openai-cost-warning" class="cost-warning" style="display:none" data-i18n="settings.engine.openaiCostWarning">
               ⚠️ ~$4/hr — much pricier than Soniox. Charged to your OpenAI account.
             </div>
           </div>
@@ -701,7 +701,7 @@
 
         <div class="settings-section" id="section-api-key">
           <span class="field-label">
-            Soniox API Key
+            <span data-i18n="settings.engine.sonioxApiKeyLabel">Soniox API Key</span>
             <span id="key-status-soniox" class="key-status"></span>
           </span>
           <div class="input-group">
@@ -713,12 +713,12 @@
             </button>
             <button id="btn-test-soniox" class="btn-secondary small" title="Test connection">Test</button>
           </div>
-          <p class="hint">Get key at <a href="#" id="link-soniox">console.soniox.com</a></p>
+          <p class="hint"><span data-i18n="settings.engine.getKeyAt">Get key at</span> <a href="#" id="link-soniox">console.soniox.com</a></p>
         </div>
 
         <div class="settings-section" id="section-openai-key">
           <span class="field-label">
-            OpenAI API Key
+            <span data-i18n="settings.engine.openaiApiKeyLabel">OpenAI API Key</span>
             <span id="key-status-openai" class="key-status"></span>
           </span>
           <div class="input-group">
@@ -730,12 +730,24 @@
             </button>
             <button id="btn-test-openai" class="btn-secondary small" title="Test connection">Test</button>
           </div>
-          <p class="hint">Get key at <a href="#" id="link-openai">platform.openai.com</a></p>
+          <p class="hint"><span data-i18n="settings.engine.getKeyAt">Get key at</span> <a href="#" id="link-openai">platform.openai.com</a></p>
         </div>
 
         <div class="settings-section" id="section-gemini-key" style="display:none">
+          <div style="margin-bottom: 14px;">
+            <span class="field-label" data-i18n="settings.engine.geminiModel">Gemini Model</span>
+            <select id="select-gemini-model">
+              <option value="auto" data-i18n="settings.engine.geminiAuto">✨ Tự động — Gemini Live Translate (Khuyên dùng)</option>
+              <option value="models/gemini-3.5-live-translate-preview" data-i18n="settings.engine.gemini35LiveTranslate">🌐 Gemini 3.5 Live Translate Preview</option>
+            </select>
+            <p class="hint" data-i18n="settings.engine.geminiModelHint">Chỉ hiển thị các model hỗ trợ Live Translate; Auto sẽ dùng model tương thích được khuyến nghị.</p>
+          </div>
+          <div id="section-gemini-custom-model" style="display:none; margin-top: 6px;">
+            <input type="text" id="input-gemini-custom-model" placeholder="VD: models/gemini-3.5-transcribe" />
+          </div>
+
           <span class="field-label">
-            Gemini API Key
+            <span data-i18n="settings.engine.geminiApiKeyLabel">Gemini API Key</span>
             <span id="key-status-gemini" class="key-status"></span>
           </span>
           <div class="input-group">
@@ -746,22 +758,20 @@
               </svg>
             </button>
           </div>
-          <p class="hint">Get free key at <a href="#" id="link-gemini">aistudio.google.com</a></p>
-
-          <div style="margin-top: 10px;">
-            <span class="field-label" data-i18n="settings.engine.geminiModel">Gemini Model</span>
-            <select id="select-gemini-model">
-              <option value="models/gemini-3.5-live-translate-preview" data-i18n="settings.engine.gemini35LiveTranslate">🌐 Gemini 3.5 Live Translate Preview (Khuyên dùng)</option>
-            </select>
-          </div>
-          <div id="section-gemini-custom-model" style="display:none; margin-top: 6px;">
-            <input type="text" id="input-gemini-custom-model" placeholder="VD: models/gemini-3.5-transcribe" />
+          <div class="hint" id="gemini-key-guide">
+            <strong data-i18n="settings.engine.geminiKeyGuideTitle">Get a Gemini API key from Google AI Studio</strong>
+            <ol>
+              <li data-i18n="settings.engine.geminiKeyGuideStep1">Open Google AI Studio and sign in.</li>
+              <li data-i18n="settings.engine.geminiKeyGuideStep2">Click “Get API key” and create a key.</li>
+              <li data-i18n="settings.engine.geminiKeyGuideStep3">Paste the key above. Free Tier quota limits apply.</li>
+            </ol>
+            <a href="#" id="link-gemini" data-i18n="settings.engine.openGoogleAiStudio">Open Google AI Studio</a>
           </div>
         </div>
 
         <div class="settings-section" id="section-qwen-key" style="display:none">
           <span class="field-label">
-            Qwen (DashScope) API Key
+            <span data-i18n="settings.engine.qwenApiKeyLabel">Qwen (DashScope) API Key</span>
             <span id="key-status-qwen" class="key-status"></span>
           </span>
           <div class="input-group">

@@ -213,7 +213,7 @@ impl Default for Settings {
             soniox_api_key: String::new(),
             openai_api_key: String::new(),
             gemini_api_key: String::new(),
-            gemini_model: "models/gemini-3.5-live-translate-preview".to_string(),
+            gemini_model: "auto".to_string(),
             qwen_api_key: String::new(),
             source_language: "ja".to_string(),
             target_language: "vi".to_string(),
@@ -380,7 +380,7 @@ fn default_font_family() -> String {
 }
 
 fn default_gemini_model() -> String {
-    "models/gemini-3.5-live-translate-preview".to_string()
+    "auto".to_string()
 }
 
 const RELEASE_IDENTIFIER: &str = "com.meetminder.desktop";
@@ -455,9 +455,14 @@ fn normalize_loaded_settings(mut settings: Settings) -> Settings {
     {
         settings.target_language = "vi".to_string();
     }
-    // Live Translate is now the only Gemini mode exposed by the product. Any
-    // previously saved Transcribe/Flash/custom selection is migrated to it.
-    settings.gemini_model = default_gemini_model();
+    // Keep a user-selected compatible model. Older Transcribe/Flash/custom
+    // values are no longer valid for this product and fall back to Auto.
+    if settings.gemini_model.trim().is_empty()
+        || (settings.gemini_model != "auto"
+            && settings.gemini_model != "models/gemini-3.5-live-translate-preview")
+    {
+        settings.gemini_model = "auto".to_string();
+    }
     settings
 }
 
@@ -472,7 +477,7 @@ mod tests {
     fn test_default_settings() {
         let s = Settings::default();
         assert_eq!(s.app_language, "en");
-        assert_eq!(s.gemini_model, "models/gemini-3.5-live-translate-preview");
+        assert_eq!(s.gemini_model, "auto");
         assert_eq!(s.source_language, "ja");
         assert_eq!(s.target_language, "vi");
         assert_eq!(s.audio_source, "system");
@@ -505,7 +510,7 @@ mod tests {
         let s: Result<Settings, _> = serde_json::from_str(json_str);
         assert!(s.is_ok());
         let s = s.unwrap();
-        assert_eq!(s.gemini_model, "models/gemini-3.5-live-translate-preview");
+        assert_eq!(s.gemini_model, "auto");
         assert_eq!(s.font_size, 16);
         assert_eq!(s.menu_font_family, "system");
         assert_eq!(s.menu_font_size, 12);
@@ -532,10 +537,24 @@ mod tests {
         assert_eq!(s.gemini_api_key, "test-key");
         assert_eq!(s.source_language, "en");
         assert_eq!(s.target_language, "ja");
-        assert_eq!(s.gemini_model, "models/gemini-3.5-live-translate-preview");
+        assert_eq!(s.gemini_model, "auto");
         assert!((s.overlay_opacity - 0.85).abs() < f64::EPSILON);
         assert_eq!(s.font_size, 16);
         assert!((s.tts_speed - 1.2).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_normalize_loaded_settings_keeps_supported_model_and_migrates_legacy() {
+        let mut settings = Settings::default();
+        settings.gemini_model = "models/gemini-3.5-live-translate-preview".to_string();
+        assert_eq!(
+            normalize_loaded_settings(settings).gemini_model,
+            "models/gemini-3.5-live-translate-preview"
+        );
+
+        let mut legacy = Settings::default();
+        legacy.gemini_model = "models/gemini-2.0-flash".to_string();
+        assert_eq!(normalize_loaded_settings(legacy).gemini_model, "auto");
     }
 
     #[test]
