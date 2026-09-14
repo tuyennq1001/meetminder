@@ -5,7 +5,11 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
-use tauri::{ipc::Channel, State};
+use tauri::{ipc::Channel, AppHandle, Manager, State};
+
+const RECORDING_LOG_MAX_BYTES: u64 = 2 * 1024 * 1024;
+const RECORDING_LOG_ROTATIONS: usize = 3;
+static RECORDING_LOG_LOCK: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
 
 /// State for tracking active audio captures
 pub struct AudioState {
@@ -24,6 +28,7 @@ pub struct AudioForwarder {
     received_samples: std::sync::Arc<AtomicU64>,
     nonzero_samples: std::sync::Arc<AtomicU64>,
     rms_milli: std::sync::Arc<AtomicU64>,
+    recording_error: std::sync::Arc<Mutex<Option<String>>>,
 }
 
 impl AudioForwarder {
@@ -34,6 +39,173 @@ impl AudioForwarder {
             let _ = worker.join();
         }
     }
+}
+
+fn recording_log_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    match app.path().app_data_dir() {
+        Ok(dir) => {
+            if let Err(err) = std::fs::create_dir_all(&dir) {
+                eprintln!("[audio-recording] persistent log directory failed: {}", err);
+                return None;
+            }
+            Some(dir.join("recording.log"))
+        }
+        Err(err) => {
+            eprintln!(
+                "[audio-recording] app data path unavailable for logging: {}",
+                err
+            );
+            None
+        }
+    }
+}
+
+fn rotated_recording_log_path(path: &std::path::Path, index: usize) -> std::path::PathBuf {
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "recording.log".to_string());
+    path.with_file_name(format!("{}.{}", file_name, index))
+}
+
+fn rotate_recording_log(path: &std::path::Path) {
+    let oldest = rotated_recording_log_path(path, RECORDING_LOG_ROTATIONS);
+    let _ = std::fs::remove_file(&oldest);
+    for index in (1..=RECORDING_LOG_ROTATIONS).rev() {
+        let source = if index == 1 {
+            path.to_path_buf()
+        } else {
+            rotated_recording_log_path(path, index - 1)
+        };
+        let destination = rotated_recording_log_path(path, index);
+        if source.exists() {
+            let _ = std::fs::remove_file(&destination);
+            if let Err(err) = std::fs::rename(&source, &destination) {
+                eprintln!(
+                    "[audio-recording] log rotation failed source={} destination={} error={}",
+                    source.display(),
+                    destination.display(),
+                    err
+                );
+            }
+        }
+    }
+}
+
+fn append_recording_log(log_path: Option<&std::path::Path>, message: &str) {
+    let timestamp = chrono::Local::now().to_rfc3339();
+    let line = format!("[{}] [audio-recording] {}", timestamp, message);
+    if let Some(path) = log_path {
+        let lock = RECORDING_LOG_LOCK.get_or_init(|| Mutex::new(()));
+        if let Ok(_guard) = lock.lock() {
+            let current_size = std::fs::metadata(path)
+                .map(|metadata| metadata.len())
+                .unwrap_or(0);
+            let line_size = line.len() as u64 + 1;
+            if current_size > 0 && current_size.saturating_add(line_size) > RECORDING_LOG_MAX_BYTES
+            {
+                rotate_recording_log(path);
+            }
+            if let Err(err) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .and_then(|mut file| {
+                    use std::io::Write;
+                    writeln!(file, "{}", line)
+                })
+            {
+                eprintln!("[audio-recording] persistent log write failed: {}", err);
+            }
+        } else {
+            eprintln!("[audio-recording] persistent log lock failed");
+        }
+    }
+    eprintln!("{}", line);
+}
+
+const WAV_HEADER_LEN: u64 = 44;
+
+fn wav_header(data_bytes: u32) -> [u8; WAV_HEADER_LEN as usize] {
+    let mut header = [0u8; WAV_HEADER_LEN as usize];
+    header[0..4].copy_from_slice(b"RIFF");
+    header[4..8].copy_from_slice(&data_bytes.saturating_add(36).to_le_bytes());
+    header[8..12].copy_from_slice(b"WAVE");
+    header[12..16].copy_from_slice(b"fmt ");
+    header[16..20].copy_from_slice(&16u32.to_le_bytes());
+    header[20..22].copy_from_slice(&1u16.to_le_bytes()); // PCM
+    header[22..24].copy_from_slice(&1u16.to_le_bytes()); // 1 channel (mono)
+    header[24..28].copy_from_slice(&16000u32.to_le_bytes()); // 16kHz
+    header[28..32].copy_from_slice(&32000u32.to_le_bytes()); // Byte rate
+    header[32..34].copy_from_slice(&2u16.to_le_bytes()); // Block align
+    header[34..36].copy_from_slice(&16u16.to_le_bytes()); // 16 bits
+    header[36..40].copy_from_slice(b"data");
+    header[40..44].copy_from_slice(&data_bytes.to_le_bytes());
+    header
+}
+
+/// Open a recording before starting the capture worker so setup failures are
+/// returned to the caller instead of silently disabling recording.
+fn prepare_wav_recording(
+    path_str: &str,
+) -> Result<(std::io::BufWriter<std::fs::File>, u32), String> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    if path_str.trim().is_empty() {
+        return Err("recording path is empty".to_string());
+    }
+
+    let path = std::path::Path::new(path_str);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|err| format!("create recording directory failed: {}", err))?;
+    }
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(|err| format!("open recording file failed: {}", err))?;
+
+    let file_len = file
+        .metadata()
+        .map_err(|err| format!("read recording file metadata failed: {}", err))?
+        .len();
+
+    let total_pcm_bytes = if file_len == 0 {
+        file.write_all(&wav_header(0))
+            .map_err(|err| format!("write WAV header failed: {}", err))?;
+        0
+    } else {
+        if file_len < WAV_HEADER_LEN {
+            return Err("existing recording file is not a supported WAV recording".to_string());
+        }
+        if file_len - WAV_HEADER_LEN > u32::MAX as u64 {
+            return Err("recording file is too large to continue".to_string());
+        }
+
+        let mut header = [0u8; WAV_HEADER_LEN as usize];
+        file.seek(SeekFrom::Start(0))
+            .and_then(|_| file.read_exact(&mut header))
+            .map_err(|_| "existing recording file is not a supported WAV recording".to_string())?;
+        if &header[0..4] != b"RIFF"
+            || &header[8..12] != b"WAVE"
+            || &header[12..16] != b"fmt "
+            || &header[36..40] != b"data"
+        {
+            return Err("existing recording file is not a supported WAV recording".to_string());
+        }
+
+        (file_len - WAV_HEADER_LEN) as u32
+    };
+
+    file.seek(SeekFrom::End(0))
+        .map_err(|err| format!("seek recording file failed: {}", err))?;
+    Ok((
+        std::io::BufWriter::with_capacity(64 * 1024, file),
+        total_pcm_bytes,
+    ))
 }
 
 #[derive(Serialize, Clone)]
@@ -50,35 +222,137 @@ pub struct CaptureStatus {
     pub microphone_received_samples: u64,
     pub microphone_nonzero_samples: u64,
     pub microphone_rms: f64,
+    pub recording_error: Option<String>,
 }
 
 /// Start audio capture and forward data to the frontend via IPC channel.
 /// If `record_path` is specified, also streams PCM audio to a valid .wav file.
 #[tauri::command]
 pub async fn start_capture(
+    app: AppHandle,
     source: String,
     channel: Channel<Vec<u8>>,
     record_path: Option<String>,
     state: State<'_, AudioState>,
 ) -> Result<(), String> {
+    let recording_log = recording_log_path(&app);
+    if let Some(path) = recording_log.as_deref() {
+        append_recording_log(
+            Some(path),
+            &format!("persistent_log_path={}", path.display()),
+        );
+    }
+    append_recording_log(
+        recording_log.as_deref(),
+        &format!(
+            "start requested source={} record_path={}",
+            source,
+            record_path.as_deref().unwrap_or("<none>")
+        ),
+    );
+
     // Stop any existing capture first
     stop_capture_inner(&state);
 
+    // Prepare the recording before opening any audio source. If this fails,
+    // return the error to the frontend instead of running a transcript without
+    // audio.
+    let prepared_recording = match record_path.as_deref() {
+        Some(path) => match prepare_wav_recording(path) {
+            Ok((writer, total_pcm_bytes)) => {
+                append_recording_log(
+                    recording_log.as_deref(),
+                    &format!(
+                        "wav prepared path={} existing_pcm_bytes={}",
+                        path, total_pcm_bytes
+                    ),
+                );
+                Some((writer, total_pcm_bytes))
+            }
+            Err(err) => {
+                append_recording_log(
+                    recording_log.as_deref(),
+                    &format!("wav prepare failed path={} error={}", path, err),
+                );
+                return Err(err);
+            }
+        },
+        None => {
+            append_recording_log(
+                recording_log.as_deref(),
+                "wav prepare skipped because no record_path was provided",
+            );
+            None
+        }
+    };
+
     let receiver: mpsc::Receiver<Vec<u8>> = match source.as_str() {
         "system" => {
-            let mut sys = state.system_audio.lock().map_err(|e| e.to_string())?;
-            sys.start()?
+            let mut sys = state.system_audio.lock().map_err(|e| {
+                let error = e.to_string();
+                append_recording_log(
+                    recording_log.as_deref(),
+                    &format!("system source lock failed error={}", error),
+                );
+                error
+            })?;
+            sys.start().map_err(|error| {
+                append_recording_log(
+                    recording_log.as_deref(),
+                    &format!("system source start failed error={}", error),
+                );
+                error
+            })?
         }
         "microphone" => {
-            let mut mic = state.microphone.lock().map_err(|e| e.to_string())?;
-            mic.start()?
+            let mut mic = state.microphone.lock().map_err(|e| {
+                let error = e.to_string();
+                append_recording_log(
+                    recording_log.as_deref(),
+                    &format!("microphone source lock failed error={}", error),
+                );
+                error
+            })?;
+            mic.start().map_err(|error| {
+                append_recording_log(
+                    recording_log.as_deref(),
+                    &format!("microphone source start failed error={}", error),
+                );
+                error
+            })?
         }
         "both" => {
             // Start both sources and digitally mix into a single 16kHz mono receiver
-            let mut sys = state.system_audio.lock().map_err(|e| e.to_string())?;
-            let sys_rx = sys.start()?;
-            let mut mic = state.microphone.lock().map_err(|e| e.to_string())?;
-            let mic_rx = mic.start()?;
+            let mut sys = state.system_audio.lock().map_err(|e| {
+                let error = e.to_string();
+                append_recording_log(
+                    recording_log.as_deref(),
+                    &format!("system source lock failed error={}", error),
+                );
+                error
+            })?;
+            let sys_rx = sys.start().map_err(|error| {
+                append_recording_log(
+                    recording_log.as_deref(),
+                    &format!("system source start failed error={}", error),
+                );
+                error
+            })?;
+            let mut mic = state.microphone.lock().map_err(|e| {
+                let error = e.to_string();
+                append_recording_log(
+                    recording_log.as_deref(),
+                    &format!("microphone source lock failed error={}", error),
+                );
+                error
+            })?;
+            let mic_rx = mic.start().map_err(|error| {
+                append_recording_log(
+                    recording_log.as_deref(),
+                    &format!("microphone source start failed error={}", error),
+                );
+                error
+            })?;
 
             let (merged_tx, merged_rx) = mpsc::channel::<Vec<u8>>();
 
@@ -132,8 +406,17 @@ pub async fn start_capture(
 
             merged_rx
         }
-        _ => return Err(format!("Unknown source: {}", source)),
+        _ => {
+            let error = format!("Unknown source: {}", source);
+            append_recording_log(recording_log.as_deref(), &error);
+            return Err(error);
+        }
     };
+
+    append_recording_log(
+        recording_log.as_deref(),
+        &format!("audio source started source={}", source),
+    );
 
     // Spawn a thread to forward audio data from receiver to IPC channel
     let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -141,14 +424,17 @@ pub async fn start_capture(
     let received_samples = std::sync::Arc::new(AtomicU64::new(0));
     let nonzero_samples = std::sync::Arc::new(AtomicU64::new(0));
     let rms_milli = std::sync::Arc::new(AtomicU64::new(0));
+    let recording_error = std::sync::Arc::new(Mutex::new(None));
     let received_samples_clone = received_samples.clone();
     let nonzero_samples_clone = nonzero_samples.clone();
     let rms_milli_clone = rms_milli.clone();
-    let record_path_clone = record_path;
+    let recording_error_clone = recording_error.clone();
+    let record_path_clone = record_path.clone();
+    let recording_log_clone = recording_log.clone();
 
     let source_clone = source.clone();
     let worker = std::thread::spawn(move || {
-        use std::io::{BufWriter, Read, Seek, Write};
+        use std::io::{Seek, Write};
         let mut buffer: Vec<u8> = Vec::with_capacity(32000); // ~1 sec at 16kHz s16le
         let batch_interval = std::time::Duration::from_millis(200);
         let mut last_flush = std::time::Instant::now();
@@ -156,79 +442,31 @@ pub async fn start_capture(
         let mut last_heartbeat = std::time::Instant::now();
         let heartbeat_interval = std::time::Duration::from_secs(30);
 
-        // Optional WAV file recording with 64KB buffer
-        let mut total_pcm_bytes: u32 = 0;
+        // The WAV file is opened before this worker starts so setup failures
+        // cannot be mistaken for a successful audio capture.
         let mut wav_error: Option<String> = None;
-        let mut wav_writer: Option<BufWriter<std::fs::File>> =
-            if let Some(ref path_str) = record_path_clone {
-                let path = std::path::Path::new(path_str);
-                if path.exists() {
-                    // Resume existing session audio file
-                    match std::fs::OpenOptions::new()
-                        .read(true)
-                        .write(true)
-                        .open(path)
-                    {
-                        Ok(mut f) => {
-                            let mut len_bytes = [0u8; 4];
-                            if f.seek(std::io::SeekFrom::Start(40)).is_ok()
-                                && f.read_exact(&mut len_bytes).is_ok()
-                            {
-                                total_pcm_bytes = u32::from_le_bytes(len_bytes);
-                            }
-                            let _ = f.seek(std::io::SeekFrom::End(0));
-                            Some(BufWriter::with_capacity(64 * 1024, f))
-                        }
-                        Err(err) => {
-                            wav_error = Some(format!("open existing recording failed: {}", err));
-                            None
-                        }
-                    }
-                } else {
-                    // New session audio file
-                    if let Some(parent) = path.parent() {
-                        if let Err(err) = std::fs::create_dir_all(parent) {
-                            wav_error = Some(format!("create recording directory failed: {}", err));
-                        }
-                    }
-                    match std::fs::OpenOptions::new()
-                        .create(true)
-                        .write(true)
-                        .truncate(true)
-                        .open(path)
-                    {
-                        Ok(mut f) => {
-                            let mut header = [0u8; 44];
-                            header[0..4].copy_from_slice(b"RIFF");
-                            header[8..12].copy_from_slice(b"WAVE");
-                            header[12..16].copy_from_slice(b"fmt ");
-                            header[16..20].copy_from_slice(&16u32.to_le_bytes());
-                            header[20..22].copy_from_slice(&1u16.to_le_bytes()); // PCM
-                            header[22..24].copy_from_slice(&1u16.to_le_bytes()); // 1 channel (mono)
-                            header[24..28].copy_from_slice(&16000u32.to_le_bytes()); // 16kHz
-                            header[28..32].copy_from_slice(&32000u32.to_le_bytes()); // Byte rate
-                            header[32..34].copy_from_slice(&2u16.to_le_bytes()); // Block align
-                            header[34..36].copy_from_slice(&16u16.to_le_bytes()); // 16 bits
-                            header[36..40].copy_from_slice(b"data");
-                            match f.write_all(&header) {
-                                Ok(()) => Some(BufWriter::with_capacity(64 * 1024, f)),
-                                Err(err) => {
-                                    wav_error = Some(format!("write WAV header failed: {}", err));
-                                    None
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            wav_error = Some(format!("create recording file failed: {}", err));
-                            None
-                        }
-                    }
+        let (mut wav_writer, mut total_pcm_bytes) = match prepared_recording {
+            Some((writer, total_pcm_bytes)) => (Some(writer), total_pcm_bytes),
+            None => (None, 0),
+        };
+        let set_recording_error = |error: String| {
+            if let Ok(mut current) = recording_error_clone.lock() {
+                if current.is_none() {
+                    *current = Some(error);
                 }
-            } else {
-                None
-            };
+            }
+        };
+        let log_recording = |message: &str| {
+            append_recording_log(recording_log_clone.as_deref(), message);
+        };
 
-        loop {
+        log_recording(&format!(
+            "worker started source={} path={}",
+            source_clone,
+            record_path_clone.as_deref().unwrap_or("<none>")
+        ));
+
+        'capture: loop {
             if stop_flag_clone.load(std::sync::atomic::Ordering::SeqCst) {
                 // Flush remaining buffer before exit
                 if !buffer.is_empty() {
@@ -262,9 +500,17 @@ pub async fn start_capture(
                                 total_pcm_bytes = total_pcm_bytes.saturating_add(data.len() as u32);
                             }
                             Err(err) => {
+                                let error = format!("write PCM data failed: {}", err);
                                 if wav_error.is_none() {
-                                    wav_error = Some(format!("write PCM data failed: {}", err));
+                                    wav_error = Some(error.clone());
                                 }
+                                set_recording_error(error.clone());
+                                log_recording(&format!(
+                                    "pcm write failed path={} error={}",
+                                    record_path_clone.as_deref().unwrap_or("<none>"),
+                                    error
+                                ));
+                                break 'capture;
                             }
                         }
                     }
@@ -297,11 +543,20 @@ pub async fn start_capture(
                     "[audio-heartbeat] source={} elapsed={}s total_pcm_bytes={} received_samples={} nonzero_samples={} current_rms={:.3}",
                     source_clone, elapsed, total_pcm_bytes, rec, nonz, rms
                 );
+                log_recording(&format!(
+                    "heartbeat source={} elapsed={}s pcm_bytes={} received_samples={} nonzero_samples={} rms={:.3}",
+                    source_clone, elapsed, total_pcm_bytes, rec, nonz, rms
+                ));
                 last_heartbeat = std::time::Instant::now();
             }
         }
 
         // Finalize WAV file header
+        log_recording(&format!(
+            "finalize started path={} pcm_bytes={}",
+            record_path_clone.as_deref().unwrap_or("<none>"),
+            total_pcm_bytes
+        ));
         if let Some(mut writer) = wav_writer {
             if let Err(err) = writer.flush() {
                 if wav_error.is_none() {
@@ -366,6 +621,13 @@ pub async fn start_capture(
                                 metadata.len(),
                                 expected_size
                             ));
+                        } else {
+                            log_recording(&format!(
+                                "finalize verified path={} file_bytes={} pcm_bytes={}",
+                                path_str,
+                                metadata.len(),
+                                total_pcm_bytes
+                            ));
                         }
                     }
                     Err(err) => {
@@ -377,7 +639,9 @@ pub async fn start_capture(
         }
 
         if let Some(err) = wav_error {
+            set_recording_error(err.clone());
             let path = record_path_clone.as_deref().unwrap_or("<none>");
+            log_recording(&format!("finalize failed path={} error={}", path, err));
             eprintln!("[audio-recording] failed to finalize {}: {}", path, err);
         }
 
@@ -387,6 +651,23 @@ pub async fn start_capture(
             "[audio-heartbeat] capture ended: source={} elapsed={:.1}s total_pcm_bytes={} total_samples={}",
             source_clone, elapsed, total_pcm_bytes, rec
         );
+        log_recording(&format!(
+            "capture ended source={} elapsed={:.1}s pcm_bytes={} total_samples={} status={}",
+            source_clone,
+            elapsed,
+            total_pcm_bytes,
+            rec,
+            if recording_error_clone
+                .lock()
+                .ok()
+                .and_then(|error| error.clone())
+                .is_some()
+            {
+                "error"
+            } else {
+                "ok"
+            }
+        ));
     });
 
     // Store the forwarder so we can stop it later
@@ -396,9 +677,14 @@ pub async fn start_capture(
         received_samples,
         nonzero_samples,
         rms_milli,
+        recording_error,
     };
     let mut active = state.active_receiver.lock().map_err(|e| e.to_string())?;
     *active = Some(forwarder);
+    append_recording_log(
+        recording_log.as_deref(),
+        &format!("capture active source={}", source),
+    );
 
     Ok(())
 }
@@ -411,6 +697,11 @@ pub fn get_capture_status(state: State<'_, AudioState>) -> Result<CaptureStatus,
     let active = state.active_receiver.lock().map_err(|e| e.to_string())?;
     let microphone = state.microphone.lock().map_err(|e| e.to_string())?.status();
     if let Some(forwarder) = active.as_ref() {
+        let recording_error = forwarder
+            .recording_error
+            .lock()
+            .ok()
+            .and_then(|error| error.clone());
         Ok(CaptureStatus {
             received_samples: forwarder.received_samples.load(Ordering::Relaxed),
             nonzero_samples: forwarder.nonzero_samples.load(Ordering::Relaxed),
@@ -418,6 +709,7 @@ pub fn get_capture_status(state: State<'_, AudioState>) -> Result<CaptureStatus,
             microphone_received_samples: microphone.received_samples,
             microphone_nonzero_samples: microphone.nonzero_samples,
             microphone_rms: microphone.rms,
+            recording_error,
         })
     } else {
         Ok(CaptureStatus {
@@ -427,6 +719,7 @@ pub fn get_capture_status(state: State<'_, AudioState>) -> Result<CaptureStatus,
             microphone_received_samples: microphone.received_samples,
             microphone_nonzero_samples: microphone.nonzero_samples,
             microphone_rms: microphone.rms,
+            recording_error: None,
         })
     }
 }
@@ -618,5 +911,91 @@ mod macos_microphone_permission {
             })
             .ok();
         guard.and_then(|(value, _)| *value).unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{append_recording_log, prepare_wav_recording, RECORDING_LOG_MAX_BYTES};
+    use std::fs;
+    use std::io::Write;
+
+    fn test_recording_path(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "meet-minder-audio-{}-{}",
+            name,
+            uuid::Uuid::new_v4()
+        ));
+        let path = dir.join("nested/session.wav");
+        (dir, path)
+    }
+
+    #[test]
+    fn prepare_wav_recording_creates_valid_header() {
+        let (dir, path) = test_recording_path("create");
+        let (writer, total_pcm_bytes) = prepare_wav_recording(path.to_str().unwrap()).unwrap();
+        assert_eq!(total_pcm_bytes, 0);
+        drop(writer);
+
+        let bytes = fs::read(&path).unwrap();
+        assert_eq!(bytes.len(), 44);
+        assert_eq!(&bytes[0..4], b"RIFF");
+        assert_eq!(&bytes[8..12], b"WAVE");
+        assert_eq!(&bytes[36..40], b"data");
+        assert_eq!(&bytes[40..44], &0u32.to_le_bytes());
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn prepare_wav_recording_resumes_existing_pcm() {
+        let (dir, path) = test_recording_path("resume");
+        let (mut writer, total_pcm_bytes) = prepare_wav_recording(path.to_str().unwrap()).unwrap();
+        assert_eq!(total_pcm_bytes, 0);
+        writer.write_all(&[1, 2, 3, 4]).unwrap();
+        writer.flush().unwrap();
+        drop(writer);
+
+        let (writer, total_pcm_bytes) = prepare_wav_recording(path.to_str().unwrap()).unwrap();
+        assert_eq!(total_pcm_bytes, 4);
+        drop(writer);
+
+        let bytes = fs::read(&path).unwrap();
+        assert_eq!(&bytes[44..], &[1, 2, 3, 4]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn prepare_wav_recording_rejects_invalid_existing_file() {
+        let (dir, path) = test_recording_path("invalid");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"not a wav").unwrap();
+
+        let result = prepare_wav_recording(path.to_str().unwrap());
+        assert!(result.is_err());
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn recording_log_rotates_before_exceeding_limit() {
+        let dir = std::env::temp_dir().join(format!(
+            "meet-minder-recording-log-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("recording.log");
+        fs::write(&path, vec![b'x'; RECORDING_LOG_MAX_BYTES as usize]).unwrap();
+
+        append_recording_log(Some(&path), "rotation test");
+
+        let rotated = dir.join("recording.log.1");
+        assert_eq!(
+            fs::metadata(rotated).unwrap().len(),
+            RECORDING_LOG_MAX_BYTES
+        );
+        assert!(fs::metadata(&path).unwrap().len() < RECORDING_LOG_MAX_BYTES);
+
+        fs::remove_dir_all(dir).unwrap();
     }
 }

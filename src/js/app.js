@@ -3469,14 +3469,20 @@ class App {
     }
 
     async _getSessionRecordPath() {
-        if (sessionStore && sessionStore.id) {
-            try {
-                return await invoke('get_session_record_path', { id: sessionStore.id });
-            } catch (e) {
-                console.warn('[App] Failed to get session record path:', e);
-            }
+        if (!sessionStore || !sessionStore.id) {
+            throw new Error('Meeting session is not initialized');
         }
-        return null;
+
+        try {
+            const recordPath = await invoke('get_session_record_path', { id: sessionStore.id });
+            if (typeof recordPath !== 'string' || !recordPath.trim()) {
+                throw new Error('Audio recording path is unavailable');
+            }
+            return recordPath;
+        } catch (e) {
+            console.error('[App] Failed to get session record path:', e);
+            throw e;
+        }
     }
 
     async _startTranslationEngine(settings) {
@@ -3522,25 +3528,34 @@ class App {
         if (this._captureHealthTimer) clearTimeout(this._captureHealthTimer);
         this._captureHealthTimer = setTimeout(async () => {
             this._captureHealthTimer = null;
-            if (!this.isRunning || this.currentSource === 'system') return;
+            if (!this.isRunning) return;
             try {
                 const status = await invoke('get_capture_status');
                 if (!this.isRunning) return;
-                const micSamples = status?.microphone_received_samples ?? status?.received_samples ?? 0;
-                if (micSamples === 0) {
-                    this._showToast(t('permission.micNoSamplesPrompt'), 'error');
-                } else {
-                    // RMS=0 can be legitimate while nobody is speaking. The
-                    // explicit 3-second recording test reports silence; live
-                    // capture only treats missing callbacks as a hard fault.
-                    console.log('[App] Microphone capture health:', {
-                        samples: micSamples,
-                        nonzeroSamples: status.microphone_nonzero_samples,
-                        rms: status.microphone_rms,
-                    });
+                if (status?.recording_error) {
+                    this._showToast(`Audio recording stopped: ${status.recording_error}`, 'error');
+                    await this.pause();
+                    return;
+                }
+                if (this.currentSource !== 'system') {
+                    const micSamples = status?.microphone_received_samples ?? status?.received_samples ?? 0;
+                    if (micSamples === 0) {
+                        this._showToast(t('permission.micNoSamplesPrompt'), 'error');
+                    } else {
+                        // RMS=0 can be legitimate while nobody is speaking. The
+                        // explicit 3-second recording test reports silence; live
+                        // capture only treats missing callbacks as a hard fault.
+                        console.log('[App] Microphone capture health:', {
+                            samples: micSamples,
+                            nonzeroSamples: status.microphone_nonzero_samples,
+                            rms: status.microphone_rms,
+                        });
+                    }
                 }
             } catch (err) {
                 console.warn('[App] Capture health check failed:', err);
+            } finally {
+                if (this.isRunning) this._scheduleCaptureHealthCheck();
             }
         }, 2000);
     }
@@ -4094,8 +4109,11 @@ class App {
             console.log('[App] Audio capture started');
             this._scheduleCaptureHealthCheck();
         } catch (err) {
-            console.error('Audio capture failed (pipeline still running):', err);
-            this._showToast(`Audio: ${err}. Pipeline still loading...`, 'error');
+            console.error('Audio capture failed:', err);
+            this._showToast(`Audio error: ${err}`, 'error');
+            // Do not leave a meeting running with a live pipeline but no
+            // recording or audio input.
+            await this.pause();
         }
     }
 

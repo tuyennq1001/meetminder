@@ -2114,12 +2114,11 @@ pub fn inspect_audio_file(path: String) -> Result<AudioFileInfo, String> {
 pub fn get_session_record_path(app: AppHandle, id: String) -> Result<String, String> {
     validate_id(&id)?;
     let dir = sessions_dir(&app)?;
-    if let Some((p, _)) = find_session_audio(&dir, &id) {
-        Ok(p.to_string_lossy().to_string())
-    } else {
-        let wav_path = audio_dir(&dir).join(format!("session-{}.wav", id));
-        Ok(wav_path.to_string_lossy().to_string())
-    }
+    // Live capture always owns a canonical WAV path. Reusing an imported
+    // MP3/M4A or a legacy root-level file would append raw PCM to it and make
+    // the meeting appear to have no playable recording.
+    let wav_path = audio_dir(&dir).join(format!("session-{}.wav", id));
+    Ok(wav_path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
