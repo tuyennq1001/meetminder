@@ -151,6 +151,14 @@ Các quy tắc đã chứng minh hữu ích trong Meet Minder:
 - Với thao tác kết thúc/lưu quan trọng, phải mở dialog xác nhận ngay; dữ liệu
   phụ như metadata, tag hoặc autocomplete chỉ được tải nền và không được khóa
   action chính bằng một lời gọi async không có giới hạn thời gian.
+- Với thao tác kết thúc phiên có thể ghi dữ liệu lớn, tách một bản dữ liệu bất
+  biến cho tác vụ lưu nền rồi trả Live về trạng thái sẵn sàng ngay sau khi
+  capture đã dừng. Không dùng lại state singleton đang thay đổi cho tác vụ nền;
+  nếu lưu lỗi, giữ tiến trình và nút thử lại tại chỗ thay vì chỉ báo toast.
+- Hiển thị indicator "đang hoàn tất ghi âm" và nhường một frame render ngay sau
+  khi người dùng xác nhận Save, trước khi gọi bước dừng capture có thể mất thời
+  gian. Khi capture dừng, đổi indicator sang "đang lưu nền" và chỉ khi đó mới
+  nói rõ rằng người dùng có thể bắt đầu phiên mới.
 
 ## 6. Consistency: thuật ngữ, biểu tượng và thứ tự thông tin
 

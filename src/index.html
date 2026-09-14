@@ -1378,6 +1378,29 @@
     </div>
   </div>
 
+  <!-- Floating indicator while a completed meeting is being saved in the background -->
+  <div id="session-save-floating-bar" class="retranscript-floating-bar session-save-floating-bar" style="display:none" role="status" aria-live="polite">
+    <div class="retranscript-floating-content" aria-label="Đang lưu cuộc họp ở chế độ nền">
+      <div class="retranscript-floating-icon-wrap">
+        <div id="session-save-floating-spinner" class="spinner-ring retranscript-spinner-mini"></div>
+        <div id="session-save-floating-check" class="retranscript-floating-check" style="display:none">✓</div>
+      </div>
+      <div class="retranscript-floating-info">
+        <div class="retranscript-floating-header">
+          <span id="session-save-floating-title" class="retranscript-floating-title">Đang lưu cuộc họp</span>
+        </div>
+        <div class="retranscript-floating-bar-track" aria-hidden="true">
+          <div class="session-save-floating-progress-fill"></div>
+        </div>
+        <div id="session-save-floating-status" class="retranscript-floating-status">Bạn có thể bắt đầu cuộc họp mới ngay bây giờ.</div>
+      </div>
+    </div>
+    <div class="retranscript-floating-actions">
+      <button type="button" id="btn-session-save-floating-retry" class="btn-secondary small" style="display:none">Thử lại</button>
+      <button type="button" id="btn-session-save-floating-close" class="icon-btn small" title="Đóng" aria-label="Đóng" style="display:none">✕</button>
+    </div>
+  </div>
+
   <!-- Floating indicator when Meeting Minutes is generating in background -->
   <div id="minutes-floating-bar" class="minutes-floating-bar" style="display:none" role="status">
     <div class="minutes-floating-content" id="btn-minutes-floating-click" data-i18n-title="minutes.floating.clickTooltip" title="Nhấp để xem Meeting Minutes">

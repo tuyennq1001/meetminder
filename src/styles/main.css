@@ -2844,6 +2844,46 @@ input[type="range"]::-webkit-slider-thumb:hover {
   color: #86efac;
   font-weight: 500;
 }
+.session-save-floating-bar {
+  z-index: 1002;
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 12px rgba(56, 189, 248, 0.2);
+}
+.session-save-floating-bar .retranscript-floating-content {
+  cursor: default;
+}
+.session-save-floating-bar.is-completed {
+  border-color: rgba(34, 197, 94, 0.5);
+}
+.session-save-floating-bar.is-error {
+  border-color: rgba(242, 184, 181, 0.72);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 14px rgba(242, 184, 181, 0.2);
+}
+.session-save-floating-bar.is-error .retranscript-floating-title,
+.session-save-floating-bar.is-error .retranscript-floating-status {
+  color: var(--md-sys-color-error, #f2b8b5);
+}
+.session-save-floating-progress-fill {
+  width: 45%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, #38bdf8, transparent);
+  animation: sessionSaveProgress 1.2s ease-in-out infinite;
+}
+.session-save-floating-bar.is-completed .session-save-floating-progress-fill {
+  width: 100%;
+  background: #22c55e;
+  animation: none;
+}
+.session-save-floating-bar.is-error .session-save-floating-progress-fill {
+  width: 100%;
+  background: var(--md-sys-color-error, #f2b8b5);
+  animation: none;
+}
+@keyframes sessionSaveProgress {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(260%); }
+}
 .retranscript-floating-actions {
   display: flex;
   align-items: center;

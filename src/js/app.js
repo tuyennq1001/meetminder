@@ -473,6 +473,8 @@ class App {
         this._captureHealthTimer = null;
         this._isStopConfirmationOpen = false;
         this._isStoppingSession = false;
+        this._backgroundSessionSave = null;
+        this._backgroundSessionSaveDismissTimer = null;
         this._pendingUpdateVersion = null;
         this._updateReadyVersion = null;
         this._isDownloadingUpdate = false;
@@ -1403,6 +1405,15 @@ class App {
             } else {
                 this._hideRetranscriptProgress();
             }
+        });
+
+        document.getElementById('btn-session-save-floating-retry')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._retryBackgroundSessionSave();
+        });
+        document.getElementById('btn-session-save-floating-close')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._hideBackgroundSessionSave();
         });
 
         // Meeting minutes floating bar controls
@@ -4313,7 +4324,7 @@ class App {
     // Pause: stop capture and persist the current chunk, but keep the session
     // file open. The next Start appends a new chunk to the same file. Finalizing
     // into a new file is stopSession()'s job.
-    async pause() {
+    async pause({ persist = true } = {}) {
         if (this._geminiReconnectTimer) {
             clearTimeout(this._geminiReconnectTimer);
             this._geminiReconnectTimer = null;
@@ -4331,6 +4342,8 @@ class App {
         // Transcript stays on screen — clearSession is no longer called here
         // so user can review & continue in next chunk.
         sessionStore.endChunk();
+        if (!persist) return 'deferred';
+
         const result = await sessionStore.persist();
         if (result === 'saved') {
             const n = sessionStore.totalSegmentCount();
@@ -5092,8 +5105,201 @@ class App {
         });
     }
 
+    _renderBackgroundSessionSave() {
+        const bar = document.getElementById('session-save-floating-bar');
+        const spinner = document.getElementById('session-save-floating-spinner');
+        const check = document.getElementById('session-save-floating-check');
+        const title = document.getElementById('session-save-floating-title');
+        const status = document.getElementById('session-save-floating-status');
+        const retry = document.getElementById('btn-session-save-floating-retry');
+        const close = document.getElementById('btn-session-save-floating-close');
+        const task = this._backgroundSessionSave;
+
+        if (!bar || !task) {
+            if (bar) bar.style.display = 'none';
+            this._updateFloatingBarsPosition();
+            return;
+        }
+
+        const isFailed = task.status === 'failed';
+        const isSaved = task.status === 'saved';
+        const isFinalizing = task.status === 'finalizing';
+        bar.style.display = 'flex';
+        bar.classList.toggle('is-error', isFailed);
+        bar.classList.toggle('is-completed', isSaved);
+        if (spinner) spinner.style.display = isSaved || isFailed ? 'none' : '';
+        if (check) check.style.display = isSaved ? 'flex' : 'none';
+        if (title) {
+            title.textContent = isFailed
+                ? t('session.backgroundSave.failedTitle')
+                : isSaved
+                    ? t('session.backgroundSave.savedTitle')
+                    : isFinalizing
+                        ? t('session.backgroundSave.finalizingTitle')
+                        : t('session.backgroundSave.runningTitle');
+        }
+        if (status) {
+            if (isFailed) {
+                status.textContent = t('session.backgroundSave.failedStatus', { title: task.title, error: this._redactSensitiveError(task.error) });
+            } else if (isSaved) {
+                status.textContent = t('session.backgroundSave.savedStatus', { title: task.title });
+            } else if (isFinalizing) {
+                status.textContent = t('session.backgroundSave.finalizingStatus', { title: task.title });
+            } else {
+                status.textContent = t('session.backgroundSave.runningStatus', { title: task.title });
+            }
+        }
+        if (retry) {
+            retry.style.display = isFailed && task.store ? 'inline-flex' : 'none';
+            retry.textContent = t('session.backgroundSave.retry');
+        }
+        if (close) {
+            close.style.display = isSaved || (isFailed && !task.store) ? 'inline-flex' : 'none';
+            close.title = t('common.close');
+            close.setAttribute('aria-label', t('common.close'));
+        }
+        this._updateFloatingBarsPosition();
+    }
+
+    _hideBackgroundSessionSave(force = false) {
+        const task = this._backgroundSessionSave;
+        if (!task || (!force && task.status !== 'saved' && !(task.status === 'failed' && !task.store))) return;
+        if (this._backgroundSessionSaveDismissTimer) {
+            clearTimeout(this._backgroundSessionSaveDismissTimer);
+            this._backgroundSessionSaveDismissTimer = null;
+        }
+        this._backgroundSessionSave = null;
+        this._renderBackgroundSessionSave();
+    }
+
+    _showBackgroundSessionFinalizing(title) {
+        if (this._backgroundSessionSaveDismissTimer) {
+            clearTimeout(this._backgroundSessionSaveDismissTimer);
+            this._backgroundSessionSaveDismissTimer = null;
+        }
+        this._backgroundSessionSave = {
+            title: title || t('session.defaultTitle'),
+            status: 'finalizing',
+            error: '',
+        };
+        this._renderBackgroundSessionSave();
+    }
+
+    _showBackgroundSessionStopFailed(error) {
+        if (!this._backgroundSessionSave || this._backgroundSessionSave.status !== 'finalizing') return;
+        this._backgroundSessionSave.status = 'failed';
+        this._backgroundSessionSave.error = error?.message || String(error);
+        this._renderBackgroundSessionSave();
+    }
+
+    _startBackgroundSessionSave(task, stopAction) {
+        if (this._backgroundSessionSaveDismissTimer) {
+            clearTimeout(this._backgroundSessionSaveDismissTimer);
+            this._backgroundSessionSaveDismissTimer = null;
+        }
+        const backgroundTask = {
+            ...task,
+            stopAction,
+            status: 'saving',
+            error: '',
+        };
+        this._backgroundSessionSave = backgroundTask;
+        this._renderBackgroundSessionSave();
+
+        // Let the newly reset Live screen paint before serializing a large
+        // transcript. The detached SessionStore keeps this write isolated from
+        // the next meeting's store.
+        const schedule = window.requestAnimationFrame || ((callback) => setTimeout(callback, 0));
+        schedule(() => setTimeout(() => this._runBackgroundSessionSave(backgroundTask), 0));
+    }
+
+    async _runBackgroundSessionSave(task) {
+        try {
+            const result = await task.store.persist();
+            if (result === 'failed') {
+                throw new Error(task.store.lastPersistError || t('session.saveFailed'));
+            }
+
+            task.status = 'saved';
+            if (this._backgroundSessionSave === task) {
+                this._renderBackgroundSessionSave();
+                this._backgroundSessionSaveDismissTimer = setTimeout(() => {
+                    if (this._backgroundSessionSave === task) this._hideBackgroundSessionSave();
+                }, 8000);
+            }
+            this._showToast(t('session.endedAndSaved', { title: task.title }), 'success');
+            this._runPostSaveTasks(task).catch(err => {
+                console.error('[App] Post-save meeting task failed:', err);
+            });
+        } catch (err) {
+            task.status = 'failed';
+            task.error = err?.message || String(err);
+            if (this._backgroundSessionSave === task) {
+                this._renderBackgroundSessionSave();
+            }
+            this._showToast(t('session.saveFailed'), 'error');
+        }
+    }
+
+    _retryBackgroundSessionSave() {
+        const task = this._backgroundSessionSave;
+        if (!task || task.status !== 'failed') return;
+        task.status = 'saving';
+        task.error = '';
+        this._renderBackgroundSessionSave();
+        this._runBackgroundSessionSave(task);
+    }
+
+    async _runPostSaveTasks(task) {
+        const { id: savedId, stopAction } = task;
+        const backupSettings = settingsManager.get();
+        if (backupSettings.git_backup_auto_push === true
+            && backupSettings.git_backup_commit_on_meeting_end !== false) {
+            this._runGitBackup({ push: true, reason: 'meeting-end' })
+                .catch(err => console.warn('[Git backup] post-meeting commit/push failed:', err));
+        }
+
+        let savedJson = null;
+        try {
+            savedJson = (await invoke('read_session', { id: savedId }))?.json || null;
+        } catch (err) {
+            console.warn('[App] Could not read the just-saved session metadata:', err);
+        }
+
+        if (stopAction.autoRetranscript) {
+            const settings = settingsManager.get();
+            const apiKey = settings.gemini_api_key?.trim();
+            if (apiKey) {
+                this._retranscribeSession(savedId, false, {
+                    generateMinutes: stopAction.autoGenerateMinutes,
+                    minutesLang: null,
+                    customTitle: t('modal.stop.retranscriptLabel'),
+                    durationSec: savedJson?.duration_sec,
+                }).catch(err => console.error('[App] Auto retranscript error:', err));
+                return;
+            }
+
+            this._showToast(t('session.retranscriptNeedGeminiKey'), 'warning');
+        }
+
+        if (!stopAction.autoGenerateMinutes) return;
+        try {
+            const mLangs = this._getMinutesLangsForSession(savedJson || {});
+            for (const mLang of mLangs) {
+                await this._generateMeetingMinutesForSession(savedId, mLang);
+            }
+        } catch (minErr) {
+            console.error('[App] Error creating minutes after background save:', minErr);
+            await this._generateMeetingMinutesForSession(savedId, 'en');
+        }
+    }
+
     async stopSession(chosenTitle = null, chosenTags = null, chosenCustomerId = null, chosenProjectId = null, chosenCategory = null, chosenScope = null) {
-        if (this.isRunning) await this.pause();
+        // Capture must fully stop before another meeting can start, but the
+        // potentially long final disk write does not need to block that next
+        // meeting.  Pause without its regular persist, then detach a sealed
+        // copy for the background writer below.
+        if (this.isRunning) await this.pause({ persist: false });
 
         const hasSegments = !sessionStore.isEmpty() && sessionStore.totalSegmentCount() > 0;
         const hasNotes = Boolean(sessionStore.notes && sessionStore.notes.trim());
@@ -5119,17 +5325,17 @@ class App {
             sessionStore.scope = chosenScope || 'work';
         }
 
+        let backgroundSave = null;
         if (!hadData) {
             this._showToast(t('session.noDataToSave'), 'info');
             this._hasUnsavedMeetingData = false;
         } else {
-            const result = await sessionStore.endSession();
-            if (result === 'failed') {
-                this._showToast(t('session.saveFailed'), 'error');
-            } else {
-                this._hasUnsavedMeetingData = false;
-                this._showToast(t('session.endedAndSaved', { title: sessionStore.title || t('session.defaultTitle') }), 'success');
-            }
+            backgroundSave = {
+                id: savedSessionId,
+                title: sessionStore.title || t('session.defaultTitle'),
+                store: sessionStore.detachForBackgroundSave(),
+            };
+            this._hasUnsavedMeetingData = false;
         }
 
         this.isRunning = false;
@@ -5168,7 +5374,10 @@ class App {
         this._syncLiveMeetingTitleInput();
         this._updateStartButton();
 
-        return hadData ? savedSessionId : null;
+        return {
+            id: hadData ? savedSessionId : null,
+            backgroundSave,
+        };
     }
 
     async _handleStopSessionAction(stopAction) {
@@ -5185,7 +5394,18 @@ class App {
             if (stopAction.discard) {
                 await this.discardSession();
             } else {
-                const savedId = await this.stopSession(
+                const hasPendingData = sessionStore.totalSegmentCount() > 0
+                    || Boolean(sessionStore.notes && sessionStore.notes.trim());
+                if (hasPendingData) {
+                    this._showBackgroundSessionFinalizing(stopAction.title || sessionStore.title);
+                    // Paint the task indicator before the capture shutdown can
+                    // take noticeable time for a long recording.
+                    await new Promise(resolve => {
+                        const schedule = window.requestAnimationFrame || ((callback) => setTimeout(callback, 0));
+                        schedule(resolve);
+                    });
+                }
+                const stopResult = await this.stopSession(
                     stopAction.title,
                     stopAction.tags,
                     stopAction.customerId,
@@ -5194,54 +5414,15 @@ class App {
                     stopAction.scope
                 );
 
-                if (savedId) {
-                    const backupSettings = settingsManager.get();
-                    if (backupSettings.git_backup_auto_push === true
-                        && backupSettings.git_backup_commit_on_meeting_end !== false) {
-                        this._runGitBackup({ push: true, reason: 'meeting-end' })
-                            .catch(err => console.warn('[Git backup] post-meeting commit/push failed:', err));
-                    }
-                    if (stopAction.autoRetranscript) {
-                        setActivity('library');
-                        await this._openSession(savedId);
-
-                        const settings = settingsManager.get();
-                        const apiKey = settings.gemini_api_key?.trim();
-
-                        if (!apiKey) {
-                            this._showToast(t('session.retranscriptNeedGeminiKey'), 'warning');
-                            if (stopAction.autoGenerateMinutes) {
-                                this._switchSessionTab('minutes');
-                                await this._generateMeetingMinutesForSession(savedId, stopAction.minutesLang || 'en');
-                            }
-                        } else {
-                            this._retranscribeSession(savedId, false, {
-                                generateMinutes: stopAction.autoGenerateMinutes,
-                                minutesLang: null,
-                                customTitle: t('modal.stop.retranscriptLabel')
-                            }).catch(err => {
-                                console.error('[App] Auto retranscript error:', err);
-                            });
-                        }
-                    } else if (stopAction.autoGenerateMinutes) {
-                        setActivity('library');
-                        await this._openSession(savedId);
-                        this._switchSessionTab('minutes');
-                        try {
-                            const res = await invoke('read_session', { id: savedId });
-                            const mLangs = this._getMinutesLangsForSession(res?.json || {});
-                            for (const mLang of mLangs) {
-                                await this._generateMeetingMinutesForSession(savedId, mLang);
-                            }
-                        } catch (minErr) {
-                            console.error('[App] Error creating minutes on stop:', minErr);
-                            await this._generateMeetingMinutesForSession(savedId, 'en');
-                        }
-                    }
+                if (stopResult?.backgroundSave) {
+                    this._startBackgroundSessionSave(stopResult.backgroundSave, stopAction);
+                } else if (hasPendingData) {
+                    this._hideBackgroundSessionSave(true);
                 }
             }
         } catch (err) {
             console.error('[App] Stop session error:', err);
+            this._showBackgroundSessionStopFailed(err);
             this._showToast(t('session.stopError', { error: err }), 'error');
         } finally {
             this._isStoppingSession = false;
@@ -11187,11 +11368,18 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     }
 
     _updateFloatingBarsPosition() {
+        const saveBar = document.getElementById('session-save-floating-bar');
         const retranscriptBar = document.getElementById('retranscript-floating-bar');
         const minutesBar = document.getElementById('minutes-floating-bar');
+        const saveVisible = saveBar && saveBar.style.display !== 'none';
         const retranscriptVisible = retranscriptBar && retranscriptBar.style.display !== 'none';
+        if (retranscriptBar) {
+            retranscriptBar.style.bottom = saveVisible ? '96px' : '20px';
+        }
         if (minutesBar) {
-            minutesBar.style.bottom = retranscriptVisible ? '96px' : '20px';
+            minutesBar.style.bottom = saveVisible && retranscriptVisible
+                ? '172px'
+                : (saveVisible || retranscriptVisible ? '96px' : '20px');
         }
     }
 
@@ -11378,7 +11566,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         });
 
         const sess = (this._cachedSessions || []).find(s => s.id === id);
-        const durationSec = sess?.duration_sec || (this._currentSessionJson?.id === id ? this._currentSessionJson.duration_sec : 0) || 0;
+        const durationSec = options.durationSec || sess?.duration_sec || (this._currentSessionJson?.id === id ? this._currentSessionJson.duration_sec : 0) || 0;
         // File dài cần thời gian upload và Gemini xử lý. Không tự hủy sớm
         // sau 10 phút; giới hạn 60 phút vẫn bảo vệ trường hợp job bị treo.
         const TIMEOUT_MS = Math.min(3_600_000, Math.max(1_800_000, durationSec * 350));
