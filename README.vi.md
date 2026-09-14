@@ -67,7 +67,6 @@ Tải phiên bản mới nhất từ trang [**GitHub Releases**](https://github.
 - **Hoàn toàn miễn phí qua Google AI Studio**: Hạn ngạch gói Free Tier rất lớn, đáp ứng thoải mái nhu cầu họp hàng ngày mà không cần thẻ tín dụng.
 - **Truyền nhận âm thanh 2 chiều thời gian thực**: Kết nối WebSocket trực tiếp stream luồng PCM audio, dịch câu thoại với độ trễ cực thấp.
 - **Tự động quét & chọn model tối ưu**: Tự động phát hiện và kết nối với model tốt nhất (`gemini-2.0-flash`, `gemini-2.5-flash`).
-- **Từ điển chuyên ngành theo dự án (Project Glossary)**: Nhận diện chuẩn xác thuật ngữ công nghệ, tên dự án, từ viết tắt riêng mà không sợ bị dịch sai.
 - **Tạo biên bản họp cực đỉnh**: Khả năng phân tích ngữ cảnh xuất sắc, trích xuất mục tiêu, quyết định trọng tâm (Key Decisions) và việc cần làm (Action Items).
 
 #### 🥈 2. Local MLX Pipeline (Ngoại tuyến 100% trên Apple Silicon)
@@ -90,7 +89,6 @@ Tải phiên bản mới nhất từ trang [**GitHub Releases**](https://github.
 | **Độ trễ** | Cực thấp (~1–2s) | Thấp (~2–3s) | Siêu thấp (<1s) | Thấp (~1–2s) | Siêu thấp (~1s) |
 | **Chạy Ngoại tuyến (Offline)** | Cần Internet | **Có (100% Offline)**| Cần Internet | Cần Internet | Cần Internet |
 | **Tạo Biên bản họp (Minutes)** | **Xuất sắc (AI Agent)**| Cơ bản | Hỗ trợ qua Gemini | Tốt | Không hỗ trợ |
-| **Từ điển thuật ngữ (Glossary)**| **Có (Tích hợp sẵn)** | Dạng Prompt | Có (API level) | Dạng Prompt | Không hỗ trợ |
 | **Mức độ Riêng tư** | Trực tiếp ➔ Google | **Cực đại (Nội bộ)** | Trực tiếp ➔ Soniox | Trực tiếp ➔ OpenAI | Trực tiếp ➔ Alibaba |
 | **Hỗ trợ thiết bị** | macOS & Windows | Apple Silicon (M1–M4) | macOS & Windows | macOS & Windows | macOS & Windows |
 

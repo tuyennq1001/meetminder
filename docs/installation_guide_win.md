@@ -85,7 +85,6 @@ Scroll down for more options:
 - **Font Size** — Adjust text size
 - **Max Lines** — How many lines to show
 - **Show original text** — Display source text alongside translation
-- **Custom Context** — Add domain/terms for better accuracy
 
 ![Settings — TTS Narration section](user_manual/mytrans_setting_2.png)
 

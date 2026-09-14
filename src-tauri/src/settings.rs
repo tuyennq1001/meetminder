@@ -3,37 +3,6 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-/// General key-value context pair
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
-#[serde(default)]
-pub struct GeneralContextPair {
-    pub key: String,
-    pub value: String,
-}
-
-/// Translation term: source → target mapping for Soniox & Gemini
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
-#[serde(default)]
-pub struct TranslationTerm {
-    pub source: String,
-    pub target: String,
-}
-
-/// Custom context for Soniox & Gemini — provides domain-specific hints
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
-#[serde(default)]
-pub struct CustomContext {
-    pub domain: Option<String>,
-    #[serde(default)]
-    pub general: Vec<GeneralContextPair>,
-    #[serde(default)]
-    pub terms: Vec<String>,
-    #[serde(default)]
-    pub text: Option<String>,
-    #[serde(default)]
-    pub translation_terms: Vec<TranslationTerm>,
-}
-
 /// App settings — persisted to JSON
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
@@ -107,8 +76,6 @@ pub struct Settings {
     /// Endpoint delay in milliseconds for endpoint-based providers
     #[serde(default = "default_endpoint_delay")]
     pub endpoint_delay: u32,
-    /// Optional custom context for better transcription
-    pub custom_context: Option<CustomContext>,
     /// ElevenLabs API key for TTS narration
     pub elevenlabs_api_key: String,
     /// Whether TTS narration is enabled
@@ -237,18 +204,6 @@ pub struct Settings {
     /// Push interval in minutes when automatic push is enabled.
     #[serde(default = "default_git_push_interval")]
     pub git_backup_push_interval_min: u32,
-    /// User profile name (e.g. "Terry", "Nguyen Quoc Tuyen")
-    #[serde(default)]
-    pub user_profile_name: String,
-    /// User profile nickname / display name (e.g. "Terry")
-    #[serde(default)]
-    pub user_profile_nickname: String,
-    /// User company/organization name (e.g. "Relipa")
-    #[serde(default)]
-    pub user_profile_company: String,
-    /// Whether project context and glossary should be used for Meeting Minutes
-    #[serde(default = "default_meeting_minutes_use_project_context")]
-    pub meeting_minutes_use_project_context: bool,
 }
 
 impl Default for Settings {
@@ -280,7 +235,6 @@ impl Default for Settings {
             translation_mode: "gemini".to_string(),
             translation_timing: default_translation_timing(),
             endpoint_delay: default_endpoint_delay(),
-            custom_context: None,
             elevenlabs_api_key: String::new(),
             tts_enabled: false,
             tts_provider: "edge".to_string(),
@@ -328,16 +282,8 @@ impl Default for Settings {
             git_backup_commit_interval_min: 30,
             git_backup_auto_push: false,
             git_backup_push_interval_min: 60,
-            user_profile_name: String::new(),
-            user_profile_nickname: String::new(),
-            user_profile_company: String::new(),
-            meeting_minutes_use_project_context: true,
         }
     }
-}
-
-fn default_meeting_minutes_use_project_context() -> bool {
-    true
 }
 
 fn default_logs_scope_setting() -> String {
@@ -594,40 +540,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_custom_context_deserialization() {
-        let json_str = r#"{
-            "user_profile_name": "Nguyen Quoc Tuyen",
-            "user_profile_nickname": "Terry",
-            "user_profile_company": "Relipa",
-            "meeting_minutes_use_project_context": true,
-            "custom_context": {
-                "domain": "medical",
-                "general": [
-                    { "key": "project", "value": "AI Translator" }
-                ],
-                "terms": ["Kubernetes", "gRPC"],
-                "text": "Meeting about infrastructure",
-                "translation_terms": [
-                    { "source": "CT", "target": "chụp cắt lớp" }
-                ]
-            }
-        }"#;
-        let s: Settings = serde_json::from_str(json_str).expect("should parse custom context");
-        assert_eq!(s.user_profile_name, "Nguyen Quoc Tuyen");
-        assert_eq!(s.user_profile_nickname, "Terry");
-        assert_eq!(s.user_profile_company, "Relipa");
-        assert!(s.meeting_minutes_use_project_context);
-        assert!(s.custom_context.is_some());
-        let ctx = s.custom_context.unwrap();
-        assert_eq!(ctx.domain.as_deref(), Some("medical"));
-        assert_eq!(ctx.general.len(), 1);
-        assert_eq!(ctx.general[0].key, "project");
-        assert_eq!(ctx.general[0].value, "AI Translator");
-        assert_eq!(ctx.terms, vec!["Kubernetes", "gRPC"]);
-        assert_eq!(ctx.text.as_deref(), Some("Meeting about infrastructure"));
-        assert_eq!(ctx.translation_terms.len(), 1);
-        assert_eq!(ctx.translation_terms[0].source, "CT");
-        assert_eq!(ctx.translation_terms[0].target, "chụp cắt lớp");
-    }
 }

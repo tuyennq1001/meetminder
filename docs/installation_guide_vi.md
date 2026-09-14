@@ -68,7 +68,6 @@ Meet Minder hỗ trợ các giải pháp công nghệ AI tiên tiến, được 
 - **Tính năng nổi bật**:
   - Tự động nhận diện ngôn ngữ và dịch thuật ngữ cảnh sâu.
   - Tích hợp tính năng tự động tổng hợp **Biên bản cuộc họp (Meeting Minutes)** xuất sắc: trích xuất mục tiêu, quyết định trọng tâm (Key Decisions) và đầu việc (Action Items).
-  - Tự động nhận diện danh mục từ điển dự án (Project Glossary).
 
 **Các bước lấy API Key Google Gemini (30 giây):**
 1. Truy cập [**Google AI Studio**](https://aistudio.google.com).

@@ -116,12 +116,6 @@ pub struct Customer {
     pub updated_at: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-pub struct TranslationTermPair {
-    pub source: String,
-    pub target: String,
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Project {
     pub id: String,
@@ -136,10 +130,6 @@ pub struct Project {
     pub color: String,
     #[serde(default = "default_work_scope")]
     pub scope: String, // "work" | "personal"
-    #[serde(default)]
-    pub terms: Vec<String>,
-    #[serde(default)]
-    pub translation_terms: Vec<TranslationTermPair>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -960,8 +950,6 @@ pub fn save_project(app: AppHandle, mut project: Project) -> Result<Project, Str
             existing.color = project.color.clone();
             existing.status = project.status.clone();
             existing.scope = project.scope.clone();
-            existing.terms = project.terms.clone();
-            existing.translation_terms = project.translation_terms.clone();
             existing.updated_at = project.updated_at.clone();
         } else {
             project.created_at = now;
@@ -4804,45 +4792,4 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
-    #[test]
-    fn test_project_glossary_serialization() {
-        let legacy_json = r##"{
-            "id": "proj_123",
-            "name": "Legacy Project",
-            "scope": "work",
-            "color": "#431A46",
-            "created_at": "2026-09-12T10:00:00Z",
-            "updated_at": "2026-09-12T10:00:00Z"
-        }"##;
-
-        let proj: Project = serde_json::from_str(legacy_json).expect("Should deserialize legacy project");
-        assert_eq!(proj.name, "Legacy Project");
-        assert!(proj.terms.is_empty());
-        assert!(proj.translation_terms.is_empty());
-
-        let project_with_glossary = Project {
-            id: "proj_456".into(),
-            name: "Glossary Project".into(),
-            customer_id: None,
-            description: "Test".into(),
-            status: "active".into(),
-            color: "#431A46".into(),
-            scope: "work".into(),
-            terms: vec!["Kubernetes".into(), "gRPC".into()],
-            translation_terms: vec![TranslationTermPair {
-                source: "要件定義".into(),
-                target: "Định nghĩa yêu cầu".into(),
-            }],
-            created_at: "2026-09-12T10:00:00Z".into(),
-            updated_at: "2026-09-12T10:00:00Z".into(),
-        };
-
-        let serialized = serde_json::to_string(&project_with_glossary).unwrap();
-        let deserialized: Project = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(deserialized.terms.len(), 2);
-        assert_eq!(deserialized.terms[0], "Kubernetes");
-        assert_eq!(deserialized.translation_terms.len(), 1);
-        assert_eq!(deserialized.translation_terms[0].source, "要件定義");
-        assert_eq!(deserialized.translation_terms[0].target, "Định nghĩa yêu cầu");
-    }
 }

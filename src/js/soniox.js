@@ -9,7 +9,7 @@
  * - Speaker diarization
  * - Language identification (per-token language tags)
  * - Connection keepalive (prevents timeout during silence)
- * - Rich context support (general key-value, terms, text, translation_terms)
+ * - Conversation carryover context for reconnects
  * - Confidence score pass-through
  */
 
@@ -82,7 +82,7 @@ export class SonioxClient {
     }
 
     _doConnect(config, carryoverContext = null, generation = this._connectionGeneration) {
-        const { apiKey, sourceLanguage, targetLanguage, customContext,
+        const { apiKey, sourceLanguage, targetLanguage,
                 translationType, languageA, languageB, languageHintsStrict,
                 endpointDelay } = config;
 
@@ -146,8 +146,8 @@ export class SonioxClient {
                 };
             }
 
-            // Context: build using new API format (general, text, terms, translation_terms)
-            const context = this._buildContext(customContext, carryoverContext);
+            // Keep only recent conversation carryover when reconnecting.
+            const context = this._buildContext(carryoverContext);
             if (context) {
                 configMsg.context = context;
             }
@@ -427,48 +427,11 @@ export class SonioxClient {
 
     // ─── Context Builder ─────────────────────────────────────
 
-    /**
-     * Build context object using Soniox API format:
-     * - general: array of {key, value} pairs (domain, topic, speakers...)
-     * - text: longer unstructured context (carryover, background)
-     * - terms: transcription terms (domain-specific words)
-     * - translation_terms: array of {source, target} pairs
-     */
-    _buildContext(customContext, carryoverContext) {
+    /** Build reconnect context from recent conversation only. */
+    _buildContext(carryoverContext) {
         const context = {};
         let hasContent = false;
-
-        // General key-value pairs
-        const general = [];
-        if (customContext?.general && Array.isArray(customContext.general)) {
-            // New format: array of {key, value}
-            general.push(...customContext.general);
-        } else if (customContext?.domain) {
-            // Legacy format: single domain string → convert to general
-            general.push({ key: 'domain', value: customContext.domain });
-        }
-        if (general.length > 0) {
-            context.general = general;
-            hasContent = true;
-        }
-
-        // Transcription terms (domain-specific words for accuracy)
-        if (customContext?.terms && customContext.terms.length > 0) {
-            context.terms = customContext.terms;
-            hasContent = true;
-        }
-
-        // Translation terms
-        if (customContext?.translation_terms && customContext.translation_terms.length > 0) {
-            context.translation_terms = customContext.translation_terms;
-            hasContent = true;
-        }
-
-        // Text context: user-provided background + carryover
         const textParts = [];
-        if (customContext?.text) {
-            textParts.push(customContext.text);
-        }
         if (carryoverContext) {
             textParts.push(`Recent conversation: ${carryoverContext}`);
         }

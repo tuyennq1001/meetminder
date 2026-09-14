@@ -68,7 +68,6 @@ Meet Minder supports five cutting-edge speech translation engines:
 - **Key Features**:
   - Direct 2-way PCM audio streaming with near-instant translation.
   - Generates comprehensive **AI Meeting Minutes**: automatically extracts Executive Summary, Key Decisions, and Action Items.
-  - Automatically respects your custom **Project Glossary** and domain terms.
 
 **Get your Google Gemini API Key in 30 seconds:**
 1. Open [**Google AI Studio**](https://aistudio.google.com).

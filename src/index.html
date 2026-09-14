@@ -216,7 +216,6 @@
                 <select id="select-note-project" class="note-meta-select" data-i18n-title="notes.project.title" title="Gán Dự án cho cuộc họp">
                   <option value="" data-i18n="notes.project">🚀 Dự án...</option>
                 </select>
-                <span id="note-project-glossary-badge" class="note-project-glossary-badge" style="display:none;" title="Từ điển dự án được kích hoạt">📚 0</span>
               </div>
               <select id="select-note-category" class="note-meta-select" data-i18n-title="notes.category.title" title="Category cuộc họp">
                 <option value="" data-i18n="notes.category">🗂️ Category...</option>
@@ -822,58 +821,6 @@
           </div>
         </div>
 
-        <div class="settings-section" id="section-soniox-context">
-          <div class="profile-settings-card">
-            <span class="field-label profile-section-title" data-i18n="settings.profile.title">👤 Hồ sơ người dùng &amp; Đơn vị</span>
-            <p class="hint profile-section-hint" data-i18n="settings.profile.hint">Thông tin này giúp AI xưng hô chuẩn xác và hiểu rõ bối cảnh công ty/cá nhân khi dịch và tạo Meeting Minutes.</p>
-            <div class="profile-fields-grid">
-              <div class="profile-field-item">
-                <label class="field-label" for="input-user-profile-name" data-i18n="settings.profile.userName">Họ và tên của bạn:</label>
-                <input type="text" id="input-user-profile-name" data-i18n-placeholder="settings.profile.userNamePlaceholder" placeholder="VD: Terry" />
-              </div>
-              <div class="profile-field-item">
-                <label class="field-label" for="input-user-profile-nickname" data-i18n="settings.profile.nickname">Biệt danh / Tên gọi:</label>
-                <input type="text" id="input-user-profile-nickname" data-i18n-placeholder="settings.profile.nicknamePlaceholder" placeholder="VD: Terry" />
-              </div>
-              <div class="profile-field-item profile-field-full">
-                <label class="field-label" for="input-user-profile-company" data-i18n="settings.profile.company">Tên Công ty / Cơ quan:</label>
-                <input type="text" id="input-user-profile-company" data-i18n-placeholder="settings.profile.companyPlaceholder" placeholder="VD: Relipa" />
-              </div>
-            </div>
-          </div>
-
-          <div class="global-context-card">
-            <span class="field-label global-context-title" data-i18n="settings.globalContext.title">🌐 Bối cảnh chung &amp; Từ điển mặc định (Global Context)</span>
-            <p class="hint" style="margin-top: 4px; margin-bottom: 12px;" data-i18n="settings.globalContext.hint">Áp dụng xuyên suốt cho tất cả cuộc họp khi chưa gán dự án riêng biệt.</p>
-
-            <!-- 1. Background text (Đoạn văn tự do mô tả bối cảnh) -->
-            <div class="context-subsection">
-              <span class="field-sublabel" data-i18n="settings.globalContext.textLabel">📝 Bối cảnh làm việc chung (Background Context)</span>
-              <p class="hint" style="margin: 0 0 4px; font-size: 11px;" data-i18n="settings.globalContext.textHint">Mô tả tự do về vai trò, lĩnh vực hoặc nội dung công việc (AI tự hiểu để dịch và làm biên bản họp chuẩn xác).</p>
-              <textarea id="input-context-text" class="context-textarea" rows="2" data-i18n-placeholder="settings.globalContext.textPlaceholder" placeholder="VD: Công ty gia công phần mềm cho khách Nhật. Tôi là Tech Lead, thường xuyên họp Sprint Planning..."></textarea>
-            </div>
-
-            <!-- 2. Transcription terms (Chống nghe nhầm) -->
-            <div class="context-subsection">
-              <span class="field-sublabel" data-i18n="settings.globalContext.termsLabel">🎯 Từ khóa nhận diện chung (Chống nghe nhầm)</span>
-              <p class="hint" style="margin: 0 0 4px; font-size: 11px;" data-i18n="settings.globalContext.termsHint">Điền trước các tên riêng, từ viết tắt IT, công nghệ để AI KHÔNG NGHE NHẦM âm thanh (mỗi từ một dòng).</p>
-              <textarea id="input-context-terms" class="context-textarea" rows="3" data-i18n-placeholder="settings.globalContext.termsPlaceholder" placeholder="VD:&#10;Relipa&#10;Kubernetes&#10;gRPC&#10;GraphQL"></textarea>
-            </div>
-
-            <!-- 3. Translation terms (Bảng dịch) -->
-            <div class="context-subsection">
-              <div class="terms-header">
-                <div>
-                  <span class="field-sublabel" data-i18n="settings.globalContext.transLabel">📖 Từ điển dịch thuật mặc định (Quy ước dịch)</span>
-                  <span class="hint-dim block-hint" data-i18n="settings.globalContext.transHint">Bắt buộc AI dịch từ gốc sang từ đích theo ý muốn (Gốc ➔ Đích).</span>
-                </div>
-                <button type="button" id="btn-add-term" class="btn-icon-sm" title="Add term">+</button>
-              </div>
-              <div id="translation-terms-list"></div>
-              <div id="translation-terms-empty" class="terms-empty-hint" style="display:none;" data-i18n="settings.globalContext.transEmpty">Chưa có cặp từ điển dịch thuật mặc định. Nhấp [+] để thêm...</div>
-            </div>
-          </div>
-        </div>
       </div>
 
         <!-- 6. Detail: Display -->
@@ -1075,17 +1022,6 @@
               </div>
               <p class="hint template-source-hint" data-i18n="settings.template.sourceHint">
                 Bật để AI kết hợp ghi chép bằng tay với transcript. Tắt để AI chỉ sử dụng nội dung transcript.
-              </p>
-
-              <div class="settings-grid-row template-source-setting" style="margin-top: 6px;">
-                <span class="field-label" data-i18n="settings.template.projectContextLabel">Ngữ cảnh &amp; Từ điển</span>
-                <label class="checkbox-option" for="check-meeting-minutes-use-project-context">
-                  <input type="checkbox" id="check-meeting-minutes-use-project-context" checked />
-                  <span class="checkbox-label" data-i18n="settings.template.projectContextCheckbox">Nạp Bối cảnh &amp; Từ điển Dự án (Glossary) khi tạo biên bản</span>
-                </label>
-              </div>
-              <p class="hint template-source-hint" data-i18n="settings.template.projectContextHint">
-                Bật để AI dịch và giải thích chuẩn xác thuật ngữ chuyên ngành dựa theo từ điển dự án và thông tin đối tác/công ty.
               </p>
 
               <div class="templates-preset-bar folder-tab-bar" id="templates-preset-bar" role="tablist">
@@ -1825,13 +1761,6 @@
         <h3 id="modal-proj-title">🚀 Thêm Dự án mới</h3>
         <button type="button" id="btn-close-add-project" class="icon-btn close-btn" data-i18n-title="common.close" title="Đóng">×</button>
       </div>
-      <div class="modal-tab-bar" id="modal-proj-tab-bar" role="tablist">
-        <button type="button" class="modal-tab-btn active" data-tab="general" id="btn-modal-proj-tab-general" data-i18n="modal.proj.tabGeneral">ℹ️ Thông tin chung</button>
-        <button type="button" class="modal-tab-btn" data-tab="glossary" id="btn-modal-proj-tab-glossary">
-          <span data-i18n="modal.proj.tabGlossary">📚 Từ điển &amp; Thuật ngữ</span>
-          <span id="badge-modal-proj-terms-count" class="modal-tab-badge" style="display:none;">0</span>
-        </button>
-      </div>
       <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
         <input type="hidden" id="input-modal-proj-id" value="" />
 
@@ -1869,28 +1798,6 @@
           <div>
             <label class="field-label" for="input-modal-proj-desc" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.descLabel">Mô tả dự án:</label>
             <textarea id="input-modal-proj-desc" class="modal-input" rows="2" data-i18n-placeholder="modal.proj.descPlaceholder" placeholder="Mô tả mục tiêu dự án (tuỳ chọn)..." style="resize: none;"></textarea>
-          </div>
-        </div>
-
-        <!-- Tab Pane 2: Glossary & Terms -->
-        <div id="modal-proj-pane-glossary" style="display: none; flex-direction: column; gap: 12px;">
-          <p class="hint" style="margin: 0; line-height: 1.45;" data-i18n="modal.proj.glossaryHint">
-            Các từ khóa và quy tắc dịch này được nạp tự động khi bạn chọn dự án này trong cuộc họp, giúp AI nhận diện đúng âm thanh và dịch chuẩn xác.
-          </p>
-
-          <div>
-            <label class="field-label" for="input-modal-proj-terms" style="margin-bottom: 2px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.termsLabel">🎯 Từ khóa dự án (Chống nghe nhầm):</label>
-            <p class="hint" style="margin-top: 0; margin-bottom: 4px; font-size: 11px;" data-i18n="modal.proj.termsHint">Điền trước các tên riêng, tên module, API, mã viết tắt, tên người... để AI KHÔNG NGHE NHẦM âm thanh khi nói (mỗi từ một dòng).</p>
-            <textarea id="input-modal-proj-terms" class="modal-input" rows="4" data-i18n-placeholder="modal.proj.termsPlaceholder" placeholder="VD:&#10;OrderService&#10;Docomo&#10;Kafka&#10;UAT" style="resize: vertical; font-family: inherit; font-size: 12px;"></textarea>
-          </div>
-
-          <div>
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-              <label class="field-label" style="margin: 0; font-size: 12px; font-weight: 600;" data-i18n="modal.proj.transTermsLabel">📖 Bảng dịch thuật ngữ theo dự án (Quy ước dịch):</label>
-              <button type="button" id="btn-add-modal-proj-trans-term" class="btn-secondary-small" style="padding: 2px 8px; font-size: 11px;" data-i18n="modal.proj.addTransTerm">+ Thêm thuật ngữ dịch</button>
-            </div>
-            <p class="hint" style="margin-top: 0; margin-bottom: 6px; font-size: 11px;" data-i18n="modal.proj.transTermsHint">Bắt buộc AI dịch từ gốc sang từ đích theo quy ước riêng của dự án này.</p>
-            <div id="modal-proj-trans-terms-list" style="max-height: 160px; overflow-y: auto; padding-right: 2px; display: flex; flex-direction: column; gap: 4px;"></div>
           </div>
         </div>
 

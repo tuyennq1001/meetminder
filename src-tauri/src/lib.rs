@@ -179,7 +179,6 @@ pub fn run() {
             commands::gemini_realtime::gemini_realtime_start,
             commands::gemini_realtime::gemini_realtime_send_audio,
             commands::gemini_realtime::gemini_realtime_set_target_lang,
-            commands::gemini_realtime::gemini_realtime_set_context,
             commands::gemini_realtime::gemini_realtime_stop,
             commands::qwen_realtime::qwen_realtime_start,
             commands::qwen_realtime::qwen_realtime_send_audio,

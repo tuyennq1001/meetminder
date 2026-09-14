@@ -68,7 +68,6 @@ Meet Minderは5つの高度なAI音声翻訳ソリューションに対応して
 - **主な特徴**:
   - 音声ストリームを受信しながらリアルタイムで高精度翻訳。
   - 会議の背景・目的、決定事項（Key Decisions）、ネクストアクション（Action Items）を自動整理する **高品質なAI議事録（Meeting Minutes）** を自動生成。
-  - プロジェクト固有の専門用語集（Project Glossary）を自動反映。
 
 **Google Gemini APIキーの取得手順（約30秒）:**
 1. [**Google AI Studio**](https://aistudio.google.com) にアクセスします。

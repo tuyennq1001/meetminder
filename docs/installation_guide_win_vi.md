@@ -85,7 +85,6 @@ Kéo xuống để xem thêm tuỳ chọn:
 - **Font Size** — Điều chỉnh cỡ chữ
 - **Max Lines** — Số dòng hiển thị tối đa
 - **Show original text** — Hiện text gốc bên cạnh bản dịch
-- **Custom Context** — Thêm lĩnh vực/thuật ngữ để dịch chính xác hơn
 
 ![Settings — TTS Narration](user_manual/mytrans_setting_2.png)
 

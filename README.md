@@ -67,7 +67,6 @@ Download pre-built installers directly from [**GitHub Releases**](https://github
 - **Completely Free via Google AI Studio**: Generous free tier quotas cover daily business meetings without requiring a paid subscription.
 - **Real-time 2-way Streaming**: Direct WebSocket connection streaming linear PCM audio with sub-second translation feedback.
 - **Dynamic Model Discovery**: Automatically discovers and utilizes the optimal available model (`gemini-2.0-flash`, `gemini-2.5-flash`).
-- **Domain Glossary & Translation Pairs**: Learns project-specific terminology, product acronyms, and company names so key terms are never mistranslated.
 - **Superior Meeting Minutes**: Outstanding synthesis capabilities extracting goals, discussions, decisions, and action items.
 
 #### 🥈 2. Local MLX Pipeline (100% Offline on Apple Silicon)
@@ -90,7 +89,6 @@ Download pre-built installers directly from [**GitHub Releases**](https://github
 | **Latency** | Ultra-low (~1–2s) | Low (~2–3s) | Lowest (<1s) | Low (~1–2s) | Lowest (~1s) |
 | **Offline Operation** | Internet required | **Yes (100% Offline)**| Internet required | Internet required | Internet required |
 | **AI Meeting Minutes** | **Outstanding (Native)**| Basic | Via Gemini | Good | Not supported |
-| **Custom Glossary** | **Yes (Built-in)** | Prompt-based | Yes (API-level) | Prompt-based | Not supported |
 | **Privacy Rating** | Direct to Google | **Maximum (Local-only)**| Direct to Soniox | Direct to OpenAI | Direct to Alibaba |
 | **Platform Support** | macOS & Windows | Apple Silicon (M1–M4) | macOS & Windows | macOS & Windows | macOS & Windows |
 
