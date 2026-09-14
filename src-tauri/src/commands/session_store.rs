@@ -210,7 +210,12 @@ pub struct SessionData {
 pub struct NoteImage {
     pub id: String,
     pub alt: String,
-    pub data_url: String,
+    // Older/local sessions keep the image inline. Git-backed sessions store
+    // the decoded image on disk and keep only `path` in the JSON sidecar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -4408,6 +4413,32 @@ mod tests {
         assert_eq!(
             data2.retranscribed_at,
             Some("2026-09-04T12:00:00Z".to_string())
+        );
+    }
+
+    #[test]
+    fn test_session_data_accepts_disk_backed_note_image() {
+        let json = r#"{
+            "id":"s1",
+            "created_at":"2026-09-04T10:00:00Z",
+            "title":"Test",
+            "engine":"gemini",
+            "source_lang":"ja",
+            "target_lang":"vi",
+            "duration_sec":60,
+            "chunks":[],
+            "note_images":[{
+                "id":"img-1",
+                "alt":"image.png",
+                "path":"images/s1/img-1.png"
+            }]
+        }"#;
+        let data: SessionData = serde_json::from_str(json).unwrap();
+        assert_eq!(data.note_images.len(), 1);
+        assert_eq!(data.note_images[0].data_url, None);
+        assert_eq!(
+            data.note_images[0].path,
+            Some("images/s1/img-1.png".to_string())
         );
     }
 
