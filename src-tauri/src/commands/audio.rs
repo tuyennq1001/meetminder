@@ -357,8 +357,14 @@ pub async fn start_capture(
             let (merged_tx, merged_rx) = mpsc::channel::<Vec<u8>>();
 
             std::thread::spawn(move || {
-                let mut sys_buf: VecDeque<i16> = VecDeque::with_capacity(8000);
-                let mut mic_buf: VecDeque<i16> = VecDeque::with_capacity(8000);
+                const FRAME_SAMPLES: usize = 320; // 20 ms at 16 kHz
+                const PREBUFFER_SAMPLES: usize = FRAME_SAMPLES * 2;
+                const MAX_BUFFER_SAMPLES: usize = FRAME_SAMPLES * 10;
+                let mut sys_buf: VecDeque<i16> = VecDeque::with_capacity(MAX_BUFFER_SAMPLES);
+                let mut mic_buf: VecDeque<i16> = VecDeque::with_capacity(MAX_BUFFER_SAMPLES);
+                let mut started = false;
+                let mut next_frame = std::time::Instant::now();
+                let mut wait_since: Option<std::time::Instant> = None;
 
                 loop {
                     // Drain sys_rx
@@ -374,33 +380,57 @@ pub async fn start_capture(
                         }
                     }
 
-                    // Prevent buffer bloat if one side produces more samples (> 1 sec = 16000 samples)
-                    if sys_buf.len() > 16000 {
-                        let excess = sys_buf.len() - 16000;
+                    // Keep latency bounded when the two hardware clocks drift.
+                    if sys_buf.len() > MAX_BUFFER_SAMPLES {
+                        let excess = sys_buf.len() - MAX_BUFFER_SAMPLES;
                         sys_buf.drain(..excess);
                     }
-                    if mic_buf.len() > 16000 {
-                        let excess = mic_buf.len() - 16000;
+                    if mic_buf.len() > MAX_BUFFER_SAMPLES {
+                        let excess = mic_buf.len() - MAX_BUFFER_SAMPLES;
                         mic_buf.drain(..excess);
                     }
 
-                    let available = std::cmp::max(sys_buf.len(), mic_buf.len());
-                    if available >= 800 {
-                        // at least 50ms (800 samples at 16kHz)
-                        let chunk_len = available.min(1600); // up to 100ms
-                        let mut mixed_bytes = Vec::with_capacity(chunk_len * 2);
-                        for _ in 0..chunk_len {
+                    if !started
+                        && (sys_buf.len() >= PREBUFFER_SAMPLES
+                            || mic_buf.len() >= PREBUFFER_SAMPLES)
+                    {
+                        started = true;
+                        next_frame = std::time::Instant::now();
+                    }
+
+                    let now = std::time::Instant::now();
+                    if started && now >= next_frame {
+                        // Give a late callback up to 30 ms to arrive instead
+                        // of immediately inserting a discontinuous zero frame.
+                        let both_ready =
+                            sys_buf.len() >= FRAME_SAMPLES && mic_buf.len() >= FRAME_SAMPLES;
+                        if !both_ready {
+                            let first_wait = *wait_since.get_or_insert(now);
+                            if now.duration_since(first_wait) < std::time::Duration::from_millis(30)
+                            {
+                                std::thread::sleep(std::time::Duration::from_millis(2));
+                                continue;
+                            }
+                        }
+                        wait_since = None;
+                        let mut mixed_bytes = Vec::with_capacity(FRAME_SAMPLES * 2);
+                        for _ in 0..FRAME_SAMPLES {
                             let s1 = sys_buf.pop_front().unwrap_or(0) as i32;
                             let s2 = mic_buf.pop_front().unwrap_or(0) as i32;
-                            let mixed = (s1 + s2).clamp(-32768, 32767) as i16;
+                            // Give both sources 6 dB headroom to avoid hard clipping.
+                            let mixed = ((s1 + s2) / 2) as i16;
                             mixed_bytes.extend_from_slice(&mixed.to_le_bytes());
                         }
                         if merged_tx.send(mixed_bytes).is_err() {
                             break;
                         }
+                        next_frame += std::time::Duration::from_millis(20);
+                        if next_frame + std::time::Duration::from_millis(100) < now {
+                            next_frame = now + std::time::Duration::from_millis(20);
+                        }
                     }
 
-                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    std::thread::sleep(std::time::Duration::from_millis(2));
                 }
             });
 

@@ -276,7 +276,9 @@ pub fn send_audio_to_pipeline(
 
 /// Stop the local pipeline
 #[tauri::command]
-pub fn stop_local_pipeline(state: tauri::State<'_, LocalPipelineState>) -> Result<(), String> {
+pub async fn stop_local_pipeline(
+    state: tauri::State<'_, LocalPipelineState>,
+) -> Result<(), String> {
     log_to_file("stop_local_pipeline called");
     stop_local_pipeline_inner(&state);
     Ok(())

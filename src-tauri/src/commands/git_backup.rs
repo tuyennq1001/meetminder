@@ -417,9 +417,8 @@ fn stage_managed_data(repo: &Path) -> Result<(), String> {
     }
 }
 
-#[tauri::command]
-pub fn git_backup_status(app: AppHandle) -> GitBackupStatus {
-    match crate::commands::session_store::sessions_dir(&app) {
+fn git_backup_status_inner(app: &AppHandle) -> GitBackupStatus {
+    match crate::commands::session_store::sessions_dir(app) {
         Ok(repo) => {
             let repo_path = repo.to_string_lossy().to_string();
             status_for(&repo_path)
@@ -439,8 +438,24 @@ pub fn git_backup_status(app: AppHandle) -> GitBackupStatus {
 }
 
 #[tauri::command]
-pub fn git_backup_now(app: AppHandle, push: bool) -> Result<GitBackupResult, String> {
-    let repo = crate::commands::session_store::sessions_dir(&app)?;
+pub async fn git_backup_status(app: AppHandle) -> GitBackupStatus {
+    tokio::task::spawn_blocking(move || git_backup_status_inner(&app))
+        .await
+        .unwrap_or_else(|e| GitBackupStatus {
+            configured: false,
+            git_available: is_git_available(),
+            is_repo: false,
+            repo_path: String::new(),
+            branch: None,
+            remote: None,
+            dirty_files: 0,
+            last_commit: None,
+            error: Some(format!("Task join error: {}", e)),
+        })
+}
+
+fn git_backup_now_inner(app: &AppHandle, push: bool) -> Result<GitBackupResult, String> {
+    let repo = crate::commands::session_store::sessions_dir(app)?;
     if !is_git_available() {
         return Err("Git chưa được cài đặt hoặc chưa có trong PATH".into());
     }
@@ -457,7 +472,7 @@ pub fn git_backup_now(app: AppHandle, push: bool) -> Result<GitBackupResult, Str
         return Err("Repository đang có conflict; hãy xử lý bằng Git client trước".into());
     }
 
-    sync_managed_data(&app, &repo)?;
+    sync_managed_data(app, &repo)?;
     stage_managed_data(&repo)?;
     let staged_paths = git_name_only(&repo, &["diff", "--cached", "--name-only", "--"]);
     let diff = run_git(&repo, &["diff", "--cached", "--quiet"])?;
@@ -519,8 +534,14 @@ pub fn git_backup_now(app: AppHandle, push: bool) -> Result<GitBackupResult, Str
 }
 
 #[tauri::command]
-pub fn git_backup_push(app: AppHandle) -> Result<GitPushResult, String> {
-    let repo = crate::commands::session_store::sessions_dir(&app)?;
+pub async fn git_backup_now(app: AppHandle, push: bool) -> Result<GitBackupResult, String> {
+    tokio::task::spawn_blocking(move || git_backup_now_inner(&app, push))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+}
+
+fn git_backup_push_inner(app: &AppHandle) -> Result<GitPushResult, String> {
+    let repo = crate::commands::session_store::sessions_dir(app)?;
     let repo_path = repo.to_string_lossy().to_string();
     if !repo_is_valid(&repo) {
         return Err(
@@ -552,6 +573,13 @@ pub fn git_backup_push(app: AppHandle) -> Result<GitPushResult, String> {
         warning: None,
         status: status_for(&repo_path),
     })
+}
+
+#[tauri::command]
+pub async fn git_backup_push(app: AppHandle) -> Result<GitPushResult, String> {
+    tokio::task::spawn_blocking(move || git_backup_push_inner(&app))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[cfg(test)]

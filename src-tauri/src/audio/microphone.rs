@@ -5,6 +5,98 @@ use std::sync::Arc;
 
 use super::TARGET_SAMPLE_RATE;
 
+/// Stateful resampling keeps the fractional source position between CPAL
+/// callbacks. Re-starting interpolation at zero for every callback drops a
+/// different number of source frames (especially at 44.1/48 kHz), producing
+/// periodic timing discontinuities and audible roughness.
+pub(crate) struct StreamingLinearResampler {
+    step: f64,
+    position: f64,
+    samples: Vec<f32>,
+    lowpass: Option<OnePoleLowPass>,
+}
+
+#[derive(Clone, Copy)]
+struct OnePoleLowPass {
+    state: f32,
+    alpha: f32,
+}
+
+impl OnePoleLowPass {
+    fn new(source_rate: u32, target_rate: u32) -> Option<Self> {
+        if source_rate <= target_rate {
+            return None;
+        }
+        // Keep the speech band while attenuating content above the Nyquist
+        // frequency of the 16 kHz output before decimation.
+        let cutoff = (target_rate as f64 * 0.44).min(source_rate as f64 * 0.45);
+        let x = (std::f64::consts::TAU * cutoff / source_rate as f64) as f32;
+        Some(Self {
+            state: 0.0,
+            alpha: x / (1.0 + x),
+        })
+    }
+
+    fn process(&mut self, sample: f32) -> f32 {
+        self.state += self.alpha * (sample - self.state);
+        self.state
+    }
+}
+
+impl StreamingLinearResampler {
+    pub(crate) fn new(source_rate: u32, target_rate: u32) -> Self {
+        Self {
+            step: source_rate as f64 / target_rate as f64,
+            position: 0.0,
+            samples: Vec::new(),
+            lowpass: OnePoleLowPass::new(source_rate, target_rate),
+        }
+    }
+
+    pub(crate) fn push(&mut self, input: &[f32]) -> Vec<f32> {
+        if input.is_empty() {
+            return Vec::new();
+        }
+        if self.step == 1.0 {
+            return input.to_vec();
+        }
+
+        if let Some(lowpass) = &mut self.lowpass {
+            self.samples
+                .extend(input.iter().map(|&sample| lowpass.process(sample)));
+        } else {
+            self.samples.extend_from_slice(input);
+        }
+
+        let mut output = Vec::with_capacity((input.len() as f64 / self.step).ceil() as usize);
+        while self.position + 1.0 < self.samples.len() as f64 {
+            let index = self.position.floor() as usize;
+            let fraction = self.position - index as f64;
+            output.push(
+                (self.samples[index] as f64 * (1.0 - fraction)
+                    + self.samples[index + 1] as f64 * fraction) as f32,
+            );
+            self.position += self.step;
+        }
+
+        // Retain the sample immediately before the next interpolation point
+        // so the next callback joins continuously to this one.
+        let removable = (self.position.floor() as usize).min(self.samples.len() - 1);
+        if removable > 0 {
+            self.samples.drain(..removable);
+            self.position -= removable as f64;
+        }
+        output
+    }
+}
+
+pub(crate) fn f32_to_pcm_s16le(samples: &[f32]) -> Vec<u8> {
+    samples
+        .iter()
+        .flat_map(|&sample| ((sample.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes())
+        .collect()
+}
+
 /// Microphone capture using cpal.
 /// Captures from the default input device and converts to PCM s16le 16kHz mono.
 pub struct MicCapture {
@@ -132,18 +224,15 @@ impl MicCapture {
                 let received_samples = self.received_samples.clone();
                 let nonzero_samples = self.nonzero_samples.clone();
                 let rms_milli = self.rms_milli.clone();
+                let mut resampler = StreamingLinearResampler::new(source_sample_rate, target_rate);
                 device.build_input_stream(
                     &stream_config,
                     move |data: &[f32], _: &cpal::InputCallbackInfo| {
                         if !is_capturing.load(Ordering::SeqCst) {
                             return;
                         }
-                        let pcm = convert_f32_to_pcm_s16le(
-                            data,
-                            source_channels,
-                            source_sample_rate,
-                            target_rate,
-                        );
+                        let mono = mix_f32_to_mono(data, source_channels);
+                        let pcm = f32_to_pcm_s16le(&resampler.push(&mono));
                         if !pcm.is_empty() {
                             update_pcm_stats(&pcm, &received_samples, &nonzero_samples, &rms_milli);
                             let _ = sender.send(pcm);
@@ -158,18 +247,15 @@ impl MicCapture {
                 let received_samples = self.received_samples.clone();
                 let nonzero_samples = self.nonzero_samples.clone();
                 let rms_milli = self.rms_milli.clone();
+                let mut resampler = StreamingLinearResampler::new(source_sample_rate, target_rate);
                 device.build_input_stream(
                     &stream_config,
                     move |data: &[i16], _: &cpal::InputCallbackInfo| {
                         if !is_capturing.load(Ordering::SeqCst) {
                             return;
                         }
-                        let pcm = convert_i16_to_pcm_s16le(
-                            data,
-                            source_channels,
-                            source_sample_rate,
-                            target_rate,
-                        );
+                        let mono = mix_i16_to_mono(data, source_channels);
+                        let pcm = f32_to_pcm_s16le(&resampler.push(&mono));
                         if !pcm.is_empty() {
                             update_pcm_stats(&pcm, &received_samples, &nonzero_samples, &rms_milli);
                             let _ = sender.send(pcm);
@@ -184,18 +270,15 @@ impl MicCapture {
                 let received_samples = self.received_samples.clone();
                 let nonzero_samples = self.nonzero_samples.clone();
                 let rms_milli = self.rms_milli.clone();
+                let mut resampler = StreamingLinearResampler::new(source_sample_rate, target_rate);
                 device.build_input_stream(
                     &stream_config,
                     move |data: &[u16], _: &cpal::InputCallbackInfo| {
                         if !is_capturing.load(Ordering::SeqCst) {
                             return;
                         }
-                        let pcm = convert_u16_to_pcm_s16le(
-                            data,
-                            source_channels,
-                            source_sample_rate,
-                            target_rate,
-                        );
+                        let mono = mix_u16_to_mono(data, source_channels);
+                        let pcm = f32_to_pcm_s16le(&resampler.push(&mono));
                         if !pcm.is_empty() {
                             update_pcm_stats(&pcm, &received_samples, &nonzero_samples, &rms_milli);
                             let _ = sender.send(pcm);
@@ -284,50 +367,19 @@ impl Default for MicCapture {
     }
 }
 
-/// Convert f32 audio to PCM s16le, with mono mixdown and resampling
-fn convert_f32_to_pcm_s16le(
-    data: &[f32],
-    channels: usize,
-    source_rate: u32,
-    target_rate: u32,
-) -> Vec<u8> {
-    // Step 1: Mix to mono
-    let mono: Vec<f32> = if channels > 1 {
-        data.chunks(channels)
+fn mix_f32_to_mono(data: &[f32], channels: usize) -> Vec<f32> {
+    if channels > 1 {
+        data.chunks_exact(channels)
             .map(|frame| frame.iter().sum::<f32>() / channels as f32)
             .collect()
     } else {
         data.to_vec()
-    };
-
-    // Step 2: Resample if needed
-    let resampled = if source_rate != target_rate {
-        simple_resample(&mono, source_rate, target_rate)
-    } else {
-        mono
-    };
-
-    // Step 3: Convert to s16le bytes
-    resampled
-        .iter()
-        .flat_map(|&s| {
-            let clamped = s.clamp(-1.0, 1.0);
-            let s16 = (clamped * 32767.0) as i16;
-            s16.to_le_bytes()
-        })
-        .collect()
+    }
 }
 
-/// Convert i16 audio to PCM s16le, with mono mixdown and resampling
-fn convert_i16_to_pcm_s16le(
-    data: &[i16],
-    channels: usize,
-    source_rate: u32,
-    target_rate: u32,
-) -> Vec<u8> {
-    // Step 1: Mix to mono and convert to f32
-    let mono: Vec<f32> = if channels > 1 {
-        data.chunks(channels)
+fn mix_i16_to_mono(data: &[i16], channels: usize) -> Vec<f32> {
+    if channels > 1 {
+        data.chunks_exact(channels)
             .map(|frame| {
                 let sum: f32 = frame.iter().map(|&s| s as f32).sum();
                 sum / (channels as f32 * 32768.0)
@@ -335,35 +387,12 @@ fn convert_i16_to_pcm_s16le(
             .collect()
     } else {
         data.iter().map(|&s| s as f32 / 32768.0).collect()
-    };
-
-    // Step 2: Resample if needed
-    let resampled = if source_rate != target_rate {
-        simple_resample(&mono, source_rate, target_rate)
-    } else {
-        mono
-    };
-
-    // Step 3: Convert to s16le bytes
-    resampled
-        .iter()
-        .flat_map(|&s| {
-            let clamped = s.clamp(-1.0, 1.0);
-            let s16 = (clamped * 32767.0) as i16;
-            s16.to_le_bytes()
-        })
-        .collect()
+    }
 }
 
-/// Convert unsigned 16-bit audio to PCM s16le (used by some input devices).
-fn convert_u16_to_pcm_s16le(
-    data: &[u16],
-    channels: usize,
-    source_rate: u32,
-    target_rate: u32,
-) -> Vec<u8> {
-    let mono: Vec<f32> = if channels > 1 {
-        data.chunks(channels)
+fn mix_u16_to_mono(data: &[u16], channels: usize) -> Vec<f32> {
+    if channels > 1 {
+        data.chunks_exact(channels)
             .map(|frame| {
                 let sum: f32 = frame.iter().map(|&s| (s as f32 - 32768.0) / 32768.0).sum();
                 sum / channels as f32
@@ -373,44 +402,28 @@ fn convert_u16_to_pcm_s16le(
         data.iter()
             .map(|&s| (s as f32 - 32768.0) / 32768.0)
             .collect()
-    };
-
-    let resampled = if source_rate != target_rate {
-        simple_resample(&mono, source_rate, target_rate)
-    } else {
-        mono
-    };
-
-    resampled
-        .iter()
-        .flat_map(|&s| ((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes())
-        .collect()
+    }
 }
 
-/// Simple linear interpolation resampler
-/// Good enough for speech (not for music production)
-fn simple_resample(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
-    if from_rate == to_rate || samples.is_empty() {
-        return samples.to_vec();
-    }
+#[cfg(test)]
+mod tests {
+    use super::StreamingLinearResampler;
 
-    let ratio = from_rate as f64 / to_rate as f64;
-    let output_len = (samples.len() as f64 / ratio) as usize;
-    let mut output = Vec::with_capacity(output_len);
-
-    for i in 0..output_len {
-        let src_pos = i as f64 * ratio;
-        let src_idx = src_pos as usize;
-        let frac = src_pos - src_idx as f64;
-
-        if src_idx + 1 < samples.len() {
-            // Linear interpolation between two adjacent samples
-            let s = samples[src_idx] as f64 * (1.0 - frac) + samples[src_idx + 1] as f64 * frac;
-            output.push(s as f32);
-        } else if src_idx < samples.len() {
-            output.push(samples[src_idx]);
+    #[test]
+    fn streaming_resampler_does_not_depend_on_callback_boundaries() {
+        let input: Vec<f32> = (0..48_000)
+            .map(|index| ((index as f32) * 0.017).sin())
+            .collect();
+        let mut whole = StreamingLinearResampler::new(48_000, 16_000);
+        let expected = whole.push(&input);
+        let mut chunked = StreamingLinearResampler::new(48_000, 16_000);
+        let mut actual = Vec::new();
+        for chunk in input.chunks(512) {
+            actual.extend(chunked.push(chunk));
+        }
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(expected.iter()) {
+            assert!((actual - expected).abs() < 1e-6);
         }
     }
-
-    output
 }
