@@ -22,8 +22,10 @@ File `.env` ở thư mục gốc (đã được `.gitignore`) chứa các biến
 ```bash
 APP_IDENTIFIER=com.meetminder.desktop.dev
 APP_SIGNING_IDENTITY=Apple Development: tuyennq1001@gmail.com (DGWT97FSZ4)
+# Release local builds must use the production certificate separately:
+APP_RELEASE_SIGNING_IDENTITY=Apple Development: tuyennq1001@gmail.com (DGWT97FSZ4)
 ```
-Script `scripts/tauri-with-env.mjs` sẽ tự động đọc cấu hình này khi chạy `npm run dev` hoặc `npm run build:dev`.
+Script `scripts/tauri-with-env.mjs` sẽ tự động đọc cấu hình Dev khi chạy `npm run dev` hoặc `npm run build:dev`, và đọc `APP_RELEASE_SIGNING_IDENTITY` khi chạy `npm run release:local`.
 
 ---
 

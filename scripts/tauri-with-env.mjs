@@ -72,11 +72,20 @@ if (identifier) {
   // Ad-hoc signatures change on every rebuild, which makes macOS Screen-Recording and
   // Microphone permissions expire. Require an explicit stable certificate instead of
   // silently falling back to ad-hoc signing and creating a permission-reset trap.
-  const signingIdentity = process.env.APP_SIGNING_IDENTITY || readEnvValue('APP_SIGNING_IDENTITY');
+  // Dev and Release intentionally have different bundle identifiers and must
+  // also be allowed to use different stable certificates. Never reuse the
+  // Dev certificate for a Release build: macOS TCC permissions are bound to
+  // both the bundle identifier and the signing requirement.
+  const devSigningIdentity = process.env.APP_SIGNING_IDENTITY || readEnvValue('APP_SIGNING_IDENTITY');
+  const releaseSigningIdentity = process.env.APP_RELEASE_SIGNING_IDENTITY
+    || readEnvValue('APP_RELEASE_SIGNING_IDENTITY');
+  const signingIdentity = isReleaseLocal ? releaseSigningIdentity : devSigningIdentity;
   if (!signingIdentity) {
     throw new Error(
-      `[tauri-with-env] APP_SIGNING_IDENTITY is required for ${isReleaseLocal ? 'Release' : 'Dev'} builds. ` +
-      'Configure a stable macOS code-signing certificate in .env (for example: Apple Development: ...).'
+      `[tauri-with-env] A stable macOS signing identity is required for ${isReleaseLocal ? 'Release' : 'Dev'} builds. ` +
+      (isReleaseLocal
+        ? 'Configure APP_RELEASE_SIGNING_IDENTITY in .env (for example: Apple Development: ...).'
+        : 'Configure APP_SIGNING_IDENTITY in .env (for example: Apple Development: ...).')
     );
   }
   const manualSigning = args[0] === 'build';
