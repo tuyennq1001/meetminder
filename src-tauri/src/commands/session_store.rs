@@ -1073,9 +1073,8 @@ fn chrono_timestamp_id() -> String {
     format!("{:x}", now)
 }
 
-#[tauri::command]
-pub fn save_session(
-    app: AppHandle,
+fn save_session_inner(
+    app: &AppHandle,
     id: String,
     md_content: String,
     json_data: SessionData,
@@ -1084,14 +1083,14 @@ pub fn save_session(
     if json_data.id != id {
         return Err("id mismatch between argument and json_data".into());
     }
-    let dir = sessions_dir(&app)?;
+    let dir = sessions_dir(app)?;
     let (md_path, json_path) = session_paths(&dir, &id);
     fs::create_dir_all(records_dir(&dir))
         .map_err(|e| format!("Không thể tạo thư mục records: {}", e))?;
 
     // Auto-register any new tags into registry
     if !json_data.tags.is_empty() {
-        if let Ok(mut reg) = load_project_registry(&app) {
+        if let Ok(mut reg) = load_project_registry(app) {
             let mut changed = false;
             for t in &json_data.tags {
                 let clean = t.trim().trim_start_matches('#').to_lowercase();
@@ -1101,7 +1100,7 @@ pub fn save_session(
                 }
             }
             if changed {
-                let _ = save_project_registry(&app, &reg);
+                let _ = save_project_registry(app, &reg);
             }
         }
     }
@@ -1115,12 +1114,23 @@ pub fn save_session(
 }
 
 #[tauri::command]
-pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
-    let dir = sessions_dir(&app)?;
+pub async fn save_session(
+    app: AppHandle,
+    id: String,
+    md_content: String,
+    json_data: SessionData,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || save_session_inner(&app, id, md_content, json_data))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+}
+
+fn list_sessions_inner(app: &AppHandle) -> Result<Vec<SessionListItem>, String> {
+    let dir = sessions_dir(app)?;
     let mut items: Vec<SessionListItem> = Vec::new();
     let mut seen_new_ids: std::collections::HashSet<String> = Default::default();
 
-    let registry = load_project_registry(&app).unwrap_or_default();
+    let registry = load_project_registry(app).unwrap_or_default();
     let customer_map: std::collections::HashMap<String, (String, String, String)> = registry
         .customers
         .into_iter()
@@ -1290,9 +1300,15 @@ pub fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
 }
 
 #[tauri::command]
-pub fn read_session(app: AppHandle, id: String) -> Result<SessionReadResult, String> {
+pub async fn list_sessions(app: AppHandle) -> Result<Vec<SessionListItem>, String> {
+    tokio::task::spawn_blocking(move || list_sessions_inner(&app))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+}
+
+fn read_session_inner(app: &AppHandle, id: String) -> Result<SessionReadResult, String> {
     validate_id(&id)?;
-    let dir = sessions_dir(&app)?;
+    let dir = sessions_dir(app)?;
     let (md_path, json_path) = session_paths_for_read(&dir, &id);
     let md = fs::read_to_string(&md_path).map_err(|e| format!("Read md failed: {}", e))?;
     let json_str =
@@ -1300,6 +1316,13 @@ pub fn read_session(app: AppHandle, id: String) -> Result<SessionReadResult, Str
     let json: SessionData =
         serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
     Ok(SessionReadResult { md, json })
+}
+
+#[tauri::command]
+pub async fn read_session(app: AppHandle, id: String) -> Result<SessionReadResult, String> {
+    tokio::task::spawn_blocking(move || read_session_inner(&app, id))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
@@ -1314,10 +1337,9 @@ pub fn read_legacy_session(app: AppHandle, id: String) -> Result<String, String>
     fs::read_to_string(&path).map_err(|e| format!("Read failed: {}", e))
 }
 
-#[tauri::command]
-pub fn delete_session(app: AppHandle, id: String) -> Result<(), String> {
+fn delete_session_inner(app: &AppHandle, id: String) -> Result<(), String> {
     validate_id(&id)?;
-    let dir = sessions_dir(&app)?;
+    let dir = sessions_dir(app)?;
     // Remove both canonical files and any legacy root copies, so a manual
     // move that left a duplicate behind cannot resurrect the session.
     let (md_path, json_path) = session_paths(&dir, &id);
@@ -1335,11 +1357,22 @@ pub fn delete_session(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn delete_sessions(app: AppHandle, ids: Vec<String>) -> Result<(), String> {
-    for id in ids {
-        let _ = delete_session(app.clone(), id);
-    }
-    Ok(())
+pub async fn delete_session(app: AppHandle, id: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || delete_session_inner(&app, id))
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+}
+
+#[tauri::command]
+pub async fn delete_sessions(app: AppHandle, ids: Vec<String>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        for id in ids {
+            let _ = delete_session_inner(&app, id);
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
@@ -1968,7 +2001,7 @@ pub fn search_sessions(app: AppHandle, query: String) -> Result<Vec<SessionSearc
         return Ok(Vec::new());
     }
 
-    let all = list_sessions(app.clone())?;
+    let all = list_sessions_inner(&app)?;
     let dir = sessions_dir(&app)?;
     let mut hits: Vec<SessionSearchResult> = Vec::new();
 
@@ -2598,14 +2631,18 @@ fn transcript_timestamp(seconds: f64) -> String {
 
 fn timestamp_seconds(timestamp: &str) -> Option<u64> {
     let parts: Vec<&str> = timestamp.split(':').collect();
-    if parts.len() != 3 {
-        return None;
+    if parts.len() == 2 {
+        let min = parts[0].trim().parse::<f64>().ok()?;
+        let sec = parts[1].trim().parse::<f64>().ok()?;
+        return Some((min * 60.0 + sec).round() as u64);
     }
-    Some(
-        parts[0].parse::<u64>().ok()? * 3600
-            + parts[1].parse::<u64>().ok()? * 60
-            + parts[2].parse::<u64>().ok()?,
-    )
+    if parts.len() == 3 {
+        let hr = parts[0].trim().parse::<f64>().ok()?;
+        let min = parts[1].trim().parse::<f64>().ok()?;
+        let sec = parts[2].trim().parse::<f64>().ok()?;
+        return Some((hr * 3600.0 + min * 60.0 + sec).round() as u64);
+    }
+    None
 }
 
 fn normalize_chunk_timestamps(segments: &mut [Segment], chunk_start_sec: u64) {
@@ -2780,8 +2817,35 @@ fn extract_segments_fallback(text: &str) -> Vec<Segment> {
         };
 
         let chunk = &text[start..=end];
-        let has_text = chunk.contains("\"text\"") || chunk.contains("\"src\"");
-        let has_meta = chunk.contains("\"start_sec\"") || chunk.contains("\"translation\"") || chunk.contains("\"tgt\"");
+        let has_text = [
+            "\"text\"",
+            "\"src\"",
+            "\"original_text\"",
+            "\"source_text\"",
+            "\"source\"",
+            "\"transcript\"",
+            "\"content\"",
+        ]
+        .iter()
+        .any(|key| chunk.contains(key));
+        let has_meta = [
+            "\"start_sec\"",
+            "\"start_seconds\"",
+            "\"startSec\"",
+            "\"startSeconds\"",
+            "\"start\"",
+            "\"timestamp\"",
+            "\"start_time\"",
+            "\"startTime\"",
+            "\"translation\"",
+            "\"tgt\"",
+            "\"translated_text\"",
+            "\"target_text\"",
+            "\"target\"",
+            "\"translated\"",
+        ]
+        .iter()
+        .any(|key| chunk.contains(key));
 
         if has_text && has_meta {
             if let Ok(item) = serde_json::from_str::<GeminiTranscriptSegment>(chunk) {
@@ -2805,10 +2869,42 @@ fn extract_segments_fallback(text: &str) -> Vec<Segment> {
                     });
                 }
             } else {
-                let sec = extract_json_f64_field(chunk, "start_sec")
-                    .unwrap_or(segments.len() as f64 * 5.0);
-                let src = extract_json_string_field(chunk, &["text", "src"]);
-                let tgt = extract_json_string_field(chunk, &["translation", "tgt"]);
+                let sec = [
+                    "start_sec",
+                    "start_seconds",
+                    "startSec",
+                    "startSeconds",
+                    "start",
+                    "timestamp",
+                    "start_time",
+                    "startTime",
+                ]
+                .iter()
+                .find_map(|field| extract_json_f64_field(chunk, field))
+                .unwrap_or(segments.len() as f64 * 5.0);
+                let src = extract_json_string_field(
+                    chunk,
+                    &[
+                        "text",
+                        "src",
+                        "original_text",
+                        "source_text",
+                        "source",
+                        "transcript",
+                        "content",
+                    ],
+                );
+                let tgt = extract_json_string_field(
+                    chunk,
+                    &[
+                        "translation",
+                        "tgt",
+                        "translated_text",
+                        "target_text",
+                        "target",
+                        "translated",
+                    ],
+                );
                 if !src.is_empty() {
                     segments.push(Segment {
                         ts: transcript_timestamp(sec),
@@ -2906,6 +3002,12 @@ fn segment_from_value(value: &Value, index: usize) -> Option<Segment> {
             "source",
             "transcript",
             "content",
+            "original",
+            "speech",
+            "sentence",
+            "dialogue",
+            "utterance",
+            "message",
         ],
     );
     if src.is_empty() {
@@ -2920,6 +3022,12 @@ fn segment_from_value(value: &Value, index: usize) -> Option<Segment> {
             "target_text",
             "target",
             "translated",
+            "meaning",
+            "vietnamese",
+            "english",
+            "ja",
+            "vi",
+            "en",
         ],
     );
     let seconds = value_seconds(
@@ -2933,6 +3041,8 @@ fn segment_from_value(value: &Value, index: usize) -> Option<Segment> {
             "timestamp",
             "start_time",
             "startTime",
+            "time",
+            "offset",
         ],
     )
     .unwrap_or(index as f64 * 5.0);
@@ -2959,10 +3069,19 @@ fn segments_from_value(value: &Value) -> Vec<Segment> {
     for key in [
         "segments",
         "transcript_segments",
+        "transcriptSegments",
         "transcript",
+        "transcripts",
+        "transcription",
+        "transcriptions",
         "utterances",
         "items",
         "entries",
+        "dialogue",
+        "dialogues",
+        "conversation",
+        "conversations",
+        "lines",
         "results",
         "data",
         "output",
@@ -2987,7 +3106,21 @@ fn parse_gemini_json_value(text: &str) -> Option<Vec<Segment>> {
     } else {
         segments_from_value(&value)
     };
-    (!segments.is_empty()).then_some(segments)
+    if !segments.is_empty() {
+        return Some(segments);
+    }
+    // Accept valid JSON that explicitly contains an empty segments/transcript array
+    let is_empty_segments_shape = value.as_array().is_some_and(|arr| arr.is_empty())
+        || value.get("segments").and_then(Value::as_array).is_some_and(|arr| arr.is_empty())
+        || value.get("transcript_segments").and_then(Value::as_array).is_some_and(|arr| arr.is_empty())
+        || value.get("transcriptSegments").and_then(Value::as_array).is_some_and(|arr| arr.is_empty())
+        || value.get("transcript").and_then(Value::as_array).is_some_and(|arr| arr.is_empty())
+        || value.get("transcription").and_then(Value::as_array).is_some_and(|arr| arr.is_empty())
+        || value.get("utterances").and_then(Value::as_array).is_some_and(|arr| arr.is_empty());
+    if is_empty_segments_shape {
+        return Some(Vec::new());
+    }
+    None
 }
 
 fn extract_gemini_candidate_text(body: &Value) -> Option<String> {
@@ -3009,6 +3142,51 @@ fn extract_gemini_candidate_text(body: &Value) -> Option<String> {
         .filter(|text| !text.trim().is_empty())
 }
 
+fn parse_plain_text_transcript(text: &str) -> Vec<Segment> {
+    let normalized = text.trim().trim_matches('`').trim();
+    if normalized.is_empty()
+        || normalized.contains("\"segments\"")
+        || normalized.contains("\"start_sec\"")
+        || normalized.contains("\"translation\"")
+        || normalized.contains('{')
+        || normalized.contains('}')
+    {
+        return Vec::new();
+    }
+
+    let lines: Vec<String> = normalized
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| {
+            let lower = line.to_lowercase();
+            !lower.starts_with("here is")
+                && !lower.starts_with("transcript:")
+                && !lower.starts_with("i cannot")
+                && !lower.starts_with("i'm unable")
+        })
+        .map(|line| {
+            line.strip_prefix("- ")
+                .or_else(|| line.strip_prefix("* "))
+                .unwrap_or(line)
+                .trim()
+                .to_string()
+        })
+        .filter(|line| line.len() >= 2)
+        .collect();
+
+    lines
+        .into_iter()
+        .enumerate()
+        .map(|(index, src)| Segment {
+            ts: transcript_timestamp(index as f64 * 5.0),
+            src,
+            tgt: String::new(),
+            speaker: None,
+        })
+        .collect()
+}
+
 fn parse_gemini_transcript(text: &str) -> Result<Vec<Segment>, String> {
     let trimmed = clean_gemini_json(text);
 
@@ -3023,11 +3201,17 @@ fn parse_gemini_transcript(text: &str) -> Result<Vec<Segment>, String> {
     // Some responses contain a short prose prefix/suffix around the JSON.
     // Extract the obvious JSON envelope while keeping the original text for
     // the fallback scanner below.
-    for (open, close) in [('{', '}'), ('[', ']')] {
-        if let (Some(start), Some(end)) = (trimmed.find(open), trimmed.rfind(close)) {
-            if start < end {
-                if let Some(segs) = parse_gemini_json_value(&trimmed[start..=end]) {
-                    return Ok(segs);
+    if (!trimmed.starts_with('{') || !trimmed.ends_with('}'))
+        && (!trimmed.starts_with('[') || !trimmed.ends_with(']'))
+    {
+        for (open, close) in [('{', '}'), ('[', ']')] {
+            if let (Some(start), Some(end)) = (trimmed.find(open), trimmed.rfind(close)) {
+                if start < end {
+                    if let Some(segs) = parse_gemini_json_value(&trimmed[start..=end]) {
+                        if !segs.is_empty() {
+                            return Ok(segs);
+                        }
+                    }
                 }
             }
         }
@@ -3035,10 +3219,7 @@ fn parse_gemini_transcript(text: &str) -> Result<Vec<Segment>, String> {
 
     // Tier 1: Direct serde parsing
     if let Ok(payload) = serde_json::from_str::<GeminiTranscriptPayload>(trimmed) {
-        let segs = build_segments_from_raw(payload.segments);
-        if !segs.is_empty() {
-            return Ok(segs);
-        }
+        return Ok(build_segments_from_raw(payload.segments));
     }
 
     // Tier 2: Repaired JSON parsing
@@ -3059,7 +3240,27 @@ fn parse_gemini_transcript(text: &str) -> Result<Vec<Segment>, String> {
         return Ok(segs);
     }
 
-    Err("Gemini returned an invalid transcript".into())
+    // If the model ignored the JSON response format, preserve the spoken text
+    // instead of failing the whole re-transcription. This is deliberately
+    // conservative and refuses JSON-looking or refusal/error responses.
+    let plain = parse_plain_text_transcript(trimmed);
+    if !plain.is_empty() {
+        eprintln!(
+            "[session_store] Warning: Gemini returned plain text; salvaged {} segments",
+            plain.len()
+        );
+        return Ok(plain);
+    }
+
+    eprintln!(
+        "[session_store] Failed to parse Gemini transcript. Raw output (first 500 chars):\n{}",
+        trimmed.chars().take(500).collect::<String>()
+    );
+    let sample: String = trimmed.chars().take(80).collect();
+    Err(format!(
+        "Gemini returned an invalid transcript: {}",
+        if sample.is_empty() { "(empty output)" } else { &sample }
+    ))
 }
 
 static RETRANSCRIBE_CANCEL_MAP: std::sync::LazyLock<
@@ -3251,7 +3452,7 @@ pub async fn retranscribe_session_with_gemini(
             );
         }
         if all_segments.is_empty() {
-            return Err("Gemini không trả về đoạn transcript nào".into());
+            return Err("Không tìm thấy đoạn hội thoại nào trong file ghi âm (Gemini không phát hiện giọng nói)".into());
         }
         all_segments.sort_by(|left, right| left.ts.cmp(&right.ts));
         data.duration_sec = data.duration_sec.max(duration_sec);
@@ -3520,6 +3721,9 @@ pub async fn retranscribe_session_with_gemini(
         &generated
             .ok_or_else(|| last_error.unwrap_or_else(|| "Gemini transcription failed".into()))?,
     )?;
+    if segments.is_empty() {
+        return Err("Không tìm thấy đoạn hội thoại nào trong file ghi âm (Gemini không phát hiện giọng nói)".into());
+    }
     emit_audio_transcript_progress(
         &app,
         &id,
@@ -4473,10 +4677,11 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_gemini_transcript_empty_fails() {
+    fn test_parse_gemini_transcript_empty_segments_returns_empty() {
         let json_data = r#"{"segments": []}"#;
         let result = parse_gemini_transcript(json_data);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
     }
 
     #[test]
@@ -4887,6 +5092,43 @@ mod tests {
     fn test_parse_gemini_transcript_rejects_empty_equivalent_shapes() {
         assert!(parse_gemini_transcript(r#"{"data":[]}"#).is_err());
         assert!(parse_gemini_transcript(r#"[{"start_sec":0,"translation":"only translation"}]"#).is_err());
+    }
+
+    #[test]
+    fn test_parse_gemini_transcript_plain_text_fallback() {
+        let text = "Hello everyone.\n- We will start the review now.";
+        let segs = parse_gemini_transcript(text).expect("Plain transcript should be preserved");
+        assert_eq!(segs.len(), 2);
+        assert_eq!(segs[1].src, "We will start the review now.");
+        assert!(parse_gemini_transcript("I cannot transcribe this recording").is_err());
+    }
+
+    #[test]
+    fn test_timestamp_seconds_supports_both_mm_ss_and_hh_mm_ss() {
+        assert_eq!(timestamp_seconds("00:00:00"), Some(0));
+        assert_eq!(timestamp_seconds("01:23"), Some(83));
+        assert_eq!(timestamp_seconds("00:01:23"), Some(83));
+        assert_eq!(timestamp_seconds("01:02:03"), Some(3723));
+        assert_eq!(timestamp_seconds("01:23.45"), Some(83));
+        assert_eq!(timestamp_seconds("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_gemini_transcript_handles_aliases() {
+        let json = r#"{
+            "transcription": [
+                {"timestamp": "01:15", "speech": "Good morning", "meaning": "Chào buổi sáng"},
+                {"start": "01:20", "dialogue": "How are you?", "target": "Bạn thế nào?"}
+            ]
+        }"#;
+        let segs = parse_gemini_transcript(json).expect("Aliases should parse cleanly");
+        assert_eq!(segs.len(), 2);
+        assert_eq!(segs[0].ts, "00:01:15");
+        assert_eq!(segs[0].src, "Good morning");
+        assert_eq!(segs[0].tgt, "Chào buổi sáng");
+        assert_eq!(segs[1].ts, "00:01:20");
+        assert_eq!(segs[1].src, "How are you?");
+        assert_eq!(segs[1].tgt, "Bạn thế nào?");
     }
 
     #[test]

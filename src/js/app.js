@@ -473,6 +473,7 @@ class App {
         this._captureHealthTimer = null;
         this._isStopConfirmationOpen = false;
         this._isStoppingSession = false;
+        this._activeCaptureTeardown = null;
         this._backgroundSessionSave = null;
         this._backgroundSessionSaveDismissTimer = null;
         this._pendingUpdateVersion = null;
@@ -1403,6 +1404,18 @@ class App {
         document.getElementById('btn-session-save-floating-close')?.addEventListener('click', (e) => {
             e.stopPropagation();
             this._hideBackgroundSessionSave();
+        });
+        document.getElementById('session-save-floating-bar')?.addEventListener('click', (e) => {
+            if (e.target.closest('#btn-session-save-floating-retry') || e.target.closest('#btn-session-save-floating-close')) {
+                return;
+            }
+            const task = this._backgroundSessionSave;
+            if (task && task.status === 'saved' && task.id) {
+                setActivity('library');
+                this._showSessions().then(() => {
+                    this._openSession(task.id);
+                });
+            }
         });
 
         // Meeting minutes floating bar controls
@@ -3452,6 +3465,15 @@ class App {
             return;
         }
 
+        // Await any in-flight capture teardown from a previous meeting
+        if (this._activeCaptureTeardown) {
+            try {
+                await this._activeCaptureTeardown;
+            } catch (err) {
+                console.warn('[App] Warning awaiting previous capture teardown:', err);
+            }
+        }
+
         if (this.currentSource === 'microphone' || this.currentSource === 'both') {
             if (!await this._ensureMicrophonePermission()) return;
         }
@@ -4329,6 +4351,18 @@ class App {
                     reject(err);
                 });
         });
+    }
+
+    async _teardownCurrentCaptureAndEngine() {
+        this._audioCaptureActive = false;
+        try {
+            await invoke('stop_capture');
+        } catch (err) {
+            console.error('[App] Failed to stop audio capture:', err);
+        }
+        await this._disconnectLiveEngine({ preserveFinalResults: false });
+        this.localPipelineReady = false;
+        this.localPipelineChannel = null;
     }
 
     async _stopTranslationEngine({ preserveFinalResults = false } = {}) {
@@ -5255,6 +5289,9 @@ class App {
 
     async _runBackgroundSessionSave(task) {
         try {
+            if (task.teardownPromise) {
+                await task.teardownPromise;
+            }
             const result = await task.store.persist();
             if (result === 'failed') {
                 throw new Error(task.store.lastPersistError || t('session.saveFailed'));
@@ -5268,6 +5305,14 @@ class App {
                 }, 8000);
             }
             this._showToast(t('session.endedAndSaved', { title: task.title }), 'success');
+
+            // Refresh sessions list if user navigated to Meeting Logs (library) while save was in-flight
+            if (getActivity() === 'library') {
+                this._showSessions().catch((err) => {
+                    console.error('[App] Failed to refresh sessions list after background save:', err);
+                });
+            }
+
             this._runPostSaveTasks(task).catch(err => {
                 console.error('[App] Post-save meeting task failed:', err);
             });
@@ -5292,11 +5337,16 @@ class App {
 
     async _runPostSaveTasks(task) {
         const { id: savedId, stopAction } = task;
+        // Yield to let the main UI paint and handle interactions before post-save background operations
+        await new Promise(resolve => setTimeout(resolve, 50));
+
         const backupSettings = settingsManager.get();
         if (backupSettings.git_backup_auto_push === true
             && backupSettings.git_backup_commit_on_meeting_end !== false) {
-            this._runGitBackup({ push: true, reason: 'meeting-end' })
-                .catch(err => console.warn('[Git backup] post-meeting commit/push failed:', err));
+            setTimeout(() => {
+                this._runGitBackup({ push: true, reason: 'meeting-end' })
+                    .catch(err => console.warn('[Git backup] post-meeting commit/push failed:', err));
+            }, 100);
         }
 
         let savedJson = null;
@@ -5335,11 +5385,14 @@ class App {
     }
 
     async stopSession(chosenTitle = null, chosenTags = null, chosenCustomerId = null, chosenProjectId = null, chosenCategory = null, chosenScope = null) {
-        // Capture must fully stop before another meeting can start, but the
-        // potentially long final disk write does not need to block that next
-        // meeting.  Pause without its regular persist, then detach a sealed
-        // copy for the background writer below.
-        if (this.isRunning) await this.pause({ persist: false });
+        if (this._geminiReconnectTimer) {
+            clearTimeout(this._geminiReconnectTimer);
+            this._geminiReconnectTimer = null;
+        }
+        this._liveEngineGeneration++;
+
+        // Finalize chunk in current session store
+        sessionStore.endChunk();
 
         const hasSegments = !sessionStore.isEmpty() && sessionStore.totalSegmentCount() > 0;
         const hasNotes = Boolean(sessionStore.notes && sessionStore.notes.trim());
@@ -5365,6 +5418,15 @@ class App {
             sessionStore.scope = chosenScope || 'work';
         }
 
+        // Teardown capture & live engine asynchronously in background
+        const teardownPromise = this._teardownCurrentCaptureAndEngine();
+        this._activeCaptureTeardown = teardownPromise;
+        teardownPromise.finally(() => {
+            if (this._activeCaptureTeardown === teardownPromise) {
+                this._activeCaptureTeardown = null;
+            }
+        });
+
         let backgroundSave = null;
         if (!hadData) {
             this._showToast(t('session.noDataToSave'), 'info');
@@ -5374,10 +5436,12 @@ class App {
                 id: savedSessionId,
                 title: sessionStore.title || t('session.defaultTitle'),
                 store: sessionStore.detachForBackgroundSave(),
+                teardownPromise,
             };
             this._hasUnsavedMeetingData = false;
         }
 
+        // Reset live state immediately (zero UI freeze)
         this.isRunning = false;
         this.isPaused = false;
         this._hideNetworkAlertBanner();
@@ -5393,6 +5457,7 @@ class App {
             this.transcriptUI.clear();
             this.transcriptUI.showPlaceholder();
         }
+        this.transcriptUI.removeStatusMessage();
         this._updateStatus('idle');
 
         // Reset live notes to template and clear metadata selectors (keep drawer open by default)
@@ -5413,6 +5478,7 @@ class App {
         });
         this._syncLiveMeetingTitleInput();
         this._updateStartButton();
+        this._setEnginePillLocked(false);
 
         return {
             id: hadData ? savedSessionId : null,
@@ -5434,17 +5500,6 @@ class App {
             if (stopAction.discard) {
                 await this.discardSession();
             } else {
-                const hasPendingData = sessionStore.totalSegmentCount() > 0
-                    || Boolean(sessionStore.notes && sessionStore.notes.trim());
-                if (hasPendingData) {
-                    this._showBackgroundSessionFinalizing(stopAction.title || sessionStore.title);
-                    // Paint the task indicator before the capture shutdown can
-                    // take noticeable time for a long recording.
-                    await new Promise(resolve => {
-                        const schedule = window.requestAnimationFrame || ((callback) => setTimeout(callback, 0));
-                        schedule(resolve);
-                    });
-                }
                 const stopResult = await this.stopSession(
                     stopAction.title,
                     stopAction.tags,
@@ -5456,7 +5511,7 @@ class App {
 
                 if (stopResult?.backgroundSave) {
                     this._startBackgroundSessionSave(stopResult.backgroundSave, stopAction);
-                } else if (hasPendingData) {
+                } else {
                     this._hideBackgroundSessionSave(true);
                 }
             }

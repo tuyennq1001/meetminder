@@ -3,12 +3,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 
+use super::microphone::{f32_to_pcm_s16le, StreamingLinearResampler};
 use super::TARGET_SAMPLE_RATE;
 
 /// Audio handler that receives CMSampleBuffer callbacks from ScreenCaptureKit
 /// and sends PCM data through a channel.
 struct AudioHandler {
     sender: mpsc::Sender<Vec<u8>>,
+    resampler: std::sync::Mutex<StreamingLinearResampler>,
 }
 
 impl SCStreamOutputTrait for AudioHandler {
@@ -36,25 +38,10 @@ impl SCStreamOutputTrait for AudioHandler {
                             )
                         };
 
-                        // Downsample 48kHz -> 16kHz (factor of 3)
-                        let source_rate = 48000u32;
-                        let ratio = source_rate / TARGET_SAMPLE_RATE; // 3
-
-                        let downsampled: Vec<f32> = f32_samples
-                            .iter()
-                            .step_by(ratio as usize)
-                            .copied()
-                            .collect();
-
-                        // Convert f32 [-1.0, 1.0] to i16 PCM s16le
-                        let pcm_s16: Vec<u8> = downsampled
-                            .iter()
-                            .flat_map(|&sample| {
-                                let clamped = sample.clamp(-1.0, 1.0);
-                                let s16 = (clamped * 32767.0) as i16;
-                                s16.to_le_bytes()
-                            })
-                            .collect();
+                        let Ok(mut resampler) = self.resampler.lock() else {
+                            return;
+                        };
+                        let pcm_s16 = f32_to_pcm_s16le(&resampler.push(f32_samples));
 
                         if !pcm_s16.is_empty() {
                             let _ = self.sender.send(pcm_s16);
@@ -138,7 +125,13 @@ impl SystemAudioCapture {
         // Create channel for audio data
         let (sender, receiver) = mpsc::channel::<Vec<u8>>();
 
-        let handler = AudioHandler { sender };
+        let handler = AudioHandler {
+            sender,
+            resampler: std::sync::Mutex::new(StreamingLinearResampler::new(
+                48000,
+                TARGET_SAMPLE_RATE,
+            )),
+        };
 
         // Create and start the stream
         let mut stream = SCStream::new(&filter, &config);
