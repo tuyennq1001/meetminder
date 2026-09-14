@@ -868,7 +868,6 @@ class App {
         const desc = document.getElementById('network-alert-desc');
         const btnLocal = document.getElementById('btn-net-fallback-local');
         const btnGemini = document.getElementById('btn-net-fallback-gemini');
-        const btnNoTrans = document.getElementById('btn-net-fallback-notrans');
         const btnRetry = document.getElementById('btn-net-retry');
 
         if (icon) icon.textContent = '⚠️';
@@ -880,11 +879,6 @@ class App {
         if (btnLocal) {
             btnLocal.style.display = (this._isLocalMlxReady && this.isAppleSilicon) ? 'inline-flex' : 'none';
         }
-        if (btnNoTrans) {
-            const s = settingsManager.get();
-            btnNoTrans.style.display = (s.target_language === 'none') ? 'none' : 'inline-flex';
-        }
-
         banner.style.display = 'flex';
     }
 
@@ -898,7 +892,6 @@ class App {
         const desc = document.getElementById('network-alert-desc');
         const btnLocal = document.getElementById('btn-net-fallback-local');
         const btnGemini = document.getElementById('btn-net-fallback-gemini');
-        const btnNoTrans = document.getElementById('btn-net-fallback-notrans');
         const btnRetry = document.getElementById('btn-net-retry');
 
         if (icon) icon.textContent = '🌐';
@@ -906,7 +899,6 @@ class App {
         if (desc) desc.textContent = t('network.restoredDesc');
         if (btnLocal) btnLocal.style.display = 'none';
         if (btnGemini) btnGemini.style.display = 'inline-flex';
-        if (btnNoTrans) btnNoTrans.style.display = 'none';
         if (btnRetry) btnRetry.style.display = 'none';
 
         banner.style.display = 'flex';
@@ -961,10 +953,6 @@ class App {
         document.getElementById('btn-net-fallback-gemini')?.addEventListener('click', () => {
             this._hideNetworkAlertBanner();
             this._hotSwapToEngine('gemini');
-        });
-        document.getElementById('btn-net-fallback-notrans')?.addEventListener('click', () => {
-            this._hideNetworkAlertBanner();
-            this._handleQuickTargetLangChange('none');
         });
         document.getElementById('btn-net-retry')?.addEventListener('click', () => {
             this._showToast(t('network.reconnecting'), 'info');
@@ -2645,7 +2633,7 @@ class App {
         const customModelSection = document.getElementById('section-gemini-custom-model');
         const customModelInput = document.getElementById('input-gemini-custom-model');
         if (geminiModelSelect) {
-            const savedModel = s.gemini_model || 'models/gemini-2.0-flash-exp';
+            const savedModel = s.gemini_model || 'models/gemini-3.5-live-translate-preview';
             const standardOptions = Array.from(geminiModelSelect.options).map(o => o.value);
             if (standardOptions.includes(savedModel)) {
                 geminiModelSelect.value = savedModel;
@@ -2764,9 +2752,9 @@ class App {
             gemini_model: (() => {
                 const sel = document.getElementById('select-gemini-model')?.value;
                 if (sel === 'custom') {
-                    return document.getElementById('input-gemini-custom-model')?.value.trim() || 'models/gemini-2.0-flash-exp';
+                    return document.getElementById('input-gemini-custom-model')?.value.trim() || 'models/gemini-3.5-live-translate-preview';
                 }
-                return sel || 'models/gemini-2.0-flash-exp';
+                return sel || 'models/gemini-3.5-live-translate-preview';
             })(),
             qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
             source_language: document.getElementById('quick-select-source-lang')?.value || settingsManager.get().source_language || 'ja',
@@ -3657,7 +3645,8 @@ class App {
         this._updateStatus('connecting');
         const { GeminiRealtimeClient } = await import('./gemini-realtime-client.js');
 
-        this.transcriptUI.provider = 'gemini';
+        const usesLiveTranslate = (settings.gemini_model || '').includes('live-translate');
+        this.transcriptUI.provider = usesLiveTranslate ? 'gemini-live' : 'gemini';
 
         this.geminiClient = new GeminiRealtimeClient();
 
@@ -3671,6 +3660,17 @@ class App {
         };
         this.geminiClient.onProvisional = (text) => {
             this.transcriptUI.setProvisional(text, null, null);
+        };
+        this.geminiClient.onLivePreview = (original, translation) => {
+            if (original) this.transcriptUI.setSourceProvisional(original);
+            else this.transcriptUI.clearSourceProvisional();
+            if (translation) this.transcriptUI.setProvisional(translation, null, null);
+            else this.transcriptUI.clearProvisional();
+        };
+        this.geminiClient.onReconnecting = (delayMs) => {
+            if (this.isRunning && this.translationMode === 'gemini') {
+                this._scheduleGeminiReconnect(delayMs);
+            }
         };
         this.geminiClient.onSourceFinal = (sourceText, pendingId = null, speaker = null) => {
             if (!sourceText || !sourceText.trim()) return;
@@ -3816,7 +3816,7 @@ class App {
                 apiKey: settings.gemini_api_key,
                 sourceLanguage: settings.source_language || 'ja',
                 targetLanguage: settings.target_language || 'vi',
-                model: settings.gemini_model || 'models/gemini-3.5-transcribe-live',
+                model: settings.gemini_model || 'models/gemini-3.5-live-translate-preview',
             });
         } catch (err) {
             console.error('[Gemini Realtime] connect error:', err);
@@ -5858,13 +5858,13 @@ class App {
         }
 
         if (hasDisabledCurrent) {
-            const fallbackOrder = src === 'vi' ? ['ja', 'en', 'none']
-                : (src === 'ja' ? ['vi', 'en', 'none']
-                : ['vi', 'ja', 'none']);
+            const fallbackOrder = src === 'vi' ? ['ja', 'en']
+                : (src === 'ja' ? ['vi', 'en']
+                : ['vi', 'ja', 'en']);
             const nextValid = fallbackOrder.find(lang => {
                 const opt = Array.from(targetSelect.options).find(o => o.value === lang);
                 return opt && !opt.disabled;
-            }) || 'none';
+            }) || Array.from(targetSelect.options).find(o => !o.disabled)?.value || curTgt;
             targetSelect.value = nextValid;
             return nextValid;
         }

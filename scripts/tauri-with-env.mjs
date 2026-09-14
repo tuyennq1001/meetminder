@@ -61,6 +61,9 @@ function readConfValue(key) {
 }
 
 if (identifier) {
+  // Make the effective bundle id available to Rust at compile time so Dev and
+  // Release do not accidentally share the same settings.json.
+  process.env.MEET_MINDER_BUILD_IDENTIFIER = identifier;
   // Dev or local-release override: stable signing identity, proper product name.
   const baseName = readConfValue('productName') || 'Meet Minder';
   const targetAppName = isReleaseLocal

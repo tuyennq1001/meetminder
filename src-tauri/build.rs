@@ -9,8 +9,19 @@ fn main() {
     // GOOGLE_FREE_TTS_KEY to the crate via option_env!. Missing .env is fine —
     // the Google Free provider degrades to "not configured".
     load_env_secret("GOOGLE_FREE_TTS_KEY");
+    export_build_identifier();
 
     tauri_build::build()
+}
+
+fn export_build_identifier() {
+    const KEY: &str = "MEET_MINDER_BUILD_IDENTIFIER";
+    println!("cargo:rerun-if-env-changed={}", KEY);
+    if let Ok(identifier) = std::env::var(KEY) {
+        if !identifier.trim().is_empty() {
+            println!("cargo:rustc-env={}={}", KEY, identifier.trim());
+        }
+    }
 }
 
 /// Read `KEY=VALUE` for `key` from ../.env and re-export it as a compile-time env var.
