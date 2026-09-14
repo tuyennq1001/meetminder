@@ -44,6 +44,7 @@ export class SessionStore {
         // for this session never overlap the shared deterministic .tmp path.
         this._persistChain = Promise.resolve();
         this._lastPersistAt = 0;
+        this.lastPersistError = null;
         this._autosaveTimer = null;
         this._noteAutosaveTimer = null;
     }
@@ -75,6 +76,7 @@ export class SessionStore {
         this._persistedMutations = 0;
         this._persistChain = Promise.resolve();
         this._lastPersistAt = Date.now();
+        this.lastPersistError = null;
     }
 
     beginChunk({ engine, sourceLang, targetLang } = {}) {
@@ -173,9 +175,11 @@ export class SessionStore {
             });
             this._persistedMutations = gen;
             this._lastPersistAt = Date.now();
+            this.lastPersistError = null;
             return 'saved';
         } catch (err) {
             console.error('[SessionStore] persist failed:', err);
+            this.lastPersistError = err?.message || String(err);
             return 'failed';
         }
     }
@@ -185,6 +189,50 @@ export class SessionStore {
         this.endedAt = new Date().toISOString();
         this._mutations++;
         return await this.persist();
+    }
+
+    // Seal this store and hand its data to an independent store for a final
+    // background write.  The app can immediately call init() on the live
+    // singleton for the next meeting without the new session leaking into the
+    // previous meeting's JSON/Markdown files.
+    detachForBackgroundSave() {
+        this._cancelAutosave();
+        this.endChunk();
+        this.endedAt = new Date().toISOString();
+        this._mutations++;
+
+        const pendingPersists = this._persistChain.catch(() => {});
+        const detached = new SessionStore();
+        Object.assign(detached, {
+            id: this.id,
+            createdAt: this.createdAt,
+            endedAt: this.endedAt,
+            title: this.title,
+            notes: this.notes,
+            noteImages: this.noteImages,
+            meetingMinutes: this.meetingMinutes,
+            meetingMinutesLang: this.meetingMinutesLang,
+            meetingMinutesJa: this.meetingMinutesJa,
+            meetingMinutesVi: this.meetingMinutesVi,
+            meetingMinutesEn: this.meetingMinutesEn,
+            tags: this.tags,
+            customerId: this.customerId,
+            projectId: this.projectId,
+            category: this.category,
+            scope: this.scope,
+            engine: this.engine,
+            sourceLang: this.sourceLang,
+            targetLang: this.targetLang,
+            chunks: this.chunks,
+            currentChunk: null,
+            _mutations: 1,
+            _persistedMutations: 0,
+            // A prior autosave may still be writing the same session's files.
+            // Preserve write order before the detached final save takes over.
+            _persistChain: pendingPersists,
+            _lastPersistAt: 0,
+        });
+        return detached;
     }
 
     // Discard the current session and remove any autosaved files. Wait for

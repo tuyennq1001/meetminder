@@ -2516,17 +2516,7 @@ async fn generate_gemini_audio_transcript(
                     );
                     continue;
                 }
-                let text = candidate
-                    .and_then(|candidate| candidate.get("content"))
-                    .and_then(|content| content.get("parts"))
-                    .and_then(Value::as_array)
-                    .map(|parts| {
-                        parts
-                            .iter()
-                            .filter_map(|part| part.get("text").and_then(Value::as_str))
-                            .collect::<String>()
-                    });
-                if let Some(text) = text.filter(|value| !value.trim().is_empty()) {
+                if let Some(text) = extract_gemini_candidate_text(&body) {
                     return Ok(text);
                 }
                 last_error = Some("Gemini returned an empty transcript".to_string());
@@ -2874,8 +2864,174 @@ fn build_segments_from_raw(raw_items: Vec<GeminiTranscriptSegment>) -> Vec<Segme
         .collect()
 }
 
+fn value_string(value: &Value, keys: &[&str]) -> String {
+    keys.iter()
+        .find_map(|key| value.get(*key).and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn value_seconds(value: &Value, keys: &[&str]) -> Option<f64> {
+    for key in keys {
+        let Some(raw) = value.get(*key) else {
+            continue;
+        };
+        if let Some(seconds) = raw.as_f64().filter(|value| value.is_finite()) {
+            return Some(seconds.max(0.0));
+        }
+        if let Some(text) = raw.as_str() {
+            if let Ok(seconds) = text.trim().parse::<f64>() {
+                if seconds.is_finite() {
+                    return Some(seconds.max(0.0));
+                }
+            }
+            if let Some(seconds) = timestamp_seconds(text.trim()) {
+                return Some(seconds as f64);
+            }
+        }
+    }
+    None
+}
+
+fn segment_from_value(value: &Value, index: usize) -> Option<Segment> {
+    let src = value_string(
+        value,
+        &[
+            "text",
+            "src",
+            "original_text",
+            "source_text",
+            "source",
+            "transcript",
+            "content",
+        ],
+    );
+    if src.is_empty() {
+        return None;
+    }
+    let tgt = value_string(
+        value,
+        &[
+            "translation",
+            "tgt",
+            "translated_text",
+            "target_text",
+            "target",
+            "translated",
+        ],
+    );
+    let seconds = value_seconds(
+        value,
+        &[
+            "start_sec",
+            "start_seconds",
+            "startSec",
+            "startSeconds",
+            "start",
+            "timestamp",
+            "start_time",
+            "startTime",
+        ],
+    )
+    .unwrap_or(index as f64 * 5.0);
+    Some(Segment {
+        ts: transcript_timestamp(seconds),
+        src,
+        tgt,
+        speaker: None,
+    })
+}
+
+fn segments_from_value(value: &Value) -> Vec<Segment> {
+    if let Some(array) = value.as_array() {
+        return array
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| segment_from_value(item, index))
+            .collect();
+    }
+    let Some(object) = value.as_object() else {
+        return Vec::new();
+    };
+
+    for key in [
+        "segments",
+        "transcript_segments",
+        "transcript",
+        "utterances",
+        "items",
+        "entries",
+        "results",
+        "data",
+        "output",
+    ] {
+        if let Some(nested) = object.get(key) {
+            let segments = segments_from_value(nested);
+            if !segments.is_empty() {
+                return segments;
+            }
+        }
+    }
+    segment_from_value(value, 0).into_iter().collect()
+}
+
+fn parse_gemini_json_value(text: &str) -> Option<Vec<Segment>> {
+    let value = serde_json::from_str::<Value>(text).ok()?;
+    let segments = if let Some(inner) = value.as_str() {
+        serde_json::from_str::<Value>(inner)
+            .ok()
+            .map(|value| segments_from_value(&value))
+            .unwrap_or_default()
+    } else {
+        segments_from_value(&value)
+    };
+    (!segments.is_empty()).then_some(segments)
+}
+
+fn extract_gemini_candidate_text(body: &Value) -> Option<String> {
+    body.get("candidates")
+        .and_then(Value::as_array)
+        .and_then(|candidates| candidates.first())
+        .and_then(|candidate| candidate.get("content"))
+        .and_then(|content| content.get("parts"))
+        .and_then(Value::as_array)
+        .map(|parts| {
+            parts
+                .iter()
+                // Gemini 3.x may include reasoning parts alongside the final
+                // answer. Only the non-thought part is the requested JSON.
+                .filter(|part| part.get("thought").and_then(Value::as_bool) != Some(true))
+                .filter_map(|part| part.get("text").and_then(Value::as_str))
+                .collect::<String>()
+        })
+        .filter(|text| !text.trim().is_empty())
+}
+
 fn parse_gemini_transcript(text: &str) -> Result<Vec<Segment>, String> {
     let trimmed = clean_gemini_json(text);
+
+    // Gemini occasionally returns an equivalent JSON shape (a top-level array,
+    // a `data`/`transcript` wrapper, or an escaped JSON string) even when the
+    // prompt requests the canonical `segments` object. Accept those shapes
+    // before falling back to the more expensive repair/scanner paths.
+    if let Some(segs) = parse_gemini_json_value(trimmed) {
+        return Ok(segs);
+    }
+
+    // Some responses contain a short prose prefix/suffix around the JSON.
+    // Extract the obvious JSON envelope while keeping the original text for
+    // the fallback scanner below.
+    for (open, close) in [('{', '}'), ('[', ']')] {
+        if let (Some(start), Some(end)) = (trimmed.find(open), trimmed.rfind(close)) {
+            if start < end {
+                if let Some(segs) = parse_gemini_json_value(&trimmed[start..=end]) {
+                    return Ok(segs);
+                }
+            }
+        }
+    }
 
     // Tier 1: Direct serde parsing
     if let Ok(payload) = serde_json::from_str::<GeminiTranscriptPayload>(trimmed) {
@@ -3325,20 +3481,7 @@ pub async fn retranscribe_session_with_gemini(
                     );
                     continue;
                 }
-                let text = body
-                    .get("candidates")
-                    .and_then(Value::as_array)
-                    .and_then(|candidates| candidates.first())
-                    .and_then(|candidate| candidate.get("content"))
-                    .and_then(|content| content.get("parts"))
-                    .and_then(Value::as_array)
-                    .map(|parts| {
-                        parts
-                            .iter()
-                            .filter_map(|part| part.get("text").and_then(Value::as_str))
-                            .collect::<String>()
-                    });
-                if let Some(text) = text.filter(|value| !value.trim().is_empty()) {
+                if let Some(text) = extract_gemini_candidate_text(&body) {
                     generated = Some(text);
                     break;
                 }
@@ -4718,6 +4861,32 @@ mod tests {
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].src, "Line 1");
         assert_eq!(segs[0].tgt, "Dòng 1");
+    }
+
+    #[test]
+    fn test_parse_gemini_transcript_equivalent_json_shapes() {
+        let direct_array = r#"[
+            {"start": "00:00:02", "original_text": "Hello", "translated_text": "Xin chào"}
+        ]"#;
+        let segs = parse_gemini_transcript(direct_array).expect("Top-level arrays should parse");
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].ts, "00:00:02");
+        assert_eq!(segs[0].src, "Hello");
+        assert_eq!(segs[0].tgt, "Xin chào");
+
+        let wrapped = r#"{"data":{"transcript":[{"start_seconds":4,"source":"Next","target":"Tiếp"}]}}"#;
+        let segs = parse_gemini_transcript(wrapped).expect("Wrapped transcript should parse");
+        assert_eq!(segs[0].ts, "00:00:04");
+
+        let escaped = r#""{"segments":[{"start_sec":1,"text":"Escaped","translation":"Thoát"}]}""#;
+        let segs = parse_gemini_transcript(escaped).expect("Escaped JSON should parse");
+        assert_eq!(segs[0].src, "Escaped");
+    }
+
+    #[test]
+    fn test_parse_gemini_transcript_rejects_empty_equivalent_shapes() {
+        assert!(parse_gemini_transcript(r#"{"data":[]}"#).is_err());
+        assert!(parse_gemini_transcript(r#"[{"start_sec":0,"translation":"only translation"}]"#).is_err());
     }
 
     #[test]
