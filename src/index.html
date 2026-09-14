@@ -89,7 +89,6 @@
               <option value="vi" data-i18n="language.vi">🇻🇳 Tiếng Việt</option>
               <option value="ja" data-i18n="language.ja">🇯🇵 日本語</option>
               <option value="en" data-i18n="language.en">🇬🇧 English</option>
-              <option value="none" data-i18n="language.none">🚫 Không dịch</option>
             </select>
           </div>
 
@@ -154,7 +153,6 @@
         <div class="network-alert-actions">
           <button type="button" id="btn-net-fallback-local" class="btn-net-action btn-net-primary" data-i18n="network.local" style="display: none;">🖥️ Dùng Local MLX</button>
           <button type="button" id="btn-net-fallback-gemini" class="btn-net-action btn-net-primary" data-i18n="network.gemini" style="display: none;">✨ Chuyển về Gemini</button>
-          <button type="button" id="btn-net-fallback-notrans" class="btn-net-action btn-net-secondary" data-i18n="network.transcriptOnly">🚫 Chỉ chép lời</button>
           <button type="button" id="btn-net-retry" class="btn-net-action btn-net-secondary" data-i18n="network.retry">🔄 Thử lại</button>
           <button type="button" id="btn-net-dismiss" class="btn-net-close" data-i18n-title="network.dismiss" title="Đóng thông báo">✕</button>
         </div>
@@ -753,10 +751,7 @@
           <div style="margin-top: 10px;">
             <span class="field-label" data-i18n="settings.engine.geminiModel">Gemini Model</span>
             <select id="select-gemini-model">
-              <option value="models/gemini-3.5-transcribe-live" data-i18n="settings.engine.gemini35">🎙️ Gemini 3.5 Transcribe Live (Khuyên dùng)</option>
-              <option value="models/gemini-2.0-flash-exp" data-i18n="settings.engine.gemini20">✨ Gemini 2.0 Flash Live</option>
-              <option value="models/gemini-2.0-flash-realtime-exp" data-i18n="settings.engine.gemini20Realtime">⚡ Gemini Realtime Exp</option>
-              <option value="custom" data-i18n="settings.engine.geminiCustom">✏️ Model tùy chỉnh (Nhập tay)...</option>
+              <option value="models/gemini-3.5-live-translate-preview" data-i18n="settings.engine.gemini35LiveTranslate">🌐 Gemini 3.5 Live Translate Preview (Khuyên dùng)</option>
             </select>
           </div>
           <div id="section-gemini-custom-model" style="display:none; margin-top: 6px;">
@@ -1697,7 +1692,6 @@
             <option value="ja" data-i18n="language.ja">🇯🇵 Tiếng Nhật (日本語)</option>
             <option value="vi" data-i18n="language.vi">🇻🇳 Tiếng Việt</option>
             <option value="en" data-i18n="language.en">🇬🇧 English</option>
-            <option value="none" data-i18n="language.none">🚫 Không dịch</option>
           </select>
         </div>
       </div>

@@ -709,20 +709,23 @@ export class TranscriptUI {
 
         if (this.sourceProvisionalText || this.provisionalText) {
             const usingOpenAi = this.provider === 'openai';
-            const srcText = usingOpenAi ? this.sourceProvisionalText : this.provisionalText;
-            const tgtText = usingOpenAi ? this.provisionalText : '';
+            const usingLiveTranslate = this.provider === 'gemini-live';
+            const srcText = (usingOpenAi || usingLiveTranslate)
+                ? this.sourceProvisionalText
+                : this.provisionalText;
+            const tgtText = (usingOpenAi || usingLiveTranslate) ? this.provisionalText : '';
 
             if (srcText) {
                 const pLang = this.provisionalLanguage || '';
                 const langBadge = pLang ? `<span class="lang-badge">${this._langEmoji(pLang)}</span> ` : '';
                 srcHtml += `${langBadge}<div class="seg-text seg-provisional">${this._esc(srcText)}</div>`;
                 timeHtml += `<div class="segment-time">...</div>`;
-                if (!usingOpenAi) {
+                if (!usingOpenAi && !usingLiveTranslate) {
                     tgtHtml += `<div class="seg-text pending">...</div>`;
                 }
             }
 
-            if (usingOpenAi && tgtText) {
+            if ((usingOpenAi || usingLiveTranslate) && tgtText) {
                 tgtHtml += `<div class="seg-text seg-provisional">${this._esc(tgtText)}</div>`;
             }
         }

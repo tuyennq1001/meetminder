@@ -213,7 +213,7 @@ impl Default for Settings {
             soniox_api_key: String::new(),
             openai_api_key: String::new(),
             gemini_api_key: String::new(),
-            gemini_model: "models/gemini-3.5-transcribe-live".to_string(),
+            gemini_model: "models/gemini-3.5-live-translate-preview".to_string(),
             qwen_api_key: String::new(),
             source_language: "ja".to_string(),
             target_language: "vi".to_string(),
@@ -380,14 +380,27 @@ fn default_font_family() -> String {
 }
 
 fn default_gemini_model() -> String {
-    "models/gemini-3.5-transcribe-live".to_string()
+    "models/gemini-3.5-live-translate-preview".to_string()
+}
+
+const RELEASE_IDENTIFIER: &str = "com.meetminder.desktop";
+
+fn settings_identifier() -> &'static str {
+    option_env!("MEET_MINDER_BUILD_IDENTIFIER").unwrap_or(RELEASE_IDENTIFIER)
 }
 
 /// Get the settings file path
-/// ~/Library/Application Support/com.meetminder.desktop/settings.json
+/// ~/Library/Application Support/<bundle identifier>/settings.json
 fn settings_path() -> PathBuf {
     let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("com.meetminder.desktop");
+    path.push(settings_identifier());
+    path.push("settings.json");
+    path
+}
+
+fn release_settings_path() -> PathBuf {
+    let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    path.push(RELEASE_IDENTIFIER);
     path.push("settings.json");
     path
 }
@@ -398,9 +411,19 @@ impl Settings {
         let path = settings_path();
         if path.exists() {
             match fs::read_to_string(&path) {
-                Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+                Ok(content) => normalize_loaded_settings(
+                    serde_json::from_str(&content).unwrap_or_default(),
+                ),
                 Err(_) => Self::default(),
             }
+        } else if settings_identifier() != RELEASE_IDENTIFIER {
+            // First Dev launch starts with the user's existing preferences but
+            // all subsequent saves stay isolated under the Dev bundle id.
+            fs::read_to_string(release_settings_path())
+                .ok()
+                .and_then(|content| serde_json::from_str(&content).ok())
+                .map(normalize_loaded_settings)
+                .unwrap_or_default()
         } else {
             Self::default()
         }
@@ -425,6 +448,19 @@ impl Settings {
     }
 }
 
+fn normalize_loaded_settings(mut settings: Settings) -> Settings {
+    if settings.target_language.trim().is_empty()
+        || settings.target_language.eq_ignore_ascii_case("none")
+        || settings.target_language.eq_ignore_ascii_case("off")
+    {
+        settings.target_language = "vi".to_string();
+    }
+    // Live Translate is now the only Gemini mode exposed by the product. Any
+    // previously saved Transcribe/Flash/custom selection is migrated to it.
+    settings.gemini_model = default_gemini_model();
+    settings
+}
+
 /// Thread-safe settings state managed by Tauri
 pub struct SettingsState(pub Mutex<Settings>);
 
@@ -436,7 +472,7 @@ mod tests {
     fn test_default_settings() {
         let s = Settings::default();
         assert_eq!(s.app_language, "en");
-        assert_eq!(s.gemini_model, "models/gemini-3.5-transcribe-live");
+        assert_eq!(s.gemini_model, "models/gemini-3.5-live-translate-preview");
         assert_eq!(s.source_language, "ja");
         assert_eq!(s.target_language, "vi");
         assert_eq!(s.audio_source, "system");
@@ -469,7 +505,7 @@ mod tests {
         let s: Result<Settings, _> = serde_json::from_str(json_str);
         assert!(s.is_ok());
         let s = s.unwrap();
-        assert_eq!(s.gemini_model, "models/gemini-3.5-transcribe-live");
+        assert_eq!(s.gemini_model, "models/gemini-3.5-live-translate-preview");
         assert_eq!(s.font_size, 16);
         assert_eq!(s.menu_font_family, "system");
         assert_eq!(s.menu_font_size, 12);
@@ -496,7 +532,7 @@ mod tests {
         assert_eq!(s.gemini_api_key, "test-key");
         assert_eq!(s.source_language, "en");
         assert_eq!(s.target_language, "ja");
-        assert_eq!(s.gemini_model, "models/gemini-3.5-transcribe-live");
+        assert_eq!(s.gemini_model, "models/gemini-3.5-live-translate-preview");
         assert!((s.overlay_opacity - 0.85).abs() < f64::EPSILON);
         assert_eq!(s.font_size, 16);
         assert!((s.tts_speed - 1.2).abs() < f64::EPSILON);
