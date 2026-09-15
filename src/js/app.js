@@ -517,6 +517,7 @@ class App {
         this._sessionAudioElement = null;
         this._sessionAudioId = null;
         this._sessionAudioTitle = null;
+        this._sessionPlayerProgressFrame = null;
         // Logs table sort: default newest first, restore the user's last choice.
         this._sessionSort = { field: 'created_at', dir: 'desc' };
         try {
@@ -6779,6 +6780,7 @@ class App {
     }
 
     _stopSessionAudioPlayback() {
+        this._stopSessionPlayerProgressLoop();
         if (this._sessionAudioElement) this._sessionAudioElement.pause();
         this._sessionAudioElement = null;
         this._sessionAudioId = null;
@@ -6942,13 +6944,18 @@ class App {
                 if (this._sessionAudioElement === audio) this._updateSessionPlayerUI(audio);
             };
             audio.onpause = () => {
-                if (this._sessionAudioElement === audio) this._setSessionPlayerUI(id, false);
+                if (this._sessionAudioElement !== audio) return;
+                this._stopSessionPlayerProgressLoop();
+                this._setSessionPlayerUI(id, false);
             };
             audio.onplay = () => {
-                if (this._sessionAudioElement === audio) this._setSessionPlayerUI(id, true);
+                if (this._sessionAudioElement !== audio) return;
+                this._setSessionPlayerUI(id, true);
+                this._startSessionPlayerProgressLoop(audio);
             };
             audio.onended = () => {
                 if (this._sessionAudioElement !== audio) return;
+                this._stopSessionPlayerProgressLoop();
                 this._sessionAudioElement = null;
                 this._sessionAudioId = null;
                 this._sessionAudioTitle = null;
@@ -6959,6 +6966,7 @@ class App {
             };
             audio.onerror = () => {
                 if (this._sessionAudioElement !== audio) return;
+                this._stopSessionPlayerProgressLoop();
                 const mediaError = audio.error;
                 console.error('[App] Audio playback error:', mediaError?.code, mediaError?.message);
                 const reason = mediaError?.code === 3
@@ -6976,7 +6984,10 @@ class App {
                 this._resetSessionPlayerUI();
             };
             await audio.play();
-            if (this._sessionAudioElement === audio) this._setSessionPlayerUI(id, true);
+            if (this._sessionAudioElement === audio) {
+                this._setSessionPlayerUI(id, true);
+                this._startSessionPlayerProgressLoop(audio);
+            }
         } catch (err) {
             this._showToast(t('session.audioPlayFailed', { error: err }), 'error');
             if (this._sessionAudioId === id) this._stopSessionAudioPlayback();
@@ -6987,10 +6998,13 @@ class App {
 
     _formatPlayerTime(seconds) {
         if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
-        const totalMinutes = seconds > 0 ? Math.ceil(seconds / 60) : 0;
-        const h = Math.floor(totalMinutes / 60);
-        const m = totalMinutes % 60;
-        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        const total = Math.floor(seconds);
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = String(total % 60).padStart(2, '0');
+        return h > 0
+            ? `${h}:${String(m).padStart(2, '0')}:${s}`
+            : `${String(m).padStart(2, '0')}:${s}`;
     }
 
     _sessionPlayerElements() {
@@ -7079,6 +7093,26 @@ class App {
             if (current) current.textContent = this._formatPlayerTime(audio.currentTime);
             if (duration) duration.textContent = this._formatPlayerTime(durationSeconds);
         });
+    }
+
+    _startSessionPlayerProgressLoop(audio) {
+        this._stopSessionPlayerProgressLoop();
+        const tick = () => {
+            if (this._sessionAudioElement !== audio || audio.paused || audio.ended) {
+                this._sessionPlayerProgressFrame = null;
+                return;
+            }
+            this._updateSessionPlayerUI(audio);
+            this._sessionPlayerProgressFrame = window.requestAnimationFrame(tick);
+        };
+        this._sessionPlayerProgressFrame = window.requestAnimationFrame(tick);
+    }
+
+    _stopSessionPlayerProgressLoop() {
+        if (this._sessionPlayerProgressFrame !== null) {
+            window.cancelAnimationFrame(this._sessionPlayerProgressFrame);
+            this._sessionPlayerProgressFrame = null;
+        }
     }
 
     _resetSessionPlayerElement(player) {
