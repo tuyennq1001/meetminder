@@ -225,6 +225,176 @@ pub struct CaptureStatus {
     pub recording_error: Option<String>,
 }
 
+/// Mixes two i16 audio samples with a transparent soft-clipping limiter.
+/// - When the combined amplitude is within normal speech levels (|sum| <= 24576, approx -2.5 dBFS),
+///   the sum is passed through with 100% unity gain (1.0x) to preserve full SNR for STT.
+/// - When the combined amplitude exceeds 24576, a smooth hyperbolic tangent (tanh) soft-knee
+///   compresses the peak smoothly toward +/- 32767, preventing harsh square-wave clipping.
+pub(crate) fn mix_and_soft_clip(s1: i16, s2: i16) -> i16 {
+    let sum = s1 as f64 + s2 as f64;
+    const THRESHOLD: f64 = 24576.0; // 0.75 of 32768.0 (-2.5 dBFS)
+    const MAX_VAL: f64 = 32767.0;
+
+    let abs_sum = sum.abs();
+    if abs_sum <= THRESHOLD {
+        sum as i16
+    } else {
+        let headroom = MAX_VAL - THRESHOLD;
+        let excess = (abs_sum - THRESHOLD) / headroom;
+        let saturated = THRESHOLD + headroom * excess.tanh();
+        let result = if sum > 0.0 { saturated } else { -saturated };
+        result.clamp(-32768.0, 32767.0) as i16
+    }
+}
+
+pub(crate) fn run_mixer_loop(
+    sys_rx: mpsc::Receiver<Vec<u8>>,
+    mic_rx: mpsc::Receiver<Vec<u8>>,
+    merged_tx: mpsc::Sender<Vec<u8>>,
+    stop_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+) {
+    const FRAME_SAMPLES: usize = 320; // 20 ms at 16 kHz
+    const PREBUFFER_SAMPLES: usize = FRAME_SAMPLES * 2; // 40 ms initial cushion
+    const MAX_WAIT_BUFFER_SAMPLES: usize = FRAME_SAMPLES * 5; // 100 ms wait cushion
+    const MAX_BUFFER_SAMPLES: usize = 16_000; // 1 second max buffer to prevent bloat without dropping bursts
+    const ACTIVITY_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(150);
+    const MAX_WAIT_FOR_LATE_STREAM: std::time::Duration = std::time::Duration::from_millis(15);
+
+    let mut sys_buf: VecDeque<i16> = VecDeque::with_capacity(MAX_BUFFER_SAMPLES);
+    let mut mic_buf: VecDeque<i16> = VecDeque::with_capacity(MAX_BUFFER_SAMPLES);
+    let mut last_sys_recv: Option<std::time::Instant> = None;
+    let mut last_mic_recv: Option<std::time::Instant> = None;
+    let mut next_frame: Option<std::time::Instant> = None;
+    let mut wait_since: Option<std::time::Instant> = None;
+
+    loop {
+        if let Some(ref stop) = stop_flag {
+            if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+        }
+
+        // Drain sys_rx
+        let mut sys_disconnected = false;
+        match sys_rx.try_recv() {
+            Ok(data) => {
+                last_sys_recv = Some(std::time::Instant::now());
+                for chunk in data.chunks_exact(2) {
+                    sys_buf.push_back(i16::from_le_bytes([chunk[0], chunk[1]]));
+                }
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => sys_disconnected = true,
+        }
+        while let Ok(data) = sys_rx.try_recv() {
+            last_sys_recv = Some(std::time::Instant::now());
+            for chunk in data.chunks_exact(2) {
+                sys_buf.push_back(i16::from_le_bytes([chunk[0], chunk[1]]));
+            }
+        }
+
+        // Drain mic_rx
+        let mut mic_disconnected = false;
+        match mic_rx.try_recv() {
+            Ok(data) => {
+                last_mic_recv = Some(std::time::Instant::now());
+                for chunk in data.chunks_exact(2) {
+                    mic_buf.push_back(i16::from_le_bytes([chunk[0], chunk[1]]));
+                }
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => mic_disconnected = true,
+        }
+        while let Ok(data) = mic_rx.try_recv() {
+            last_mic_recv = Some(std::time::Instant::now());
+            for chunk in data.chunks_exact(2) {
+                mic_buf.push_back(i16::from_le_bytes([chunk[0], chunk[1]]));
+            }
+        }
+
+        // Clean exit if both inputs are disconnected and emptied
+        if sys_disconnected && mic_disconnected && sys_buf.is_empty() && mic_buf.is_empty() {
+            break;
+        }
+
+        // Keep latency bounded when the two hardware clocks drift.
+        if sys_buf.len() > MAX_BUFFER_SAMPLES {
+            let excess = sys_buf.len() - MAX_BUFFER_SAMPLES;
+            sys_buf.drain(..excess);
+        }
+        if mic_buf.len() > MAX_BUFFER_SAMPLES {
+            let excess = mic_buf.len() - MAX_BUFFER_SAMPLES;
+            mic_buf.drain(..excess);
+        }
+
+        let now = std::time::Instant::now();
+
+        // Start timing once either buffer has accumulated enough initial samples
+        if next_frame.is_none()
+            && (sys_buf.len() >= PREBUFFER_SAMPLES || mic_buf.len() >= PREBUFFER_SAMPLES)
+        {
+            next_frame = Some(now);
+        }
+
+        if let Some(target_time) = next_frame {
+            if now >= target_time {
+                let sys_active = last_sys_recv
+                    .map(|t| now.duration_since(t) < ACTIVITY_TIMEOUT)
+                    .unwrap_or(false);
+                let mic_active = last_mic_recv
+                    .map(|t| now.duration_since(t) < ACTIVITY_TIMEOUT)
+                    .unwrap_or(false);
+
+                // If both streams are currently active, but one is momentarily short on samples,
+                // give the late stream a brief grace window (up to 15 ms) before proceeding.
+                // However, if the other buffer is already at max wait cushion, do NOT wait.
+                let sys_short = sys_active && sys_buf.len() < FRAME_SAMPLES;
+                let mic_short = mic_active && mic_buf.len() < FRAME_SAMPLES;
+                let either_short = sys_short || mic_short;
+
+                let can_wait = either_short
+                    && sys_buf.len() < MAX_WAIT_BUFFER_SAMPLES
+                    && mic_buf.len() < MAX_WAIT_BUFFER_SAMPLES;
+
+                if can_wait {
+                    let wait_start = *wait_since.get_or_insert(now);
+                    if now.duration_since(wait_start) < MAX_WAIT_FOR_LATE_STREAM {
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                        continue;
+                    }
+                }
+                wait_since = None;
+
+                // If both are inactive and both buffers are empty, idle sleep
+                if sys_buf.is_empty() && mic_buf.is_empty() {
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                    continue;
+                }
+
+                let mut mixed_bytes = Vec::with_capacity(FRAME_SAMPLES * 2);
+                for _ in 0..FRAME_SAMPLES {
+                    let s1 = sys_buf.pop_front().unwrap_or(0);
+                    let s2 = mic_buf.pop_front().unwrap_or(0);
+                    let mixed = mix_and_soft_clip(s1, s2);
+                    mixed_bytes.extend_from_slice(&mixed.to_le_bytes());
+                }
+
+                if merged_tx.send(mixed_bytes).is_err() {
+                    break;
+                }
+
+                let mut next = target_time + std::time::Duration::from_millis(20);
+                if next + std::time::Duration::from_millis(60) < now {
+                    next = now + std::time::Duration::from_millis(20);
+                }
+                next_frame = Some(next);
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+}
+
 /// Start audio capture and forward data to the frontend via IPC channel.
 /// If `record_path` is specified, also streams PCM audio to a valid .wav file.
 #[tauri::command]
@@ -357,81 +527,7 @@ pub async fn start_capture(
             let (merged_tx, merged_rx) = mpsc::channel::<Vec<u8>>();
 
             std::thread::spawn(move || {
-                const FRAME_SAMPLES: usize = 320; // 20 ms at 16 kHz
-                const PREBUFFER_SAMPLES: usize = FRAME_SAMPLES * 2;
-                const MAX_BUFFER_SAMPLES: usize = FRAME_SAMPLES * 10;
-                let mut sys_buf: VecDeque<i16> = VecDeque::with_capacity(MAX_BUFFER_SAMPLES);
-                let mut mic_buf: VecDeque<i16> = VecDeque::with_capacity(MAX_BUFFER_SAMPLES);
-                let mut started = false;
-                let mut next_frame = std::time::Instant::now();
-                let mut wait_since: Option<std::time::Instant> = None;
-
-                loop {
-                    // Drain sys_rx
-                    while let Ok(data) = sys_rx.try_recv() {
-                        for chunk in data.chunks_exact(2) {
-                            sys_buf.push_back(i16::from_le_bytes([chunk[0], chunk[1]]));
-                        }
-                    }
-                    // Drain mic_rx
-                    while let Ok(data) = mic_rx.try_recv() {
-                        for chunk in data.chunks_exact(2) {
-                            mic_buf.push_back(i16::from_le_bytes([chunk[0], chunk[1]]));
-                        }
-                    }
-
-                    // Keep latency bounded when the two hardware clocks drift.
-                    if sys_buf.len() > MAX_BUFFER_SAMPLES {
-                        let excess = sys_buf.len() - MAX_BUFFER_SAMPLES;
-                        sys_buf.drain(..excess);
-                    }
-                    if mic_buf.len() > MAX_BUFFER_SAMPLES {
-                        let excess = mic_buf.len() - MAX_BUFFER_SAMPLES;
-                        mic_buf.drain(..excess);
-                    }
-
-                    if !started
-                        && (sys_buf.len() >= PREBUFFER_SAMPLES
-                            || mic_buf.len() >= PREBUFFER_SAMPLES)
-                    {
-                        started = true;
-                        next_frame = std::time::Instant::now();
-                    }
-
-                    let now = std::time::Instant::now();
-                    if started && now >= next_frame {
-                        // Give a late callback up to 30 ms to arrive instead
-                        // of immediately inserting a discontinuous zero frame.
-                        let both_ready =
-                            sys_buf.len() >= FRAME_SAMPLES && mic_buf.len() >= FRAME_SAMPLES;
-                        if !both_ready {
-                            let first_wait = *wait_since.get_or_insert(now);
-                            if now.duration_since(first_wait) < std::time::Duration::from_millis(30)
-                            {
-                                std::thread::sleep(std::time::Duration::from_millis(2));
-                                continue;
-                            }
-                        }
-                        wait_since = None;
-                        let mut mixed_bytes = Vec::with_capacity(FRAME_SAMPLES * 2);
-                        for _ in 0..FRAME_SAMPLES {
-                            let s1 = sys_buf.pop_front().unwrap_or(0) as i32;
-                            let s2 = mic_buf.pop_front().unwrap_or(0) as i32;
-                            // Give both sources 6 dB headroom to avoid hard clipping.
-                            let mixed = ((s1 + s2) / 2) as i16;
-                            mixed_bytes.extend_from_slice(&mixed.to_le_bytes());
-                        }
-                        if merged_tx.send(mixed_bytes).is_err() {
-                            break;
-                        }
-                        next_frame += std::time::Duration::from_millis(20);
-                        if next_frame + std::time::Duration::from_millis(100) < now {
-                            next_frame = now + std::time::Duration::from_millis(20);
-                        }
-                    }
-
-                    std::thread::sleep(std::time::Duration::from_millis(2));
-                }
+                run_mixer_loop(sys_rx, mic_rx, merged_tx, None);
             });
 
             merged_rx
@@ -1028,4 +1124,127 @@ mod tests {
 
         fs::remove_dir_all(dir).unwrap();
     }
+
+    #[test]
+    fn mix_and_soft_clip_linear_in_speech_band() {
+        use super::mix_and_soft_clip;
+        // Below 24576 threshold, sum is strictly linear (1.0x gain)
+        assert_eq!(mix_and_soft_clip(1000, 0), 1000);
+        assert_eq!(mix_and_soft_clip(0, 15000), 15000);
+        assert_eq!(mix_and_soft_clip(10000, 12000), 22000);
+        assert_eq!(mix_and_soft_clip(-10000, -12000), -22000);
+        assert_eq!(mix_and_soft_clip(24576, 0), 24576);
+        assert_eq!(mix_and_soft_clip(-24576, 0), -24576);
+    }
+
+    #[test]
+    fn mix_and_soft_clip_prevents_overflow_and_harsh_clipping() {
+        use super::mix_and_soft_clip;
+        // Peak sum above threshold is smoothly compressed
+        let loud_sum = mix_and_soft_clip(25000, 10000); // sum = 35000
+        assert!(loud_sum > 24576);
+
+        // Maximum possible input sum stays below 32767 with smooth saturation
+        let max_pos = mix_and_soft_clip(32767, 32767);
+        assert!(max_pos >= 32000, "max_pos = {}", max_pos);
+
+        // Minimum possible input sum stays above -32768 with smooth saturation
+        let max_neg = mix_and_soft_clip(-32768, -32768);
+        assert!(max_neg <= -32000, "max_neg = {}", max_neg);
+    }
+
+    #[test]
+    fn mixer_loop_handles_silent_system_audio_without_blocking_microphone() {
+        use super::run_mixer_loop;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::{mpsc, Arc};
+
+        let (sys_tx, sys_rx) = mpsc::channel::<Vec<u8>>();
+        let (mic_tx, mic_rx) = mpsc::channel::<Vec<u8>>();
+        let (merged_tx, merged_rx) = mpsc::channel::<Vec<u8>>();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = stop.clone();
+
+        let handle = std::thread::spawn(move || {
+            run_mixer_loop(sys_rx, mic_rx, merged_tx, Some(stop_clone));
+        });
+
+        // Send 10 frames (320 samples each = 640 bytes) of mic data
+        // System audio sends NOTHING (completely silent/inactive)
+        let num_frames = 10;
+        let pcm_chunk: Vec<u8> = (0..320i16)
+            .flat_map(|i| ((i % 1000) * 10).to_le_bytes())
+            .collect();
+
+        for _ in 0..num_frames {
+            mic_tx.send(pcm_chunk.clone()).unwrap();
+        }
+
+        // Collect merged audio
+        let mut received_bytes = Vec::new();
+        let start = std::time::Instant::now();
+        while received_bytes.len() < num_frames * 640 && start.elapsed() < std::time::Duration::from_secs(2) {
+            if let Ok(chunk) = merged_rx.recv_timeout(std::time::Duration::from_millis(50)) {
+                received_bytes.extend(chunk);
+            }
+        }
+
+        stop.store(true, Ordering::Relaxed);
+        drop(sys_tx);
+        drop(mic_tx);
+        let _ = handle.join();
+
+        assert_eq!(
+            received_bytes.len(),
+            num_frames * 640,
+            "All mic audio must be emitted even when system audio is completely silent"
+        );
+    }
+
+    #[test]
+    fn mixer_loop_handles_silent_microphone_without_blocking_system() {
+        use super::run_mixer_loop;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::{mpsc, Arc};
+
+        let (sys_tx, sys_rx) = mpsc::channel::<Vec<u8>>();
+        let (mic_tx, mic_rx) = mpsc::channel::<Vec<u8>>();
+        let (merged_tx, merged_rx) = mpsc::channel::<Vec<u8>>();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = stop.clone();
+
+        let handle = std::thread::spawn(move || {
+            run_mixer_loop(sys_rx, mic_rx, merged_tx, Some(stop_clone));
+        });
+
+        // Send 10 frames of system audio; mic sends NOTHING
+        let num_frames = 10;
+        let pcm_chunk: Vec<u8> = (0..320i16)
+            .flat_map(|i| ((i % 1000) * 10).to_le_bytes())
+            .collect();
+
+        for _ in 0..num_frames {
+            sys_tx.send(pcm_chunk.clone()).unwrap();
+        }
+
+        let mut received_bytes = Vec::new();
+        let start = std::time::Instant::now();
+        while received_bytes.len() < num_frames * 640 && start.elapsed() < std::time::Duration::from_secs(2) {
+            if let Ok(chunk) = merged_rx.recv_timeout(std::time::Duration::from_millis(50)) {
+                received_bytes.extend(chunk);
+            }
+        }
+
+        stop.store(true, Ordering::Relaxed);
+        drop(sys_tx);
+        drop(mic_tx);
+        let _ = handle.join();
+
+        assert_eq!(
+            received_bytes.len(),
+            num_frames * 640,
+            "All system audio must be emitted even when microphone is completely silent"
+        );
+    }
 }
+
