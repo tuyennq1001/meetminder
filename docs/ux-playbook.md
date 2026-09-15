@@ -142,6 +142,11 @@ Các quy tắc đã chứng minh hữu ích trong Meet Minder:
   lý do và chặn ở bước thực thi với hướng dẫn rõ ràng.
 - Với thao tác tốn thời gian, cho thấy các bước và phần trăm/trạng thái thay vì
   spinner vô hạn.
+- Các floating progress card của tác vụ nền nên dùng chung kích thước và vị trí
+  neo; copy dài cần ellipsis và chỉ co theo viewport nhỏ, để title/status thay
+  đổi không làm card nhảy kích thước hoặc làm lệch các card đang xếp chồng.
+- Message tiến trình từ backend phải đi qua lớp i18n của frontend trước khi
+  hiển thị; không đưa operational copy theo một locale cố định thẳng vào UI.
 - Với hành động nguy hiểm, copy phải nói rõ phạm vi ảnh hưởng và nút phải nói
   rõ kết quả.
 - Không dùng toast làm kênh duy nhất cho lỗi quan trọng; lỗi cần lưu lại trong
