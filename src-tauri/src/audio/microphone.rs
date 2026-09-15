@@ -5,6 +5,85 @@ use std::sync::Arc;
 
 use super::TARGET_SAMPLE_RATE;
 
+/// 2nd-order Biquad filter (Direct Form II Transposed).
+#[derive(Clone, Copy, Debug)]
+struct Biquad {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+    z1: f32,
+    z2: f32,
+}
+
+impl Biquad {
+    fn new_lowpass(sample_rate: f64, cutoff: f64, q: f64) -> Self {
+        let omega = std::f64::consts::TAU * cutoff / sample_rate;
+        let sin_omega = omega.sin();
+        let cos_omega = omega.cos();
+        let alpha = sin_omega / (2.0 * q);
+
+        let b0 = (1.0 - cos_omega) / 2.0;
+        let b1 = 1.0 - cos_omega;
+        let b2 = (1.0 - cos_omega) / 2.0;
+        let a0 = 1.0 + alpha;
+        let a1 = -2.0 * cos_omega;
+        let a2 = 1.0 - alpha;
+
+        Self {
+            b0: (b0 / a0) as f32,
+            b1: (b1 / a0) as f32,
+            b2: (b2 / a0) as f32,
+            a1: (a1 / a0) as f32,
+            a2: (a2 / a0) as f32,
+            z1: 0.0,
+            z2: 0.0,
+        }
+    }
+
+    #[inline]
+    fn process(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.z1;
+        self.z1 = self.b1 * x - self.a1 * y + self.z2;
+        self.z2 = self.b2 * x - self.a2 * y;
+        y
+    }
+}
+
+/// 4th-order Butterworth low-pass filter (cascade of two biquads, -24 dB/octave).
+/// Provides a maximally flat passband for speech with steep roll-off to suppress aliasing.
+#[derive(Clone, Copy, Debug)]
+struct Butterworth4thOrderLowPass {
+    stage1: Biquad,
+    stage2: Biquad,
+}
+
+impl Butterworth4thOrderLowPass {
+    fn new(source_rate: u32, target_rate: u32) -> Option<Self> {
+        if source_rate <= target_rate {
+            return None;
+        }
+        // Cutoff at ~7200 Hz gives a transparent speech passband (0-7kHz)
+        // while attenuating everything at and above the 8kHz Nyquist of 16kHz audio.
+        let cutoff = (target_rate as f64 * 0.45).min(source_rate as f64 * 0.45);
+        let fs = source_rate as f64;
+        // Butterworth 4th order Q factors: Q1 = 1 / (2 * cos(pi/8)), Q2 = 1 / (2 * cos(3*pi/8))
+        let q1 = 1.0 / (2.0 * (std::f64::consts::PI / 8.0).cos());
+        let q2 = 1.0 / (2.0 * (3.0 * std::f64::consts::PI / 8.0).cos());
+
+        Some(Self {
+            stage1: Biquad::new_lowpass(fs, cutoff, q1),
+            stage2: Biquad::new_lowpass(fs, cutoff, q2),
+        })
+    }
+
+    #[inline]
+    fn process(&mut self, sample: f32) -> f32 {
+        self.stage2.process(self.stage1.process(sample))
+    }
+}
+
 /// Stateful resampling keeps the fractional source position between CPAL
 /// callbacks. Re-starting interpolation at zero for every callback drops a
 /// different number of source frames (especially at 44.1/48 kHz), producing
@@ -13,34 +92,7 @@ pub(crate) struct StreamingLinearResampler {
     step: f64,
     position: f64,
     samples: Vec<f32>,
-    lowpass: Option<OnePoleLowPass>,
-}
-
-#[derive(Clone, Copy)]
-struct OnePoleLowPass {
-    state: f32,
-    alpha: f32,
-}
-
-impl OnePoleLowPass {
-    fn new(source_rate: u32, target_rate: u32) -> Option<Self> {
-        if source_rate <= target_rate {
-            return None;
-        }
-        // Keep the speech band while attenuating content above the Nyquist
-        // frequency of the 16 kHz output before decimation.
-        let cutoff = (target_rate as f64 * 0.44).min(source_rate as f64 * 0.45);
-        let x = (std::f64::consts::TAU * cutoff / source_rate as f64) as f32;
-        Some(Self {
-            state: 0.0,
-            alpha: x / (1.0 + x),
-        })
-    }
-
-    fn process(&mut self, sample: f32) -> f32 {
-        self.state += self.alpha * (sample - self.state);
-        self.state
-    }
+    lowpass: Option<Butterworth4thOrderLowPass>,
 }
 
 impl StreamingLinearResampler {
@@ -49,7 +101,7 @@ impl StreamingLinearResampler {
             step: source_rate as f64 / target_rate as f64,
             position: 0.0,
             samples: Vec::new(),
-            lowpass: OnePoleLowPass::new(source_rate, target_rate),
+            lowpass: Butterworth4thOrderLowPass::new(source_rate, target_rate),
         }
     }
 
@@ -426,4 +478,38 @@ mod tests {
             assert!((actual - expected).abs() < 1e-6);
         }
     }
+
+    #[test]
+    fn butterworth_lowpass_attenuates_above_nyquist() {
+        let sample_rate = 48_000.0;
+        let mut filter = super::Butterworth4thOrderLowPass::new(48_000, 16_000).unwrap();
+
+        // Feed 1 kHz tone (passband)
+        let mut rms_1k = 0.0f32;
+        for i in 0..4800 {
+            let sample = (2.0 * std::f32::consts::PI * 1000.0 * (i as f32) / sample_rate as f32).sin();
+            let filtered = filter.process(sample);
+            if i >= 480 { // Skip initial transient
+                rms_1k += filtered * filtered;
+            }
+        }
+        rms_1k = (rms_1k / (4800.0 - 480.0)).sqrt();
+        // 1 kHz should pass with minimal attenuation (> 0.95 amplitude)
+        assert!(rms_1k > 0.65, "1 kHz tone should pass through: rms={}", rms_1k);
+
+        // Feed 12 kHz tone (well above 8 kHz Nyquist of 16 kHz)
+        let mut filter_12k = super::Butterworth4thOrderLowPass::new(48_000, 16_000).unwrap();
+        let mut rms_12k = 0.0f32;
+        for i in 0..4800 {
+            let sample = (2.0 * std::f32::consts::PI * 12000.0 * (i as f32) / sample_rate as f32).sin();
+            let filtered = filter_12k.process(sample);
+            if i >= 480 {
+                rms_12k += filtered * filtered;
+            }
+        }
+        rms_12k = (rms_12k / (4800.0 - 480.0)).sqrt();
+        // 12 kHz should be heavily attenuated (> 20 dB suppression, RMS < 0.07)
+        assert!(rms_12k < 0.07, "12 kHz tone should be heavily attenuated: rms={}", rms_12k);
+    }
 }
+
