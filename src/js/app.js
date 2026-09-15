@@ -554,6 +554,8 @@ class App {
         this._templateDrafts = {};
         this._notesTemplateEditor = null;
         this._selectedSessionIds = new Set();
+        this._sessionSelectionAnchorId = null;
+        this._sessionSelectionOrder = [];
         this._cachedSessions = [];
         this._filteredSessions = [];
         this._geminiReconnectTimer = null;
@@ -6642,6 +6644,7 @@ class App {
         try {
             await invoke('delete_sessions', { ids });
             this._selectedSessionIds.clear();
+            this._sessionSelectionAnchorId = null;
             this._showToast(t('modal.delete.batchSuccess', { count }), 'success');
             await this._showSessions();
         } catch (err) {
@@ -6816,7 +6819,7 @@ class App {
             }
             const current = player.querySelector('[data-player-current]');
             const duration = player.querySelector('[data-player-duration]');
-            if (current) current.textContent = '0:00';
+            if (current) current.textContent = this._formatPlayerTime(0);
             if (duration) duration.textContent = this._formatPlayerTime(knownDuration);
         });
     }
@@ -6983,12 +6986,11 @@ class App {
     }
 
     _formatPlayerTime(seconds) {
-        if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
-        const total = Math.floor(seconds);
-        const h = Math.floor(total / 3600);
-        const m = Math.floor((total % 3600) / 60);
-        const s = String(total % 60).padStart(2, '0');
-        return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+        if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
+        const totalMinutes = seconds > 0 ? Math.ceil(seconds / 60) : 0;
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     }
 
     _sessionPlayerElements() {
@@ -7011,6 +7013,14 @@ class App {
                 player.classList.remove('is-active');
             }
         });
+        document.querySelectorAll('[data-play-session], .session-btn-action.play-tts').forEach(button => {
+            const buttonId = button.dataset.playSession || button.dataset.id;
+            const isCurrent = Boolean(id) && buttonId === id;
+            button.textContent = isCurrent && playing ? '❚❚' : '▶';
+            const actionLabel = isCurrent && playing ? t('session.audioPause') : t('logsTable.playTooltip');
+            button.title = actionLabel;
+            button.setAttribute('aria-label', actionLabel);
+        });
         const detailBtn = document.getElementById('btn-session-tts-play');
         if (detailBtn && this._currentViewedSession?.id === id) {
             detailBtn.innerHTML = playing ? `⏸ ${t('session.audioPause')}` : `▶ ${t('session.audioResume')}`;
@@ -7032,6 +7042,16 @@ class App {
                 }
             }
             if (timeline) timeline.disabled = loading;
+        });
+        document.querySelectorAll('[data-play-session], .session-btn-action.play-tts').forEach(button => {
+            const buttonId = button.dataset.playSession || button.dataset.id;
+            if (buttonId !== id) return;
+            button.disabled = loading;
+            if (loading) {
+                button.textContent = '…';
+                button.title = t('session.audioLoading');
+                button.setAttribute('aria-label', t('session.audioLoading'));
+            }
         });
         const detailBtn = document.getElementById('btn-session-tts-play');
         if (detailBtn && this._currentViewedSession?.id === id) {
@@ -7083,14 +7103,20 @@ class App {
         }
         const current = player.querySelector('[data-player-current]');
         const duration = player.querySelector('[data-player-duration]');
-        if (current) current.textContent = '0:00';
-        if (duration) duration.textContent = '0:00';
+        if (current) current.textContent = this._formatPlayerTime(0);
+        if (duration) duration.textContent = this._formatPlayerTime(0);
     }
 
     _resetSessionPlayerUI() {
         this._sessionPlayerElements().forEach(player => {
             this._resetSessionPlayerElement(player);
             player.dataset.legacy = '0';
+        });
+        document.querySelectorAll('[data-play-session], .session-btn-action.play-tts').forEach(button => {
+            button.disabled = false;
+            button.textContent = '▶';
+            button.title = t('logsTable.playTooltip');
+            button.setAttribute('aria-label', t('logsTable.playTooltip'));
         });
         const miniPlayer = document.getElementById('session-mini-player');
         if (miniPlayer) {
@@ -7611,9 +7637,10 @@ class App {
         this._sessionPage = Math.min(Math.max(1, this._sessionPage), totalPages);
         const pageStart = (this._sessionPage - 1) * this._sessionPageSize;
         const pageItems = filtered.slice(pageStart, pageStart + this._sessionPageSize);
+        this._sessionSelectionOrder = filtered.map(session => session.id);
         const selectedCount = this._selectedSessionIds.size;
-        const selectedInFiltered = filtered.filter(session => this._selectedSessionIds.has(session.id)).length;
-        const allFilteredSelected = filtered.length > 0 && selectedInFiltered === filtered.length;
+        const selectedInPage = pageItems.filter(session => this._selectedSessionIds.has(session.id)).length;
+        const allPageSelected = pageItems.length > 0 && selectedInPage === pageItems.length;
         const sortIcon = (field) => this._sessionSort.field === field
             ? (this._sessionSort.dir === 'asc' ? '▲' : '▼')
             : '⇅';
@@ -7635,8 +7662,8 @@ class App {
             // Update select-all checkbox state
             const selectAllCheckbox = listEl.querySelector('#chk-select-all-sessions');
             if (selectAllCheckbox) {
-                selectAllCheckbox.checked = allFilteredSelected;
-                selectAllCheckbox.indeterminate = selectedInFiltered > 0 && !allFilteredSelected;
+                selectAllCheckbox.checked = allPageSelected;
+                selectAllCheckbox.indeterminate = selectedInPage > 0 && !allPageSelected;
             }
 
             // Update batch delete button next to log name filter
@@ -7644,7 +7671,7 @@ class App {
             if (batchDeleteBtn) {
                 batchDeleteBtn.classList.toggle('is-visible', selectedCount > 0);
                 batchDeleteBtn.disabled = selectedCount === 0;
-                batchDeleteBtn.textContent = `🗑 ${t('logsTable.deleteSelected', { count: selectedCount })}`;
+                batchDeleteBtn.textContent = t('logsTable.deleteSelected', { count: selectedCount });
             }
 
             // Update sort indicators in table header
@@ -7670,6 +7697,9 @@ class App {
 
             // Rebind row action events on the updated rows
             this._bindSessionRowEvents(existingTable);
+            if (this._sessionAudioId) {
+                this._setSessionPlayerUI(this._sessionAudioId, this._sessionAudioElement ? !this._sessionAudioElement.paused : false);
+            }
             return;
         }
 
@@ -7738,18 +7768,19 @@ class App {
                 <th>#</th>
                 <th class="${sortHeaderClass('title')}" data-sort="title" tabindex="0" aria-sort="${sortHeaderAria('title')}">${t('logsTable.title')} <span class="sort-icon">${sortIcon('title')}</span></th>
                 <th class="${sortHeaderClass('created_at')}" data-sort="created_at" tabindex="0" aria-sort="${sortHeaderAria('created_at')}">${t('logsTable.date')} <span class="sort-icon">${sortIcon('created_at')}</span></th>
+                <th class="${sortHeaderClass('duration_sec')}" data-sort="duration_sec" tabindex="0" aria-sort="${sortHeaderAria('duration_sec')}">${t('logsTable.duration')} <span class="sort-icon">${sortIcon('duration_sec')}</span></th>
                 ${customerHeader}
                 <th class="${sortHeaderClass('project_name')}" data-sort="project_name" tabindex="0" aria-sort="${sortHeaderAria('project_name')}">${projectHeaderTitle} <span class="sort-icon">${sortIcon('project_name')}</span></th>
                 <th class="${sortHeaderClass('category')}" data-sort="category" tabindex="0" aria-sort="${sortHeaderAria('category')}">${t('logsTable.category')} <span class="sort-icon">${sortIcon('category')}</span></th>
                 <th class="${sortHeaderClass('tags')}" data-sort="tags" tabindex="0" aria-sort="${sortHeaderAria('tags')}">${t('logsTable.tags')} <span class="sort-icon">${sortIcon('tags')}</span></th>
-                <th class="${sortHeaderClass('duration_sec')}" data-sort="duration_sec" tabindex="0" aria-sort="${sortHeaderAria('duration_sec')}">${t('logsTable.duration')} <span class="sort-icon">${sortIcon('duration_sec')}</span></th>
                 <th class="logs-col-actions-header">${t('logsTable.actions')}</th>
             </tr>
             <tr class="logs-filter-row">
                 <td colspan="2" class="logs-filter-actions-cell">
-                    <button type="button" class="btn-danger-small logs-delete-selected ${selectedCount ? 'is-visible' : ''}" data-batch-delete ${selectedCount ? '' : 'disabled'} title="${this._escAttr(t('logsTable.deleteSelectedTitle'))}">🗑 ${t('logsTable.deleteSelected', { count: selectedCount })}</button>
+                    <button type="button" class="btn-danger-small logs-delete-selected ${selectedCount ? 'is-visible' : ''}" data-batch-delete ${selectedCount ? '' : 'disabled'} title="${this._escAttr(t('logsTable.deleteSelectedTitle'))}">${t('logsTable.deleteSelected', { count: selectedCount })}</button>
                 </td>
                 <td><input type="search" class="logs-filter-input" data-filter-name value="${this._escAttr(this._sessionNameQuery)}" placeholder="${this._escAttr(t('logsTable.filterTitlePlaceholder'))}"></td>
+                <td></td>
                 <td></td>
                 ${customerFilterCell}
                 <td><select class="logs-filter-select" data-filter-select="project">${renderSelectOptions(relevantProjects, activeProject, isPersonalScope ? t('logsTable.allPersonalProjects') : t('logsTable.allProjects'))}</select></td>
@@ -7759,13 +7790,12 @@ class App {
                     const count = (this._cachedSessions || []).filter(s => (s.tags || []).some(x => (x || '').toLowerCase() === tKey)).length;
                     return `#${t} (${count})`;
                 })}</select></td>
-                <td></td>
                 <td><button type="button" class="logs-reset-filters" data-clear-filters title="${this._escAttr(t('logsTable.clearFiltersTitle'))}">${t('logsTable.clearFilters')}</button></td>
             </tr>`;
 
         const colGroup = isPersonalScope
-            ? `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-duration"><col class="logs-col-actions"></colgroup>`
-            : `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-customer"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-duration"><col class="logs-col-actions"></colgroup>`;
+            ? `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-duration"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`
+            : `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-duration"><col class="logs-col-customer"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`;
 
         listEl.innerHTML = `<div class="logs-table-container"><table class="logs-table" data-scope="${activeScope}">${colGroup}<thead>${header}</thead><tbody>${rows}</tbody></table></div>
             <div class="session-pagination">
@@ -7777,8 +7807,8 @@ class App {
         this._bindLogsTableEvents(listEl, filtered, totalPages, { customers, projects, categories, tags, renderSelectOptions, isPersonalScope, isAllScope });
         const selectAllCheckbox = listEl.querySelector('#chk-select-all-sessions');
         if (selectAllCheckbox) {
-            selectAllCheckbox.checked = allFilteredSelected;
-            selectAllCheckbox.indeterminate = selectedInFiltered > 0 && !allFilteredSelected;
+            selectAllCheckbox.checked = allPageSelected;
+            selectAllCheckbox.indeterminate = selectedInPage > 0 && !allPageSelected;
         }
     }
 
@@ -7804,7 +7834,7 @@ class App {
         const category = session.category ? `<button type="button" class="session-category-badge" data-category="${this._escAttr(session.category)}" title="${this._escAttr(t('logsTable.filterByCategory', { category: session.category }))}">${this._esc(session.category)}</button>` : '<span class="logs-empty-value">—</span>';
         const durationSec = Number(session.duration_sec) || 0;
         const duration = durationSec > 0 ? this._formatPlayerTime(durationSec) : '<span class="logs-empty-value">—</span>';
-        const retranscriptButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-retranscript-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.retranscriptTooltip'))}">🔄</button>`;
+        const playButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action session-audio-action" data-play-session="${this._escAttr(session.id)}" aria-label="${this._escAttr(t('logsTable.playTooltip'))}" title="${this._escAttr(t('logsTable.playTooltip'))}">▶</button>`;
         const editButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-edit-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.editTooltip'))}">${PENCIL_YELLOW_ICON}</button>`;
 
         const scopeBadge = isAllScope
@@ -7820,14 +7850,17 @@ class App {
             <td class="logs-index">${number}</td>
             <td class="logs-title-cell"><button type="button" class="logs-title-link" data-open-session="${this._escAttr(session.id)}">${scopeBadge}${this._esc(session.title || t('logsTable.untitled'))}</button></td>
             <td class="logs-date">${this._formatSessionDate(session.created_at)}</td>
-            ${customerTd}<td>${project}</td><td>${category}</td><td><div class="logs-tags" title="${this._escAttr(tagsTitle)}">${tags}</div></td><td class="logs-duration">${duration}</td>
-            <td><div class="logs-actions">${retranscriptButton}${editButton}<button type="button" class="session-btn-action" data-copy-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.copyTooltip'))}">⧉</button><button type="button" class="session-delete-btn" data-delete-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.deleteTooltip'))}">×</button></div></td>
+            <td class="logs-duration">${duration}</td>${customerTd}<td>${project}</td><td>${category}</td><td><div class="logs-tags" title="${this._escAttr(tagsTitle)}">${tags}</div></td>
+            <td><div class="logs-actions">${playButton}${editButton}<button type="button" class="session-btn-action" data-copy-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.copyTooltip'))}">⧉</button><button type="button" class="session-delete-btn" data-delete-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.deleteTooltip'))}">×</button></div></td>
         </tr>`;
     }
 
     _bindLogsTableEvents(listEl, filtered, totalPages, optionsContext) {
         const toggleAll = (checked) => {
-            (this._filteredSessions || []).forEach(session => checked ? this._selectedSessionIds.add(session.id) : this._selectedSessionIds.delete(session.id));
+            const currentPageIds = Array.from(listEl.querySelectorAll('tbody tr[data-session-id]'))
+                .map(row => row.dataset.sessionId)
+                .filter(Boolean);
+            currentPageIds.forEach(id => checked ? this._selectedSessionIds.add(id) : this._selectedSessionIds.delete(id));
             this._renderFilteredSessions();
         };
 
@@ -7911,6 +7944,8 @@ class App {
             this._activeProjectFilter = [];
             this._activeCategoryFilter = [];
             this._activeTagFilter = [];
+            this._selectedSessionIds.clear();
+            this._sessionSelectionAnchorId = null;
             this._sessionPage = 1;
             const nameInput = listEl.querySelector('[data-filter-name]');
             if (nameInput) nameInput.value = '';
@@ -7986,13 +8021,33 @@ class App {
         });
 
         tableContainer.querySelectorAll('[data-session-check]').forEach(check => {
-            check.addEventListener('change', () => {
-                check.checked ? this._selectedSessionIds.add(check.dataset.sessionCheck) : this._selectedSessionIds.delete(check.dataset.sessionCheck);
+            check.addEventListener('click', (event) => {
+                const id = check.dataset.sessionCheck;
+                const selectionOrder = this._sessionSelectionOrder || [];
+                const anchorIndex = this._sessionSelectionAnchorId
+                    ? selectionOrder.indexOf(this._sessionSelectionAnchorId)
+                    : -1;
+                const targetIndex = selectionOrder.indexOf(id);
+                const isRangeSelection = event.shiftKey && anchorIndex >= 0 && targetIndex >= 0;
+
+                if (isRangeSelection) {
+                    const start = Math.min(anchorIndex, targetIndex);
+                    const end = Math.max(anchorIndex, targetIndex);
+                    for (const rangeId of selectionOrder.slice(start, end + 1)) {
+                        check.checked ? this._selectedSessionIds.add(rangeId) : this._selectedSessionIds.delete(rangeId);
+                    }
+                } else {
+                    check.checked ? this._selectedSessionIds.add(id) : this._selectedSessionIds.delete(id);
+                    this._sessionSelectionAnchorId = id;
+                }
                 this._renderFilteredSessions();
             });
         });
         tableContainer.querySelectorAll('[data-open-session]').forEach(button => button.addEventListener('click', () => this._openSession(button.dataset.openSession, button.closest('tr').dataset.legacy === '1')));
-        tableContainer.querySelectorAll('[data-retranscript-session]').forEach(button => button.addEventListener('click', () => this._retranscribeSession(button.dataset.retranscriptSession)));
+        tableContainer.querySelectorAll('[data-play-session]').forEach(button => button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            this._playSessionTTS(button.dataset.playSession, button.closest('tr')?.dataset.legacy === '1');
+        }));
         tableContainer.querySelectorAll('[data-edit-session]').forEach(button => button.addEventListener('click', () => {
             const session = this._cachedSessions.find(item => item.id === button.dataset.editSession);
             if (session) this._editSessionMetadata(session);
@@ -8030,6 +8085,7 @@ class App {
         try {
             await invoke('delete_session', { id });
             this._selectedSessionIds.delete(id);
+            if (this._sessionSelectionAnchorId === id) this._sessionSelectionAnchorId = null;
             this._showToast(t('modal.delete.singleSuccess'), 'success');
             await this._showSessions();
         } catch (err) {
@@ -8204,6 +8260,7 @@ class App {
                 try {
                     await invoke('delete_session', { id });
                     this._selectedSessionIds.delete(id);
+                    if (this._sessionSelectionAnchorId === id) this._sessionSelectionAnchorId = null;
                     await this._showSessions();
                     this._showToast(t('modal.delete.singleSuccess'), 'success');
                 } catch (err) {
@@ -8226,7 +8283,7 @@ class App {
     _renderSessionItem(s) {
         const title = this._esc(s.title || t('logsTable.untitled'));
         const created = s.created_at ? this._esc(formatDateTime(s.created_at)) : '—';
-        const duration = this._formatSeconds(s.duration_sec || 0);
+        const duration = this._formatPlayerTime(Number(s.duration_sec) || 0);
         const engine = s.engine || 'unknown';
         const engineBadge = s.has_legacy_only
             ? `<span class="session-badge badge-legacy">legacy</span>`
@@ -8260,8 +8317,8 @@ class App {
             ? s.tags.map(tTag => `<span class="session-tag-badge" data-tag="${this._escAttr(tTag)}" title="${this._escAttr(t('logsTable.filterByTag', { tag: tTag }))}">#${this._esc(tTag)}</span>`).join('')
             : '';
 
-        const retranscriptBtn = !s.has_legacy_only
-            ? `<button type="button" class="session-btn-action retranscript" data-id="${this._escAttr(s.id)}" title="${this._escAttr(t('logsTable.retranscriptTooltip'))}">🔄 Re-transcript</button>`
+        const playBtn = !s.has_legacy_only
+            ? `<button type="button" class="session-btn-action play-tts" data-id="${this._escAttr(s.id)}" data-legacy="0" aria-label="${this._escAttr(t('logsTable.playTooltip'))}" title="${this._escAttr(t('logsTable.playTooltip'))}">▶</button>`
             : '';
         const editBtn = !s.has_legacy_only
             ? `<button type="button" class="session-btn-action edit-meta" data-id="${this._escAttr(s.id)}" title="${this._escAttr(t('logsTable.editTooltip'))}">${PENCIL_YELLOW_ICON}${this._esc(t('common.edit'))}</button>`
@@ -8276,7 +8333,7 @@ class App {
                 <input type="checkbox" class="session-item-chk" data-id="${this._escAttr(s.id)}" ${isChecked ? 'checked' : ''} />
                 <span class="session-item-title">${title}</span>
                 <div class="session-actions-inline">
-                    ${retranscriptBtn}
+                    ${playBtn}
                     ${editBtn}
                     <button type="button" class="session-btn-action copy-session" data-id="${this._escAttr(s.id)}" data-legacy="${s.has_legacy_only ? '1' : '0'}" title="${this._escAttr(t('logsTable.copyTooltip'))}">
                         <svg class="icon-copy-svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -12123,7 +12180,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
 
         const buttonsToDisable = [
-            document.querySelector(`[data-retranscript-session="${CSS.escape(id)}"]`),
             this._currentViewedSession?.id === id ? document.getElementById('btn-session-retranscript') : null,
         ].filter(Boolean);
         const originalTexts = buttonsToDisable.map(b => b.innerHTML);

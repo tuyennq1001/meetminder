@@ -34,7 +34,7 @@ review.
 | Phạm vi lọc | Nêu rõ filter áp dụng trên toàn bộ dataset hay chỉ trang hiện tại. Mặc định nên lọc trước rồi mới phân trang. |
 | Reset | Có một nút `Clear`/`Xoá bộ lọc` để xoá toàn bộ điều kiện trong một lần. |
 | Pagination | Khi danh sách dài, có số bản ghi, trang hiện tại/tổng số trang, page size và nút Previous/Next disabled đúng trạng thái. |
-| Selection | Nếu có chọn nhiều dòng, checkbox chọn tất cả phải chỉ áp dụng cho tập đang lọc; trạng thái indeterminate phải được hiển thị. |
+| Selection | Nếu có chọn nhiều dòng, checkbox chọn tất cả chỉ áp dụng cho các dòng của trang hiện tại; lựa chọn ở các trang khác vẫn được giữ và trạng thái indeterminate phải được hiển thị. |
 | Empty state | Phân biệt “chưa có dữ liệu” với “không tìm thấy kết quả phù hợp bộ lọc”; câu chữ nên hướng dẫn bước tiếp theo. |
 | Responsive | Bảng rộng được đặt trong vùng cuộn ngang có chủ đích; không ép chữ khiến dữ liệu khó đọc. |
 | Dữ liệu mới | Dùng default sort hợp lý, thường là mới nhất trước với log/event; không để thứ tự thay đổi ngẫu nhiên sau mỗi lần tải. |
