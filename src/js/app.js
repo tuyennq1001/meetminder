@@ -5647,6 +5647,7 @@ class App {
                     minutesLang: null,
                     customTitle: t('modal.stop.retranscriptLabel'),
                     durationSec: savedJson?.duration_sec,
+                    confirm: false,
                 }).catch(err => console.error('[App] Auto retranscript error:', err));
                 return;
             }
@@ -6008,11 +6009,29 @@ class App {
             const percent = Number.isFinite(Number(payload.percent))
                 ? Math.max(0, Math.min(98, Number(payload.percent)))
                 : active.percent;
-            const message = String(payload.message || active.text || t('retranscript.modal.prepAudio'));
+            // Backend progress events are intentionally locale-neutral at the
+            // UI boundary. Rust currently emits operational messages in one
+            // language, so never copy payload.message directly into the UI.
+            const message = this._getLocalizedAudioTranscriptProgress(stage, active);
             active.backendProgress = true;
             active.progressBaseText = message;
             this._setRetranscriptProgress(stage, message, percent, active.customTitle);
         });
+    }
+
+    _getLocalizedAudioTranscriptProgress(stage, active) {
+        if (stage === 'upload') {
+            return t(active?.isImport
+                ? 'retranscript.progress.readingAndUploading'
+                : 'retranscript.progress.uploading');
+        }
+        if (stage === 'save') {
+            return t(active?.isImport
+                ? 'retranscript.progress.savingImport'
+                : 'retranscript.progress.saving');
+        }
+        if (stage === 'minutes') return t('retranscript.step.minutes');
+        return t('retranscript.progress.transcribing');
     }
 
     async _bindStorageMigrationProgressEvents() {
@@ -8669,6 +8688,89 @@ class App {
 
     // ─── Universal Confirm Delete Modal ─────────────────────────────────────
 
+    _promptConfirmRetranscript() {
+        const modal = document.getElementById('modal-confirm-retranscript');
+        const title = t('session.retranscriptConfirmTitle');
+        const description = t('session.retranscriptConfirmDesc');
+        const keepMessage = t('session.retranscriptConfirmKeep');
+
+        if (!modal) {
+            return window.confirm(`${title}\n\n${description}\n\n${keepMessage}`);
+        }
+
+        if (this._isRetranscriptConfirmOpen) return Promise.resolve(false);
+        this._isRetranscriptConfirmOpen = true;
+
+        const titleEl = document.getElementById('confirm-retranscript-title-text');
+        const descriptionEl = document.getElementById('confirm-retranscript-description');
+        const agreeBtn = document.getElementById('btn-agree-confirm-retranscript');
+        const cancelBtn = document.getElementById('btn-cancel-confirm-retranscript');
+        const closeBtn = document.getElementById('btn-close-confirm-retranscript');
+        const previousFocus = document.activeElement;
+
+        if (titleEl) titleEl.textContent = title;
+        if (descriptionEl) descriptionEl.textContent = description;
+        if (agreeBtn) agreeBtn.textContent = t('session.retranscriptConfirmAction');
+        modal.style.display = 'flex';
+
+        return new Promise((resolve) => {
+            const focusable = () => Array.from(modal.querySelectorAll(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+            )).filter((element) => !element.disabled && element.offsetParent !== null);
+
+            const cleanup = () => {
+                modal.style.display = 'none';
+                agreeBtn?.removeEventListener('click', onAgree);
+                cancelBtn?.removeEventListener('click', onCancel);
+                closeBtn?.removeEventListener('click', onCancel);
+                modal.removeEventListener('click', onBackdrop);
+                window.removeEventListener('keydown', onKeyDown);
+                this._isRetranscriptConfirmOpen = false;
+                if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
+            };
+
+            const onAgree = () => {
+                cleanup();
+                resolve(true);
+            };
+            const onCancel = () => {
+                cleanup();
+                resolve(false);
+            };
+            const onBackdrop = (event) => {
+                if (event.target === modal) onCancel();
+            };
+            const onKeyDown = (event) => {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    onCancel();
+                } else if (event.key === 'Enter') {
+                    event.preventDefault();
+                    onAgree();
+                } else if (event.key === 'Tab') {
+                    const elements = focusable();
+                    if (elements.length === 0) return;
+                    const first = elements[0];
+                    const last = elements[elements.length - 1];
+                    if (event.shiftKey && document.activeElement === first) {
+                        event.preventDefault();
+                        last.focus();
+                    } else if (!event.shiftKey && document.activeElement === last) {
+                        event.preventDefault();
+                        first.focus();
+                    }
+                }
+            };
+
+            agreeBtn?.addEventListener('click', onAgree);
+            cancelBtn?.addEventListener('click', onCancel);
+            closeBtn?.addEventListener('click', onCancel);
+            modal.addEventListener('click', onBackdrop);
+            window.addEventListener('keydown', onKeyDown);
+            setTimeout(() => cancelBtn?.focus(), 0);
+        });
+    }
+
     _promptConfirmDelete({
         title = t('modal.delete.title'),
         message = t('modal.delete.message'),
@@ -11297,6 +11399,14 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         return this._getQuickLangName(lang);
     }
 
+    _getMinutesRegenerateButtonMarkup() {
+        return `<svg class="session-action-icon minutes-action-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="m12 3-1.5 4.5L6 9l4.5 1.5L12 15l1.5-4.5L18 9l-4.5-1.5L12 3Z"></path><path d="m5 3-.5 1.5L3 5l1.5.5L5 7l.5-1.5L7 5l-1.5-.5L5 3Z"></path><path d="m19 15-.5 1.5L17 17l1.5.5L19 19l.5-1.5L19 15Z"></path></svg><span>${this._esc(t('session.minutesRegenerate'))}</span>`;
+    }
+
+    _getRetranscriptButtonMarkup() {
+        return `<svg class="session-action-icon retranscript-action-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M3 12h2l1.5-5 3 10 1.5-5h2l1.5-4 2 8 1.5-4H21"></path></svg><span>${this._esc(t('session.retranscriptBtn'))}</span>`;
+    }
+
     _switchMinutesSubtab(lang) {
         this._activeMinutesLang = lang || 'en';
         const subtabs = ['ja', 'vi', 'en'];
@@ -11482,7 +11592,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = '🔄 Re-transcript';
+            btn.innerHTML = this._getRetranscriptButtonMarkup();
         }
         status.classList.remove('is-running');
 
@@ -11727,6 +11837,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 sourceLang: src,
                 targetLang: tgt,
                 customTitle: t('modal.sessionLangs.customTitle'),
+                confirm: false,
             });
         } finally {
             if (btn) {
@@ -12160,7 +12271,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const status = document.getElementById('session-retranscript-status');
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = '🔄 Re-transcript';
+                btn.innerHTML = this._getRetranscriptButtonMarkup();
             }
             if (status) {
                 status.classList.remove('is-running');
@@ -12211,6 +12322,11 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (!apiKey) {
             this._showToast(t('retranscript.needGeminiKey'), 'error');
             return;
+        }
+
+        if (options.confirm !== false) {
+            const agreed = await this._promptConfirmRetranscript();
+            if (!agreed) return;
         }
 
         const buttonsToDisable = [
@@ -13460,7 +13576,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (loadingEl) loadingEl.style.display = 'none';
             if (regenBtn) {
                 regenBtn.disabled = false;
-                regenBtn.innerHTML = t('session.minutesRegenerate');
+                regenBtn.innerHTML = this._getMinutesRegenerateButtonMarkup();
             }
             if (emptyBtn) {
                 emptyBtn.disabled = false;
@@ -13518,7 +13634,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         } finally {
             if (regenBtn) {
                 regenBtn.disabled = false;
-                regenBtn.innerHTML = t('session.minutesRegenerate');
+                regenBtn.innerHTML = this._getMinutesRegenerateButtonMarkup();
             }
             if (emptyBtn) {
                 emptyBtn.disabled = false;
@@ -13774,7 +13890,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                     const btn = document.getElementById('btn-session-retranscript');
                     if (btn && !this._activeRetranscribe.buttonsToDisable.includes(btn)) {
                         this._activeRetranscribe.buttonsToDisable.push(btn);
-                        this._activeRetranscribe.originalTexts.push('🔄 Re-transcript');
+                        this._activeRetranscribe.originalTexts.push(this._getRetranscriptButtonMarkup());
                     }
                 }
 
