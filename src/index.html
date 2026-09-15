@@ -45,7 +45,7 @@
         <!-- Live Header Controls: Actions · Languages · Timing · View · Audio · TTS · More -->
         <div class="live-header-controls" id="live-header-controls" data-tauri-drag-region="false">
           <!-- Main Start / Pause button -->
-          <button id="btn-start" type="button" class="primary-action-btn" data-tauri-drag-region="false" data-i18n-title="button.start.title" title="Start / Pause (⌘S)">
+          <button id="btn-start" type="button" class="primary-action-btn" data-tauri-drag-region="false" title="Start translation (⌘S)">
             <svg id="icon-play" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5 3 19 12 5 21 5 3" />
             </svg>
@@ -53,7 +53,7 @@
               <rect x="6" y="4" width="4" height="16" rx="1" />
               <rect x="14" y="4" width="4" height="16" rx="1" />
             </svg>
-            <span id="btn-start-label" data-i18n="button.start" data-i18n-html="true"><u>S</u>tart</span>
+            <span id="btn-start-label"><u>S</u>tart</span>
           </button>
 
           <!-- Dynamic Stop / Save button -->
@@ -142,12 +142,13 @@
     <!-- Transcript Area (Live activity panel) -->
     <div id="transcript-container" class="activity-panel active" data-activity="live">
       <!-- Smart Network Interruption Banner -->
-      <div id="live-network-alert-banner" class="live-network-alert-banner" style="display: none;">
+      <div id="live-network-alert-banner" class="live-network-alert-banner" role="alert" aria-live="polite" style="display: none;">
         <div class="network-alert-content">
           <span class="network-alert-icon" id="network-alert-icon">⚠️</span>
           <div class="network-alert-text-wrap">
-            <div class="network-alert-title" id="network-alert-title" data-i18n="network.title">Mạng gián đoạn — Bản dịch trực tiếp tạm dừng</div>
-            <div class="network-alert-desc" id="network-alert-desc" data-i18n="network.description">File ghi âm (.wav) &amp; ghi chú vẫn đang được lưu an toàn 100%.</div>
+            <div class="network-alert-title" id="network-alert-title">Mạng gián đoạn — Bản dịch trực tiếp tạm dừng</div>
+            <div class="network-alert-desc" id="network-alert-desc">File ghi âm (.wav) &amp; ghi chú vẫn đang được lưu an toàn 100%.</div>
+            <div class="network-alert-meta" id="network-alert-meta" aria-live="polite"></div>
           </div>
         </div>
         <div class="network-alert-actions">
@@ -1357,6 +1358,23 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Persistent audio player for the recording currently playing -->
+  <div id="session-mini-player" class="session-player session-mini-player" style="display:none" data-player-id="" role="region" data-i18n-aria-label="session.miniPlayerAria" aria-label="Trình phát bản ghi đang hoạt động">
+    <button type="button" class="session-player-toggle session-mini-player-toggle" data-player-toggle data-i18n-title="session.playAudio" title="Phát bản ghi âm" aria-label="Phát bản ghi âm">▶</button>
+    <div class="session-mini-player-body">
+      <button type="button" id="session-mini-player-open" class="session-mini-player-open" data-i18n-title="session.miniPlayerOpen" title="Mở record đang phát">
+        <span class="session-mini-player-title" data-player-title>—</span>
+      </button>
+      <div class="session-mini-player-meta" aria-hidden="true">
+        <span class="session-player-time" data-player-current>0:00</span>
+        <span>/</span>
+        <span class="session-player-time" data-player-duration>0:00</span>
+      </div>
+      <input class="session-player-timeline session-mini-player-timeline" data-player-timeline type="range" min="0" max="0" step="0.1" value="0" data-i18n-aria-label="session.playerTimelineAria" aria-label="Timeline bản ghi âm" />
+    </div>
+    <button type="button" id="session-mini-player-close" class="icon-btn small session-mini-player-close" data-i18n-title="common.close" data-i18n-aria-label="common.close" title="Đóng" aria-label="Đóng">✕</button>
   </div>
 
   <!-- Floating indicator when re-transcript runs in background -->

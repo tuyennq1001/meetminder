@@ -53,6 +53,8 @@ export class GeminiRealtimeClient {
             });
         } catch (err) {
             console.warn('[Gemini Realtime] send audio failed:', err);
+            this.isConnected = false;
+            this.onError('send_audio_failed', String(err));
         }
     }
 

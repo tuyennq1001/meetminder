@@ -101,6 +101,18 @@ pub struct Chunk {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SessionDiagnostic {
+    pub at: String,
+    pub kind: String,
+    #[serde(default)]
+    pub code: String,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub last_output_at: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Customer {
     pub id: String,
     pub name: String,
@@ -178,6 +190,8 @@ pub struct SessionData {
     pub target_lang: String,
     pub duration_sec: u64,
     pub chunks: Vec<Chunk>,
+    #[serde(default)]
+    pub diagnostics: Vec<SessionDiagnostic>,
     #[serde(default)]
     pub notes: Option<String>,
     #[serde(default)]
@@ -1694,6 +1708,34 @@ pub fn rebuild_session_markdown(data: &SessionData) -> String {
         lines.push(tgt_lines.join("\n"));
     } else {
         lines.push("*(Không có nội dung bản dịch)*".to_string());
+    }
+
+    if !data.diagnostics.is_empty() {
+        lines.push(String::new());
+        lines.push("---".to_string());
+        lines.push(String::new());
+        lines.push("## 4. Diagnostic Log".to_string());
+        lines.push(String::new());
+        for diagnostic in &data.diagnostics {
+            let code = if diagnostic.code.trim().is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", diagnostic.code.trim())
+            };
+            let last_output = diagnostic
+                .last_output_at
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or("none");
+            lines.push(format!(
+                "- {} · {}{} · {} · output cuối: {}",
+                diagnostic.at.trim(),
+                diagnostic.kind.trim(),
+                code,
+                diagnostic.message.trim(),
+                last_output.trim()
+            ));
+        }
     }
 
     lines.join("\n")
@@ -4024,6 +4066,7 @@ pub async fn import_audio_session(
             source_lang: source_lang.clone(),
             target_lang: target_lang.clone(),
             duration_sec,
+            diagnostics: Vec::new(),
             chunks: vec![Chunk {
                 started_at: now.clone(),
                 ended_at: Some(now.clone()),
@@ -4390,6 +4433,7 @@ start_sec must be the approximate offset in seconds.";
         source_lang: source_lang.clone(),
         target_lang: target_lang.clone(),
         duration_sec,
+        diagnostics: Vec::new(),
         chunks: vec![Chunk {
             started_at: now.clone(),
             ended_at: Some(now.clone()),
@@ -4711,6 +4755,13 @@ mod tests {
             source_lang: "ja".to_string(),
             target_lang: "vi".to_string(),
             duration_sec: 300,
+            diagnostics: vec![SessionDiagnostic {
+                at: "2026-09-04T12:04:00Z".to_string(),
+                kind: "quota".to_string(),
+                code: "429".to_string(),
+                message: "Gemini quota reached".to_string(),
+                last_output_at: Some("2026-09-04T12:03:00Z".to_string()),
+            }],
             chunks: vec![Chunk {
                 started_at: "2026-09-04T12:00:00Z".to_string(),
                 ended_at: Some("2026-09-04T12:05:00Z".to_string()),
@@ -4748,6 +4799,8 @@ mod tests {
         assert!(md.contains("(Speaker 1) Hãy bắt đầu thôi"));
         assert!(md.contains("## 📋 Biên bản cuộc họp (Tiếng Việt)"));
         assert!(md.contains("1. Báo cáo tiến độ"));
+        assert!(md.contains("## 4. Diagnostic Log"));
+        assert!(md.contains("quota (429)"));
     }
 
     #[test]
@@ -4822,6 +4875,7 @@ mod tests {
             source_lang: "ja".to_string(),
             target_lang: "vi".to_string(),
             duration_sec: 10,
+            diagnostics: Vec::new(),
             chunks: vec![Chunk {
                 started_at: "2026-09-05T00:00:00Z".to_string(),
                 ended_at: None,
@@ -4875,6 +4929,7 @@ mod tests {
             source_lang: "ja".to_string(),
             target_lang: "vi".to_string(),
             duration_sec: 10,
+            diagnostics: Vec::new(),
             chunks: vec![Chunk {
                 started_at: "2026-09-05T00:00:00Z".to_string(),
                 ended_at: None,

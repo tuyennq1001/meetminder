@@ -26,6 +26,12 @@ const TRANSLATION_MAX_ATTEMPTS: usize = 5;
 // worker below that limit without imposing a per-utterance delay.
 const TRANSLATION_PACE_DELAY: std::time::Duration = std::time::Duration::from_secs(4);
 
+#[derive(Clone, Copy)]
+enum ModelCooldownKind {
+    Quota,
+    Server,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct GeminiRealtimeConfig {
     pub api_key: String,
@@ -231,7 +237,7 @@ pub struct GeminiState {
     sessions: Arc<Mutex<HashMap<u64, Session>>>,
     next_id: Mutex<u64>,
     models_cache: Arc<tokio::sync::RwLock<Option<(std::time::Instant, Vec<String>)>>>,
-    cooldowns: Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
+    cooldowns: Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
     translation_cache: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
 }
 
@@ -378,7 +384,7 @@ async fn run_session(
     mut stop_rx: mpsc::UnboundedReceiver<()>,
     event_ch: Channel<GeminiEvent>,
     models_cache: Arc<tokio::sync::RwLock<Option<(std::time::Instant, Vec<String>)>>>,
-    cooldowns: Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
+    cooldowns: Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
     translation_cache: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
 ) -> Result<(), String> {
     let ws_url = format!(
@@ -390,7 +396,22 @@ async fn run_session(
     eprintln!("[gemini-live] Connecting to WebSocket endpoint...");
     let (ws_stream, response) = connect_async(ws_url.as_str())
         .await
-        .map_err(|e| format!("WebSocket handshake failed: {}", e))?;
+        .map_err(|e| match e {
+            tokio_tungstenite::tungstenite::Error::Http(response) => {
+                let status = response.status();
+                let body = response
+                    .body()
+                    .as_ref()
+                    .map(|bytes| String::from_utf8_lossy(bytes).to_string())
+                    .unwrap_or_default();
+                if body.trim().is_empty() {
+                    format!("WebSocket handshake failed: HTTP {}", status)
+                } else {
+                    format!("WebSocket handshake failed: HTTP {}: {}", status, body.trim())
+                }
+            }
+            other => format!("WebSocket handshake failed: {}", other),
+        })?;
 
     eprintln!(
         "[gemini-live] WebSocket connected! HTTP status: {}",
@@ -576,7 +597,7 @@ async fn translate_job(
     target_lang_ref: std::sync::Arc<tokio::sync::RwLock<String>>,
     job: TranslationJob,
     models_ref: std::sync::Arc<tokio::sync::RwLock<Vec<String>>>,
-    cooldowns_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
+    cooldowns_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
     cache_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, String>>>,
 ) -> GeminiEvent {
     let target_lang = target_lang_ref.read().await.clone();
@@ -598,13 +619,14 @@ async fn translate_job(
             t
         } else {
             let mut result = None;
+            let mut last_error = None;
             let models = models_ref.read().await.clone();
             for attempt in 0..TRANSLATION_MAX_ATTEMPTS {
                 if attempt > 0 {
                     let delay_ms = 1500u64 * attempt as u64;
                     tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                 }
-                result = translate_text_rest(
+                match translate_text_rest(
                     &http_client,
                     &api_key,
                     &trimmed_text,
@@ -612,7 +634,18 @@ async fn translate_job(
                     &models,
                     &cooldowns_ref,
                 )
-                .await;
+                .await
+                {
+                    Ok(value) => result = value,
+                    Err(error) => {
+                        let stop_retrying = is_non_retryable_translation_error(&error);
+                        last_error = Some(error);
+                        result = None;
+                        if stop_retrying {
+                            break;
+                        }
+                    }
+                }
                 if result.as_ref().is_some_and(|text| !text.trim().is_empty()) {
                     break;
                 }
@@ -633,10 +666,12 @@ async fn translate_job(
                     );
                     return GeminiEvent::TranslationFailed {
                         id: job.id,
-                        message: format!(
-                            "Translation failed after {} attempts",
-                            TRANSLATION_MAX_ATTEMPTS
-                        ),
+                        message: last_error.unwrap_or_else(|| {
+                            format!(
+                                "Translation failed after {} attempts",
+                                TRANSLATION_MAX_ATTEMPTS
+                            )
+                        }),
                     };
                 }
             }
@@ -676,7 +711,7 @@ async fn start_translation_worker(
     target_lang_ref: Arc<tokio::sync::RwLock<String>>,
     event_ch: Channel<GeminiEvent>,
     models_cache: Arc<tokio::sync::RwLock<Option<(std::time::Instant, Vec<String>)>>>,
-    cooldowns: Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
+    cooldowns: Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
     translation_cache: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
 ) -> (
     mpsc::Sender<TranslationJob>,
@@ -1452,22 +1487,28 @@ async fn translate_raw_prompt(
     api_key: &str,
     prompt: &str,
     models: &[String],
-    cooldowns_ref: &Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
-) -> Option<String> {
+    cooldowns_ref: &Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
+) -> Result<Option<String>, String> {
     let now = std::time::Instant::now();
     let mut soonest_wait: Option<std::time::Duration> = None;
+    let mut soonest_cooldown_kind: Option<ModelCooldownKind> = None;
+    let mut last_error: Option<String> = None;
 
     for model in models {
         // Check if model is cooling down
         {
             let cooldowns = cooldowns_ref.lock().await;
-            if let Some(until) = cooldowns.get(model) {
+            if let Some((until, cooldown_kind)) = cooldowns.get(model) {
                 if now < *until {
                     let wait = *until - now;
+                    let is_soonest = soonest_wait.map(|prev| wait < prev).unwrap_or(true);
                     soonest_wait = match soonest_wait {
                         Some(prev) => Some(prev.min(wait)),
                         None => Some(wait),
                     };
+                    if is_soonest {
+                        soonest_cooldown_kind = Some(*cooldown_kind);
+                    }
                     continue;
                 }
             }
@@ -1505,65 +1546,102 @@ async fn translate_raw_prompt(
             Ok(resp) => {
                 let status = resp.status();
                 if status.is_success() {
-                    if let Ok(text_resp) = resp.text().await {
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text_resp) {
-                            if let Some(translated) = json
-                                .get("candidates")
-                                .and_then(|c| c.get(0))
-                                .and_then(|c| c.get("content"))
-                                .and_then(|c| c.get("parts"))
-                                .and_then(|p| p.get(0))
-                                .and_then(|p| p.get("text"))
-                                .and_then(|t| t.as_str())
-                                .map(|s| s.trim().to_string())
-                            {
-                                if !translated.is_empty() {
-                                    return Some(translated);
+                    match resp.text().await {
+                        Ok(text_resp) => {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text_resp) {
+                                if let Some(translated) = json
+                                    .get("candidates")
+                                    .and_then(|c| c.get(0))
+                                    .and_then(|c| c.get("content"))
+                                    .and_then(|c| c.get("parts"))
+                                    .and_then(|p| p.get(0))
+                                    .and_then(|p| p.get("text"))
+                                    .and_then(|t| t.as_str())
+                                    .map(|s| s.trim().to_string())
+                                {
+                                    if !translated.is_empty() {
+                                        return Ok(Some(translated));
+                                    }
                                 }
+                                last_error = Some(format!("Gemini API HTTP {} returned empty translation", status));
+                            } else {
+                                last_error = Some(format!("Gemini API HTTP {} returned invalid JSON", status));
                             }
                         }
-                    }
-                } else if status.as_u16() == 429 || status.as_u16() == 503 {
-                    // Extract retryDelay or default to 20s
-                    let delay_secs = if let Ok(err_body) = resp.text().await {
-                        if let Ok(err_json) = serde_json::from_str::<serde_json::Value>(&err_body) {
-                            err_json
-                                .get("error")
-                                .and_then(|e| e.get("details"))
-                                .and_then(|d| d.as_array())
-                                .and_then(|arr| {
-                                    arr.iter().find_map(|item| {
-                                        if item.get("@type").and_then(|t| t.as_str())
-                                            == Some("type.googleapis.com/google.rpc.RetryInfo")
-                                        {
-                                            item.get("retryDelay")
-                                                .and_then(|r| r.as_str())
-                                                .and_then(|s| {
-                                                    s.trim_end_matches('s').parse::<u64>().ok()
-                                                })
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                })
-                                .unwrap_or(20)
-                        } else {
-                            20
+                        Err(e) => {
+                            last_error = Some(format!("Gemini API HTTP {} response read failed: {}", status, e));
                         }
-                    } else {
-                        20
-                    };
-                    eprintln!(
-                        "[gemini-live] Model {} hit HTTP {}, placing in cooldown for {}s",
-                        model, status, delay_secs
-                    );
-                    let mut cooldowns = cooldowns_ref.lock().await;
-                    cooldowns.insert(
-                        model.clone(),
-                        std::time::Instant::now() + std::time::Duration::from_secs(delay_secs),
-                    );
+                    }
                 } else {
-                    eprintln!("[gemini-live] Model {} returned HTTP {}", model, status);
+                    let err_body = resp.text().await.unwrap_or_default();
+                    let err_json = serde_json::from_str::<serde_json::Value>(&err_body).ok();
+                    let api_message = err_json
+                        .as_ref()
+                        .and_then(|json| json.get("error"))
+                        .and_then(|error| error.get("message"))
+                        .and_then(|message| message.as_str())
+                        .unwrap_or("")
+                        .trim();
+                    let detail = if api_message.is_empty() {
+                        format!("HTTP {}", status)
+                    } else {
+                        format!("HTTP {}: {}", status, api_message)
+                    };
+                    let is_quota_error = status.as_u16() == 429 || is_quota_error_text(api_message);
+                    let is_auth_error = matches!(status.as_u16(), 401 | 403) || is_auth_error_text(api_message);
+                    last_error = Some(format!("Gemini API {}", detail));
+
+                    // Extract retryDelay or default to 20s for transient errors.
+                    let delay_secs = err_json
+                        .as_ref()
+                        .and_then(|json| json.get("error"))
+                        .and_then(|error| error.get("details"))
+                        .and_then(|details| details.as_array())
+                        .and_then(|items| {
+                            items.iter().find_map(|item| {
+                                if item.get("@type").and_then(|t| t.as_str())
+                                    == Some("type.googleapis.com/google.rpc.RetryInfo")
+                                {
+                                    item.get("retryDelay")
+                                        .and_then(|retry| retry.as_str())
+                                        .and_then(|value| {
+                                            value.trim_end_matches('s').parse::<u64>().ok()
+                                        })
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                        .unwrap_or(20);
+
+                    if status.as_u16() == 429 || status.as_u16() == 503 {
+                        eprintln!(
+                            "[gemini-live] Model {} hit HTTP {}, placing in cooldown for {}s",
+                            model, status, delay_secs
+                        );
+                        let mut cooldowns = cooldowns_ref.lock().await;
+                        cooldowns.insert(
+                            model.clone(),
+                            (
+                                std::time::Instant::now()
+                                    + std::time::Duration::from_secs(delay_secs),
+                                if is_quota_error {
+                                    ModelCooldownKind::Quota
+                                } else {
+                                    ModelCooldownKind::Server
+                                },
+                            ),
+                        );
+                    } else {
+                        eprintln!("[gemini-live] Model {} returned HTTP {}", model, status);
+                    }
+
+                    // Quota and credential failures are provider-wide. Trying
+                    // every model or retrying the same request only creates a
+                    // long silent gap and can make the rate-limit worse.
+                    if is_quota_error || is_auth_error {
+                        return Err(last_error.unwrap_or_else(|| format!("Gemini API {}", detail)));
+                    }
                 }
             }
             Err(e) => {
@@ -1571,22 +1649,63 @@ async fn translate_raw_prompt(
                     "[gemini-live] HTTP request error for model {}: {}",
                     model, e
                 );
+                last_error = Some(format!("Gemini HTTP request failed: {}", e));
             }
         }
     }
 
-    // If all models were in cooldown, wait up to 20s for the soonest cooldown to expire
+    // If all models were in cooldown, return immediately. Sleeping here blocks
+    // the translation worker and causes every queued utterance to inherit the
+    // provider outage. The caller can surface the category and let the user
+    // retry explicitly.
     if let Some(wait) = soonest_wait {
-        if wait <= std::time::Duration::from_secs(20) {
-            eprintln!(
-                "[gemini-live] All candidate models in cooldown, waiting {:?} before retrying",
-                wait
-            );
-            tokio::time::sleep(wait).await;
-        }
+        let seconds = wait
+            .as_secs()
+            .saturating_add(if wait.subsec_nanos() > 0 { 1 } else { 0 });
+        let label = match soonest_cooldown_kind {
+            Some(ModelCooldownKind::Quota) => "rate limit",
+            Some(ModelCooldownKind::Server) => "server",
+            None => "provider",
+        };
+        return Err(format!(
+            "Gemini API {} cooldown active; retry after {}s",
+            label, seconds
+        ));
     }
 
-    None
+    if let Some(error) = last_error {
+        Err(error)
+    } else {
+        Ok(None)
+    }
+}
+
+fn is_quota_error_text(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    lower.contains("429")
+        || lower.contains("quota")
+        || lower.contains("resource exhausted")
+        || lower.contains("rate limit")
+        || lower.contains("too many requests")
+        || lower.contains("daily limit")
+        || lower.contains("per-minute limit")
+}
+
+fn is_auth_error_text(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    lower.contains("api key")
+        || lower.contains("api_key")
+        || lower.contains("invalid key")
+        || lower.contains("key not valid")
+        || lower.contains("permission denied")
+        || lower.contains("unauthenticated")
+        || lower.contains("forbidden")
+}
+
+fn is_non_retryable_translation_error(message: &str) -> bool {
+    is_quota_error_text(message)
+        || is_auth_error_text(message)
+        || message.to_lowercase().contains("cooldown active")
 }
 
 async fn translate_text_rest(
@@ -1595,8 +1714,8 @@ async fn translate_text_rest(
     text: &str,
     target_lang: &str,
     models: &[String],
-    cooldowns_ref: &Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
-) -> Option<String> {
+    cooldowns_ref: &Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
+) -> Result<Option<String>, String> {
     let target_name = map_lang_name(target_lang);
     let prompt = format!(
         "Translate the following speech accurately and naturally into {target_name}. Output ONLY the translated text in {target_name} without repeating the source language, and without notes or quotes:\n{}",
@@ -1680,7 +1799,7 @@ async fn translate_batch_jobs(
     target_lang_ref: std::sync::Arc<tokio::sync::RwLock<String>>,
     jobs: Vec<TranslationJob>,
     models_ref: std::sync::Arc<tokio::sync::RwLock<Vec<String>>>,
-    cooldowns_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, std::time::Instant>>>,
+    cooldowns_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
     cache_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, String>>>,
 ) -> Vec<GeminiEvent> {
     let target_lang = target_lang_ref.read().await.clone();
@@ -1699,6 +1818,7 @@ async fn translate_batch_jobs(
     }
 
     let mut results: HashMap<u64, String> = HashMap::new();
+    let mut failures: HashMap<u64, String> = HashMap::new();
     let mut uncached_indices: Vec<usize> = Vec::new();
 
     // Check cache for each job
@@ -1742,18 +1862,27 @@ async fn translate_batch_jobs(
             cache_ref,
         )
         .await;
-        if let GeminiEvent::Segment { id, translation, .. } = &event {
-            results.insert(*id, translation.clone());
+        match event {
+            GeminiEvent::Segment { id, translation, .. } => {
+                results.insert(id, translation);
+            }
+            GeminiEvent::TranslationFailed { id, message } => {
+                failures.insert(id, message);
+            }
+            _ => {}
         }
         return jobs
             .into_iter()
-            .map(|j| {
-                let trans = results.remove(&j.id).unwrap_or_default();
-                GeminiEvent::Segment {
-                    id: j.id,
-                    original: j.original,
-                    translation: trans,
-                    speaker: j.speaker,
+            .map(|j| match failures.remove(&j.id) {
+                Some(message) => GeminiEvent::TranslationFailed { id: j.id, message },
+                None => {
+                    let trans = results.remove(&j.id).unwrap_or_default();
+                    GeminiEvent::Segment {
+                        id: j.id,
+                        original: j.original,
+                        translation: trans,
+                        speaker: j.speaker,
+                    }
                 }
             })
             .collect();
@@ -1771,20 +1900,33 @@ async fn translate_batch_jobs(
     );
     let models = models_ref.read().await.clone();
     let mut batch_text_opt = None;
+    let mut batch_error: Option<String> = None;
 
     for attempt in 0..TRANSLATION_MAX_ATTEMPTS {
         if attempt > 0 {
             let delay_ms = 2000u64 * (attempt as u64);
             tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         }
-        batch_text_opt = translate_raw_prompt(
+        batch_text_opt = match translate_raw_prompt(
             &http_client,
             &api_key,
             &prompt,
             &models,
             &cooldowns_ref,
         )
-        .await;
+        .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                eprintln!("[gemini-live] Batch translation attempt failed: {}", error);
+                let stop_retrying = is_non_retryable_translation_error(&error);
+                batch_error = Some(error);
+                if stop_retrying {
+                    break;
+                }
+                None
+            }
+        };
         if batch_text_opt.as_ref().is_some_and(|t| !t.trim().is_empty()) {
             break;
         }
@@ -1813,6 +1955,10 @@ async fn translate_batch_jobs(
         // Fallback: translate uncached items individually
         for &idx in &uncached_indices {
             let job = jobs[idx].clone();
+            if let Some(error) = batch_error.as_deref().filter(|message| is_non_retryable_translation_error(message)) {
+                failures.insert(job.id, error.to_string());
+                continue;
+            }
             let event = translate_job(
                 http_client.clone(),
                 api_key.clone(),
@@ -1823,20 +1969,29 @@ async fn translate_batch_jobs(
                 cache_ref.clone(),
             )
             .await;
-            if let GeminiEvent::Segment { id, translation, .. } = event {
-                results.insert(id, translation);
+            match event {
+                GeminiEvent::Segment { id, translation, .. } => {
+                    results.insert(id, translation);
+                }
+                GeminiEvent::TranslationFailed { id, message } => {
+                    failures.insert(id, message);
+                }
+                _ => {}
             }
         }
     }
 
     jobs.into_iter()
-        .map(|job| {
-            let trans = results.remove(&job.id).unwrap_or_default();
-            GeminiEvent::Segment {
-                id: job.id,
-                original: job.original,
-                translation: trans,
-                speaker: job.speaker,
+        .map(|job| match failures.remove(&job.id) {
+            Some(message) => GeminiEvent::TranslationFailed { id: job.id, message },
+            None => {
+                let trans = results.remove(&job.id).unwrap_or_default();
+                GeminiEvent::Segment {
+                    id: job.id,
+                    original: job.original,
+                    translation: trans,
+                    speaker: job.speaker,
+                }
             }
         })
         .collect()

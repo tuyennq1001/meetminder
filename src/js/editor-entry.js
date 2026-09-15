@@ -844,19 +844,21 @@ const smartListKeymap = [
     },
   },
   {
-    // On list items, Cmd/Ctrl+Left should land before the list marker rather
-    // than at the absolute start of the line (inside the indentation).
+    // On Markdown block lines, Cmd/Ctrl+Left should land at the start of the
+    // content rather than at the absolute start of the line (inside the
+    // indentation or syntax marker).
     key: 'Mod-ArrowLeft',
     run: (view) => {
       const { state, dispatch } = view;
       const { main } = state.selection;
       if (!main.empty) return false;
       const line = state.doc.lineAt(main.head);
-      const match = line.text.match(/^(\s*)([-*+]|\d+\.)\s+/);
+      const match = line.text.match(/^(\s*)(?:(?:[-*+]|\d+\.)\s+|#{1,6}(?:\s+|$))/);
       if (!match) return false;
       const markerStart = line.from + match[1].length;
+      const contentStart = line.from + match[0].length;
       if (main.head <= markerStart) return false;
-      dispatch({ selection: { anchor: markerStart } });
+      dispatch({ selection: { anchor: contentStart } });
       return true;
     },
   },

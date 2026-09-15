@@ -18,6 +18,10 @@ import {
 const { invoke, Channel, convertFileSrc } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
 
+const GEMINI_WATCHDOG_INTERVAL_MS = 5000;
+const GEMINI_NO_OUTPUT_TIMEOUT_MS = 30_000;
+const GEMINI_AUDIO_ACTIVITY_WINDOW_MS = 45_000;
+
 const LANGUAGE_DISPLAY = {
     auto: ['🌐', 'Auto'], en: ['🇬🇧', 'English'], ja: ['🇯🇵', '日本語'],
     ko: ['🇰🇷', '한국어'], zh: ['🇨🇳', '中文'], vi: ['🇻🇳', 'Tiếng Việt'],
@@ -510,11 +514,14 @@ class App {
         this._sessionSearchScrollTop = 0;
         this._sessionReturnToSearch = false;
         this._sessionSearchTargets = new Map();
+        this._sessionAudioElement = null;
+        this._sessionAudioId = null;
+        this._sessionAudioTitle = null;
         // Logs table sort: default newest first, restore the user's last choice.
         this._sessionSort = { field: 'created_at', dir: 'desc' };
         try {
             const savedSort = JSON.parse(localStorage.getItem('meet_minder_logs_sort') || 'null');
-            const validFields = ['created_at', 'title', 'customer_name', 'project_name', 'category', 'tags'];
+            const validFields = ['created_at', 'title', 'customer_name', 'project_name', 'category', 'tags', 'duration_sec'];
             if (savedSort && validFields.includes(savedSort.field) && ['asc', 'desc'].includes(savedSort.dir)) {
                 this._sessionSort = { field: savedSort.field, dir: savedSort.dir };
             }
@@ -550,6 +557,19 @@ class App {
         this._cachedSessions = [];
         this._filteredSessions = [];
         this._geminiReconnectTimer = null;
+        this._geminiReconnectAttempts = 0;
+        this._geminiWatchdogTimer = null;
+        this._geminiLastOutputAt = 0;
+        this._geminiMonitorStartedAt = 0;
+        this._geminiLastAudioActivityAt = 0;
+        this._geminiWatchdogAlerted = false;
+        this._geminiAutoReconnectBlocked = false;
+        this._geminiAutoReconnectBlockedKind = '';
+        this._lastGeminiDiagnosticSignature = '';
+        this._lastGeminiDiagnosticAt = 0;
+        this._networkAlertKind = '';
+        this._networkAlertReason = '';
+        this._networkAlertGeneration = 0;
         this._liveEngineRestart = Promise.resolve();
         this._liveEngineGeneration = 0;
         this._quickLanguageUpdate = Promise.resolve();
@@ -857,26 +877,173 @@ class App {
         }
     }
 
-    async _showNetworkAlertBanner(engine = '', reason = '') {
+    _classifyGeminiIssue(code = '', reason = '') {
+        const text = `${code} ${reason}`.toLowerCase();
+        if (/\b429\b|resource[\s_-]*exhausted|quota|rate[\s_-]*limit|too many requests|daily limit|per[\s_-]*minute limit/.test(text)) {
+            return 'quota';
+        }
+        if (/\b401\b|\b403\b|api[\s_-]*key|permission[\s_-]*denied|unauthenticated|invalid.{0,20}key/.test(text)) {
+            return 'auth';
+        }
+        if (/\b5\d\d\b|internal server|service unavailable|overload|server error/.test(text)) {
+            return 'server';
+        }
+        if (/offline|network|websocket|\bws\b|connect|connection|timeout|dns|stream_ended|remote_close|closed/.test(text)) {
+            return 'network';
+        }
+        return 'unknown';
+    }
+
+    _sanitizeGeminiDiagnosticMessage(message) {
+        return String(message || '')
+            .replace(/([?&](?:key|api[_-]?key)=)[^&\s]+/gi, '$1[redacted]')
+            .replace(/(Bearer\s+)[^\s]+/gi, '$1[redacted]')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 300);
+    }
+
+    _formatGeminiClock(timestamp) {
+        return new Date(timestamp).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+        });
+    }
+
+    _logGeminiDiagnostic(kind, code = '', message = '') {
+        const sanitizedMessage = this._sanitizeGeminiDiagnosticMessage(message);
+        const signature = `${kind}|${String(code || '')}|${sanitizedMessage}`;
+        const now = Date.now();
+        if (signature === this._lastGeminiDiagnosticSignature
+            && now - this._lastGeminiDiagnosticAt < 5000) {
+            return;
+        }
+        this._lastGeminiDiagnosticSignature = signature;
+        this._lastGeminiDiagnosticAt = now;
+
+        const lastOutputAt = this._geminiLastOutputAt
+            ? new Date(this._geminiLastOutputAt).toISOString()
+            : null;
+        const diagnostic = {
+            kind,
+            code: String(code || ''),
+            message: sanitizedMessage,
+            at: new Date(now).toISOString(),
+            lastOutputAt,
+        };
+        console.warn('[Gemini Realtime] diagnostic:', diagnostic);
+        if (sessionStore?.id && typeof sessionStore.addDiagnostic === 'function') {
+            sessionStore.addDiagnostic(diagnostic);
+        }
+    }
+
+    _markGeminiOutput(text = '') {
+        if (!String(text || '').trim()) return;
+        this._geminiLastOutputAt = Date.now();
+        this._geminiWatchdogAlerted = false;
+        if (this._networkAlertKind === 'stalled') {
+            this._hideNetworkAlertBanner();
+        }
+    }
+
+    _startGeminiWatchdog() {
+        this._stopGeminiWatchdog();
+        this._geminiMonitorStartedAt = Date.now();
+        this._geminiWatchdogAlerted = false;
+        this._geminiWatchdogTimer = setInterval(() => this._checkGeminiWatchdog(), GEMINI_WATCHDOG_INTERVAL_MS);
+    }
+
+    _stopGeminiWatchdog() {
+        if (this._geminiWatchdogTimer) {
+            clearInterval(this._geminiWatchdogTimer);
+            this._geminiWatchdogTimer = null;
+        }
+        this._geminiWatchdogAlerted = false;
+    }
+
+    _checkGeminiWatchdog() {
+        if (!this.isRunning || this.translationMode !== 'gemini' || !this.geminiClient?.isConnected) return;
+        if (!this._geminiLastAudioActivityAt) return;
+
+        const now = Date.now();
+        const audioAge = now - this._geminiLastAudioActivityAt;
+        const outputGap = now - (this._geminiLastOutputAt || this._geminiMonitorStartedAt || now);
+        if (audioAge > GEMINI_AUDIO_ACTIVITY_WINDOW_MS
+            || outputGap < GEMINI_NO_OUTPUT_TIMEOUT_MS
+            || this._geminiWatchdogAlerted) {
+            return;
+        }
+
+        this._geminiWatchdogAlerted = true;
+        const seconds = Math.floor(outputGap / 1000);
+        const detail = t('network.stalledDetail', { seconds });
+        this._logGeminiDiagnostic('stalled', 'no_output_watchdog', detail);
+        this._showNetworkAlertBanner('gemini', detail, 'stalled');
+    }
+
+    async _showNetworkAlertBanner(engine = '', reason = '', issueKind = '') {
         if (!this.isRunning || this.translationMode === 'local') return;
         const banner = document.getElementById('live-network-alert-banner');
         if (!banner) return;
 
+        const requestGeneration = ++this._networkAlertGeneration;
+
         this._networkAlertBannerVisible = true;
         this._hadNetworkIssueInSession = true;
 
+        const kind = engine === 'gemini'
+            ? (issueKind || this._classifyGeminiIssue('', reason))
+            : 'network';
+        this._networkAlertKind = kind;
+        this._networkAlertReason = reason || '';
+
         await this._checkMlxReadiness();
+
+        // The readiness check is asynchronous. A reconnect, pause, dismiss,
+        // or newer error may have changed the banner state while it awaited.
+        if (!this.isRunning
+            || requestGeneration !== this._networkAlertGeneration
+            || !this._networkAlertBannerVisible
+            || this._networkAlertKind !== kind
+            || this._networkAlertReason !== (reason || '')) {
+            return;
+        }
 
         const icon = document.getElementById('network-alert-icon');
         const title = document.getElementById('network-alert-title');
         const desc = document.getElementById('network-alert-desc');
+        const meta = document.getElementById('network-alert-meta');
         const btnLocal = document.getElementById('btn-net-fallback-local');
         const btnGemini = document.getElementById('btn-net-fallback-gemini');
         const btnRetry = document.getElementById('btn-net-retry');
 
         if (icon) icon.textContent = '⚠️';
-        if (title) title.textContent = t('network.interruptedTitle');
-        if (desc) desc.textContent = t('network.interruptedDesc');
+        const copy = {
+            quota: ['network.quotaTitle', 'network.quotaDesc'],
+            auth: ['network.authTitle', 'network.authDesc'],
+            server: ['network.serverTitle', 'network.serverDesc'],
+            stalled: ['network.stalledTitle', 'network.stalledDesc'],
+            unknown: ['network.unknownTitle', 'network.unknownDesc'],
+            network: ['network.interruptedTitle', 'network.interruptedDesc'],
+        }[kind] || ['network.interruptedTitle', 'network.interruptedDesc'];
+        if (title) title.textContent = t(copy[0]);
+        if (desc) desc.textContent = t(copy[1]);
+        if (meta) {
+            const metaParts = [];
+            if (engine === 'gemini') {
+                metaParts.push(this._geminiLastOutputAt
+                    ? t('network.lastOutput', { time: this._formatGeminiClock(this._geminiLastOutputAt) })
+                    : t('network.lastOutputNone'));
+            }
+            if (kind === 'quota' || kind === 'auth') {
+                metaParts.push(t('network.autoReconnectStopped'));
+            } else if (kind === 'stalled') {
+                metaParts.push(reason || t('network.stalledDesc'));
+            }
+            meta.textContent = metaParts.join(' · ');
+        }
         if (btnGemini) btnGemini.style.display = 'none';
         if (btnRetry) btnRetry.style.display = 'inline-flex';
 
@@ -889,11 +1056,15 @@ class App {
     _showNetworkRestoredBanner() {
         const banner = document.getElementById('live-network-alert-banner');
         if (!banner) return;
+        this._networkAlertGeneration++;
         this._networkAlertBannerVisible = true;
+        this._networkAlertKind = 'network';
+        this._networkAlertReason = '';
 
         const icon = document.getElementById('network-alert-icon');
         const title = document.getElementById('network-alert-title');
         const desc = document.getElementById('network-alert-desc');
+        const meta = document.getElementById('network-alert-meta');
         const btnLocal = document.getElementById('btn-net-fallback-local');
         const btnGemini = document.getElementById('btn-net-fallback-gemini');
         const btnRetry = document.getElementById('btn-net-retry');
@@ -901,6 +1072,7 @@ class App {
         if (icon) icon.textContent = '🌐';
         if (title) title.textContent = t('network.restoredTitle');
         if (desc) desc.textContent = t('network.restoredDesc');
+        if (meta) meta.textContent = '';
         if (btnLocal) btnLocal.style.display = 'none';
         if (btnGemini) btnGemini.style.display = 'inline-flex';
         if (btnRetry) btnRetry.style.display = 'none';
@@ -912,7 +1084,15 @@ class App {
     _hideNetworkAlertBanner() {
         const banner = document.getElementById('live-network-alert-banner');
         if (banner) banner.style.display = 'none';
+        this._networkAlertGeneration++;
         this._networkAlertBannerVisible = false;
+        this._networkAlertKind = '';
+        this._networkAlertReason = '';
+    }
+
+    _refreshNetworkAlertBanner() {
+        if (!this._networkAlertBannerVisible) return;
+        this._showNetworkAlertBanner(this.translationMode, this._networkAlertReason, this._networkAlertKind);
     }
 
     async _hotSwapToEngine(newMode) {
@@ -959,6 +1139,11 @@ class App {
             this._hotSwapToEngine('gemini');
         });
         document.getElementById('btn-net-retry')?.addEventListener('click', () => {
+            this._geminiAutoReconnectBlocked = false;
+            this._geminiAutoReconnectBlockedKind = '';
+            this._geminiReconnectAttempts = 0;
+            this._geminiWatchdogAlerted = false;
+            this._hideNetworkAlertBanner();
             this._showToast(t('network.reconnecting'), 'info');
             this._restartLiveEngineForSettings();
         });
@@ -977,16 +1162,25 @@ class App {
         // Offline / Online window events
         window.addEventListener('offline', () => {
             if (this.isRunning && this.translationMode !== 'local') {
-                this._showNetworkAlertBanner(this.translationMode, t('network.lostConnection'));
+                const reason = t('network.lostConnection');
+                if (this.translationMode === 'gemini') {
+                    this._logGeminiDiagnostic('network', 'browser_offline', reason);
+                }
+                this._showNetworkAlertBanner(this.translationMode, reason, 'network');
             }
         });
         window.addEventListener('online', () => {
             if (this.isRunning) {
                 if (this.translationMode === 'local') {
                     this._showNetworkRestoredBanner();
-                } else if (this._networkAlertBannerVisible) {
+                } else if (this._networkAlertBannerVisible && !['quota', 'auth', 'stalled'].includes(this._networkAlertKind)) {
+                    if (this.translationMode === 'gemini' && this._geminiAutoReconnectBlocked) return;
                     this._showToast(t('network.onlineReconnecting'), 'info');
-                    this._restartLiveEngineForSettings();
+                    if (this.translationMode === 'gemini') {
+                        this._scheduleGeminiReconnect(2500);
+                    } else {
+                        this._restartLiveEngineForSettings();
+                    }
                 }
             }
         });
@@ -1003,6 +1197,8 @@ class App {
             const previousLocale = normalizeLocale(settingsManager.get().app_language);
             const nextLocale = normalizeLocale(select.value);
             applyLocale(nextLocale);
+            this._updateStartButton();
+            this._refreshNetworkAlertBanner();
             if (this._currentSettingsScreen) {
                 this._showSettingsScreen(this._currentSettingsScreen);
             }
@@ -1020,6 +1216,8 @@ class App {
             } catch (err) {
                 select.value = previousLocale;
                 applyLocale(previousLocale);
+                this._updateStartButton();
+                this._refreshNetworkAlertBanner();
                 if (this._currentSettingsScreen) {
                     this._showSettingsScreen(this._currentSettingsScreen);
                 }
@@ -1321,6 +1519,21 @@ class App {
         });
 
         this._bindSessionPlayer(document.querySelector('.session-player-detail'));
+        const miniPlayer = document.getElementById('session-mini-player');
+        this._bindSessionPlayer(miniPlayer);
+        miniPlayer?.addEventListener('click', (event) => {
+            if (event.target.closest('[data-player-toggle], [data-player-timeline], #session-mini-player-close')) return;
+            this._openSessionFromMiniPlayer();
+        });
+        document.getElementById('session-mini-player-open')?.addEventListener('click', (event) => {
+            event.stopPropagation();
+            this._openSessionFromMiniPlayer();
+        });
+        document.getElementById('session-mini-player-close')?.addEventListener('click', (event) => {
+            event.stopPropagation();
+            this._stopSessionAudioPlayback();
+        });
+        window.addEventListener('resize', () => this._updateFloatingBarsPosition());
 
         // Delete single session from viewer
         document.getElementById('btn-session-delete-single')?.addEventListener('click', async () => {
@@ -1509,7 +1722,7 @@ class App {
 
         // Main Start / Pause button
         document.getElementById('btn-start')?.addEventListener('click', async () => {
-            if (this.isStarting) return;
+            if (this.isStarting || this._isStoppingSession) return;
             try {
                 if (this.isRunning) {
                     // Running -> click to Pause
@@ -2851,6 +3064,7 @@ class App {
     _applySettings(settings) {
         const appLocale = normalizeLocale(settings.app_language);
         applyLocale(appLocale);
+        this._updateStartButton();
         const appLanguageSelect = document.getElementById('select-app-language');
         if (appLanguageSelect && appLanguageSelect.value !== appLocale) {
             appLanguageSelect.value = appLocale;
@@ -3425,6 +3639,7 @@ class App {
     // ─── Start/Stop ────────────────────────────────────────
 
     async start() {
+        if (this._isStoppingSession) return;
         const settings = settingsManager.get();
         this.translationMode = settings.translation_mode || 'soniox';
         console.log('[App] start() called, translation_mode:', this.translationMode, 'settings:', JSON.stringify(settings));
@@ -3478,9 +3693,22 @@ class App {
             if (!await this._ensureMicrophonePermission()) return;
         }
 
+        // Resume the active-duration clock only after all start prerequisites
+        // have passed. Time spent paused must not be included in the meeting
+        // duration shown in the Live header.
+        if (this.isPaused && this._pausedAt !== null) {
+            this._totalPausedMs += Math.max(0, Date.now() - this._pausedAt);
+            this._pausedAt = null;
+        }
+
         this.isRunning = true;
         this.isPaused = false;
         this._hideNetworkAlertBanner();
+        this._geminiAutoReconnectBlocked = false;
+        this._geminiAutoReconnectBlockedKind = '';
+        this._geminiReconnectAttempts = 0;
+        this._geminiWatchdogAlerted = false;
+        this._geminiLastAudioActivityAt = 0;
         if (!this.sessionStartTime) {
             this._hadNetworkIssueInSession = false;
         }
@@ -3725,16 +3953,20 @@ class App {
 
         this.geminiClient.onStatusChange = (state) => {
             if (state === 'ready') {
+                this._geminiReconnectAttempts = 0;
                 this._updateStatus('connected');
                 this._hideNetworkAlertBanner();
+                this._startGeminiWatchdog();
             } else if (state === 'connecting') {
                 this._updateStatus('connecting');
             }
         };
         this.geminiClient.onProvisional = (text) => {
+            this._markGeminiOutput(text);
             this.transcriptUI.setProvisional(text, null, null);
         };
         this.geminiClient.onLivePreview = (original, translation) => {
+            this._markGeminiOutput(original || translation);
             if (original) this.transcriptUI.setSourceProvisional(original);
             else this.transcriptUI.clearSourceProvisional();
             if (translation) this.transcriptUI.setProvisional(translation, null, null);
@@ -3747,6 +3979,7 @@ class App {
         };
         this.geminiClient.onSourceFinal = (sourceText, pendingId = null, speaker = null) => {
             if (!sourceText || !sourceText.trim()) return;
+            this._markGeminiOutput(sourceText);
             const source = sourceText.trim();
             // The final source event supersedes Gemini's interim line. Clear it
             // before adding the durable pending-source segment, otherwise the
@@ -3782,11 +4015,26 @@ class App {
         };
         this.geminiClient.onTranslationFailed = (pendingId, message) => {
             console.warn('[Gemini Realtime] Translation failed:', pendingId, message);
+            const kind = this._classifyGeminiIssue('translation_failed', message);
+            this._logGeminiDiagnostic(kind, 'translation_failed', message);
+            if (this.isRunning) {
+                this._showNetworkAlertBanner('gemini', message, kind);
+                if (kind === 'quota' || kind === 'auth') {
+                    this._geminiAutoReconnectBlocked = true;
+                    this._geminiAutoReconnectBlockedKind = kind;
+                    this._disconnectLiveEngine().catch((error) => {
+                        console.warn('[Gemini Realtime] Failed to stop after non-transient translation error:', error);
+                    });
+                } else if ((kind === 'network' || kind === 'server') && navigator.onLine) {
+                    this._scheduleGeminiReconnect(2500);
+                }
+            }
             if (pendingId !== null) {
                 this.transcriptUI.markTranslationFailed(pendingId);
             }
         };
         this.geminiClient.onSegment = (sourceText, translatedText, pendingId = null, speaker = null) => {
+            this._markGeminiOutput(sourceText || translatedText);
             // New backend versions emit SourceTranscript first and attach the
             // same id to the later REST translation. Never pair by whichever
             // source happens to remain in the bounded UI buffer.
@@ -3818,14 +4066,21 @@ class App {
         };
         this.geminiClient.onError = (code, msg) => {
             console.error('[Gemini Realtime]', code, msg);
-            if (this.translationMode !== 'gemini') return;
+            if (this.translationMode !== 'gemini' || !this.isRunning) return;
             const msgStr = String(msg || '');
-            if ((code === 'connect_failed' || code === 'session_failed') && (msgStr.includes('API key') || msgStr.includes('PERMISSION_DENIED'))) {
-                this._showToast(`Gemini: ${msgStr || code}`, 'error');
-                this._updateStatus('error');
-                this.pause();
-            } else if (this.isRunning) {
-                this._showNetworkAlertBanner('gemini', msgStr || code);
+            const kind = this._classifyGeminiIssue(code, msgStr);
+            this._logGeminiDiagnostic(kind, code, msgStr || kind);
+            this._updateStatus('error');
+
+            if (kind === 'quota' || kind === 'auth') {
+                this._geminiAutoReconnectBlocked = true;
+                this._geminiAutoReconnectBlockedKind = kind;
+                this._showNetworkAlertBanner('gemini', msgStr || code, kind);
+                this._disconnectLiveEngine().catch((error) => {
+                    console.warn('[Gemini Realtime] Failed to stop after non-transient error:', error);
+                });
+            } else {
+                this._showNetworkAlertBanner('gemini', msgStr || code, kind);
                 if (navigator.onLine) {
                     this._scheduleGeminiReconnect(2500);
                 }
@@ -3833,9 +4088,23 @@ class App {
         };
         this.geminiClient.onClosed = (reason) => {
             console.warn('[Gemini Realtime] closed:', reason);
-            if (this.translationMode !== 'gemini') return;
-            if (this.isRunning) {
-                this._showNetworkAlertBanner('gemini', reason);
+            if (this.translationMode !== 'gemini' || !this.isRunning) return;
+            this._stopGeminiWatchdog();
+            const reasonStr = String(reason || 'closed');
+            const kind = this._classifyGeminiIssue('closed', reasonStr);
+            this._logGeminiDiagnostic(kind, 'closed', reasonStr);
+
+            const blockedKind = this._geminiAutoReconnectBlocked
+                ? (this._geminiAutoReconnectBlockedKind || this._networkAlertKind || kind)
+                : (['quota', 'auth'].includes(this._networkAlertKind)
+                    ? this._networkAlertKind
+                    : kind);
+            if (blockedKind === 'quota' || blockedKind === 'auth') {
+                this._geminiAutoReconnectBlocked = true;
+                this._geminiAutoReconnectBlockedKind = blockedKind;
+                this._showNetworkAlertBanner('gemini', reasonStr, blockedKind);
+            } else {
+                this._showNetworkAlertBanner('gemini', reasonStr, kind);
                 if (navigator.onLine) {
                     this._scheduleGeminiReconnect(2500);
                 }
@@ -3894,15 +4163,14 @@ class App {
         } catch (err) {
             console.error('[Gemini Realtime] connect error:', err);
             const errStr = String(err);
-            if (errStr.includes('API key') || errStr.includes('PERMISSION_DENIED')) {
-                this._showToast(`Gemini connect failed: ${err}`, 'error');
-                await this.pause();
-                return;
-            }
+            const kind = this._classifyGeminiIssue('connect_failed', errStr);
             if (this.isRunning) {
                 console.log('[Gemini Realtime] Connection failed, showing network banner...');
-                this._showNetworkAlertBanner('gemini', errStr);
-                if (navigator.onLine) {
+                this._showNetworkAlertBanner('gemini', errStr, kind);
+                if (kind === 'quota' || kind === 'auth') {
+                    this._geminiAutoReconnectBlocked = true;
+                    this._geminiAutoReconnectBlockedKind = kind;
+                } else if (navigator.onLine) {
                     this._scheduleGeminiReconnect(3000);
                 }
             }
@@ -3912,6 +4180,10 @@ class App {
 
     _scheduleGeminiReconnect(delayMs = 2500) {
         if (!this.isRunning || this.translationMode !== 'gemini') return;
+        if (this._geminiAutoReconnectBlocked) {
+            console.log('[Gemini Realtime] Auto-reconnect blocked after a non-transient error');
+            return;
+        }
         if (!navigator.onLine) {
             console.log('[Gemini Realtime] Network offline, skipping auto-reconnect loop');
             return;
@@ -3920,12 +4192,15 @@ class App {
             clearTimeout(this._geminiReconnectTimer);
             this._geminiReconnectTimer = null;
         }
-        console.log(`[Gemini Realtime] Scheduling auto-reconnect in ${delayMs}ms...`);
+        const backoffMs = Math.min(30_000, 2500 * (2 ** Math.min(this._geminiReconnectAttempts, 4)));
+        const reconnectDelayMs = Math.max(Number(delayMs) || 2500, backoffMs);
+        console.log(`[Gemini Realtime] Scheduling auto-reconnect in ${reconnectDelayMs}ms...`);
         this._geminiReconnectTimer = setTimeout(async () => {
             this._geminiReconnectTimer = null;
             if (!this.isRunning || this.translationMode !== 'gemini' || !navigator.onLine) return;
+            this._geminiReconnectAttempts++;
             await this._restartLiveEngineForSettings();
-        }, delayMs);
+        }, reconnectDelayMs);
     }
 
     async _startQwenMode(settings) {
@@ -4353,14 +4628,14 @@ class App {
         });
     }
 
-    async _teardownCurrentCaptureAndEngine() {
+    async _teardownCurrentCaptureAndEngine({ preserveFinalResults = false } = {}) {
         this._audioCaptureActive = false;
         try {
             await invoke('stop_capture');
         } catch (err) {
             console.error('[App] Failed to stop audio capture:', err);
         }
-        await this._disconnectLiveEngine({ preserveFinalResults: false });
+        await this._disconnectLiveEngine({ preserveFinalResults });
         this.localPipelineReady = false;
         this.localPipelineChannel = null;
     }
@@ -4399,6 +4674,9 @@ class App {
     // file open. The next Start appends a new chunk to the same file. Finalizing
     // into a new file is stopSession()'s job.
     async pause({ persist = true } = {}) {
+        if (this.isRunning && this._pausedAt === null) {
+            this._pausedAt = Date.now();
+        }
         if (this._geminiReconnectTimer) {
             clearTimeout(this._geminiReconnectTimer);
             this._geminiReconnectTimer = null;
@@ -4406,6 +4684,7 @@ class App {
         this._liveEngineGeneration++;
         this.isRunning = false;
         this.isPaused = true;
+        this._stopLiveDurationTimer();
         this._updateStartButton();
         this._setEnginePillLocked(false);
         this._clearInactivityTimer();
@@ -5391,12 +5670,42 @@ class App {
         }
         this._liveEngineGeneration++;
 
-        // Finalize chunk in current session store
+        // Stop the live state immediately, but keep the current SessionStore
+        // and provider callbacks alive until the backend has drained every
+        // already-accepted final result. Detaching first loses the final
+        // SourceTranscript/Segment events emitted during gemini_realtime_stop.
+        this.isRunning = false;
+        this.isPaused = false;
+        this._stopLiveDurationTimer();
+        this._clearInactivityTimer();
+        this._hideNetworkAlertBanner();
+        this._updateStartButton();
+        this._setEnginePillLocked(false);
+        this._showBackgroundSessionFinalizing(chosenTitle || sessionStore.title || t('session.defaultTitle'));
+
+        const teardownPromise = this._teardownCurrentCaptureAndEngine({
+            preserveFinalResults: true,
+        });
+        this._activeCaptureTeardown = teardownPromise;
+        teardownPromise.finally(() => {
+            if (this._activeCaptureTeardown === teardownPromise) {
+                this._activeCaptureTeardown = null;
+            }
+        });
+
+        // gemini_realtime_stop waits for the accepted translation queue to
+        // drain (with a bounded backend timeout). All final callbacks must be
+        // handled before the store is detached or a new session is created.
+        await teardownPromise;
+
+        // Finalize only after the provider drain so late final output is part
+        // of this session's last chunk and saved record.
         sessionStore.endChunk();
 
-        const hasSegments = !sessionStore.isEmpty() && sessionStore.totalSegmentCount() > 0;
+        const hasSegments = sessionStore.totalSegmentCount() > 0;
         const hasNotes = Boolean(sessionStore.notes && sessionStore.notes.trim());
-        const hadData = hasSegments || hasNotes;
+        const hasDiagnostics = Array.isArray(sessionStore.diagnostics) && sessionStore.diagnostics.length > 0;
+        const hadData = hasSegments || hasNotes || hasDiagnostics;
         const savedSessionId = sessionStore.id;
 
         if (chosenTitle) {
@@ -5418,15 +5727,6 @@ class App {
             sessionStore.scope = chosenScope || 'work';
         }
 
-        // Teardown capture & live engine asynchronously in background
-        const teardownPromise = this._teardownCurrentCaptureAndEngine();
-        this._activeCaptureTeardown = teardownPromise;
-        teardownPromise.finally(() => {
-            if (this._activeCaptureTeardown === teardownPromise) {
-                this._activeCaptureTeardown = null;
-            }
-        });
-
         let backgroundSave = null;
         if (!hadData) {
             this._showToast(t('session.noDataToSave'), 'info');
@@ -5441,13 +5741,17 @@ class App {
             this._hasUnsavedMeetingData = false;
         }
 
-        // Reset live state immediately (zero UI freeze)
-        this.isRunning = false;
-        this.isPaused = false;
-        this._hideNetworkAlertBanner();
+        // Reset the remaining live state after the drained store has been
+        // detached. The stop action itself has already been reflected in the
+        // toolbar above while the provider was flushing final output.
         this._hadNetworkIssueInSession = false;
         this.sessionStartTime = null;
         this.recordingStartTime = null;
+        this._pausedAt = null;
+        this._totalPausedMs = 0;
+        this._geminiLastOutputAt = 0;
+        this._geminiLastAudioActivityAt = 0;
+        this._geminiMonitorStartedAt = 0;
         this._stopLiveDurationTimer();
         this._clearInactivityTimer();
         this._updateLiveDurationDisplay();
@@ -5535,12 +5839,33 @@ class App {
     }
 
     async discardSession() {
-        if (this.isRunning) {
-            this.isRunning = false;
-            this.isPaused = true;
-            this._updateStartButton();
-            this._setEnginePillLocked(false);
-            this._clearInactivityTimer();
+        const wasRunning = this.isRunning;
+
+        // Discard is a terminal action for the current live session. Mark it
+        // idle before awaiting engine shutdown so the toolbar never advertises
+        // "Continue" while the discarded session is being torn down.
+        this.isRunning = false;
+        this.isPaused = false;
+        this._liveEngineGeneration++;
+        if (this._geminiReconnectTimer) {
+            clearTimeout(this._geminiReconnectTimer);
+            this._geminiReconnectTimer = null;
+        }
+        this._hideNetworkAlertBanner();
+        this._setEnginePillLocked(false);
+        this._hasUnsavedMeetingData = false;
+        this.sessionStartTime = null;
+        this.recordingStartTime = null;
+        this._pausedAt = null;
+        this._totalPausedMs = 0;
+        this._geminiLastOutputAt = 0;
+        this._geminiLastAudioActivityAt = 0;
+        this._geminiMonitorStartedAt = 0;
+        this._stopLiveDurationTimer();
+        this._clearInactivityTimer();
+        this._updateStartButton();
+
+        if (wasRunning) {
             await this._stopTranslationEngine();
         }
 
@@ -5552,16 +5877,10 @@ class App {
             this._showToast(t('session.discardSuccess'), 'info');
         } catch (err) {
             this._showToast(t('session.discardError', { error: err }), 'error');
+            this._updateStatus('error');
             return;
         }
 
-        this.isRunning = false;
-        this.isPaused = false;
-        this._hasUnsavedMeetingData = false;
-        this.sessionStartTime = null;
-        this.recordingStartTime = null;
-        this._stopLiveDurationTimer();
-        this._clearInactivityTimer();
         if (this.transcriptUI) {
             this.transcriptUI.clear();
             this.transcriptUI.showPlaceholder();
@@ -5740,7 +6059,8 @@ class App {
             return;
         }
 
-        const elapsed = Math.max(0, Math.floor((Date.now() - this.sessionStartTime.getTime()) / 1000));
+        const now = this.isPaused && this._pausedAt !== null ? this._pausedAt : Date.now();
+        const elapsed = Math.max(0, Math.floor((now - this.sessionStartTime.getTime() - this._totalPausedMs) / 1000));
         const hrs = Math.floor(elapsed / 3600);
         const mins = Math.floor((elapsed % 3600) / 60);
         const secs = elapsed % 60;
@@ -5779,15 +6099,15 @@ class App {
             btnStart.className = 'primary-action-btn running-state';
             if (iconPlay) iconPlay.style.display = 'none';
             if (iconPause) iconPause.style.display = 'block';
-            if (labelStart) labelStart.innerHTML = '<u>P</u>ause';
-            btnStart.title = 'Pause translation (⌘P)';
+            if (labelStart) labelStart.innerHTML = t('button.pause');
+            btnStart.title = t('button.pause.title');
 
             if (btnStop) {
                 btnStop.style.display = 'inline-flex';
                 btnStop.className = 'action-btn btn-stop-action';
                 if (iconStopSq) iconStopSq.style.display = 'block';
                 if (iconSaveFloppy) iconSaveFloppy.style.display = 'none';
-                if (labelStop) labelStop.innerHTML = 'Save & S<u>t</u>op';
+                if (labelStop) labelStop.innerHTML = t('button.saveStop');
                 btnStop.title = t('button.saveStop.title');
             }
         } else if (this.isPaused) {
@@ -5795,15 +6115,15 @@ class App {
             btnStart.className = 'primary-action-btn paused-state';
             if (iconPlay) iconPlay.style.display = 'block';
             if (iconPause) iconPause.style.display = 'none';
-            if (labelStart) labelStart.innerHTML = '<u>C</u>ontinue';
-            btnStart.title = 'Continue translation (⌘C)';
+            if (labelStart) labelStart.innerHTML = t('button.continue');
+            btnStart.title = t('button.continue.title');
 
             if (btnStop) {
                 btnStop.style.display = 'inline-flex';
                 btnStop.className = 'action-btn btn-stop-action';
                 if (iconStopSq) iconStopSq.style.display = 'block';
                 if (iconSaveFloppy) iconSaveFloppy.style.display = 'none';
-                if (labelStop) labelStop.innerHTML = 'Save & S<u>t</u>op';
+                if (labelStop) labelStop.innerHTML = t('button.saveStop');
                 btnStop.title = t('button.saveStop.title');
             }
         } else if (this._hasUnsavedMeetingData) {
@@ -5811,8 +6131,8 @@ class App {
             btnStart.className = 'primary-action-btn';
             if (iconPlay) iconPlay.style.display = 'block';
             if (iconPause) iconPause.style.display = 'none';
-            if (labelStart) labelStart.innerHTML = '<u>S</u>tart';
-            btnStart.title = 'Start a new translation (⌘S)';
+            if (labelStart) labelStart.innerHTML = t('button.start');
+            btnStart.title = t('button.start.title');
 
             if (btnStop) {
                 btnStop.style.display = 'inline-flex';
@@ -5827,8 +6147,8 @@ class App {
             btnStart.className = 'primary-action-btn';
             if (iconPlay) iconPlay.style.display = 'block';
             if (iconPause) iconPause.style.display = 'none';
-            if (labelStart) labelStart.innerHTML = '<u>S</u>tart';
-            btnStart.title = 'Start translation (⌘S)';
+            if (labelStart) labelStart.innerHTML = t('button.start');
+            btnStart.title = t('button.start.title');
 
             if (btnStop) {
                 btnStop.style.display = 'none';
@@ -6001,6 +6321,7 @@ class App {
      * keeps Gemini callbacks until already accepted translations are drained.
      */
     async _disconnectLiveEngine({ preserveFinalResults = false } = {}) {
+        this._stopGeminiWatchdog();
         if (this._geminiReconnectTimer) {
             clearTimeout(this._geminiReconnectTimer);
             this._geminiReconnectTimer = null;
@@ -6403,6 +6724,10 @@ class App {
                             const titleEl = document.getElementById('session-viewer-title');
                             if (titleEl) titleEl.textContent = newTitle;
                         }
+                        if (this._sessionAudioId === id) {
+                            this._sessionAudioTitle = newTitle;
+                            this._syncSessionMiniPlayerUI();
+                        }
                         this._showToast(t('modal.rename.success'), 'success');
                         await this._showSessions();
                     } catch (err) {
@@ -6450,28 +6775,118 @@ class App {
         return `MM_${y}${m}${day}_${hh}:${mm}`;
     }
 
+    _stopSessionAudioPlayback() {
+        if (this._sessionAudioElement) this._sessionAudioElement.pause();
+        this._sessionAudioElement = null;
+        this._sessionAudioId = null;
+        this._sessionAudioTitle = null;
+        this._resetSessionPlayerUI();
+    }
+
+    _getSessionAudioTitle(id) {
+        const currentJsonTitle = this._currentSessionJson?.id === id ? this._currentSessionJson.title : '';
+        const viewerTitle = this._currentViewedSession?.id === id && document.getElementById('session-viewer-title')?.textContent !== id
+            ? document.getElementById('session-viewer-title')?.textContent
+            : '';
+        const cachedTitle = (this._cachedSessions || []).find(session => session.id === id)?.title;
+        return currentJsonTitle || viewerTitle || cachedTitle || id;
+    }
+
+    _getSessionDuration(id) {
+        const cachedDuration = (this._cachedSessions || []).find(session => session.id === id)?.duration_sec;
+        const currentDuration = this._currentSessionJson?.id === id ? this._currentSessionJson.duration_sec : 0;
+        const duration = Number(cachedDuration || currentDuration || 0);
+        return Number.isFinite(duration) && duration > 0 ? duration : 0;
+    }
+
+    _setSessionPlayerTarget(id, isLegacy = false) {
+        const knownDuration = this._getSessionDuration(id);
+        this._sessionPlayerElements().forEach(player => {
+            player.dataset.playerId = id;
+            player.dataset.legacy = isLegacy ? '1' : '0';
+            player.classList.toggle('is-disabled', isLegacy);
+            const toggle = player.querySelector('[data-player-toggle]');
+            const timeline = player.querySelector('[data-player-timeline]');
+            if (toggle) toggle.disabled = isLegacy;
+            if (timeline) {
+                timeline.disabled = isLegacy;
+                timeline.max = knownDuration;
+                timeline.value = 0;
+                timeline.style.setProperty('--player-progress', '0%');
+            }
+            const current = player.querySelector('[data-player-current]');
+            const duration = player.querySelector('[data-player-duration]');
+            if (current) current.textContent = '0:00';
+            if (duration) duration.textContent = this._formatPlayerTime(knownDuration);
+        });
+    }
+
+    _syncSessionMiniPlayerUI() {
+        const miniPlayer = document.getElementById('session-mini-player');
+        const audio = this._sessionAudioElement;
+        const id = this._sessionAudioId;
+        if (!miniPlayer) return;
+
+        if (!audio || !id) {
+            miniPlayer.style.display = 'none';
+            const title = miniPlayer.querySelector('[data-player-title]');
+            if (title) title.textContent = '—';
+            this._updateFloatingBarsPosition();
+            return;
+        }
+
+        miniPlayer.dataset.playerId = id;
+        miniPlayer.dataset.legacy = '0';
+        const title = miniPlayer.querySelector('[data-player-title]');
+        if (title) title.textContent = this._sessionAudioTitle || this._getSessionAudioTitle(id);
+
+        const viewer = document.getElementById('session-viewer');
+        const viewerVisible = viewer && viewer.style.display !== 'none';
+        const sameDetail = viewerVisible && this._currentViewedSession?.id === id;
+        miniPlayer.style.display = sameDetail ? 'none' : 'flex';
+        this._updateSessionPlayerUI(audio);
+        this._setSessionPlayerUI(id, !audio.paused);
+        this._updateFloatingBarsPosition();
+    }
+
+    async _openSessionFromMiniPlayer() {
+        const id = this._sessionAudioId;
+        if (!id) return;
+
+        const cachedSession = (this._cachedSessions || []).find(session => session.id === id);
+        const isLegacy = Boolean(cachedSession?.has_legacy_only);
+        const viewer = document.getElementById('session-viewer');
+        const viewerVisible = viewer && viewer.style.display !== 'none';
+        if (viewerVisible && this._currentViewedSession?.id === id) return;
+
+        if (getActivity() !== 'library') {
+            this._suppressNextShowSessions = true;
+            setActivity('library');
+            await this._showSessions();
+        }
+        await this._openSession(id, isLegacy);
+    }
+
     async _playSessionTTS(id, isLegacy = false) {
         try {
-            const btn = document.getElementById('btn-session-tts-play');
-
-            // Stop any currently playing session audio
-            if (this._sessionAudioElement) {
-                const wasPlayingSame = this._sessionAudioId === id;
-                this._sessionAudioElement.pause();
-                this._sessionAudioElement = null;
-                this._sessionAudioId = null;
-                this._resetSessionPlayerUI();
-                if (wasPlayingSame) {
-                    this._showToast(t('session.audioPlaybackStopped'), 'info');
-                    return;
+            if (this._sessionAudioElement && this._sessionAudioId === id) {
+                if (this._sessionAudioElement.paused) {
+                    await this._sessionAudioElement.play();
+                } else {
+                    this._sessionAudioElement.pause();
                 }
+                this._setSessionPlayerUI(id, !this._sessionAudioElement.paused);
+                return;
             }
+
+            if (this._sessionAudioElement) this._stopSessionAudioPlayback();
 
             if (isLegacy) {
                 this._showToast(t('session.audioLegacyNoAudio'), 'info');
                 return;
             }
 
+            this._setSessionPlayerTarget(id, false);
             this._setSessionPlayerLoading(id, true);
 
             // Resolve the recording path without loading the complete file into
@@ -6500,7 +6915,7 @@ class App {
 
             if (!audioUrl) {
                 this._showToast(t('session.audioNoRecording'), 'info');
-                if (btn) btn.innerHTML = `🔊 ${t('session.playAudio')}`;
+                this._resetSessionPlayerUI();
                 return;
             }
 
@@ -6515,19 +6930,32 @@ class App {
             audio.src = audioUrl;
             this._sessionAudioElement = audio;
             this._sessionAudioId = id;
-            audio.onloadedmetadata = () => this._updateSessionPlayerUI(audio);
-            audio.ontimeupdate = () => this._updateSessionPlayerUI(audio);
-            audio.onpause = () => this._setSessionPlayerUI(id, false);
-            audio.onplay = () => this._setSessionPlayerUI(id, true);
+            this._sessionAudioTitle = this._getSessionAudioTitle(id);
+            this._syncSessionMiniPlayerUI();
+            audio.onloadedmetadata = () => {
+                if (this._sessionAudioElement === audio) this._updateSessionPlayerUI(audio);
+            };
+            audio.ontimeupdate = () => {
+                if (this._sessionAudioElement === audio) this._updateSessionPlayerUI(audio);
+            };
+            audio.onpause = () => {
+                if (this._sessionAudioElement === audio) this._setSessionPlayerUI(id, false);
+            };
+            audio.onplay = () => {
+                if (this._sessionAudioElement === audio) this._setSessionPlayerUI(id, true);
+            };
             audio.onended = () => {
+                if (this._sessionAudioElement !== audio) return;
                 this._sessionAudioElement = null;
                 this._sessionAudioId = null;
+                this._sessionAudioTitle = null;
                 this._resetSessionPlayerUI();
             };
             audio.oncanplay = () => {
-                this._showToast(t('session.audioPlaying'), 'info');
+                if (this._sessionAudioElement === audio) this._showToast(t('session.audioPlaying'), 'info');
             };
             audio.onerror = () => {
+                if (this._sessionAudioElement !== audio) return;
                 const mediaError = audio.error;
                 console.error('[App] Audio playback error:', mediaError?.code, mediaError?.message);
                 const reason = mediaError?.code === 3
@@ -6541,15 +6969,16 @@ class App {
                 });
                 this._sessionAudioElement = null;
                 this._sessionAudioId = null;
+                this._sessionAudioTitle = null;
                 this._resetSessionPlayerUI();
             };
             await audio.play();
-            this._setSessionPlayerUI(id, true);
+            if (this._sessionAudioElement === audio) this._setSessionPlayerUI(id, true);
         } catch (err) {
             this._showToast(t('session.audioPlayFailed', { error: err }), 'error');
-            this._resetSessionPlayerUI();
+            if (this._sessionAudioId === id) this._stopSessionAudioPlayback();
         } finally {
-            this._setSessionPlayerLoading(id, false);
+            if (this._sessionAudioId === id) this._setSessionPlayerLoading(id, false);
         }
     }
 
@@ -6568,21 +6997,23 @@ class App {
 
     _setSessionPlayerUI(id, playing) {
         this._sessionPlayerElements().forEach(player => {
-            const isCurrent = player.dataset.playerId === id;
+            const isCurrent = Boolean(id) && player.dataset.playerId === id;
             const toggle = player.querySelector('[data-player-toggle]');
             if (isCurrent) {
                 player.classList.add('is-active');
                 if (toggle) {
                     toggle.textContent = playing ? '❚❚' : '▶';
-                    toggle.title = playing ? t('session.audioPause') : t('session.audioResume');
+                    const actionLabel = playing ? t('session.audioPause') : t('session.audioResume');
+                    toggle.title = actionLabel;
+                    toggle.setAttribute('aria-label', actionLabel);
                 }
-            } else if (!id) {
+            } else {
                 player.classList.remove('is-active');
             }
         });
         const detailBtn = document.getElementById('btn-session-tts-play');
         if (detailBtn && this._currentViewedSession?.id === id) {
-            detailBtn.innerHTML = playing ? `⏸ ${t('session.audioPause')}` : `🔊 ${t('session.playAudio')}`;
+            detailBtn.innerHTML = playing ? `⏸ ${t('session.audioPause')}` : `▶ ${t('session.audioResume')}`;
         }
     }
 
@@ -6597,6 +7028,7 @@ class App {
                 if (loading) {
                     toggle.textContent = '…';
                     toggle.title = t('session.audioLoading');
+                    toggle.setAttribute('aria-label', t('session.audioLoading'));
                 }
             }
             if (timeline) timeline.disabled = loading;
@@ -6609,47 +7041,66 @@ class App {
     }
 
     _updateSessionPlayerUI(audio) {
+        const knownDuration = this._getSessionDuration(this._sessionAudioId);
+        const durationSeconds = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : knownDuration;
         this._sessionPlayerElements().forEach(player => {
             if (player.dataset.playerId !== this._sessionAudioId) return;
             const timeline = player.querySelector('[data-player-timeline]');
             const current = player.querySelector('[data-player-current]');
             const duration = player.querySelector('[data-player-duration]');
             if (timeline) {
-                timeline.max = Number.isFinite(audio.duration) ? audio.duration : 0;
+                timeline.max = durationSeconds;
                 timeline.value = audio.currentTime || 0;
-                timeline.style.setProperty('--player-progress', `${audio.duration ? (audio.currentTime / audio.duration) * 100 : 0}%`);
+                const progress = durationSeconds > 0
+                    ? Math.min(100, Math.max(0, (audio.currentTime / durationSeconds) * 100))
+                    : 0;
+                timeline.style.setProperty('--player-progress', `${progress}%`);
             }
             if (current) current.textContent = this._formatPlayerTime(audio.currentTime);
-            if (duration) duration.textContent = this._formatPlayerTime(audio.duration);
+            if (duration) duration.textContent = this._formatPlayerTime(durationSeconds);
         });
+    }
+
+    _resetSessionPlayerElement(player) {
+        if (!player) return;
+        player.classList.remove('is-active');
+        player.classList.remove('is-loading');
+        player.dataset.playerId = '';
+        const toggle = player.querySelector('[data-player-toggle]');
+        const timeline = player.querySelector('[data-player-timeline]');
+        const disabled = player.dataset.legacy === '1';
+        if (toggle) {
+            toggle.textContent = '▶';
+            toggle.title = t('session.playAudio');
+            toggle.setAttribute('aria-label', t('session.playAudio'));
+            toggle.disabled = disabled;
+        }
+        if (timeline) {
+            timeline.value = 0;
+            timeline.max = 0;
+            timeline.disabled = disabled;
+            timeline.style.setProperty('--player-progress', '0%');
+        }
+        const current = player.querySelector('[data-player-current]');
+        const duration = player.querySelector('[data-player-duration]');
+        if (current) current.textContent = '0:00';
+        if (duration) duration.textContent = '0:00';
     }
 
     _resetSessionPlayerUI() {
         this._sessionPlayerElements().forEach(player => {
-            player.classList.remove('is-active');
-            player.classList.remove('is-loading');
-            player.dataset.playerId = '';
-            const toggle = player.querySelector('[data-player-toggle]');
-            const timeline = player.querySelector('[data-player-timeline]');
-            const disabled = player.dataset.legacy === '1';
-            if (toggle) {
-                toggle.textContent = '▶';
-                toggle.title = t('session.playAudio');
-                toggle.disabled = disabled;
-            }
-            if (timeline) {
-                timeline.value = 0;
-                timeline.max = 0;
-                timeline.disabled = disabled;
-                timeline.style.setProperty('--player-progress', '0%');
-            }
-            const current = player.querySelector('[data-player-current]');
-            const duration = player.querySelector('[data-player-duration]');
-            if (current) current.textContent = '0:00';
-            if (duration) duration.textContent = '0:00';
+            this._resetSessionPlayerElement(player);
+            player.dataset.legacy = '0';
         });
+        const miniPlayer = document.getElementById('session-mini-player');
+        if (miniPlayer) {
+            miniPlayer.style.display = 'none';
+            const title = miniPlayer.querySelector('[data-player-title]');
+            if (title) title.textContent = '—';
+        }
         const detailBtn = document.getElementById('btn-session-tts-play');
         if (detailBtn) detailBtn.innerHTML = `🔊 ${t('session.playAudio')}`;
+        this._updateFloatingBarsPosition();
     }
 
     _bindSessionPlayer(player) {
@@ -7058,18 +7509,13 @@ class App {
         if (this._sessionSearchOpen) {
             this._closeSessionSearch({ restoreList: true, restoreFocus: false });
         }
-        if (this._sessionAudioElement) {
-            this._sessionAudioElement.pause();
-            this._sessionAudioElement = null;
-            this._sessionAudioId = null;
-        }
-        this._resetSessionPlayerUI();
         const listEl = document.getElementById('sessions-list');
         const listPanel = document.getElementById('sessions-list-panel');
         const viewer = document.getElementById('session-viewer');
 
         if (listPanel) listPanel.style.display = '';
         if (viewer) viewer.style.display = 'none';
+        this._syncSessionMiniPlayerUI();
         if (!listEl) return;
 
         listEl.innerHTML = '<div class="sessions-loading">Loading...</div>';
@@ -7078,6 +7524,9 @@ class App {
             await this._loadProjectRegistry();
             const sessions = await invoke('list_sessions');
             this._cachedSessions = sessions || [];
+            if (this._sessionAudioId && !this._cachedSessions.some(session => session.id === this._sessionAudioId)) {
+                this._stopSessionAudioPlayback();
+            }
 
             this._renderCustomerFilterBar();
             this._renderProjectFilterBar();
@@ -7088,6 +7537,7 @@ class App {
                 listEl.innerHTML = `<div class="sessions-empty">${this._esc(t('logsTable.emptyNoLogs'))}<br><button type="button" class="btn-primary small" id="btn-empty-import-audio" style="margin-top:12px;">${this._esc(t('library.import'))}</button></div>`;
                 document.getElementById('btn-empty-import-audio')?.addEventListener('click', () => this._handleOpenImportAudio());
                 this._updateBatchSelectionUI();
+                this._syncSessionMiniPlayerUI();
                 return;
             }
 
@@ -7095,6 +7545,7 @@ class App {
             this._cachedSessions.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
 
             this._renderFilteredSessions();
+            this._syncSessionMiniPlayerUI();
             // Sessions cache changed → tag badge + session counts depend on it
             this._updateSidebarBadges().catch(err => console.error('Failed to update sidebar badges:', err));
         } catch (err) {
@@ -7147,6 +7598,7 @@ class App {
         const valueForSort = (session, field) => {
             if (field === 'created_at') return session.created_at || '';
             if (field === 'tags') return (session.tags || []).join(', ');
+            if (field === 'duration_sec') return Number(session.duration_sec) || 0;
             return session[field] || '';
         };
         filtered = [...filtered].sort((a, b) => {
@@ -7166,10 +7618,13 @@ class App {
             ? (this._sessionSort.dir === 'asc' ? '▲' : '▼')
             : '⇅';
         const sortHeaderClass = (field) => `sortable ${this._sessionSort.field === field ? 'active-sort' : ''}`;
+        const sortHeaderAria = (field) => this._sessionSort.field === field
+            ? (this._sessionSort.dir === 'asc' ? 'ascending' : 'descending')
+            : 'none';
 
         const rows = pageItems.length
             ? pageItems.map((session, index) => this._renderSessionTableRow(session, pageStart + index + 1, isPersonalScope, isAllScope)).join('')
-            : `<tr><td class="logs-table-empty" colspan="${isPersonalScope ? 8 : 9}">${t('logsTable.empty')}</td></tr>`;
+            : `<tr><td class="logs-table-empty" colspan="${isPersonalScope ? 9 : 10}">${t('logsTable.empty')}</td></tr>`;
 
         const existingTable = listEl.querySelector('.logs-table');
         if (existingTable && existingTable.dataset.scope === activeScope) {
@@ -7198,6 +7653,9 @@ class App {
                 const span = th.querySelector('.sort-icon');
                 if (span) span.textContent = sortIcon(field);
                 th.classList.toggle('active-sort', this._sessionSort.field === field);
+                th.setAttribute('aria-sort', this._sessionSort.field === field
+                    ? (this._sessionSort.dir === 'asc' ? 'ascending' : 'descending')
+                    : 'none');
             });
 
             // Update pagination text and button disabled states
@@ -7271,19 +7729,20 @@ class App {
         const activeCategory = this._activeCategoryFilter[0] || '';
         const activeTag = this._activeTagFilter[0] || '';
 
-        const customerHeader = isPersonalScope ? '' : `<th class="${sortHeaderClass('customer_name')}" data-sort="customer_name">${t('logsTable.customer')} <span class="sort-icon">${sortIcon('customer_name')}</span></th>`;
+        const customerHeader = isPersonalScope ? '' : `<th class="${sortHeaderClass('customer_name')}" data-sort="customer_name" tabindex="0" aria-sort="${sortHeaderAria('customer_name')}">${t('logsTable.customer')} <span class="sort-icon">${sortIcon('customer_name')}</span></th>`;
         const projectHeaderTitle = isPersonalScope ? t('logsTable.personalProject') : t('logsTable.project');
         const customerFilterCell = isPersonalScope ? '' : `<td><select class="logs-filter-select" data-filter-select="customer">${renderSelectOptions(customers, activeCustomer, t('logsTable.allCustomers'), c => (c.status === 'active' ? '🟢 ' : (c.status === 'archived' ? '⚪ ' : '')) + c.name)}</select></td>`;
 
         const header = `<tr class="logs-column-header">
                 <th class="logs-check-column"><input id="chk-select-all-sessions" type="checkbox" title="${this._escAttr(t('logsTable.selectAll'))}"></th>
                 <th>#</th>
-                <th class="${sortHeaderClass('title')}" data-sort="title">${t('logsTable.title')} <span class="sort-icon">${sortIcon('title')}</span></th>
-                <th class="${sortHeaderClass('created_at')}" data-sort="created_at">${t('logsTable.date')} <span class="sort-icon">${sortIcon('created_at')}</span></th>
+                <th class="${sortHeaderClass('title')}" data-sort="title" tabindex="0" aria-sort="${sortHeaderAria('title')}">${t('logsTable.title')} <span class="sort-icon">${sortIcon('title')}</span></th>
+                <th class="${sortHeaderClass('created_at')}" data-sort="created_at" tabindex="0" aria-sort="${sortHeaderAria('created_at')}">${t('logsTable.date')} <span class="sort-icon">${sortIcon('created_at')}</span></th>
                 ${customerHeader}
-                <th class="${sortHeaderClass('project_name')}" data-sort="project_name">${projectHeaderTitle} <span class="sort-icon">${sortIcon('project_name')}</span></th>
-                <th class="${sortHeaderClass('category')}" data-sort="category">${t('logsTable.category')} <span class="sort-icon">${sortIcon('category')}</span></th>
-                <th class="${sortHeaderClass('tags')}" data-sort="tags">${t('logsTable.tags')} <span class="sort-icon">${sortIcon('tags')}</span></th>
+                <th class="${sortHeaderClass('project_name')}" data-sort="project_name" tabindex="0" aria-sort="${sortHeaderAria('project_name')}">${projectHeaderTitle} <span class="sort-icon">${sortIcon('project_name')}</span></th>
+                <th class="${sortHeaderClass('category')}" data-sort="category" tabindex="0" aria-sort="${sortHeaderAria('category')}">${t('logsTable.category')} <span class="sort-icon">${sortIcon('category')}</span></th>
+                <th class="${sortHeaderClass('tags')}" data-sort="tags" tabindex="0" aria-sort="${sortHeaderAria('tags')}">${t('logsTable.tags')} <span class="sort-icon">${sortIcon('tags')}</span></th>
+                <th class="${sortHeaderClass('duration_sec')}" data-sort="duration_sec" tabindex="0" aria-sort="${sortHeaderAria('duration_sec')}">${t('logsTable.duration')} <span class="sort-icon">${sortIcon('duration_sec')}</span></th>
                 <th class="logs-col-actions-header">${t('logsTable.actions')}</th>
             </tr>
             <tr class="logs-filter-row">
@@ -7300,12 +7759,13 @@ class App {
                     const count = (this._cachedSessions || []).filter(s => (s.tags || []).some(x => (x || '').toLowerCase() === tKey)).length;
                     return `#${t} (${count})`;
                 })}</select></td>
+                <td></td>
                 <td><button type="button" class="logs-reset-filters" data-clear-filters title="${this._escAttr(t('logsTable.clearFiltersTitle'))}">${t('logsTable.clearFilters')}</button></td>
             </tr>`;
 
         const colGroup = isPersonalScope
-            ? `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`
-            : `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-customer"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`;
+            ? `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-duration"><col class="logs-col-actions"></colgroup>`
+            : `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-customer"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-duration"><col class="logs-col-actions"></colgroup>`;
 
         listEl.innerHTML = `<div class="logs-table-container"><table class="logs-table" data-scope="${activeScope}">${colGroup}<thead>${header}</thead><tbody>${rows}</tbody></table></div>
             <div class="session-pagination">
@@ -7342,6 +7802,8 @@ class App {
         const customer = session.customer_name ? `<button type="button" class="session-customer-badge" data-customer-id="${this._escAttr(session.customer_id || '')}" title="${this._escAttr(t('logsTable.filterByCustomer', { customer: session.customer_name }))}">${this._esc(session.customer_name)}</button>` : '<span class="logs-empty-value">—</span>';
         const project = session.project_name ? `<button type="button" class="session-project-badge" data-project-id="${this._escAttr(session.project_id || '')}" title="${this._escAttr(t('logsTable.filterByProject', { project: session.project_name }))}">${this._esc(session.project_name)}</button>` : '<span class="logs-empty-value">—</span>';
         const category = session.category ? `<button type="button" class="session-category-badge" data-category="${this._escAttr(session.category)}" title="${this._escAttr(t('logsTable.filterByCategory', { category: session.category }))}">${this._esc(session.category)}</button>` : '<span class="logs-empty-value">—</span>';
+        const durationSec = Number(session.duration_sec) || 0;
+        const duration = durationSec > 0 ? this._formatPlayerTime(durationSec) : '<span class="logs-empty-value">—</span>';
         const retranscriptButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-retranscript-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.retranscriptTooltip'))}">🔄</button>`;
         const editButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-edit-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.editTooltip'))}">${PENCIL_YELLOW_ICON}</button>`;
 
@@ -7358,7 +7820,7 @@ class App {
             <td class="logs-index">${number}</td>
             <td class="logs-title-cell"><button type="button" class="logs-title-link" data-open-session="${this._escAttr(session.id)}">${scopeBadge}${this._esc(session.title || t('logsTable.untitled'))}</button></td>
             <td class="logs-date">${this._formatSessionDate(session.created_at)}</td>
-            ${customerTd}<td>${project}</td><td>${category}</td><td><div class="logs-tags" title="${this._escAttr(tagsTitle)}">${tags}</div></td>
+            ${customerTd}<td>${project}</td><td>${category}</td><td><div class="logs-tags" title="${this._escAttr(tagsTitle)}">${tags}</div></td><td class="logs-duration">${duration}</td>
             <td><div class="logs-actions">${retranscriptButton}${editButton}<button type="button" class="session-btn-action" data-copy-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.copyTooltip'))}">⧉</button><button type="button" class="session-delete-btn" data-delete-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.deleteTooltip'))}">×</button></div></td>
         </tr>`;
     }
@@ -7459,15 +7921,23 @@ class App {
 
         listEl.querySelector('[data-batch-delete]')?.addEventListener('click', () => this._deleteSelectedSessions());
 
-        listEl.querySelectorAll('[data-sort]').forEach(header => header.addEventListener('click', () => {
-            const field = header.dataset.sort;
-            this._sessionSort = this._sessionSort.field === field
-                ? { field, dir: this._sessionSort.dir === 'asc' ? 'desc' : 'asc' }
-                : { field, dir: 'asc' };
-            try { localStorage.setItem('meet_minder_logs_sort', JSON.stringify(this._sessionSort)); } catch (_) {}
-            this._sessionPage = 1;
-            this._renderFilteredSessions();
-        }));
+        listEl.querySelectorAll('[data-sort]').forEach(header => {
+            const sort = () => {
+                const field = header.dataset.sort;
+                this._sessionSort = this._sessionSort.field === field
+                    ? { field, dir: this._sessionSort.dir === 'asc' ? 'desc' : 'asc' }
+                    : { field, dir: 'asc' };
+                try { localStorage.setItem('meet_minder_logs_sort', JSON.stringify(this._sessionSort)); } catch (_) {}
+                this._sessionPage = 1;
+                this._renderFilteredSessions();
+            };
+            header.addEventListener('click', sort);
+            header.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                sort();
+            });
+        });
 
         listEl.querySelector('[data-page-size]')?.addEventListener('change', (event) => {
             this._sessionPageSize = Number(event.target.value);
@@ -8049,6 +8519,10 @@ class App {
                             this._currentSessionJson = refreshed.json;
                             const titleEl = document.getElementById('session-viewer-title');
                             if (titleEl) titleEl.textContent = refreshed.json?.title || id;
+                            if (this._sessionAudioId === id) {
+                                this._sessionAudioTitle = refreshed.json?.title || this._sessionAudioTitle;
+                                this._syncSessionMiniPlayerUI();
+                            }
                             await this._renderSessionViewerMetadata(refreshed.json);
                         } catch (refErr) {
                             console.warn('[App] Failed to refresh viewer after metadata edit:', refErr);
@@ -11463,19 +11937,17 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     }
 
     _updateFloatingBarsPosition() {
+        const miniPlayer = document.getElementById('session-mini-player');
         const saveBar = document.getElementById('session-save-floating-bar');
         const retranscriptBar = document.getElementById('retranscript-floating-bar');
         const minutesBar = document.getElementById('minutes-floating-bar');
-        const saveVisible = saveBar && saveBar.style.display !== 'none';
-        const retranscriptVisible = retranscriptBar && retranscriptBar.style.display !== 'none';
-        if (retranscriptBar) {
-            retranscriptBar.style.bottom = saveVisible ? '96px' : '20px';
-        }
-        if (minutesBar) {
-            minutesBar.style.bottom = saveVisible && retranscriptVisible
-                ? '172px'
-                : (saveVisible || retranscriptVisible ? '96px' : '20px');
-        }
+        const bars = [miniPlayer, saveBar, retranscriptBar, minutesBar];
+        let bottom = 20;
+        bars.forEach(bar => {
+            if (!bar || bar.style.display === 'none') return;
+            bar.style.bottom = `${bottom}px`;
+            bottom += Math.ceil(bar.getBoundingClientRect().height || 0) + 8;
+        });
     }
 
     _setMinutesProgress(text, percent, lang = 'ja') {
@@ -13118,13 +13590,6 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         this._exitMinutesEditMode();
         this._exitNotesEditMode();
 
-        if (this._sessionAudioElement) {
-            this._sessionAudioElement.pause();
-            this._sessionAudioElement = null;
-            this._sessionAudioId = null;
-        }
-        this._resetSessionPlayerUI();
-
         const listPanel = document.getElementById('sessions-list-panel');
         const viewer = document.getElementById('session-viewer');
         const title = document.getElementById('session-viewer-title');
@@ -13134,13 +13599,23 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         if (viewer) viewer.style.display = '';
         if (title) title.textContent = id;
         if (detailPlayer) {
+            this._resetSessionPlayerElement(detailPlayer);
             detailPlayer.dataset.playerId = id;
             detailPlayer.dataset.legacy = isLegacy ? '1' : '0';
             detailPlayer.classList.toggle('is-disabled', isLegacy);
-            detailPlayer.querySelector('[data-player-toggle]').disabled = isLegacy;
-            detailPlayer.querySelector('[data-player-timeline]').disabled = isLegacy;
+            const knownDuration = this._getSessionDuration(id);
+            const toggle = detailPlayer.querySelector('[data-player-toggle]');
+            const timeline = detailPlayer.querySelector('[data-player-timeline]');
+            const duration = detailPlayer.querySelector('[data-player-duration]');
+            if (toggle) toggle.disabled = isLegacy;
+            if (timeline) {
+                timeline.disabled = isLegacy;
+                timeline.max = knownDuration;
+            }
+            if (duration) duration.textContent = this._formatPlayerTime(knownDuration);
         }
         this._currentViewedSession = { id, isLegacy };
+        this._syncSessionMiniPlayerUI();
 
         this._ensureSessionViewerEditorsMounted();
 
@@ -13199,6 +13674,10 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 this._currentSessionJson = json;
                 this._updateRetranscriptStatus(json);
                 if (title) title.textContent = json.title || id;
+                if (this._sessionAudioId === id) {
+                    this._sessionAudioTitle = json.title || this._sessionAudioTitle;
+                    this._syncSessionMiniPlayerUI();
+                }
                 await this._renderSessionViewerMetadata(json);
 
                 if (this._activeRetranscribe?.id === id) {
@@ -13654,6 +14133,9 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         this._renderAudioMeter(percent);
         if (percent > 6) {
             this._resetInactivityTimer();
+            if (this.isRunning && this.translationMode === 'gemini') {
+                this._geminiLastAudioActivityAt = Date.now();
+            }
         }
     }
 

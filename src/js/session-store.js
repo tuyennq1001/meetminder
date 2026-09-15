@@ -32,6 +32,7 @@ export class SessionStore {
         this.engine = null;            // 'openai' | 'soniox' | 'local'
         this.sourceLang = '';
         this.targetLang = '';
+        this.diagnostics = [];
         this.chunks = [];
         this.currentChunk = null;
         // Dirty tracking via a monotonic mutation counter: the store is "dirty"
@@ -70,6 +71,7 @@ export class SessionStore {
         this.engine = engine || null;
         this.sourceLang = sourceLang || '';
         this.targetLang = targetLang || '';
+        this.diagnostics = [];
         this.chunks = [];
         this.currentChunk = null;
         this._mutations = 0;
@@ -137,6 +139,23 @@ export class SessionStore {
         return true;
     }
 
+    // Keep provider failures with the record so long silent gaps can be
+    // diagnosed after the meeting has ended. The caller sanitizes provider
+    // messages before they reach this store.
+    addDiagnostic({ kind = 'unknown', code = '', message = '', at = null, lastOutputAt = null } = {}) {
+        const entry = {
+            at: at || new Date().toISOString(),
+            kind: String(kind || 'unknown'),
+            code: String(code || ''),
+            message: String(message || '').replace(/\s+/g, ' ').trim().slice(0, 300),
+            last_output_at: lastOutputAt || null,
+        };
+        this.diagnostics.push(entry);
+        if (this.diagnostics.length > 100) this.diagnostics.shift();
+        this._mutations++;
+        this._scheduleAutosave();
+    }
+
     endChunk() {
         this._cancelAutosave();
         if (!this.currentChunk) return;
@@ -159,7 +178,9 @@ export class SessionStore {
     }
 
     async _persistNow() {
-        const hasContent = this.totalSegmentCount() > 0 || Boolean(this.notes && this.notes.trim());
+        const hasContent = this.totalSegmentCount() > 0
+            || Boolean(this.notes && this.notes.trim())
+            || this.diagnostics.length > 0;
         if (this._mutations === this._persistedMutations || !hasContent) {
             return 'skipped';
         }
@@ -223,6 +244,7 @@ export class SessionStore {
             engine: this.engine,
             sourceLang: this.sourceLang,
             targetLang: this.targetLang,
+            diagnostics: this.diagnostics,
             chunks: this.chunks,
             currentChunk: null,
             _mutations: 1,
@@ -334,7 +356,8 @@ export class SessionStore {
         const chunkSegs = this.chunks.reduce((n, c) => n + c.segments.length, 0);
         const liveSegs = this.currentChunk?.segments.length || 0;
         const hasNotes = Boolean(this.notes && this.notes.trim());
-        return chunkSegs + liveSegs === 0 && !hasNotes;
+        const hasDiagnostics = this.diagnostics.length > 0;
+        return chunkSegs + liveSegs === 0 && !hasNotes && !hasDiagnostics;
     }
 
     totalSegmentCount() {
@@ -464,6 +487,7 @@ export class SessionStore {
             source_lang: this.sourceLang || '',
             target_lang: this.targetLang || '',
             duration_sec: this._totalDurationSec(),
+            diagnostics: this.diagnostics || [],
             chunks: this._allChunks(),
         };
     }
@@ -557,6 +581,28 @@ export class SessionStore {
             lines.push(tgtLines.join('\n'));
         } else {
             lines.push(`*(${t('export.noTranslation')})*`);
+        }
+
+        if (this.diagnostics && this.diagnostics.length > 0) {
+            lines.push('');
+            lines.push('---');
+            lines.push('');
+            lines.push(`## ${t('export.diagnostics')}`);
+            lines.push('');
+            for (const diagnostic of this.diagnostics) {
+                const at = this._formatDateTime(diagnostic.at) || diagnostic.at || '';
+                const code = diagnostic.code ? ` (${diagnostic.code})` : '';
+                const lastOutput = diagnostic.last_output_at
+                    ? (this._formatDateTime(diagnostic.last_output_at) || diagnostic.last_output_at)
+                    : t('network.lastOutputNone');
+                lines.push(t('network.diagnosticLogEntry', {
+                    at,
+                    kind: diagnostic.kind || 'unknown',
+                    code,
+                    message: diagnostic.message || '',
+                    lastOutput,
+                }));
+            }
         }
 
         return lines.join('\n');
