@@ -8,6 +8,13 @@
 - Không dùng ad-hoc signing cho bản Dev vì có thể làm mất quyền Screen Recording/Microphone; giữ nguyên `/Applications/Meet Minder.app` cho bản Release chính thức dùng khi họp.
 - Dùng tiền tố `codex/` cho nhánh phụ do Codex tạo, trừ khi người dùng chỉ định tên khác.
 
+## macOS signing & recording permissions
+
+- `.env` là nguồn cấu hình signing identity: `APP_SIGNING_IDENTITY` dành riêng cho Dev và `APP_RELEASE_SIGNING_IDENTITY` dành riêng cho Release. Không đổi chéo hai identity vì quyền Screen Recording/Microphone phụ thuộc vào cả Bundle ID và signing requirement.
+- Luôn dùng `npm run build:dev` cho `/Applications/Meet Minder Dev.app` và `npm run build:release` cho `/Applications/Meet Minder.app`. Script sẽ build, ký bằng identity ổn định, verify chữ ký, cài đè và mở đúng app.
+- Trong môi trường Codex, nếu `codesign` báo `no identity found` dù identity vẫn có trong Keychain, chạy lại build với quyền hệ thống để lệnh ký truy cập được Keychain. Có thể kiểm tra bằng `security find-identity -v -p codesigning` với cùng quyền đó.
+- Không dùng signing identity `-` hoặc bất kỳ ad-hoc signing nào, không tự tạo fallback signature, và không dùng bản app chưa được ký để thay thế bản Dev/Release. Nếu identity ổn định thật sự không có trong Keychain, dừng và báo blocker.
+
 ## Release & Auto-Update workflow
 
 Mô hình 2 phiên bản độc lập và luồng phát hành chuẩn của dự án:
