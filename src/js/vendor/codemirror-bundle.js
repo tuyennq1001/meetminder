@@ -25642,6 +25642,21 @@ function createLivePreviewPlugin(resolveImageAsset = () => null) {
     }
   );
 }
+function moveToMarkdownContentStart(view, extendSelection = false) {
+  const { state, dispatch } = view;
+  const { main } = state.selection;
+  if (!extendSelection && !main.empty) return false;
+  const line = state.doc.lineAt(main.head);
+  const match = line.text.match(/^(\s*)(?:(?:[-*+]|\d+\.)\s+|#{1,6}(?:\s+|$))/);
+  if (!match) return false;
+  const markerStart = line.from + match[1].length;
+  const contentStart = line.from + match[0].length;
+  if (main.head <= markerStart) return false;
+  dispatch({
+    selection: extendSelection ? { anchor: main.anchor, head: contentStart } : { anchor: contentStart }
+  });
+  return true;
+}
 var smartListKeymap = [
   {
     key: "Enter",
@@ -25759,19 +25774,13 @@ ${nextPrefix}` },
     // content rather than at the absolute start of the line (inside the
     // indentation or syntax marker).
     key: "Mod-ArrowLeft",
-    run: (view) => {
-      const { state, dispatch } = view;
-      const { main } = state.selection;
-      if (!main.empty) return false;
-      const line = state.doc.lineAt(main.head);
-      const match = line.text.match(/^(\s*)(?:(?:[-*+]|\d+\.)\s+|#{1,6}(?:\s+|$))/);
-      if (!match) return false;
-      const markerStart = line.from + match[1].length;
-      const contentStart = line.from + match[0].length;
-      if (main.head <= markerStart) return false;
-      dispatch({ selection: { anchor: contentStart } });
-      return true;
-    }
+    run: (view) => moveToMarkdownContentStart(view)
+  },
+  {
+    // Keep Cmd/Ctrl+Shift+Left aligned with the Markdown content boundary
+    // while preserving Shift's selection extension behavior.
+    key: "Mod-Shift-ArrowLeft",
+    run: (view) => moveToMarkdownContentStart(view, true)
   },
   {
     key: "Mod-b",
