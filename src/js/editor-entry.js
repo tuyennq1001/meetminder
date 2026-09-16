@@ -104,20 +104,19 @@ class HorizontalRuleWidget extends WidgetType {
 }
 
 class BulletWidget extends WidgetType {
-  constructor(level = 0, visualIndent = false) {
+  constructor(level = 0) {
     super();
     this.level = Math.max(0, Number(level) || 0);
-    this.visualIndent = visualIndent;
   }
 
   eq(other) {
-    return other.level === this.level && other.visualIndent === this.visualIndent;
+    return other.level === this.level;
   }
 
   toDOM() {
     const span = document.createElement('span');
     const levelClass = Math.min(this.level, 3);
-    span.className = `cm-md-bullet cm-md-bullet-level-${levelClass}${this.visualIndent ? ' cm-md-bullet-visual' : ''}`;
+    span.className = `cm-md-bullet cm-md-bullet-level-${levelClass}`;
     const bulletIcons = ['•', '◦', '▪'];
     span.textContent = bulletIcons[this.level % 3] || '•';
     return span;
@@ -638,7 +637,6 @@ function createLivePreviewPlugin(resolveImageAsset = () => null) {
                     'cm-md-list-item',
                     `cm-md-list-level-${Math.min(listInfo.level, 3)}`,
                   ];
-                  if (isReadOnly && !listInfo.isTask) listClasses.push('cm-md-list-visual');
                   if (listInfo.isListStart) listClasses.push('cm-md-list-start');
                   decos.push({
                     from: line.from,
@@ -649,17 +647,7 @@ function createLivePreviewPlugin(resolveImageAsset = () => null) {
 
                 if (!isTask) {
                   const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
-                  if (isReadOnly && listInfo) {
-                    // In read-only mode, replace the complete list prefix so
-                    // mixed source indentation cannot leak into the preview.
-                    decos.push({
-                      from: line.from,
-                      to: line.from + listInfo.prefixLength,
-                      deco: Decoration.replace({
-                        widget: new BulletWidget(listInfo.level, true),
-                      }),
-                    });
-                  } else if (!isOverlapping) {
+                  if (!isOverlapping) {
                     const leadingSpaces = (line.text.match(/^(\s*)/)?.[1] || '').length;
                     const level = Math.floor(leadingSpaces / 4);
                     decos.push({
