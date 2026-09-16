@@ -11489,7 +11489,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         // Tab Minutes actions
         document.getElementById('btn-minutes-edit')?.addEventListener('click', () => this._enterMinutesEditMode());
         document.getElementById('btn-minutes-save')?.addEventListener('click', () => this._saveMinutesEdit());
-        document.getElementById('btn-minutes-cancel')?.addEventListener('click', () => this._exitMinutesEditMode());
+        document.getElementById('btn-minutes-cancel')?.addEventListener('click', () => this._exitMinutesEditMode({ restore: true }));
         document.getElementById('btn-minutes-copy-rich')?.addEventListener('click', () => this._copyRichMeetingMinutes());
         document.getElementById('btn-minutes-copy-md')?.addEventListener('click', async () => {
             if (this._sessionMinutesEditor) {
@@ -11663,7 +11663,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                     if (this._isMinutesEditing) this._saveMinutesEdit();
                 },
                 onCancel: () => {
-                    if (this._isMinutesEditing) this._exitMinutesEditMode();
+                    if (this._isMinutesEditing) this._exitMinutesEditMode({ restore: true });
                 },
             });
         }
@@ -13242,7 +13242,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const lines = String(md).replace(/\r\n?/g, '\n').split('\n');
         const bodyFont = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;";
         let html = '';
-        let listType = null;
+        const listStack = [];
         let inTable = false;
         let tableHeaderDone = false;
         let inCodeBlock = false;
@@ -13291,11 +13291,19 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             return text.replace(/\u0000(\d+)\u0000/g, (_, index) => tokens[Number(index)] || '');
         };
 
+        const closeCurrentList = () => {
+            const current = listStack.pop();
+            if (!current) return;
+            if (current.itemOpen) html += '</li>\n';
+            html += `</${current.type}>\n`;
+        };
         const closeList = () => {
-            if (listType) {
-                html += `</${listType}>\n`;
-                listType = null;
-            }
+            while (listStack.length) closeCurrentList();
+        };
+        const openList = (type, indent) => {
+            const listStyle = type === 'ol' ? 'list-style-position:outside;' : '';
+            html += `<${type} style="margin:6px 0;padding-left:20px;${listStyle}${bodyFont}font-size:13px;line-height:1.6;">\n`;
+            listStack.push({ type, indent, itemOpen: false });
         };
         const closeTable = () => {
             if (inTable) {
@@ -13357,6 +13365,44 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             }
             closeTable();
 
+            // Preserve Markdown list nesting in the rich clipboard output. The
+            // editor preview also derives hierarchy from leading indentation,
+            // so do not trim this line before parsing it.
+            const listMatch = rawLine.match(/^([ \t]*)([-*+]|\d+[.)])([ \t]+)(.*)$/);
+            if (listMatch) {
+                const indent = listMatch[1].replace(/\t/g, '    ').length;
+                const nextListType = /^[-*+]$/.test(listMatch[2]) ? 'ul' : 'ol';
+
+                while (listStack.length && indent < listStack[listStack.length - 1].indent) {
+                    closeCurrentList();
+                }
+
+                if (!listStack.length) {
+                    openList(nextListType, indent);
+                } else {
+                    const current = listStack[listStack.length - 1];
+                    if (indent === current.indent) {
+                        if (current.type !== nextListType) {
+                            closeCurrentList();
+                            openList(nextListType, indent);
+                        } else if (current.itemOpen) {
+                            html += '</li>\n';
+                            current.itemOpen = false;
+                        }
+                    } else if (indent > current.indent) {
+                        // A deeper list is nested inside the previous <li>.
+                        openList(nextListType, indent);
+                    }
+                }
+
+                const current = listStack[listStack.length - 1];
+                let item = listMatch[4];
+                item = item.replace(/^\[[ xX]\]\s+/, '');
+                html += `  <li>${formatInline(item)}`;
+                current.itemOpen = true;
+                continue;
+            }
+
             if (!line) {
                 closeList();
                 continue;
@@ -13398,21 +13444,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 continue;
             }
 
-            const unordered = line.match(/^[-*+]\s+(.*)$/);
-            const ordered = line.match(/^\d+[.)]\s+(.*)$/);
-            if (unordered || ordered) {
-                const nextListType = ordered ? 'ol' : 'ul';
-                if (listType && listType !== nextListType) closeList();
-                if (!listType) {
-                    listType = nextListType;
-                    const listStyle = nextListType === 'ol' ? 'list-style-position:outside;' : '';
-                    html += `<${listType} style="margin:6px 0;padding-left:20px;${listStyle}${bodyFont}font-size:13px;line-height:1.6;">\n`;
-                }
-                let item = (unordered || ordered)[1];
-                item = item.replace(/^\[[ xX]\]\s+/, '');
-                html += `  <li>${formatInline(item)}</li>\n`;
-                continue;
-            }
             closeList();
 
             html += `<p style="margin:6px 0;${bodyFont}font-size:13px;line-height:1.6;color:#1e293b;">${formatInline(line)}</p>\n`;
@@ -13426,7 +13457,104 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     _richHtmlToPlainText(html) {
         const container = document.createElement('div');
         container.innerHTML = html;
-        return (container.innerText || container.textContent || '').trim();
+
+        const lines = [];
+        const blockTags = new Set([
+            'ADDRESS', 'ARTICLE', 'ASIDE', 'DIV', 'DL', 'FIGCAPTION', 'FIGURE',
+            'FOOTER', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEADER', 'MAIN',
+            'NAV', 'P', 'PRE', 'SECTION', 'TABLE', 'TR', 'BLOCKQUOTE',
+        ]);
+
+        const normalizeInlineText = (value) => String(value || '')
+            .replace(/\u00a0/g, ' ')
+            .replace(/[ \t]+/g, ' ')
+            .replace(/\s*\n\s*/g, ' ')
+            .trim();
+
+        const directText = (node) => {
+            let value = '';
+            for (const child of node.childNodes || []) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                    value += child.nodeValue || '';
+                } else if (child.nodeType === Node.ELEMENT_NODE) {
+                    const tag = child.tagName;
+                    if (tag === 'UL' || tag === 'OL') continue;
+                    if (tag === 'BR') {
+                        value += '\n';
+                    } else {
+                        value += directText(child);
+                    }
+                }
+            }
+            return value;
+        };
+
+        const appendText = (value, prefix = '') => {
+            const text = String(value || '').replace(/\r\n?/g, '\n').trim();
+            if (!text) return;
+            text.split('\n').forEach((line) => {
+                const normalized = normalizeInlineText(line);
+                if (normalized) lines.push(`${prefix}${normalized}`);
+            });
+        };
+
+        const renderList = (list, depth) => {
+            const ordered = list.tagName === 'OL';
+            let index = 0;
+            for (const item of Array.from(list.children)) {
+                if (item.tagName !== 'LI') continue;
+                index += 1;
+                const itemText = normalizeInlineText(directText(item));
+                const marker = ordered ? `${index}.` : '•';
+                if (itemText) lines.push(`${'    '.repeat(depth)}${marker} ${itemText}`);
+                for (const child of Array.from(item.children)) {
+                    if (child.tagName === 'UL' || child.tagName === 'OL') {
+                        renderList(child, depth + 1);
+                    }
+                }
+            }
+        };
+
+        const renderTable = (table) => {
+            for (const row of Array.from(table.rows || [])) {
+                const cells = Array.from(row.cells || [])
+                    .map((cell) => normalizeInlineText(directText(cell)))
+                    .filter(Boolean);
+                if (cells.length) lines.push(cells.join('\t'));
+            }
+        };
+
+        const renderBlocks = (parent) => {
+            for (const child of Array.from(parent.childNodes || [])) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                    appendText(child.nodeValue);
+                    continue;
+                }
+                if (child.nodeType !== Node.ELEMENT_NODE) continue;
+
+                const tag = child.tagName;
+                if (tag === 'UL' || tag === 'OL') {
+                    renderList(child, 0);
+                } else if (tag === 'TABLE') {
+                    renderTable(child);
+                } else if (tag === 'HR') {
+                    lines.push('---');
+                } else if (tag === 'PRE') {
+                    appendText(child.textContent);
+                } else if (tag === 'BLOCKQUOTE') {
+                    appendText(directText(child), '> ');
+                } else if (tag === 'DIV') {
+                    renderBlocks(child);
+                } else if (blockTags.has(tag)) {
+                    appendText(directText(child));
+                } else {
+                    appendText(directText(child));
+                }
+            }
+        };
+
+        renderBlocks(container);
+        return lines.join('\n').trim();
     }
 
     async _writeRichClipboard(html) {
@@ -13825,6 +13953,10 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     _enterMinutesEditMode() {
         const cur = this._currentViewedSession;
         if (!cur || !this._sessionMinutesEditor) return;
+        this._minutesEditOriginal = {
+            lang: this._activeMinutesLang || 'en',
+            content: this._sessionMinutesEditor.getContent(),
+        };
         this._isMinutesEditing = true;
         this._sessionMinutesEditor.setReadOnly(false);
         this._sessionMinutesEditor.focus();
@@ -13842,7 +13974,12 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         if (regen) regen.style.display = 'none';
     }
 
-    _exitMinutesEditMode() {
+    _exitMinutesEditMode({ restore = false } = {}) {
+        const original = this._minutesEditOriginal;
+        if (restore && original && this._sessionMinutesEditor && original.lang === (this._activeMinutesLang || 'en')) {
+            this._sessionMinutesEditor.setContent(original.content);
+        }
+        this._minutesEditOriginal = null;
         this._isMinutesEditing = false;
         if (this._sessionMinutesEditor) {
             this._sessionMinutesEditor.setReadOnly(true);

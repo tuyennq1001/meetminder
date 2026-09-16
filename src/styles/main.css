@@ -6178,9 +6178,8 @@ body.resizing-vertical * {
   overflow-wrap: anywhere !important;
 }
 
-/* Keep Markdown lists readable when generated notes mix two- and four-space
-   indentation. The editor preserves the original Markdown; these classes only
-   normalize the read-only preview and add a small, even breathing rhythm. */
+/* Keep Markdown lists readable while preserving the same indentation in edit
+   and read-only preview modes. */
 .cm-line.cm-md-list-item {
   padding-top: 3px !important;
   padding-bottom: 3px !important;
@@ -6193,28 +6192,6 @@ body.resizing-vertical * {
 
 .cm-line.cm-md-list-start {
   padding-top: 7px !important;
-}
-
-/* A hanging indent keeps wrapped list text aligned with the first line's
-   content instead of falling back under the bullet or the editor edge. */
-.cm-line.cm-md-list-visual.cm-md-list-level-0 {
-  padding-left: 24px !important;
-  text-indent: -24px;
-}
-
-.cm-line.cm-md-list-visual.cm-md-list-level-1 {
-  padding-left: 48px !important;
-  text-indent: -24px;
-}
-
-.cm-line.cm-md-list-visual.cm-md-list-level-2 {
-  padding-left: 72px !important;
-  text-indent: -24px;
-}
-
-.cm-line.cm-md-list-visual.cm-md-list-level-3 {
-  padding-left: 96px !important;
-  text-indent: -24px;
 }
 
 .cm-scroller {
