@@ -104,18 +104,20 @@ class HorizontalRuleWidget extends WidgetType {
 }
 
 class BulletWidget extends WidgetType {
-  constructor(level = 0) {
+  constructor(level = 0, visualIndent = false) {
     super();
-    this.level = level;
+    this.level = Math.max(0, Number(level) || 0);
+    this.visualIndent = visualIndent;
   }
 
   eq(other) {
-    return other.level === this.level;
+    return other.level === this.level && other.visualIndent === this.visualIndent;
   }
 
   toDOM() {
     const span = document.createElement('span');
-    span.className = `cm-md-bullet cm-md-bullet-level-${this.level % 3}`;
+    const levelClass = Math.min(this.level, 3);
+    span.className = `cm-md-bullet cm-md-bullet-level-${levelClass}${this.visualIndent ? ' cm-md-bullet-visual' : ''}`;
     const bulletIcons = ['•', '◦', '▪'];
     span.textContent = bulletIcons[this.level % 3] || '•';
     return span;
@@ -364,6 +366,44 @@ function isLineSelected(selection, line) {
   return false;
 }
 
+// Markdown permits different indentation widths (two or four spaces are both
+// common in generated notes). Build a visual hierarchy from each list item's
+// relationship to the previous items so the rendered list stays consistent
+// even when the source Markdown uses mixed indentation.
+function buildListLineInfo(doc) {
+  const listLines = new Map();
+  const stack = [];
+
+  for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber++) {
+    const line = doc.line(lineNumber);
+    const match = line.text.match(/^([ \t]*)([-*+]|\d+[.)])([ \t]+)/);
+
+    if (!match) {
+      // Preserve the stack across blank lines so a loose list can continue,
+      // but start a new hierarchy after a normal paragraph or heading.
+      if (line.text.trim()) stack.length = 0;
+      continue;
+    }
+
+    const indent = match[1].replace(/\t/g, '    ').length;
+    while (stack.length && indent <= stack[stack.length - 1]) stack.pop();
+
+    const level = stack.length;
+    const previousLine = lineNumber > 1 ? doc.line(lineNumber - 1) : null;
+    const previousInfo = previousLine ? listLines.get(previousLine.from) : null;
+    listLines.set(line.from, {
+      level,
+      isUnordered: /^[-*+]$/.test(match[2]),
+      isTask: /^\[[ xX]\]/.test(line.text.slice(match[0].length).trimStart()),
+      prefixLength: match[0].length,
+      isListStart: !previousInfo || (level === 0 && previousInfo.level !== 0),
+    });
+    stack.push(indent);
+  }
+
+  return listLines;
+}
+
 function createLivePreviewPlugin(resolveImageAsset = () => null) {
   return ViewPlugin.fromClass(
     class {
@@ -375,7 +415,7 @@ function createLivePreviewPlugin(resolveImageAsset = () => null) {
       const imageAssetsChanged = update.transactions.some((transaction) =>
         transaction.effects.some((effect) => effect.is(refreshImageAssetsEffect))
       );
-      if (update.docChanged || update.selectionSet || update.viewportChanged || imageAssetsChanged) {
+      if (update.docChanged || update.selectionSet || update.viewportChanged || update.reconfigured || imageAssetsChanged) {
         this.decorations = this.buildDecorations(update.view);
       }
     }
@@ -386,6 +426,7 @@ function createLivePreviewPlugin(resolveImageAsset = () => null) {
       const tree = syntaxTree(view.state);
       const decos = [];
       const decoratedLines = new Set();
+      const listLineInfo = buildListLineInfo(doc);
 
       for (const { from, to } of view.visibleRanges) {
         tree.iterate({
@@ -587,11 +628,38 @@ function createLivePreviewPlugin(resolveImageAsset = () => null) {
               const text = doc.sliceString(nodeFrom, nodeTo);
               if (/^[-*+]$/.test(text)) {
                 const line = doc.lineAt(nodeFrom);
+                const listInfo = listLineInfo.get(line.from);
                 const afterMarker = doc.sliceString(nodeTo, line.to);
                 const isTask = /^\s*\[[ xX]\]/.test(afterMarker);
+
+                if (listInfo?.isUnordered && !decoratedLines.has(line.from)) {
+                  decoratedLines.add(line.from);
+                  const listClasses = [
+                    'cm-md-list-item',
+                    `cm-md-list-level-${Math.min(listInfo.level, 3)}`,
+                  ];
+                  if (isReadOnly && !listInfo.isTask) listClasses.push('cm-md-list-visual');
+                  if (listInfo.isListStart) listClasses.push('cm-md-list-start');
+                  decos.push({
+                    from: line.from,
+                    to: line.from,
+                    deco: Decoration.line({ class: listClasses.join(' ') }),
+                  });
+                }
+
                 if (!isTask) {
                   const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
-                  if (!isOverlapping) {
+                  if (isReadOnly && listInfo) {
+                    // In read-only mode, replace the complete list prefix so
+                    // mixed source indentation cannot leak into the preview.
+                    decos.push({
+                      from: line.from,
+                      to: line.from + listInfo.prefixLength,
+                      deco: Decoration.replace({
+                        widget: new BulletWidget(listInfo.level, true),
+                      }),
+                    });
+                  } else if (!isOverlapping) {
                     const leadingSpaces = (line.text.match(/^(\s*)/)?.[1] || '').length;
                     const level = Math.floor(leadingSpaces / 4);
                     decos.push({

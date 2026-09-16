@@ -48,6 +48,12 @@ LANG_NAMES = {
     "auto": "the spoken language",
 }
 
+# Batch settings are used only when rebuilding a saved recording. Live
+# translation keeps the short rolling window below so captions remain
+# responsive while someone is speaking.
+BATCH_TRANSCRIBE_SECONDS = 10 * 60
+BATCH_TRANSLATE_SIZE = 8
+
 
 class LocalPipeline:
     def __init__(
@@ -197,6 +203,26 @@ class LocalPipeline:
             )
             return result.text.strip(), result.language
 
+    def _transcribe_segments(self, audio_np):
+        """Transcribe a batch once and keep Whisper's native timestamps."""
+        if self.asr_model_type != "whisper":
+            return []
+
+        import mlx_whisper
+
+        result = mlx_whisper.transcribe(
+            audio_np,
+            path_or_hf_repo=self.asr_model,
+            language=self._whisper_lang_code(),
+            task="transcribe",
+            condition_on_previous_text=False,
+            temperature=0.0,
+            compression_ratio_threshold=2.4,
+            no_speech_threshold=0.6,
+            logprob_threshold=-1.0,
+        )
+        return result.get("segments", [])
+
     def _whisper_lang_code(self):
         """Map source_lang to Whisper language code."""
         lang_map = {
@@ -278,6 +304,90 @@ class LocalPipeline:
 
         return result
 
+    def _translate_batch(self, texts):
+        """Translate several transcript segments in one Gemma generation."""
+        if not texts or self.target_lang in ("none", "off", ""):
+            return [""] * len(texts)
+        if not self.llm_model or not self.llm_tokenizer:
+            return [""] * len(texts)
+
+        from mlx_lm import generate
+
+        context_block = ""
+        if self.context_history:
+            recent = self.context_history[-self.max_context:]
+            ctx = " / ".join(orig for orig, _ in recent)
+            context_block = f"[Topic context: {ctx}]\n\n"
+
+        numbered = "\n".join(
+            f"{index}. {text}" for index, text in enumerate(texts, start=1)
+        )
+        prompt = (
+            "<start_of_turn>user\n"
+            f"Translate each numbered speech segment from {self.source_lang_name} "
+            f"to {self.target_lang_name}.\n"
+            "Return ONLY a JSON array with one object per input, in the same order, "
+            "using exactly this schema: "
+            '[{"index":1,"translation":"..."}]. '
+            "Do not add explanations, markdown, or source text. Preserve technical "
+            "terms, proper nouns, and code names naturally.\n\n"
+            f"{context_block}"
+            f"Segments:\n{numbered}\n"
+            "<end_of_turn>\n"
+            "<start_of_turn>model\n"
+        )
+
+        max_tokens = min(768, max(160, len(texts) * 48 + 32))
+        try:
+            raw = generate(
+                self.llm_model,
+                self.llm_tokenizer,
+                prompt=prompt,
+                max_tokens=max_tokens,
+            )
+            raw = raw.split("<end_of_turn>")[0].strip()
+            raw = raw.replace("```json", "").replace("```", "").strip()
+            start = raw.find("[")
+            end = raw.rfind("]")
+            if start < 0 or end <= start:
+                raise ValueError("Gemma did not return a JSON translation array")
+            parsed = json.loads(raw[start : end + 1])
+
+            translations = [""] * len(texts)
+            if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
+                if len(parsed) != len(texts):
+                    raise ValueError("Gemma returned the wrong number of translations")
+                translations = [self._clean_translation(item) for item in parsed]
+            elif isinstance(parsed, list):
+                for fallback_index, item in enumerate(parsed):
+                    if not isinstance(item, dict):
+                        continue
+                    index = item.get("index", fallback_index + 1)
+                    try:
+                        index = int(index) - 1
+                    except (TypeError, ValueError):
+                        continue
+                    if 0 <= index < len(translations):
+                        translations[index] = self._clean_translation(
+                            str(item.get("translation", ""))
+                        )
+                if not any(translations) and texts:
+                    raise ValueError("Gemma returned no usable translations")
+            else:
+                raise ValueError("Gemma returned an invalid translation array")
+        except Exception as exc:
+            # Keep correctness if a model response is malformed. This is a rare
+            # fallback; the normal path still makes one generation per batch.
+            log(f"Batch translation fallback ({len(texts)} segments): {exc}")
+            translations = [self._translate(text) for text in texts]
+
+        for original, translated in zip(texts, translations):
+            if translated:
+                self.context_history.append((original, translated))
+        if len(self.context_history) > self.max_context * 2:
+            self.context_history = self.context_history[-self.max_context:]
+        return translations
+
     def _clean_translation(self, text):
         """Remove special tokens and truncate at hallucination."""
         import re
@@ -336,7 +446,7 @@ class LocalPipeline:
         
         return text
 
-    def _process_chunk(self, pcm_bytes):
+    def _process_chunk(self, pcm_bytes, start_sec=0.0):
         """Process one audio chunk: transcribe → emit original → translate → emit translation."""
         t_start = time.time()
 
@@ -389,6 +499,7 @@ class LocalPipeline:
                 "original": new_text,
                 "translated": translated,
                 "language": lang if isinstance(lang, str) else (lang[0] if lang else "vi"),
+                "start_sec": round(float(start_sec), 3),
                 "timing": {
                     "asr": round(t_asr, 2),
                     "translate": round(t_llm, 2),
@@ -400,6 +511,105 @@ class LocalPipeline:
 
         finally:
             os.unlink(wav_path)
+
+    def _emit_batch_progress(self, processed_sec, total_sec, message):
+        """Report batch progress without coupling the UI to English/Vietnamese."""
+        ratio = processed_sec / total_sec if total_sec > 0 else 0.0
+        percent = int(round(15 + max(0.0, min(1.0, ratio)) * 75))
+        emit({
+            "type": "progress",
+            "percent": percent,
+            "message": message,
+        })
+
+    def _process_whisper_batch(self, pcm_bytes, start_sec, total_sec):
+        """Transcribe one large batch, then translate segments in groups."""
+        samples = np.frombuffer(pcm_bytes, dtype=np.int16)
+        if samples.size == 0:
+            return
+        rms = np.sqrt(np.mean(samples.astype(np.float32) ** 2))
+        if rms < 100:
+            return
+
+        audio_np = samples.astype(np.float32) / 32768.0
+        started = time.time()
+        raw_segments = self._transcribe_segments(audio_np)
+        log(
+            f"Batch ASR start={start_sec:.0f}s duration={len(audio_np) / self.sample_rate:.0f}s "
+            f"segments={len(raw_segments)} elapsed={time.time() - started:.1f}s"
+        )
+
+        items = []
+        for segment in raw_segments:
+            text = self._clean_repetitions(str(segment.get("text", "")).strip())
+            if len(text) < 2:
+                continue
+            relative_start = float(segment.get("start", 0.0) or 0.0)
+            items.append({
+                "text": text,
+                "start_sec": max(0.0, start_sec + relative_start),
+            })
+
+        for offset in range(0, len(items), BATCH_TRANSLATE_SIZE):
+            group = items[offset : offset + BATCH_TRANSLATE_SIZE]
+            translations = self._translate_batch([item["text"] for item in group])
+            for item, translated in zip(group, translations):
+                emit({
+                    "type": "result",
+                    "original": item["text"],
+                    "translated": translated,
+                    "language": self.source_lang,
+                    "start_sec": round(item["start_sec"], 3),
+                })
+
+        if items:
+            self.prev_text = items[-1]["text"]
+        self._emit_batch_progress(
+            start_sec + len(audio_np) / self.sample_rate,
+            total_sec,
+            f"Processed audio through {start_sec + len(audio_np) / self.sample_rate:.0f}s",
+        )
+
+    def process_test_file(self, wav_path):
+        """Efficient batch path for rebuilding a saved recording."""
+        with wave.open(wav_path, "r") as wf:
+            sample_rate = wf.getframerate()
+            channels = wf.getnchannels()
+            sample_width = wf.getsampwidth()
+            total_frames = wf.getnframes()
+            total_sec = total_frames / sample_rate if sample_rate else 0.0
+
+            if sample_rate != self.sample_rate or channels != 1 or sample_width != 2:
+                raise RuntimeError(
+                    f"Unsupported WAV format for Local MLX: {sample_rate}Hz, "
+                    f"{channels} channel(s), {sample_width * 8}-bit"
+                )
+
+            if self.asr_model_type != "whisper":
+                # Keep the legacy path available for manual Qwen CLI tests.
+                pcm = wf.readframes(total_frames)
+                chunk_bytes = self.chunk_seconds * self.sample_rate * self.bytes_per_sample
+                stride_bytes = self.stride_seconds * self.sample_rate * self.bytes_per_sample
+                pos = 0
+                while pos + chunk_bytes <= len(pcm):
+                    self._process_chunk(pcm[pos : pos + chunk_bytes], pos / (self.sample_rate * self.bytes_per_sample))
+                    pos += stride_bytes
+                if pos < len(pcm) and len(pcm) - pos > self.sample_rate * self.bytes_per_sample:
+                    self._process_chunk(pcm[pos:], pos / (self.sample_rate * self.bytes_per_sample))
+                return
+
+            batch_frames = BATCH_TRANSCRIBE_SECONDS * self.sample_rate
+            frame_pos = 0
+            self._emit_batch_progress(0, total_sec, "Preparing local audio")
+            while frame_pos < total_frames:
+                frames_to_read = min(batch_frames, total_frames - frame_pos)
+                pcm = wf.readframes(frames_to_read)
+                if not pcm:
+                    break
+                start_sec = frame_pos / self.sample_rate
+                self._emit_batch_progress(start_sec, total_sec, f"Transcribing audio from {start_sec:.0f}s")
+                self._process_whisper_batch(pcm, start_sec, total_sec)
+                frame_pos += frames_to_read
 
     def stdin_reader(self):
         """Read PCM bytes from stdin into buffer."""
@@ -438,7 +648,7 @@ class LocalPipeline:
                 with self.lock:
                     chunk = bytes(self.audio_buffer[processed_pos : processed_pos + self.chunk_bytes])
 
-                self._process_chunk(chunk)
+                self._process_chunk(chunk, processed_pos / (self.sample_rate * self.bytes_per_sample))
                 processed_pos += self.stride_bytes
 
         # Process remaining audio
@@ -446,7 +656,7 @@ class LocalPipeline:
             remaining = len(self.audio_buffer) - processed_pos
             if remaining > self.sample_rate * self.bytes_per_sample:  # At least 1 second
                 chunk = bytes(self.audio_buffer[processed_pos:])
-                self._process_chunk(chunk)
+                self._process_chunk(chunk, processed_pos / (self.sample_rate * self.bytes_per_sample))
 
         emit({"type": "done"})
         log("Pipeline stopped.")
@@ -479,22 +689,7 @@ def main():
             )
 
             log(f"Test mode: processing {args.test_file}")
-            with wave.open(args.test_file, "r") as wf:
-                pcm = wf.readframes(wf.getnframes())
-
-            # Simulate streaming: feed chunks
-            chunk_bytes = args.chunk_seconds * 16000 * 2
-            stride_bytes = args.stride_seconds * 16000 * 2
-            pos = 0
-            while pos + chunk_bytes <= len(pcm):
-                chunk = pcm[pos : pos + chunk_bytes]
-                pipeline._process_chunk(chunk)
-                pos += stride_bytes
-
-            # Remaining
-            if pos < len(pcm) and len(pcm) - pos > 16000 * 2:
-                pipeline._process_chunk(pcm[pos:])
-
+            pipeline.process_test_file(args.test_file)
             emit({"type": "done"})
         else:
             # Normal mode: read from stdin

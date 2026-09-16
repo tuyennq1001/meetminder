@@ -30,6 +30,7 @@ const DEFAULT_SETTINGS = {
   max_lines: 5,
   show_original: true,
   translation_mode: 'gemini',
+  transcript_engine: 'gemini_transcribe',
   translation_timing: 'on_pause',
   endpoint_delay: 3000,
   inactivity_timeout_min: 10,

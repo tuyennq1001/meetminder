@@ -70,6 +70,9 @@ pub struct Settings {
     pub show_original: bool,
     /// Translation mode: "soniox" | "local" | "openai"
     pub translation_mode: String,
+    /// Transcript/re-transcript engine: "gemini_transcribe" | "local_mlx"
+    #[serde(default = "default_transcript_engine")]
+    pub transcript_engine: String,
     /// Translation timing: "on_pause" (whole sentence) | "realtime"
     #[serde(default = "default_translation_timing")]
     pub translation_timing: String,
@@ -233,6 +236,7 @@ impl Default for Settings {
             max_lines: 5,
             show_original: true,
             translation_mode: "gemini".to_string(),
+            transcript_engine: default_transcript_engine(),
             translation_timing: default_translation_timing(),
             endpoint_delay: default_endpoint_delay(),
             elevenlabs_api_key: String::new(),
@@ -383,6 +387,10 @@ fn default_gemini_model() -> String {
     "auto".to_string()
 }
 
+fn default_transcript_engine() -> String {
+    "gemini_transcribe".to_string()
+}
+
 const RELEASE_IDENTIFIER: &str = "com.meetminder.desktop";
 
 fn settings_identifier() -> &'static str {
@@ -463,6 +471,11 @@ fn normalize_loaded_settings(mut settings: Settings) -> Settings {
     {
         settings.gemini_model = "auto".to_string();
     }
+    if settings.transcript_engine != "gemini_transcribe"
+        && settings.transcript_engine != "local_mlx"
+    {
+        settings.transcript_engine = default_transcript_engine();
+    }
     settings
 }
 
@@ -478,6 +491,7 @@ mod tests {
         let s = Settings::default();
         assert_eq!(s.app_language, "en");
         assert_eq!(s.gemini_model, "auto");
+        assert_eq!(s.transcript_engine, "gemini_transcribe");
         assert_eq!(s.source_language, "ja");
         assert_eq!(s.target_language, "vi");
         assert_eq!(s.audio_source, "system");

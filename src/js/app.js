@@ -39,6 +39,7 @@ const LANGUAGE_DISPLAY = {
 const PENCIL_YELLOW_ICON = `<svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="13" height="13" style="display:inline-block;vertical-align:-2px;margin-right:3px;" aria-hidden="true"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>`;
 
 const DEFAULT_TEMPLATE_NOTES = `# MTG Title
+
 ## Meeting Information
 - Attendees: 
 - Date: {{date}}
@@ -66,9 +67,9 @@ const DEFAULT_TEMPLATE_MINUTES_JA = `# 📋 会議議事録 (Meeting Minutes)
 
 ### 📝 2. 主な協議内容と決定事項 (Key Discussion & Decisions)
 - **協議内容の要約**:
-  - (要点をトピックごとに整理して箇条書きで記載)
+    - (要点をトピックごとに整理して箇条書きで記載)
 - **決定事項 (Key Decisions)**:
-  - (合意された決定内容)
+    - (合意された決定内容)
 
 ---
 
@@ -94,9 +95,9 @@ const DEFAULT_TEMPLATE_MINUTES_VI = `# 📋 BIÊN BẢN CUỘC HỌP (MEETING MI
 
 ### 📝 2. NỘI DUNG TÓM TẮT & CÁC ĐIỂM THỐNG NHẤT (SUMMARY & DECISIONS)
 - **Tóm tắt nội dung trao đổi chính**:
-  - (Các luận điểm chính được trình bày mạch lạc, dễ hiểu)
+    - (Các luận điểm chính được trình bày mạch lạc, dễ hiểu)
 - **Các quyết định đã chốt (Key Decisions)**:
-  - (Các điểm hai bên đã thống nhất)
+    - (Các điểm hai bên đã thống nhất)
 
 ---
 
@@ -122,9 +123,9 @@ const DEFAULT_TEMPLATE_MINUTES_EN = `# 📋 MEETING MINUTES
 
 ### 📝 2. SUMMARY & DECISIONS
 - **Summary of the main discussion**:
-  - (Organize the key points clearly by topic)
+    - (Organize the key points clearly by topic)
 - **Key decisions**:
-  - (Record the decisions agreed upon)
+    - (Record the decisions agreed upon)
 
 ---
 
@@ -770,6 +771,7 @@ class App {
             this._localMlxInfo = null;
         }
         this._updateMlxSettingsUI();
+        this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_transcribe');
         return this._isLocalMlxReady;
     }
 
@@ -779,7 +781,10 @@ class App {
         const btnDelete = document.getElementById('btn-delete-mlx');
         const sizeTag = document.getElementById('local-mlx-size');
         const desc = document.getElementById('local-mlx-desc');
-        if (!badge || !btnInstall) return;
+        if (!badge || !btnInstall) {
+            this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_transcribe');
+            return;
+        }
 
         if (!this.isAppleSilicon) {
             badge.className = 'local-mlx-badge not-ready';
@@ -788,6 +793,7 @@ class App {
             if (btnDelete) btnDelete.style.display = 'none';
             if (sizeTag) sizeTag.style.display = 'none';
             if (desc) desc.textContent = t('settings.engine.mlxAppleSiliconOnly');
+            this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_transcribe');
             return;
         }
 
@@ -823,6 +829,7 @@ class App {
             btnInstall.textContent = t('settings.engine.mlxInstallBtn');
             if (desc) desc.textContent = t('settings.engine.mlxNotInstalledDesc');
         }
+        this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_transcribe');
     }
 
     async _handleInstallMlxClick() {
@@ -1132,7 +1139,94 @@ class App {
 
     // ─── Event Binding ──────────────────────────────────────
 
+    _initInstantTooltips() {
+        if (this._instantTooltipController) return;
+
+        const buttons = Array.from(document.querySelectorAll('.instant-tooltip'));
+        if (!buttons.length) return;
+
+        const tooltip = document.createElement('div');
+        tooltip.id = 'app-instant-tooltip';
+        tooltip.className = 'app-instant-tooltip';
+        tooltip.setAttribute('role', 'tooltip');
+        tooltip.hidden = true;
+        document.body.appendChild(tooltip);
+
+        let activeButton = null;
+        const hide = () => {
+            if (activeButton) {
+                activeButton.removeAttribute('aria-describedby');
+            }
+            activeButton = null;
+            tooltip.hidden = true;
+            tooltip.removeAttribute('data-visible');
+        };
+
+        const show = (button) => {
+            const message = button.dataset.tooltip || button.getAttribute('title') || '';
+            if (!message || button.disabled) {
+                hide();
+                return;
+            }
+
+            if (activeButton && activeButton !== button) {
+                activeButton.removeAttribute('aria-describedby');
+            }
+            activeButton = button;
+            button.setAttribute('aria-describedby', tooltip.id);
+            tooltip.textContent = message;
+            tooltip.hidden = false;
+            tooltip.dataset.visible = 'true';
+
+            const buttonRect = button.getBoundingClientRect();
+            const tooltipRect = tooltip.getBoundingClientRect();
+            const viewportPadding = 8;
+            const gap = 8;
+            const left = Math.min(
+                Math.max(
+                    buttonRect.left + (buttonRect.width - tooltipRect.width) / 2,
+                    viewportPadding,
+                ),
+                Math.max(viewportPadding, window.innerWidth - tooltipRect.width - viewportPadding),
+            );
+            const aboveTop = buttonRect.top - tooltipRect.height - gap;
+            const top = aboveTop >= viewportPadding
+                ? aboveTop
+                : Math.min(
+                    buttonRect.bottom + gap,
+                    Math.max(viewportPadding, window.innerHeight - tooltipRect.height - viewportPadding),
+                );
+
+            tooltip.style.left = `${Math.round(left)}px`;
+            tooltip.style.top = `${Math.round(top)}px`;
+        };
+
+        buttons.forEach((button) => {
+            button.addEventListener('mouseenter', () => show(button));
+            button.addEventListener('mouseleave', hide);
+            button.addEventListener('focus', () => show(button));
+            button.addEventListener('blur', hide);
+        });
+
+        const hideOnViewportChange = () => hide();
+        window.addEventListener('resize', hideOnViewportChange);
+        window.addEventListener('scroll', hideOnViewportChange, true);
+
+        this._instantTooltipController = {
+            hide,
+            dispose: () => {
+                hide();
+                window.removeEventListener('resize', hideOnViewportChange);
+                window.removeEventListener('scroll', hideOnViewportChange, true);
+                tooltip.remove();
+            },
+            getActiveButton: () => activeButton,
+        };
+    }
+
     _bindEvents() {
+        this._initInstantTooltips();
+
         // Smart Network Interruption Banner buttons
         document.getElementById('btn-net-fallback-local')?.addEventListener('click', () => {
             this._hotSwapToEngine('local');
@@ -1914,6 +2008,7 @@ class App {
         });
         geminiInput?.addEventListener('input', () => {
             this._refreshKeyStatus();
+            this._updateTranscriptEngineUI(document.getElementById('select-transcript-engine')?.value || 'gemini_transcribe');
             this._debouncedAutoSave();
         });
         qwenInput?.addEventListener('input', () => {
@@ -1934,6 +2029,11 @@ class App {
             if (this.isRunning) {
                 await this._hotSwapToEngine(newMode);
             }
+        });
+
+        document.getElementById('select-transcript-engine')?.addEventListener('change', async (e) => {
+            this._updateTranscriptEngineUI(e.target.value);
+            await this._autoSaveSettingsFromForm();
         });
 
         // Translation timing (configured in Settings, not the compact toolbar)
@@ -2915,6 +3015,14 @@ class App {
         if (selectTgt) selectTgt.value = s.target_language || 'vi';
         const selectTransMode = document.getElementById('select-translation-mode');
         if (selectTransMode) selectTransMode.value = s.translation_mode || 'gemini';
+        const selectTranscriptEngine = document.getElementById('select-transcript-engine');
+        if (selectTranscriptEngine) {
+            const transcriptEngine = ['gemini_transcribe', 'local_mlx'].includes(s.transcript_engine)
+                ? s.transcript_engine
+                : 'gemini_transcribe';
+            selectTranscriptEngine.value = transcriptEngine;
+            this._updateTranscriptEngineUI(transcriptEngine);
+        }
         const selectTiming = document.getElementById('select-translation-timing');
         if (selectTiming) selectTiming.value = s.translation_timing || 'on_pause';
         const inactSelect = document.getElementById('select-inactivity-timeout');
@@ -3023,6 +3131,7 @@ class App {
             source_language: document.getElementById('quick-select-source-lang')?.value || settingsManager.get().source_language || 'ja',
             target_language: document.getElementById('quick-select-target-lang')?.value || settingsManager.get().target_language || 'vi',
             translation_mode: document.getElementById('select-translation-mode')?.value || 'gemini',
+            transcript_engine: document.getElementById('select-transcript-engine')?.value || settingsManager.get().transcript_engine || 'gemini_transcribe',
             translation_timing: document.getElementById('select-translation-timing')?.value || settingsManager.get().translation_timing || 'on_pause',
             inactivity_timeout_min: parseInt(document.getElementById('select-inactivity-timeout')?.value || '10', 10),
             translation_type: 'one_way',
@@ -3181,6 +3290,13 @@ class App {
             }
             this._updateModeUI(settings.translation_mode);
         }
+
+        const transcriptEngine = ['gemini_transcribe', 'local_mlx'].includes(settings.transcript_engine)
+            ? settings.transcript_engine
+            : 'gemini_transcribe';
+        const transcriptSelect = document.getElementById('select-transcript-engine');
+        if (transcriptSelect) transcriptSelect.value = transcriptEngine;
+        this._updateTranscriptEngineUI(transcriptEngine);
 
         // Update quick language and timing in toolbar
         const quickSrc = document.getElementById('quick-select-source-lang');
@@ -3420,9 +3536,10 @@ class App {
         const sectionOpenAiKey = document.getElementById('section-openai-key');
         const sectionGeminiKey = document.getElementById('section-gemini-key');
         const sectionQwenKey = document.getElementById('section-qwen-key');
+        const transcriptUsesGemini = s.transcript_engine !== 'local_mlx';
         if (sectionApiKey) sectionApiKey.style.display = isSoniox ? '' : 'none';
         if (sectionOpenAiKey) sectionOpenAiKey.style.display = isOpenAi ? '' : 'none';
-        if (sectionGeminiKey) sectionGeminiKey.style.display = isGemini ? '' : 'none';
+        if (sectionGeminiKey) sectionGeminiKey.style.display = (isGemini || transcriptUsesGemini) ? '' : 'none';
         if (sectionQwenKey) sectionQwenKey.style.display = isQwen ? '' : 'none';
 
         const sectionStrictLang = document.getElementById('section-strict-lang');
@@ -3451,6 +3568,28 @@ class App {
         // rejects "auto" on real mic input.
         this._refreshTargetLangList(mode);
         this._refreshSourceLangList(mode);
+    }
+
+    _updateTranscriptEngineUI(engine) {
+        const select = document.getElementById('select-transcript-engine');
+        const hint = document.getElementById('hint-transcript-engine');
+        if (!select || !hint) return;
+
+        const isLocal = engine === 'local_mlx';
+        const settings = settingsManager.get();
+        const localUnavailable = isLocal && (!this.isAppleSilicon || !this._isLocalMlxReady);
+        const missingGeminiKey = !isLocal && !(settings.gemini_api_key || '').trim();
+
+        if (missingGeminiKey) {
+            hint.textContent = t('settings.engine.transcriptGeminiMissingKey');
+        } else if (isLocal && !this.isAppleSilicon) {
+            hint.textContent = t('settings.engine.transcriptLocalUnsupported');
+        } else {
+            hint.textContent = isLocal
+                ? t('settings.engine.transcriptLocalHint')
+                : t('settings.engine.transcriptGeminiHint');
+        }
+        hint.classList.toggle('hint-warning', localUnavailable || missingGeminiKey);
     }
 
     _refreshTargetLangList(mode) {
@@ -6020,10 +6159,13 @@ class App {
     }
 
     _getLocalizedAudioTranscriptProgress(stage, active) {
+        const isLocal = active?.transcriptEngine === 'local_mlx';
         if (stage === 'upload') {
-            return t(active?.isImport
+            return t(isLocal
+                ? 'retranscript.progress.uploadingLocal'
+                : (active?.isImport
                 ? 'retranscript.progress.readingAndUploading'
-                : 'retranscript.progress.uploading');
+                : 'retranscript.progress.uploading'));
         }
         if (stage === 'save') {
             return t(active?.isImport
@@ -6031,7 +6173,24 @@ class App {
                 : 'retranscript.progress.saving');
         }
         if (stage === 'minutes') return t('retranscript.step.minutes');
-        return t('retranscript.progress.transcribing');
+        return t(isLocal
+            ? 'retranscript.progress.transcribingLocal'
+            : 'retranscript.progress.transcribing');
+    }
+
+    _updateRetranscriptEngineLabels(active = this._activeRetranscribe) {
+        const isLocal = active?.transcriptEngine === 'local_mlx';
+        const labels = {
+            upload: isLocal ? 'retranscript.step.uploadLocal' : 'retranscript.step.upload',
+            transcribe: isLocal ? 'retranscript.step.transcribeLocal' : 'retranscript.step.transcribe',
+        };
+        Object.entries(labels).forEach(([stepName, key]) => {
+            const step = document.querySelector(`[data-retranscript-step="${stepName}"]`);
+            const text = step?.querySelector('.step-text');
+            if (!text) return;
+            text.dataset.i18n = key;
+            text.textContent = t(key);
+        });
     }
 
     async _bindStorageMigrationProgressEvents() {
@@ -11860,6 +12019,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     }
 
     _setRetranscriptProgress(stage, text, percent, customTitle = null) {
+        this._updateRetranscriptEngineLabels();
         const modal = document.getElementById('retranscript-progress-modal');
         const modalCard = modal?.querySelector('.retranscript-progress-card');
         const floatingBar = document.getElementById('retranscript-floating-bar');
@@ -12318,9 +12478,16 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             return;
         }
         const settings = settingsManager.get();
-        const apiKey = settings.gemini_api_key?.trim();
-        if (!apiKey) {
+        const transcriptEngine = ['gemini_transcribe', 'local_mlx'].includes(settings.transcript_engine)
+            ? settings.transcript_engine
+            : 'gemini_transcribe';
+        const apiKey = settings.gemini_api_key?.trim() || '';
+        if (transcriptEngine === 'gemini_transcribe' && !apiKey) {
             this._showToast(t('retranscript.needGeminiKey'), 'error');
+            return;
+        }
+        if (transcriptEngine === 'local_mlx' && (!this.isAppleSilicon || !this._isLocalMlxReady)) {
+            this._showToast(t('settings.engine.transcriptLocalUnavailable'), 'error');
             return;
         }
 
@@ -12355,16 +12522,26 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             isMinimized: true,
             progressInterval: null,
             backendProgress: false,
-            progressBaseText: t('retranscript.progress.uploading'),
+            transcriptEngine,
+            progressBaseText: t(transcriptEngine === 'local_mlx'
+                ? 'retranscript.progress.uploadingLocal'
+                : 'retranscript.progress.uploading'),
             stage: 'upload',
-            text: t('retranscript.progress.uploading'),
+            text: t(transcriptEngine === 'local_mlx'
+                ? 'retranscript.progress.uploadingLocal'
+                : 'retranscript.progress.uploading'),
             percent: 15,
             options,
             customTitle: options.customTitle || t('retranscript.floating.title'),
             startedAt: Date.now(),
         };
 
-        this._setRetranscriptProgress('upload', t('retranscript.progress.uploading'), 15, options.customTitle);
+        this._setRetranscriptProgress(
+            'upload',
+            this._getLocalizedAudioTranscriptProgress('upload', this._activeRetranscribe),
+            15,
+            options.customTitle,
+        );
 
         let currentPct = 15;
         const progressInterval = setInterval(() => {
@@ -12384,17 +12561,17 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (currentPct < 88) {
                 currentPct += (currentPct < 45 ? 3 : (currentPct < 70 ? 2 : 1));
             }
-            let text = t('retranscript.progress.uploading');
+            let text = this._getLocalizedAudioTranscriptProgress('upload', this._activeRetranscribe);
             let stage = 'upload';
             if (currentPct >= 25 && currentPct < 65) {
                 stage = 'transcribe';
-                text = t('retranscript.progress.transcribing');
+                text = this._getLocalizedAudioTranscriptProgress('transcribe', this._activeRetranscribe);
             } else if (currentPct >= 65 && currentPct < 80) {
                 stage = 'transcribe';
-                text = t('retranscript.progress.formatting');
+                text = this._getLocalizedAudioTranscriptProgress('transcribe', this._activeRetranscribe);
             } else if (currentPct >= 80) {
                 stage = 'transcribe';
-                text = t('retranscript.progress.finalizing');
+                text = this._getLocalizedAudioTranscriptProgress('transcribe', this._activeRetranscribe);
             }
             const elapsedSec = Math.floor((Date.now() - this._activeRetranscribe.startedAt) / 1000);
             const elapsedMin = Math.floor(elapsedSec / 60);
@@ -12406,9 +12583,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         try {
             // options.sourceLang/targetLang: cặp ngôn ngữ mới (từ modal sửa ngôn ngữ).
             // Backend áp dụng trước khi build prompt và chỉ lưu khi thành công.
-            const result = await invoke('retranscribe_session_with_gemini', {
+            const result = await invoke('retranscribe_session', {
                 id,
                 apiKey,
+                transcriptEngine,
                 sourceLang: options.sourceLang || null,
                 targetLang: options.targetLang || null,
             });
@@ -12928,6 +13106,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             isMinimized: true,
             progressInterval: null,
             backendProgress: false,
+            transcriptEngine: 'gemini_transcribe',
             progressBaseText: t('retranscript.progress.readingAndUploading'),
             stage: 'upload',
             text: t('retranscript.progress.readingAndUploading'),

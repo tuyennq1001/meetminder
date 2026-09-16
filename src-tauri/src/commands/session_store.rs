@@ -12,8 +12,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
+use std::process::{Command, Stdio};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -2326,6 +2326,12 @@ fn emit_audio_transcript_progress(
 
 const AUDIO_CHUNK_SECONDS: u64 = 10 * 60;
 const AUDIO_CHUNK_THRESHOLD_SECONDS: u64 = 15 * 60;
+// Gemini audio input is metered as tokens. The free-tier error shown by the
+// app caps this model at 10,000 input tokens; at roughly 25 audio tokens/sec,
+// four-minute chunks leave room for request overhead and avoid a predictable
+// 429 on otherwise valid recordings.
+const GEMINI_TRANSCRIBE_CHUNK_SECONDS: u64 = 4 * 60;
+const GEMINI_TRANSCRIBE_CHUNK_THRESHOLD_SECONDS: u64 = GEMINI_TRANSCRIBE_CHUNK_SECONDS;
 
 struct AudioChunkWorkspace(PathBuf);
 
@@ -2377,6 +2383,18 @@ fn create_audio_chunks(
     duration_sec: f64,
     id: &str,
 ) -> Result<(AudioChunkWorkspace, Vec<(PathBuf, u64, u64)>), String> {
+    create_audio_chunks_with_size(source_path, duration_sec, id, AUDIO_CHUNK_SECONDS)
+}
+
+fn create_audio_chunks_with_size(
+    source_path: &Path,
+    duration_sec: f64,
+    id: &str,
+    chunk_seconds: u64,
+) -> Result<(AudioChunkWorkspace, Vec<(PathBuf, u64, u64)>), String> {
+    if chunk_seconds == 0 {
+        return Err("Audio chunk size must be greater than zero".into());
+    }
     let ffmpeg = find_audio_tool("ffmpeg").ok_or(
         "File ghi âm dài cần ffmpeg để chia thành nhiều phần, nhưng máy chưa có ffmpeg",
     )?;
@@ -2387,8 +2405,8 @@ fn create_audio_chunks(
     let duration = duration_sec.ceil() as u64;
     let mut chunks = Vec::new();
 
-    for start_sec in (0..duration).step_by(AUDIO_CHUNK_SECONDS as usize) {
-        let length_sec = (duration - start_sec).min(AUDIO_CHUNK_SECONDS);
+    for start_sec in (0..duration).step_by(chunk_seconds as usize) {
+        let length_sec = (duration - start_sec).min(chunk_seconds);
         let chunk_path = workspace_path.join(format!("chunk-{:05}.wav", chunks.len() + 1));
         let output = Command::new(&ffmpeg)
             .args(["-hide_banner", "-loglevel", "error", "-y"])
@@ -3020,13 +3038,8 @@ fn value_seconds(value: &Value, keys: &[&str]) -> Option<f64> {
             return Some(seconds.max(0.0));
         }
         if let Some(text) = raw.as_str() {
-            if let Ok(seconds) = text.trim().parse::<f64>() {
-                if seconds.is_finite() {
-                    return Some(seconds.max(0.0));
-                }
-            }
-            if let Some(seconds) = timestamp_seconds(text.trim()) {
-                return Some(seconds as f64);
+            if let Some(seconds) = parse_audio_offset_seconds(text) {
+                return Some(seconds);
             }
         }
     }
@@ -3331,6 +3344,938 @@ pub fn cancel_retranscribe_session(id: String) -> Result<bool, String> {
     } else {
         Ok(false)
     }
+}
+
+/// Route the post-meeting transcript job to the engine selected in Settings.
+/// Live Translate has a separate setting and is intentionally not involved
+/// here: a saved recording can be processed by a more accurate, slower ASR
+/// engine after the meeting ends.
+#[tauri::command]
+pub async fn retranscribe_session(
+    app: AppHandle,
+    id: String,
+    api_key: String,
+    transcript_engine: String,
+    source_lang: Option<String>,
+    target_lang: Option<String>,
+) -> Result<SessionReadResult, String> {
+    match transcript_engine.trim() {
+        "local_mlx" => {
+            retranscribe_session_with_local_mlx(app, id, source_lang, target_lang).await
+        }
+        // Unknown values deliberately fall back to the cloud engine. This
+        // keeps older settings files usable after an upgrade.
+        _ => retranscribe_session_with_gemini_transcribe(
+            app,
+            id,
+            api_key,
+            source_lang,
+            target_lang,
+        )
+        .await,
+    }
+}
+
+fn register_retranscribe_cancel(
+    id: &str,
+) -> Result<
+    (
+        std::sync::Arc<std::sync::atomic::AtomicBool>,
+        RetranscribeGuard,
+    ),
+    String,
+> {
+    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut map = RETRANSCRIBE_CANCEL_MAP.lock().map_err(|e| e.to_string())?;
+    map.insert(id.to_string(), cancel_flag.clone());
+    Ok((cancel_flag, RetranscribeGuard(id.to_string())))
+}
+
+fn load_retranscribe_context(
+    app: &AppHandle,
+    id: &str,
+    source_lang: Option<String>,
+    target_lang: Option<String>,
+) -> Result<(PathBuf, PathBuf, PathBuf, &'static str, u64, SessionData), String> {
+    validate_id(id)?;
+    let dir = sessions_dir(app)?;
+    let (md_path, json_path) = session_paths(&dir, id);
+    let (_, existing_json_path) = session_paths_for_read(&dir, id);
+    let (audio_path, mime_type) = find_session_audio(&dir, id)
+        .ok_or_else(|| "This meeting does not have an audio recording".to_string())?;
+    let audio_size = fs::metadata(&audio_path)
+        .map_err(|e| format!("Read audio recording metadata failed: {}", e))?
+        .len();
+    if audio_size <= 44 {
+        return Err("The audio recording is empty".into());
+    }
+    let json_str = fs::read_to_string(&existing_json_path)
+        .map_err(|e| format!("Read session failed: {}", e))?;
+    let mut data: SessionData =
+        serde_json::from_str(&json_str).map_err(|e| format!("Parse session failed: {}", e))?;
+
+    // Apply language edits only in memory. The previous transcript remains
+    // untouched if upload, ASR, translation, or local MLX fails.
+    if let Some(src) = source_lang {
+        let src = src.trim().to_lowercase();
+        if !src.is_empty() && src.len() <= 12 {
+            data.source_lang = src;
+        }
+    }
+    if let Some(tgt) = target_lang {
+        let tgt = tgt.trim().to_lowercase();
+        if !tgt.is_empty() && tgt.len() <= 12 {
+            data.target_lang = tgt;
+        }
+    }
+
+    Ok((
+        md_path,
+        json_path,
+        audio_path,
+        mime_type,
+        audio_size,
+        data,
+    ))
+}
+
+fn has_transcript_translation(data: &SessionData) -> bool {
+    let target = data.target_lang.trim().to_lowercase();
+    !target.is_empty() && target != "none" && target != "off" && target != data.source_lang
+}
+
+fn save_retranscribed_session(
+    app: &AppHandle,
+    id: &str,
+    md_path: &Path,
+    json_path: &Path,
+    data: &mut SessionData,
+    engine: &str,
+    mut segments: Vec<Segment>,
+    duration_sec: Option<f64>,
+) -> Result<SessionReadResult, String> {
+    if segments.is_empty() {
+        return Err(
+            "Không tìm thấy đoạn hội thoại nào trong file ghi âm (không phát hiện giọng nói)"
+                .into(),
+        );
+    }
+    segments.sort_by_key(|segment| timestamp_seconds(&segment.ts).unwrap_or(0));
+    if let Some(duration) = duration_sec.filter(|value| value.is_finite() && *value > 0.0) {
+        data.duration_sec = data.duration_sec.max(duration.ceil() as u64);
+    }
+    data.chunks = vec![Chunk {
+        started_at: data.created_at.clone(),
+        ended_at: data.ended_at.clone(),
+        engine: engine.to_string(),
+        source_lang: data.source_lang.clone(),
+        target_lang: data.target_lang.clone(),
+        segments,
+    }];
+    data.engine = engine.to_string();
+    data.retranscribed_at = Some(chrono::Local::now().to_rfc3339());
+    emit_audio_transcript_progress(
+        app,
+        id,
+        "save",
+        "Đang ghi Logs mới vào ổ đĩa...",
+        95,
+    );
+    let md = rebuild_session_markdown(data);
+    let json_bytes = serde_json::to_vec_pretty(data)
+        .map_err(|e| format!("Serialize transcript failed: {}", e))?;
+    write_atomic(json_path, &json_bytes)?;
+    write_atomic(md_path, md.as_bytes())?;
+    Ok(SessionReadResult {
+        md,
+        json: data.clone(),
+    })
+}
+
+fn retry_delay(attempt: u32) -> std::time::Duration {
+    // Exponential backoff with a small clock-derived jitter. The jitter keeps
+    // several clients from retrying a temporary 503 at exactly the same time.
+    let base_ms = 1_000_u64.saturating_mul(2_u64.saturating_pow(attempt.min(3)));
+    let jitter_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| (duration.subsec_millis() as u64) % 400)
+        .unwrap_or(0);
+    std::time::Duration::from_millis(base_ms + jitter_ms)
+}
+
+fn is_retryable_gemini_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
+fn is_hard_free_tier_input_quota(status: reqwest::StatusCode, body: &str) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        && body.to_ascii_lowercase().contains("free_tier_input_token_count")
+}
+
+fn gemini_quota_aware_error(status: reqwest::StatusCode, body: &str) -> String {
+    let detail = gemini_error(status, body.to_string());
+    if is_hard_free_tier_input_quota(status, body) {
+        format!(
+            "Gemini Free Tier đã chạm giới hạn input token của model này; retry ngay sẽ không giải quyết được. Hãy chọn Local MLX hoặc nâng usage tier. Chi tiết: {}",
+            detail
+        )
+    } else {
+        detail
+    }
+}
+
+fn gemini_bcp47_code(code: &str) -> Option<String> {
+    let region = match code.trim().to_lowercase().as_str() {
+        "vi" => "vi-VN",
+        "en" => "en-US",
+        "ja" => "ja-JP",
+        "ko" => "ko-KR",
+        "zh" => "cmn-Hans-CN",
+        "fr" => "fr-FR",
+        "de" => "de-DE",
+        "es" => "es-419",
+        "th" => "th-TH",
+        "id" => "id-ID",
+        "ru" => "ru-RU",
+        _ => return None,
+    };
+    Some(region.to_string())
+}
+
+fn parse_audio_offset_seconds(raw: &str) -> Option<f64> {
+    let text = raw.trim();
+    for (suffix, divisor) in [("ms", 1_000.0), ("s", 1.0)] {
+        if let Some(value) = text.strip_suffix(suffix) {
+            let seconds = value.trim().parse::<f64>().ok()? / divisor;
+            return seconds.is_finite().then_some(seconds.max(0.0));
+        }
+    }
+    text.parse::<f64>()
+        .ok()
+        .filter(|seconds| seconds.is_finite())
+        .map(|seconds| seconds.max(0.0))
+        .or_else(|| timestamp_seconds(text).map(|seconds| seconds as f64))
+}
+
+struct TimedTranscriptWord {
+    start_sec: f64,
+    end_sec: f64,
+    word: String,
+    speaker: Option<String>,
+}
+
+struct TranscriptWordRun {
+    start_sec: f64,
+    last_end_sec: f64,
+    speaker: Option<String>,
+    text: String,
+}
+
+fn append_transcript_word(text: &mut String, word: &str, source_lang: &str) {
+    let no_spaces = matches!(source_lang, "ja" | "zh");
+    let starts_with_punctuation = word
+        .chars()
+        .next()
+        .is_some_and(|ch| ".,!?;:%)]}。、！？；：％）】》〉」』".contains(ch));
+    if !text.is_empty() && !no_spaces && !starts_with_punctuation && !text.ends_with(' ') {
+        text.push(' ');
+    }
+    text.push_str(word);
+}
+
+fn flush_transcript_word_run(
+    segments: &mut Vec<Segment>,
+    run: &mut Option<TranscriptWordRun>,
+) {
+    if let Some(run) = run.take() {
+        let text = run.text.trim().to_string();
+        if !text.is_empty() {
+            segments.push(Segment {
+                ts: transcript_timestamp(run.start_sec),
+                src: text,
+                tgt: String::new(),
+                speaker: run.speaker,
+            });
+        }
+    }
+}
+
+fn parse_gemini_transcribe_segments(body: &Value, source_lang: &str) -> Vec<Segment> {
+    let mut words = Vec::<TimedTranscriptWord>::new();
+    if let Some(candidates) = body.get("candidates").and_then(Value::as_array) {
+        for candidate in candidates {
+            let Some(parts) = candidate
+                .get("content")
+                .and_then(|content| content.get("parts"))
+                .and_then(Value::as_array)
+            else {
+                continue;
+            };
+            for part in parts {
+                let Some(transcription) = part.get("audioTranscription") else {
+                    continue;
+                };
+                let speaker = match value_string(transcription, &["speakerLabel", "speaker_label"])
+                    .as_str()
+                {
+                    "" => None,
+                    label => Some(label.to_string()),
+                };
+                if let Some(items) = transcription.get("words").and_then(Value::as_array) {
+                    for item in items {
+                        let word = value_string(item, &["word", "text"]);
+                        if word.is_empty() {
+                            continue;
+                        }
+                        let start_sec = value_seconds(item, &["startOffset", "start_offset"])
+                            .unwrap_or_else(|| words.last().map(|last| last.end_sec).unwrap_or(0.0));
+                        let end_sec = value_seconds(item, &["endOffset", "end_offset"])
+                            .unwrap_or(start_sec);
+                        words.push(TimedTranscriptWord {
+                            start_sec,
+                            end_sec: end_sec.max(start_sec),
+                            word,
+                            speaker: speaker.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    let mut segments = Vec::new();
+    let mut run: Option<TranscriptWordRun> = None;
+    for word in words {
+        let should_flush = run.as_ref().is_some_and(|current| {
+            current.speaker != word.speaker
+                || word.start_sec - current.last_end_sec > 1.25
+                || current.text.chars().count() >= 220
+        });
+        if should_flush {
+            flush_transcript_word_run(&mut segments, &mut run);
+        }
+        if let Some(current) = run.as_mut() {
+            append_transcript_word(&mut current.text, &word.word, source_lang);
+            current.last_end_sec = word.end_sec;
+        } else {
+            let mut text = String::new();
+            append_transcript_word(&mut text, &word.word, source_lang);
+            run = Some(TranscriptWordRun {
+                start_sec: word.start_sec,
+                last_end_sec: word.end_sec,
+                speaker: word.speaker,
+                text,
+            });
+        }
+    }
+    flush_transcript_word_run(&mut segments, &mut run);
+
+    // If annotations were omitted by the API, still preserve response.text as
+    // a usable transcript instead of reporting a false empty-audio failure.
+    if segments.is_empty() {
+        if let Some(text) = extract_gemini_candidate_text(body) {
+            let text = text.trim();
+            if !text.is_empty() {
+                segments.push(Segment {
+                    ts: transcript_timestamp(0.0),
+                    src: text.to_string(),
+                    tgt: String::new(),
+                    speaker: None,
+                });
+            }
+        }
+    }
+    segments
+}
+
+async fn generate_gemini_transcribe_segments(
+    client: &reqwest::Client,
+    api_key: &str,
+    mime_type: &str,
+    file_uri: &str,
+    source_lang: &str,
+    cancel_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<Vec<Segment>, String> {
+    let mut last_error = None;
+    let mut language_codes = Vec::new();
+    if let Some(code) = gemini_bcp47_code(source_lang) {
+        language_codes.push(code);
+    }
+    for attempt in 0..4_u32 {
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("Quá trình Re-transcript đã bị hủy".into());
+        }
+        let response = client
+            .post("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-transcribe:generateContent")
+            .header("x-goog-api-key", api_key.trim())
+            .json(&serde_json::json!({
+                "contents": [{ "parts": [
+                    { "fileData": { "mimeType": mime_type, "fileUri": file_uri } }
+                ] }],
+                "generationConfig": {
+                    "audioTranscriptionConfig": {
+                        "languageCodes": language_codes,
+                        "diarization": true,
+                        "wordTimestamp": true,
+                        "mode": "VERBATIM"
+                    }
+                }
+            }))
+            .send()
+            .await;
+        match response {
+            Ok(response) if response.status().is_success() => {
+                let body: Value = response
+                    .json()
+                    .await
+                    .map_err(|e| format!("Read Gemini Transcribe response failed: {}", e))?;
+                let segments = parse_gemini_transcribe_segments(&body, source_lang);
+                if !segments.is_empty() {
+                    return Ok(segments);
+                }
+                last_error = Some("Gemini Transcribe returned an empty transcript".to_string());
+            }
+            Ok(response) => {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                let message = gemini_quota_aware_error(status, &body);
+                last_error = Some(message.clone());
+                // A free-tier input-token quota is not fixed by an immediate
+                // retry. Return once so the UI can recommend Local MLX.
+                if is_hard_free_tier_input_quota(status, &body)
+                    || !is_retryable_gemini_status(status)
+                    || attempt == 3
+                {
+                    return Err(message);
+                }
+            }
+            Err(error) => {
+                let message = format!("Call Gemini Transcribe failed: {}", gemini_transport_error(&error));
+                last_error = Some(message.clone());
+                if attempt == 3 {
+                    return Err(message);
+                }
+            }
+        }
+        tokio::time::sleep(retry_delay(attempt)).await;
+    }
+    Err(last_error.unwrap_or_else(|| "Gemini Transcribe failed".into()))
+}
+
+async fn delete_gemini_audio_file(client: &reqwest::Client, api_key: &str, file_name: &str) {
+    let _ = client
+        .delete(format!(
+            "https://generativelanguage.googleapis.com/v1beta/{}",
+            file_name
+        ))
+        .header("x-goog-api-key", api_key.trim())
+        .send()
+        .await;
+}
+
+#[derive(Deserialize)]
+struct GeminiTranslationsPayload {
+    #[serde(default)]
+    translations: Vec<String>,
+}
+
+fn parse_gemini_translations(text: &str) -> Result<Vec<String>, String> {
+    let trimmed = clean_gemini_json(text);
+    let value: Value = serde_json::from_str(trimmed)
+        .map_err(|e| format!("Gemini returned invalid translations JSON: {}", e))?;
+    let translations = if let Some(items) = value.as_array() {
+        items
+            .iter()
+            .map(|item| item.as_str().unwrap_or_default().trim().to_string())
+            .collect()
+    } else {
+        serde_json::from_value::<GeminiTranslationsPayload>(value)
+            .map_err(|e| format!("Gemini returned invalid translations JSON: {}", e))?
+            .translations
+    };
+    Ok(translations)
+}
+
+async fn translate_transcript_segments_with_gemini(
+    client: &reqwest::Client,
+    api_key: &str,
+    source_lang: &str,
+    target_lang: &str,
+    segments: &mut [Segment],
+    cancel_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<(), String> {
+    if segments.is_empty() || source_lang == target_lang {
+        return Ok(());
+    }
+    let target_name = language_name(target_lang);
+    let source_name = language_name(source_lang);
+    for start in (0..segments.len()).step_by(32) {
+        let end = (start + 32).min(segments.len());
+        let input: Vec<Value> = segments[start..end]
+            .iter()
+            .map(|segment| serde_json::json!({ "source": segment.src }))
+            .collect();
+        let prompt = format!(
+            "Translate each source item from {source_name} to {target_name}. Return JSON only with exactly this schema: {{\"translations\":[\"...\"]}}. Keep the same order and item count. Do not add commentary, numbering, transliteration, or summaries. Preserve names, product terms, and code identifiers. INPUT: {}",
+            serde_json::to_string(&input).unwrap_or_else(|_| "[]".to_string())
+        );
+        let mut last_error = None;
+        let translations = 'request: {
+            for attempt in 0..4_u32 {
+                if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                    return Err("Quá trình Re-transcript đã bị hủy".into());
+                }
+                let response = client
+                    .post("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent")
+                    .header("x-goog-api-key", api_key.trim())
+                    .json(&serde_json::json!({
+                        "contents": [{ "parts": [{ "text": prompt }] }],
+                        "generationConfig": {
+                            "temperature": 0.1,
+                            "maxOutputTokens": 8192,
+                            "responseMimeType": "application/json"
+                        }
+                    }))
+                    .send()
+                    .await;
+                match response {
+                    Ok(response) if response.status().is_success() => {
+                        let body: Value = response
+                            .json()
+                            .await
+                            .map_err(|e| format!("Read Gemini translation failed: {}", e))?;
+                        let text = extract_gemini_candidate_text(&body)
+                            .ok_or("Gemini returned an empty translation")?;
+                        let parsed = parse_gemini_translations(&text)?;
+                        if parsed.len() != end - start {
+                            return Err(format!(
+                                "Gemini returned {} translations for {} transcript segments",
+                                parsed.len(),
+                                end - start
+                            ));
+                        }
+                        break 'request parsed;
+                    }
+                    Ok(response) => {
+                        let status = response.status();
+                        let body = response.text().await.unwrap_or_default();
+                        let message = gemini_quota_aware_error(status, &body);
+                        last_error = Some(message.clone());
+                        if is_hard_free_tier_input_quota(status, &body)
+                            || !is_retryable_gemini_status(status)
+                            || attempt == 3
+                        {
+                            return Err(message);
+                        }
+                    }
+                    Err(error) => {
+                        let message = format!("Call Gemini translation failed: {}", gemini_transport_error(&error));
+                        last_error = Some(message.clone());
+                        if attempt == 3 {
+                            return Err(message);
+                        }
+                    }
+                }
+                tokio::time::sleep(retry_delay(attempt)).await;
+            }
+            return Err(last_error.unwrap_or_else(|| "Gemini translation failed".into()));
+        };
+        for (segment, translation) in segments[start..end].iter_mut().zip(translations) {
+            segment.tgt = translation;
+        }
+    }
+    Ok(())
+}
+
+async fn retranscribe_session_with_gemini_transcribe(
+    app: AppHandle,
+    id: String,
+    api_key: String,
+    source_lang: Option<String>,
+    target_lang: Option<String>,
+) -> Result<SessionReadResult, String> {
+    if api_key.trim().is_empty() {
+        return Err("Gemini API key is empty".into());
+    }
+    let (md_path, json_path, audio_path, mime_type, _audio_size, mut data) =
+        load_retranscribe_context(&app, &id, source_lang, target_lang)?;
+    let (cancel_flag, _guard) = register_retranscribe_cancel(&id)?;
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "upload",
+        "Đang chuẩn bị audio cho Gemini 3.5 Transcribe...",
+        10,
+    );
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(45))
+        .timeout(std::time::Duration::from_secs(1800))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    let duration_sec = probe_audio_duration(&audio_path);
+    let mut all_segments = Vec::new();
+
+    if let Some(duration) = duration_sec
+        .map(|duration| duration.ceil() as u64)
+        .filter(|duration| *duration > GEMINI_TRANSCRIBE_CHUNK_THRESHOLD_SECONDS)
+    {
+        let (_workspace, chunks) = create_audio_chunks_with_size(
+            &audio_path,
+            duration as f64,
+            &id,
+            GEMINI_TRANSCRIBE_CHUNK_SECONDS,
+        )?;
+        let total_chunks = chunks.len();
+        for (index, (chunk_path, start_sec, length_sec)) in chunks.iter().enumerate() {
+            if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err("Quá trình Re-transcript đã bị hủy".into());
+            }
+            emit_audio_transcript_progress(
+                &app,
+                &id,
+                "transcribe",
+                &format!(
+                    "Gemini 3.5 Transcribe đang xử lý phần {}/{} ({}–{})...",
+                    index + 1,
+                    total_chunks,
+                    format_duration_str(*start_sec),
+                    format_duration_str(*start_sec + *length_sec)
+                ),
+                20 + ((index as u64 * 65) / total_chunks as u64) as u8,
+            );
+            let uploaded = upload_gemini_audio_file(
+                &client,
+                &api_key,
+                chunk_path,
+                "audio/wav",
+                &format!("Meet Minder recording part {}/{}", index + 1, total_chunks),
+            )
+            .await?;
+            let generated = generate_gemini_transcribe_segments(
+                &client,
+                &api_key,
+                "audio/wav",
+                &uploaded.file_uri,
+                &data.source_lang,
+                &cancel_flag,
+            )
+            .await;
+            delete_gemini_audio_file(&client, &api_key, &uploaded.file_name).await;
+            let mut part_segments = generated?;
+            normalize_chunk_timestamps(&mut part_segments, *start_sec);
+            all_segments.append(&mut part_segments);
+        }
+    } else {
+        let uploaded = upload_gemini_audio_file(
+            &client,
+            &api_key,
+            &audio_path,
+            mime_type,
+            "Meet Minder recording",
+        )
+        .await?;
+        emit_audio_transcript_progress(
+            &app,
+            &id,
+            "transcribe",
+            "Gemini 3.5 Transcribe đang tạo transcript có timestamp và speaker...",
+            35,
+        );
+        let generated = generate_gemini_transcribe_segments(
+            &client,
+            &api_key,
+            mime_type,
+            &uploaded.file_uri,
+            &data.source_lang,
+            &cancel_flag,
+        )
+        .await;
+        delete_gemini_audio_file(&client, &api_key, &uploaded.file_name).await;
+        all_segments = generated?;
+    }
+
+    if all_segments.is_empty() {
+        return Err("Không tìm thấy đoạn hội thoại nào trong file ghi âm (Gemini không phát hiện giọng nói)".into());
+    }
+    if has_transcript_translation(&data) {
+        emit_audio_transcript_progress(
+            &app,
+            &id,
+            "translate",
+            "Đang dịch transcript theo ngôn ngữ đã chọn...",
+            86,
+        );
+        translate_transcript_segments_with_gemini(
+            &client,
+            &api_key,
+            &data.source_lang,
+            &data.target_lang,
+            &mut all_segments,
+            &cancel_flag,
+        )
+        .await?;
+    }
+    save_retranscribed_session(
+        &app,
+        &id,
+        &md_path,
+        &json_path,
+        &mut data,
+        "gemini-transcribe",
+        all_segments,
+        duration_sec,
+    )
+}
+
+#[derive(Deserialize)]
+struct LocalPipelineMessage {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    original: String,
+    #[serde(default)]
+    translated: String,
+    #[serde(default)]
+    start_sec: Option<f64>,
+    #[serde(default)]
+    message: String,
+    #[serde(default)]
+    percent: Option<u8>,
+}
+
+fn consume_local_pipeline_line(
+    line: &str,
+    segments: &mut Vec<Segment>,
+    app: &AppHandle,
+    id: &str,
+    duration_sec: Option<f64>,
+) -> Result<(), String> {
+    let Ok(message) = serde_json::from_str::<LocalPipelineMessage>(line) else {
+        return Ok(());
+    };
+    match message.kind.as_str() {
+        "error" => Err(if message.message.is_empty() {
+            "Local MLX pipeline failed".to_string()
+        } else {
+            format!("Local MLX: {}", message.message)
+        }),
+        "result" => {
+            let src = message.original.trim();
+            if !src.is_empty() {
+                let start_sec = message
+                    .start_sec
+                    .filter(|value| value.is_finite() && *value >= 0.0)
+                    .unwrap_or(segments.len() as f64 * 5.0);
+                segments.push(Segment {
+                    ts: transcript_timestamp(start_sec),
+                    src: src.to_string(),
+                    tgt: message.translated.trim().to_string(),
+                    speaker: None,
+                });
+                let percent = duration_sec
+                    .filter(|duration| *duration > 0.0)
+                    .map(|duration| {
+                        (40.0 + (start_sec / duration).clamp(0.0, 1.0) * 50.0).round() as u8
+                    })
+                    .unwrap_or(55);
+                emit_audio_transcript_progress(
+                    app,
+                    id,
+                    "transcribe",
+                    &format!("Local MLX đã nhận {} đoạn thoại...", segments.len()),
+                    percent.min(90),
+                );
+            }
+            Ok(())
+        }
+        "progress" => {
+            emit_audio_transcript_progress(
+                app,
+                id,
+                "transcribe",
+                &message.message,
+                message.percent.unwrap_or(15).clamp(15, 90),
+            );
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn local_pipeline_script_path() -> Result<PathBuf, String> {
+    let candidates = vec![
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../scripts/local_pipeline.py"),
+        PathBuf::from("scripts/local_pipeline.py"),
+        std::env::current_exe()
+            .unwrap_or_default()
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("../Resources/scripts/local_pipeline.py"),
+    ];
+    candidates
+        .into_iter()
+        .find(|path| path.exists())
+        .ok_or_else(|| "Local MLX pipeline script not found".to_string())
+}
+
+fn local_pipeline_home() -> String {
+    dirs::home_dir()
+        .map(|path| path.to_string_lossy().to_string())
+        .or_else(|| std::env::var("HOME").ok())
+        .unwrap_or_else(|| "/tmp".to_string())
+}
+
+fn local_pipeline_python(home: &str) -> String {
+    let venv = PathBuf::from(home).join("Library/Application Support/Meet Minder/mlx-env/bin/python3");
+    if venv.exists() {
+        venv.to_string_lossy().to_string()
+    } else if Path::new("/opt/homebrew/bin/python3").exists() {
+        "/opt/homebrew/bin/python3".to_string()
+    } else {
+        "python3".to_string()
+    }
+}
+
+async fn retranscribe_session_with_local_mlx(
+    app: AppHandle,
+    id: String,
+    source_lang: Option<String>,
+    target_lang: Option<String>,
+) -> Result<SessionReadResult, String> {
+    let (md_path, json_path, audio_path, _mime_type, _audio_size, mut data) =
+        load_retranscribe_context(&app, &id, source_lang, target_lang)?;
+    let home = local_pipeline_home();
+    let (has_whisper, has_gemma) = crate::commands::local_pipeline::are_local_models_installed(&home);
+    if !has_whisper || !has_gemma {
+        return Err("Local MLX models are missing or incomplete. Please install them in Settings.".into());
+    }
+    let script_path = local_pipeline_script_path()?;
+    let target_arg = if has_transcript_translation(&data) {
+        data.target_lang.clone()
+    } else {
+        "none".to_string()
+    };
+    let source_arg = if data.source_lang.trim().is_empty() {
+        "auto".to_string()
+    } else {
+        data.source_lang.clone()
+    };
+    let duration_sec = probe_audio_duration(&audio_path);
+    let (cancel_flag, _guard) = register_retranscribe_cancel(&id)?;
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "transcribe",
+        "Local MLX đang nạp Whisper và tạo transcript từ audio...",
+        15,
+    );
+
+    let mut child = Command::new(local_pipeline_python(&home))
+        .arg(script_path)
+        .arg("--asr-model")
+        .arg("whisper")
+        .arg("--source-lang")
+        .arg(&source_arg)
+        .arg("--target-lang")
+        .arg(&target_arg)
+        .arg("--test")
+        .arg("--test-file")
+        .arg(&audio_path)
+        .env("PATH", "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+        .env("HOME", &home)
+        .env("PYTHONUNBUFFERED", "1")
+        .env("TOKENIZERS_PARALLELISM", "false")
+        .env("HF_HUB_OFFLINE", "1")
+        .env("TRANSFORMERS_OFFLINE", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Không thể khởi động Local MLX: {}", e))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("Không thể đọc kết quả Local MLX")?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or("Không thể đọc log Local MLX")?;
+    let (sender, receiver) = std::sync::mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        for line in std::io::BufReader::new(stdout).lines().flatten() {
+            let _ = sender.send(line);
+        }
+    });
+    let recent_stderr = std::sync::Arc::new(std::sync::Mutex::new(
+        std::collections::VecDeque::<String>::new(),
+    ));
+    let stderr_buffer = recent_stderr.clone();
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        for line in std::io::BufReader::new(stderr).lines().flatten() {
+            if let Ok(mut buffer) = stderr_buffer.lock() {
+                if buffer.len() >= 20 {
+                    buffer.pop_front();
+                }
+                buffer.push_back(line);
+            }
+        }
+    });
+
+    let mut segments = Vec::new();
+    let exit_status = loop {
+        for line in receiver.try_iter() {
+            if let Err(error) =
+                consume_local_pipeline_line(&line, &mut segments, &app, &id, duration_sec)
+            {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        }
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Quá trình Re-transcript đã bị hủy".into());
+        }
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|e| format!("Không thể theo dõi Local MLX: {}", e))?
+        {
+            break status;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    };
+    // Wait for the stdout reader to close and drain the last result/done line.
+    for line in receiver.iter() {
+        if let Err(error) =
+            consume_local_pipeline_line(&line, &mut segments, &app, &id, duration_sec)
+        {
+            return Err(error);
+        }
+    }
+    if !exit_status.success() {
+        let detail = recent_stderr
+            .lock()
+            .map(|buffer| buffer.iter().cloned().collect::<Vec<_>>().join("\n"))
+            .unwrap_or_default();
+        return Err(if detail.is_empty() {
+            "Local MLX pipeline failed".to_string()
+        } else {
+            format!("Local MLX pipeline failed:\n{}", detail)
+        });
+    }
+    save_retranscribed_session(
+        &app,
+        &id,
+        &md_path,
+        &json_path,
+        &mut data,
+        "local-mlx",
+        segments,
+        duration_sec,
+    )
 }
 
 /// Rebuild a saved meeting's transcript from its local WAV recording. The audio
@@ -5166,6 +6111,53 @@ mod tests {
         assert_eq!(timestamp_seconds("01:02:03"), Some(3723));
         assert_eq!(timestamp_seconds("01:23.45"), Some(83));
         assert_eq!(timestamp_seconds("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_gemini_transcribe_word_annotations() {
+        let body = serde_json::json!({
+            "candidates": [{
+                "content": {"parts": [{
+                    "audioTranscription": {
+                        "speakerLabel": "spk_1",
+                        "words": [
+                            {"word": "Hello", "startOffset": "0.100s", "endOffset": "0.450s"},
+                            {"word": "world", "startOffset": "0.500s", "endOffset": "0.850s"},
+                            {"word": "!", "startOffset": "0.900s", "endOffset": "1.000s"}
+                        ]
+                    }
+                }]}
+            }]
+        });
+        let segments = parse_gemini_transcribe_segments(&body, "en");
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].ts, "00:00:00");
+        assert_eq!(segments[0].src, "Hello world!");
+        assert_eq!(segments[0].speaker.as_deref(), Some("spk_1"));
+        assert_eq!(parse_audio_offset_seconds("125ms"), Some(0.125));
+        assert_eq!(parse_audio_offset_seconds("1.5s"), Some(1.5));
+    }
+
+    #[test]
+    fn test_parse_gemini_transcribe_splits_speakers_and_long_pauses() {
+        let body = serde_json::json!({
+            "candidates": [{
+                "content": {"parts": [
+                    {"audioTranscription": {"speakerLabel": "spk_1", "words": [
+                        {"word": "One", "startOffset": "0s", "endOffset": "0.3s"}
+                    ]}},
+                    {"audioTranscription": {"speakerLabel": "spk_2", "words": [
+                        {"word": "Two", "startOffset": "3s", "endOffset": "3.3s"}
+                    ]}}
+                ]}
+            }]
+        });
+        let segments = parse_gemini_transcribe_segments(&body, "en");
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].src, "One");
+        assert_eq!(segments[1].src, "Two");
+        assert_eq!(segments[1].speaker.as_deref(), Some("spk_2"));
+        assert_eq!(segments[1].ts, "00:00:03");
     }
 
     #[test]
