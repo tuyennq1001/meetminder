@@ -3,6 +3,18 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct MeetingMinutesTemplate {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub translations: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub memo_translations: std::collections::HashMap<String, String>,
+}
+
 /// App settings — persisted to JSON
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
@@ -70,7 +82,7 @@ pub struct Settings {
     pub show_original: bool,
     /// Translation mode: "soniox" | "local" | "openai"
     pub translation_mode: String,
-    /// Transcript/re-transcript engine: "gemini_transcribe" | "local_mlx"
+    /// Transcript/re-transcript engine: "gemini_live_translate" | "local_mlx"
     #[serde(default = "default_transcript_engine")]
     pub transcript_engine: String,
     /// Translation timing: "on_pause" (whole sentence) | "realtime"
@@ -146,6 +158,9 @@ pub struct Settings {
     /// Default language for generated meeting minutes
     #[serde(default = "default_meeting_minutes_lang")]
     pub meeting_minutes_lang: String,
+    /// User-managed Meeting Minutes templates keyed by stable ID.
+    #[serde(default)]
+    pub meeting_minutes_templates: Vec<MeetingMinutesTemplate>,
     /// Custom template for Meeting Minutes - Vietnamese (Markdown)
     #[serde(default)]
     pub template_minutes_vi: Option<String>,
@@ -266,6 +281,7 @@ impl Default for Settings {
             template_notes: None,
             meeting_minutes_use_notes: true,
             meeting_minutes_lang: default_meeting_minutes_lang(),
+            meeting_minutes_templates: Vec::new(),
             template_minutes_vi: None,
             template_minutes_ja: None,
             template_minutes_en: None,
@@ -388,7 +404,7 @@ fn default_gemini_model() -> String {
 }
 
 fn default_transcript_engine() -> String {
-    "gemini_transcribe".to_string()
+    "gemini_live_translate".to_string()
 }
 
 const RELEASE_IDENTIFIER: &str = "com.meetminder.desktop";
@@ -419,9 +435,9 @@ impl Settings {
         let path = settings_path();
         if path.exists() {
             match fs::read_to_string(&path) {
-                Ok(content) => normalize_loaded_settings(
-                    serde_json::from_str(&content).unwrap_or_default(),
-                ),
+                Ok(content) => {
+                    normalize_loaded_settings(serde_json::from_str(&content).unwrap_or_default())
+                }
                 Err(_) => Self::default(),
             }
         } else if settings_identifier() != RELEASE_IDENTIFIER {
@@ -471,7 +487,9 @@ fn normalize_loaded_settings(mut settings: Settings) -> Settings {
     {
         settings.gemini_model = "auto".to_string();
     }
-    if settings.transcript_engine != "gemini_transcribe"
+    if settings.transcript_engine == "gemini_transcribe" {
+        settings.transcript_engine = "gemini_live_translate".to_string();
+    } else if settings.transcript_engine != "gemini_live_translate"
         && settings.transcript_engine != "local_mlx"
     {
         settings.transcript_engine = default_transcript_engine();
@@ -491,7 +509,7 @@ mod tests {
         let s = Settings::default();
         assert_eq!(s.app_language, "en");
         assert_eq!(s.gemini_model, "auto");
-        assert_eq!(s.transcript_engine, "gemini_transcribe");
+        assert_eq!(s.transcript_engine, "gemini_live_translate");
         assert_eq!(s.source_language, "ja");
         assert_eq!(s.target_language, "vi");
         assert_eq!(s.audio_source, "system");
@@ -587,6 +605,18 @@ mod tests {
         s.font_color = "#33ccff".to_string();
         s.meeting_minutes_use_notes = false;
         s.template_notes = Some("# Notes template".to_string());
+        s.meeting_minutes_templates.push(MeetingMinutesTemplate {
+            id: "tech".to_string(),
+            name: "Technical".to_string(),
+            translations: std::collections::HashMap::from([(
+                "en".to_string(),
+                "# Technical minutes".to_string(),
+            )]),
+            memo_translations: std::collections::HashMap::from([(
+                "en".to_string(),
+                "# Technical memo".to_string(),
+            )]),
+        });
 
         let json = serde_json::to_string(&s).expect("should serialize");
         let restored: Settings = serde_json::from_str(&json).expect("should deserialize");
@@ -607,6 +637,11 @@ mod tests {
             restored.template_notes,
             Some("# Notes template".to_string())
         );
+        assert_eq!(
+            restored.meeting_minutes_templates[0]
+                .memo_translations
+                .get("en"),
+            Some(&"# Technical memo".to_string())
+        );
     }
-
 }

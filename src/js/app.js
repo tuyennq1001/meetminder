@@ -10,7 +10,7 @@ import { updater } from './updater.js';
 import { sessionStore, SessionStore } from './session-store.js';
 import { QWEN_LANGS } from './qwen-langs.js';
 import { NotesEditor } from './notes-editor.js';
-import { applyLocale, normalizeLocale, t, formatDateTime, formatDate } from './i18n.js';
+import { applyLocale, normalizeLocale, t, formatDateTime } from './i18n.js';
 import {
     initShell, setActivity, getActivity, setLiveBadge, bindMenu, initWindowModes,
 } from './ui-shell.js';
@@ -37,19 +37,6 @@ const LANGUAGE_DISPLAY = {
 };
 
 const PENCIL_YELLOW_ICON = `<svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="13" height="13" style="display:inline-block;vertical-align:-2px;margin-right:3px;" aria-hidden="true"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>`;
-
-const DEFAULT_TEMPLATE_NOTES = `# MTG Title
-
-## Meeting Information
-- Attendees: 
-- Date: {{date}}
-
-## Discussion & Notes
-
-
-## Action Items
-- [ ] 
-`;
 
 const DEFAULT_TEMPLATE_MINUTES_JA = `# 📋 会議議事録 (Meeting Minutes)
 
@@ -549,12 +536,12 @@ class App {
         this._catScopeFilter = 'work';
         this._tagScopeFilter = 'work';
         this._templateEditor = null;
-        this._activeTemplatesMainTab = 'minutes';
-        this._activeTemplatePreset = 'standard';
+        this._activeTemplateId = 'standard';
         this._activeTemplateLang = 'en';
         this._activeMinutesLang = 'en';
-        this._templateDrafts = {};
-        this._notesTemplateEditor = null;
+        this._liveMinutesTemplateManuallySelected = false;
+        this._minutesTemplates = null;
+        this._minutesTemplatesLoaded = false;
         this._selectedSessionIds = new Set();
         this._sessionSelectionAnchorId = null;
         this._sessionSelectionOrder = [];
@@ -771,7 +758,7 @@ class App {
             this._localMlxInfo = null;
         }
         this._updateMlxSettingsUI();
-        this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_transcribe');
+        this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_live_translate');
         return this._isLocalMlxReady;
     }
 
@@ -782,7 +769,7 @@ class App {
         const sizeTag = document.getElementById('local-mlx-size');
         const desc = document.getElementById('local-mlx-desc');
         if (!badge || !btnInstall) {
-            this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_transcribe');
+            this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_live_translate');
             return;
         }
 
@@ -793,7 +780,7 @@ class App {
             if (btnDelete) btnDelete.style.display = 'none';
             if (sizeTag) sizeTag.style.display = 'none';
             if (desc) desc.textContent = t('settings.engine.mlxAppleSiliconOnly');
-            this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_transcribe');
+            this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_live_translate');
             return;
         }
 
@@ -829,7 +816,7 @@ class App {
             btnInstall.textContent = t('settings.engine.mlxInstallBtn');
             if (desc) desc.textContent = t('settings.engine.mlxNotInstalledDesc');
         }
-        this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_transcribe');
+        this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_live_translate');
     }
 
     async _handleInstallMlxClick() {
@@ -1294,6 +1281,7 @@ class App {
             const previousLocale = normalizeLocale(settingsManager.get().app_language);
             const nextLocale = normalizeLocale(select.value);
             applyLocale(nextLocale);
+            this._refreshLiveMemoTemplateLanguage(nextLocale);
             this._updateStartButton();
             this._refreshNetworkAlertBanner();
             if (this._currentSettingsScreen) {
@@ -1309,10 +1297,12 @@ class App {
             this._populateNoteMetadataSelectors?.();
             try {
                 await settingsManager.save({ app_language: nextLocale });
+                this._refreshLiveMemoTemplateLanguage(nextLocale);
                 this._showToast(t('settings.saved'), 'success');
             } catch (err) {
                 select.value = previousLocale;
                 applyLocale(previousLocale);
+                this._refreshLiveMemoTemplateLanguage(previousLocale);
                 this._updateStartButton();
                 this._refreshNetworkAlertBanner();
                 if (this._currentSettingsScreen) {
@@ -1480,7 +1470,6 @@ class App {
         });
         this._initSettingsScopeTabs();
         this._initSettingsTemplatesTab();
-        this._initSettingsNotesTemplateTab();
 
         // Add Customer Modal Triggers
         document.getElementById('btn-open-add-customer')?.addEventListener('click', () => {
@@ -2008,7 +1997,7 @@ class App {
         });
         geminiInput?.addEventListener('input', () => {
             this._refreshKeyStatus();
-            this._updateTranscriptEngineUI(document.getElementById('select-transcript-engine')?.value || 'gemini_transcribe');
+            this._updateTranscriptEngineUI(document.getElementById('select-transcript-engine')?.value || 'gemini_live_translate');
             this._debouncedAutoSave();
         });
         qwenInput?.addEventListener('input', () => {
@@ -2373,6 +2362,17 @@ class App {
                 }
             }
 
+            // Settings view shortcuts: Cmd/Ctrl+S saves templates in tab-templates without starting meetings
+            if (getActivity() === 'settings') {
+                if (hasModifier && (e.key === 's' || e.key === 'S')) {
+                    e.preventDefault();
+                    if (this._currentSettingsScreen === 'tab-templates') {
+                        this._saveSettingsTemplates();
+                    }
+                    return;
+                }
+            }
+
             // Cmd/Ctrl + L/O: switch the top-level activity.
             if (hasModifier && !isTyping && (e.key === 'l' || e.key === 'L')) {
                 e.preventDefault();
@@ -2440,8 +2440,10 @@ class App {
                 return;
             }
 
-            // Cmd/Ctrl + N: Take Note (Mở / Đóng ghi chú nhanh)
-            if (hasModifier && (e.key === 'n' || e.key === 'N')) {
+            // Alt/Option + M: toggle Memo. Use the physical key code because
+            // Option+M produces a different e.key value on macOS layouts.
+            if (!isTyping && e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey
+                && (e.code === 'KeyM' || e.key.toLowerCase() === 'm')) {
                 e.preventDefault();
                 this._toggleNotesDrawer();
                 return;
@@ -2586,8 +2588,8 @@ class App {
 
     /** Show one settings screen (sidebar item selected) inside the 2-column settings view. */
     async _showSettingsScreen(id) {
-        if (!id || (!document.getElementById(id) && id !== 'tab-notes-template')) id = 'tab-customers';
-        const targetScreen = id === 'tab-notes-template' ? 'tab-templates' : id;
+        if (!id || !document.getElementById(id)) id = 'tab-customers';
+        const targetScreen = id;
         this._currentSettingsScreen = targetScreen;
 
         // Highlight sidebar nav item
@@ -2611,11 +2613,7 @@ class App {
         } else if (targetScreen === 'tab-storage') {
             this._renderSettingsStorageTab();
         } else if (targetScreen === 'tab-templates') {
-            if (id === 'tab-notes-template') {
-                this._switchTemplatesMainTab('notes');
-            } else {
-                this._switchTemplatesMainTab(this._activeTemplatesMainTab || 'minutes');
-            }
+            this._renderSettingsTemplatesTab();
         } else if (targetScreen === 'tab-translation') {
             this._updateMlxSettingsUI();
             await this._checkMlxReadiness();
@@ -2679,7 +2677,6 @@ class App {
     _jumpToTemplateSetting(templateId) {
         if (!templateId) return;
         this._showSettingsScreen('tab-templates');
-        this._switchTemplatesMainTab('minutes');
         this._switchSettingsTemplatePreset(templateId);
     }
 
@@ -2714,14 +2711,6 @@ class App {
     // ─── Settings: Templates Manager ─────────────────────────
 
     _initSettingsTemplatesTab() {
-        // Main tabs (automatic Meeting Minutes vs handwritten notes)
-        document.querySelectorAll('#templates-main-tabs .folder-tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const tab = btn.dataset.tmplTab;
-                if (tab) this._switchTemplatesMainTab(tab);
-            });
-        });
-
         document.getElementById('check-meeting-minutes-use-notes')?.addEventListener('change', async (event) => {
             const checkbox = event.currentTarget;
             const enabled = checkbox.checked;
@@ -2744,12 +2733,27 @@ class App {
             }
         });
 
-        // Presets selector buttons
-        document.querySelectorAll('#templates-preset-bar .templates-preset-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const preset = btn.dataset.preset;
-                if (preset) this._switchSettingsTemplatePreset(preset);
-            });
+        document.getElementById('btn-template-add')?.addEventListener('click', () => {
+            this._addMeetingMinutesTemplate();
+        });
+
+        document.getElementById('templates-preset-bar')?.addEventListener('click', (event) => {
+            const btn = event.target.closest('.templates-preset-btn');
+            if (btn?.dataset.templateId) this._switchSettingsTemplatePreset(btn.dataset.templateId);
+        });
+
+        document.getElementById('template-name-input')?.addEventListener('input', (event) => {
+            const template = this._getMinutesTemplates().find(item => item.id === this._activeTemplateId);
+            if (!template || template.id === 'standard') return;
+            template.name = event.currentTarget.value;
+            this._renderMinutesTemplateList();
+        });
+
+        document.getElementById('template-name-input')?.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                this._saveSettingsTemplates();
+            }
         });
 
         // Language subtabs (JA / VI / EN)
@@ -2770,208 +2774,374 @@ class App {
         document.getElementById('btn-template-save')?.addEventListener('click', async () => {
             await this._saveSettingsTemplates();
         });
-    }
 
-    _switchTemplatesMainTab(tab) {
-        this._activeTemplatesMainTab = tab || 'minutes';
-        document.querySelectorAll('#templates-main-tabs .folder-tab-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.tmplTab === this._activeTemplatesMainTab);
+        document.getElementById('btn-template-delete')?.addEventListener('click', async () => {
+            await this._deleteMeetingMinutesTemplate();
         });
-
-        const paneMinutes = document.getElementById('pane-template-minutes');
-        const paneNotes = document.getElementById('pane-template-notes');
-        if (paneMinutes) paneMinutes.style.display = this._activeTemplatesMainTab === 'minutes' ? '' : 'none';
-        if (paneNotes) paneNotes.style.display = this._activeTemplatesMainTab === 'notes' ? '' : 'none';
-
-        if (this._activeTemplatesMainTab === 'minutes') {
-            this._renderSettingsTemplatesTab();
-        } else {
-            this._renderSettingsNotesTemplateTab();
-        }
     }
 
-    _getCurrentTemplateKey() {
-        return `${this._activeTemplatePreset}_${this._activeTemplateLang}`;
+    _defaultMinutesTemplateName(id) {
+        const keys = {
+            standard: 'settings.template.presetStandard',
+            tech: 'settings.template.presetTech',
+            one_on_one: 'settings.template.preset1on1',
+            personal: 'settings.template.presetPersonal',
+        };
+        return t(keys[id] || 'settings.template.newName');
+    }
+
+    _buildLegacyMinutesTemplates(settings = settingsManager.get()) {
+        const valueOr = (value, fallback) => typeof value === 'string' && value.trim() ? value : fallback;
+        return [
+            { id: 'standard', name: this._defaultMinutesTemplateName('standard'), translations: {
+                vi: valueOr(settings.template_minutes_vi, DEFAULT_TEMPLATE_MINUTES_VI),
+                ja: valueOr(settings.template_minutes_ja, DEFAULT_TEMPLATE_MINUTES_JA),
+                en: valueOr(settings.template_minutes_en, DEFAULT_TEMPLATE_MINUTES_EN),
+            } },
+            { id: 'tech', name: this._defaultMinutesTemplateName('tech'), translations: {
+                vi: valueOr(settings.template_minutes_tech_vi, PRESET_TEMPLATE_TECH_VI),
+                ja: valueOr(settings.template_minutes_tech_ja, PRESET_TEMPLATE_TECH_JA),
+                en: valueOr(settings.template_minutes_tech_en, PRESET_TEMPLATE_TECH_EN),
+            } },
+            { id: 'one_on_one', name: this._defaultMinutesTemplateName('one_on_one'), translations: {
+                vi: valueOr(settings.template_minutes_1on1_vi, PRESET_TEMPLATE_1ON1_VI),
+                ja: valueOr(settings.template_minutes_1on1_ja, PRESET_TEMPLATE_1ON1_JA),
+                en: valueOr(settings.template_minutes_1on1_en, PRESET_TEMPLATE_1ON1_EN),
+            } },
+            { id: 'personal', name: this._defaultMinutesTemplateName('personal'), translations: {
+                vi: valueOr(settings.template_minutes_personal_vi, PRESET_TEMPLATE_PERSONAL_VI),
+                ja: valueOr(settings.template_minutes_personal_ja, PRESET_TEMPLATE_PERSONAL_JA),
+                en: valueOr(settings.template_minutes_personal_en, PRESET_TEMPLATE_PERSONAL_EN),
+            } },
+        ];
+    }
+
+    _normalizeMinutesTemplates(templates) {
+        if (!Array.isArray(templates)) return [];
+        const legacyDefaultNames = {
+            standard: ['standard', 'Tiêu chuẩn', '🤝 Tiêu chuẩn', '🤝 Tiêu chuẩn / Khách hàng', '🤝 Standard / Customer', '🤝 標準 / 顧客'],
+            tech: ['technical', 'Kỹ thuật', '💻 Kỹ thuật', '💻 Kỹ thuật / Architecture', '💻 Technical / Architecture', '💻 技術 / アーキテクチャ'],
+            one_on_one: ['1-on-1', '👥 1-on-1 / Đánh giá', '👥 1-on-1 / Review', '👥 1-on-1 / 評価'],
+            personal: ['personal', 'Cá nhân', '👤 Cá nhân', '👤 Cá nhân / Tự học', '👤 Personal / Self-study', '👤 個人 / 学習'],
+        };
+        return templates
+            .filter(template => template && typeof template.id === 'string' && template.id)
+            .map(template => {
+                const storedName = typeof template.name === 'string' ? template.name.trim() : '';
+                const isOldDefaultName = legacyDefaultNames[template.id]?.includes(storedName);
+                return {
+                    id: template.id,
+                    name: !storedName || isOldDefaultName
+                        ? this._defaultMinutesTemplateName(template.id)
+                        : storedName,
+                    translations: template.translations && typeof template.translations === 'object'
+                        ? { ...template.translations }
+                        : {},
+                    // Retain legacy Memo translations when present so older
+                    // settings round-trip safely; the unified editor now uses
+                    // `translations` for both Memo and Meeting Minutes.
+                    ...(template.memo_translations && typeof template.memo_translations === 'object'
+                        ? { memo_translations: { ...template.memo_translations } }
+                        : {}),
+                };
+            });
+    }
+
+    _getActiveSettingsTemplateContent(template) {
+        return template?.translations?.[this._activeTemplateLang] || '';
+    }
+
+    _saveActiveSettingsTemplateEditor() {
+        if (!this._templateEditor) return;
+        const template = this._getMinutesTemplates().find(item => item.id === this._activeTemplateId);
+        if (!template) return;
+        if (!template.translations) template.translations = {};
+        template.translations[this._activeTemplateLang] = this._templateEditor.getContent();
+    }
+
+    _cloneMinutesTemplates(templates) {
+        return templates.map(template => ({
+            id: template.id,
+            name: template.name,
+            ...(template.memo_translations ? { memo_translations: { ...template.memo_translations } } : {}),
+            translations: { ...(template.translations || {}) },
+        }));
+    }
+
+    _getStoredMinutesTemplates() {
+        const settings = settingsManager.get();
+        const stored = this._normalizeMinutesTemplates(settings.meeting_minutes_templates);
+        if (stored.some(template => template.id === 'standard')) return stored;
+        return this._buildLegacyMinutesTemplates(settings);
+    }
+
+    _getMinutesTemplates() {
+        if (!this._minutesTemplatesLoaded) {
+            this._minutesTemplates = this._getStoredMinutesTemplates();
+            this._minutesTemplatesLoaded = true;
+        }
+        return this._minutesTemplates;
+    }
+
+    _getMinutesTemplateLabel(templateId) {
+        const template = this._getMinutesTemplates().find(item => item.id === templateId);
+        return template?.name || this._defaultMinutesTemplateName('standard');
+    }
+
+    _renderMinutesTemplateList() {
+        const list = document.getElementById('templates-preset-bar');
+        if (!list) return;
+        const categories = this._projectRegistry?.categories || [];
+        list.innerHTML = this._getMinutesTemplates().map(template => {
+            const assignmentCount = categories.filter(category => (category.template_id || 'standard') === template.id).length;
+            return `<button type="button" class="templates-preset-btn ${template.id === this._activeTemplateId ? 'active' : ''}" data-template-id="${this._escAttr(template.id)}" aria-pressed="${template.id === this._activeTemplateId ? 'true' : 'false'}" title="${this._escAttr(t('settings.template.assignmentCount', { count: assignmentCount }))}">
+              <span>${this._esc(template.name)}</span>
+              <span class="minutes-template-count">${assignmentCount}</span>
+            </button>`;
+        }).join('');
     }
 
     _renderSettingsTemplatesTab() {
-        const s = settingsManager.get();
+        const settings = settingsManager.get();
         if (!this._hasUserSwitchedTemplateLang) {
-            const appLocale = normalizeLocale(s.app_language);
+            const appLocale = normalizeLocale(settings.app_language);
             this._activeTemplateLang = ['ja', 'vi', 'en'].includes(appLocale) ? appLocale : 'en';
         }
+        const templates = this._getMinutesTemplates();
+        if (!templates.some(template => template.id === this._activeTemplateId)) this._activeTemplateId = 'standard';
         const useNotesCheckbox = document.getElementById('check-meeting-minutes-use-notes');
-        if (useNotesCheckbox) useNotesCheckbox.checked = s.meeting_minutes_use_notes !== false;
-        if (this._templateDrafts.standard_vi === undefined) {
-            this._templateDrafts = {
-                standard_vi: (s.template_minutes_vi !== undefined && s.template_minutes_vi !== null && s.template_minutes_vi !== '') ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI,
-                standard_ja: (s.template_minutes_ja !== undefined && s.template_minutes_ja !== null && s.template_minutes_ja !== '') ? s.template_minutes_ja : DEFAULT_TEMPLATE_MINUTES_JA,
-                standard_en: (s.template_minutes_en !== undefined && s.template_minutes_en !== null && s.template_minutes_en !== '') ? s.template_minutes_en : DEFAULT_TEMPLATE_MINUTES_EN,
-                tech_vi: (s.template_minutes_tech_vi !== undefined && s.template_minutes_tech_vi !== null && s.template_minutes_tech_vi !== '') ? s.template_minutes_tech_vi : PRESET_TEMPLATE_TECH_VI,
-                tech_ja: (s.template_minutes_tech_ja !== undefined && s.template_minutes_tech_ja !== null && s.template_minutes_tech_ja !== '') ? s.template_minutes_tech_ja : PRESET_TEMPLATE_TECH_JA,
-                tech_en: (s.template_minutes_tech_en !== undefined && s.template_minutes_tech_en !== null && s.template_minutes_tech_en !== '') ? s.template_minutes_tech_en : PRESET_TEMPLATE_TECH_EN,
-                one_on_one_vi: (s.template_minutes_1on1_vi !== undefined && s.template_minutes_1on1_vi !== null && s.template_minutes_1on1_vi !== '') ? s.template_minutes_1on1_vi : PRESET_TEMPLATE_1ON1_VI,
-                one_on_one_ja: (s.template_minutes_1on1_ja !== undefined && s.template_minutes_1on1_ja !== null && s.template_minutes_1on1_ja !== '') ? s.template_minutes_1on1_ja : PRESET_TEMPLATE_1ON1_JA,
-                one_on_one_en: (s.template_minutes_1on1_en !== undefined && s.template_minutes_1on1_en !== null && s.template_minutes_1on1_en !== '') ? s.template_minutes_1on1_en : PRESET_TEMPLATE_1ON1_EN,
-                personal_vi: (s.template_minutes_personal_vi !== undefined && s.template_minutes_personal_vi !== null && s.template_minutes_personal_vi !== '') ? s.template_minutes_personal_vi : PRESET_TEMPLATE_PERSONAL_VI,
-                personal_ja: (s.template_minutes_personal_ja !== undefined && s.template_minutes_personal_ja !== null && s.template_minutes_personal_ja !== '') ? s.template_minutes_personal_ja : PRESET_TEMPLATE_PERSONAL_JA,
-                personal_en: (s.template_minutes_personal_en !== undefined && s.template_minutes_personal_en !== null && s.template_minutes_personal_en !== '') ? s.template_minutes_personal_en : PRESET_TEMPLATE_PERSONAL_EN,
-            };
-        }
-
-        const currentKey = this._getCurrentTemplateKey();
+        if (useNotesCheckbox) useNotesCheckbox.checked = settings.meeting_minutes_use_notes !== false;
         const container = document.getElementById('template-codemirror-container');
         if (container && !this._templateEditor) {
             this._templateEditor = new NotesEditor();
             this._templateEditor.mount(container, {
-                initialContent: this._templateDrafts[currentKey] || '',
+                initialContent: this._getMinutesTemplates().find(item => item.id === this._activeTemplateId)?.translations?.[this._activeTemplateLang] || '',
                 placeholderText: t('settings.template.placeholderMinutes'),
-                onChange: (content) => {
-                    this._templateDrafts[this._getCurrentTemplateKey()] = content;
+                onChange: content => {
+                    const template = this._getMinutesTemplates().find(item => item.id === this._activeTemplateId);
+                    if (!template) return;
+                    if (!template.translations) template.translations = {};
+                    template.translations[this._activeTemplateLang] = content;
                 },
-                onSave: () => {
-                    this._saveSettingsTemplates();
-                },
+                onSave: () => this._saveSettingsTemplates(),
             });
         }
-
         this._updateSettingsTemplateUI();
     }
 
-    _switchSettingsTemplatePreset(presetKey) {
-        if (this._templateEditor) {
-            this._templateDrafts[this._getCurrentTemplateKey()] = this._templateEditor.getContent();
-        }
-        this._activeTemplatePreset = presetKey;
+    _switchSettingsTemplatePreset(templateId) {
+        if (!this._getMinutesTemplates().some(template => template.id === templateId)) return;
+        this._saveActiveSettingsTemplateEditor();
+        this._activeTemplateId = templateId;
         this._updateSettingsTemplateUI();
     }
 
     _switchSettingsTemplateLang(lang) {
-        if (this._templateEditor) {
-            this._templateDrafts[this._getCurrentTemplateKey()] = this._templateEditor.getContent();
-        }
+        this._saveActiveSettingsTemplateEditor();
         this._activeTemplateLang = lang;
         this._updateSettingsTemplateUI();
     }
 
     _updateSettingsTemplateUI() {
-        const currentKey = this._getCurrentTemplateKey();
+        const template = this._getMinutesTemplates().find(item => item.id === this._activeTemplateId)
+            || this._getMinutesTemplates().find(item => item.id === 'standard');
+        if (!template) return;
+        this._activeTemplateId = template.id;
+        this._renderMinutesTemplateList();
 
-        // Update preset button active states
-        document.querySelectorAll('#templates-preset-bar .templates-preset-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.preset === this._activeTemplatePreset);
-        });
-
-        // Update language subtab active states
         document.querySelectorAll('#templates-lang-subtabs .templates-subtab').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.lang === this._activeTemplateLang);
         });
-
-        // Update hint text
-        const hintEl = document.getElementById('template-editor-hint');
-        if (hintEl) {
-            hintEl.innerHTML = t('settings.template.autoVarsMinutes');
+        const nameInput = document.getElementById('template-name-input');
+        const standard = template.id === 'standard';
+        if (nameInput) {
+            nameInput.value = template.name;
+            nameInput.readOnly = standard;
+            nameInput.setAttribute('aria-readonly', String(standard));
         }
-
-        // Update editor content
+        const standardBadge = document.getElementById('template-standard-badge');
+        if (standardBadge) standardBadge.hidden = !standard;
+        const deleteButton = document.getElementById('btn-template-delete');
+        if (deleteButton) deleteButton.style.display = standard ? 'none' : '';
+        const resetButton = document.getElementById('btn-template-reset');
+        if (resetButton) {
+            resetButton.textContent = standard ? t('settings.template.reset') : t('settings.template.resetToStandard');
+            resetButton.title = standard ? t('settings.template.resetTitleMinutes') : t('settings.template.resetToStandard');
+        }
+        const hint = document.getElementById('template-editor-hint');
+        if (hint) hint.innerHTML = t('settings.template.autoVarsMinutes');
         if (this._templateEditor) {
-            this._templateEditor.setContent(this._templateDrafts[currentKey] || '');
+            this._templateEditor.setContent(this._getActiveSettingsTemplateContent(template));
         }
+    }
+
+    _defaultMinutesTemplateContent(templateId, lang) {
+        const defaults = {
+            standard: { vi: DEFAULT_TEMPLATE_MINUTES_VI, ja: DEFAULT_TEMPLATE_MINUTES_JA, en: DEFAULT_TEMPLATE_MINUTES_EN },
+            tech: { vi: PRESET_TEMPLATE_TECH_VI, ja: PRESET_TEMPLATE_TECH_JA, en: PRESET_TEMPLATE_TECH_EN },
+            one_on_one: { vi: PRESET_TEMPLATE_1ON1_VI, ja: PRESET_TEMPLATE_1ON1_JA, en: PRESET_TEMPLATE_1ON1_EN },
+            personal: { vi: PRESET_TEMPLATE_PERSONAL_VI, ja: PRESET_TEMPLATE_PERSONAL_JA, en: PRESET_TEMPLATE_PERSONAL_EN },
+        };
+        return defaults[templateId]?.[lang] || defaults.standard[lang] || DEFAULT_TEMPLATE_MINUTES_EN;
     }
 
     _resetCurrentSettingsTemplate() {
-        const key = this._getCurrentTemplateKey();
-        let def = '';
-        if (key === 'standard_vi') def = DEFAULT_TEMPLATE_MINUTES_VI;
-        else if (key === 'standard_ja') def = DEFAULT_TEMPLATE_MINUTES_JA;
-        else if (key === 'standard_en') def = DEFAULT_TEMPLATE_MINUTES_EN;
-        else if (key === 'tech_vi') def = PRESET_TEMPLATE_TECH_VI;
-        else if (key === 'tech_ja') def = PRESET_TEMPLATE_TECH_JA;
-        else if (key === 'tech_en') def = PRESET_TEMPLATE_TECH_EN;
-        else if (key === 'one_on_one_vi') def = PRESET_TEMPLATE_1ON1_VI;
-        else if (key === 'one_on_one_ja') def = PRESET_TEMPLATE_1ON1_JA;
-        else if (key === 'one_on_one_en') def = PRESET_TEMPLATE_1ON1_EN;
-        else if (key === 'personal_vi') def = PRESET_TEMPLATE_PERSONAL_VI;
-        else if (key === 'personal_ja') def = PRESET_TEMPLATE_PERSONAL_JA;
-        else if (key === 'personal_en') def = PRESET_TEMPLATE_PERSONAL_EN;
-
-        this._templateDrafts[key] = def;
-        if (this._templateEditor) {
-            this._templateEditor.setContent(def);
+        const template = this._getMinutesTemplates().find(item => item.id === this._activeTemplateId);
+        if (!template) return;
+        if (template.id === 'standard' || ['tech', 'one_on_one', 'personal'].includes(template.id)) {
+            template.translations[this._activeTemplateLang] = this._defaultMinutesTemplateContent(template.id, this._activeTemplateLang);
+        } else {
+            const standard = this._getMinutesTemplates().find(item => item.id === 'standard');
+            template.translations[this._activeTemplateLang] = standard?.translations?.[this._activeTemplateLang]
+                || this._defaultMinutesTemplateContent('standard', this._activeTemplateLang);
         }
+        this._updateSettingsTemplateUI();
         this._showToast(t('settings.template.resetMinutes'), 'info');
     }
 
+    _legacyMinutesTemplateSettings(templates) {
+        const byId = Object.fromEntries(templates.map(template => [template.id, template]));
+        const translation = (id, lang) => byId[id]?.translations?.[lang] || '';
+        return {
+            template_minutes_vi: translation('standard', 'vi'),
+            template_minutes_ja: translation('standard', 'ja'),
+            template_minutes_en: translation('standard', 'en'),
+            template_minutes_tech_vi: translation('tech', 'vi'),
+            template_minutes_tech_ja: translation('tech', 'ja'),
+            template_minutes_tech_en: translation('tech', 'en'),
+            template_minutes_1on1_vi: translation('one_on_one', 'vi'),
+            template_minutes_1on1_ja: translation('one_on_one', 'ja'),
+            template_minutes_1on1_en: translation('one_on_one', 'en'),
+            template_minutes_personal_vi: translation('personal', 'vi'),
+            template_minutes_personal_ja: translation('personal', 'ja'),
+            template_minutes_personal_en: translation('personal', 'en'),
+        };
+    }
+
+    async _addMeetingMinutesTemplate() {
+        this._saveActiveSettingsTemplateEditor();
+        const templates = this._getMinutesTemplates();
+        const standard = templates.find(template => template.id === 'standard');
+        const id = globalThis.crypto?.randomUUID?.() || `minutes_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+        const baseName = t('settings.template.newName');
+        let name = baseName;
+        let suffix = 2;
+        const existingNames = new Set(templates.map(item => item.name.trim().toLocaleLowerCase()));
+        while (existingNames.has(name.toLocaleLowerCase())) name = `${baseName} ${suffix++}`;
+        const template = {
+            id,
+            name,
+            ...(standard?.memo_translations ? { memo_translations: { ...standard.memo_translations } } : {}),
+            translations: {
+                vi: standard?.translations?.vi || this._defaultMinutesTemplateContent('standard', 'vi'),
+                ja: standard?.translations?.ja || this._defaultMinutesTemplateContent('standard', 'ja'),
+                en: standard?.translations?.en || this._defaultMinutesTemplateContent('standard', 'en'),
+            },
+        };
+        const nextTemplates = this._cloneMinutesTemplates([...templates, template]);
+        try {
+            await settingsManager.save({
+                meeting_minutes_templates: nextTemplates,
+                ...this._legacyMinutesTemplateSettings(nextTemplates),
+            });
+            this._minutesTemplates = nextTemplates;
+            this._activeTemplateId = id;
+            this._updateSettingsTemplateUI();
+            this._syncLiveMinutesTemplateSelector();
+            document.getElementById('template-name-input')?.select();
+            this._showToast(t('settings.template.created'), 'success');
+        } catch (err) {
+            this._showToast(t('settings.template.saveFailed', { error: err }), 'error');
+            this._updateSettingsTemplateUI();
+        }
+    }
+
+    async _deleteMeetingMinutesTemplate() {
+        this._saveActiveSettingsTemplateEditor();
+        const templates = this._getMinutesTemplates();
+        const template = templates.find(item => item.id === this._activeTemplateId);
+        if (!template || template.id === 'standard') return;
+        const registry = await this._loadProjectRegistry();
+        const affected = (registry.categories || []).filter(category => (category.template_id || 'standard') === template.id);
+        const messageKey = affected.length
+            ? 'settings.template.deleteConfirmInUse'
+            : 'settings.template.deleteConfirmUnused';
+        const agreed = await this._promptConfirmDelete({
+            title: t('settings.template.deleteTitle'),
+            message: t(messageKey, { name: template.name, count: affected.length }),
+            confirmText: t('settings.template.delete'),
+        });
+        if (!agreed) return;
+
+        const reassignedCategories = [];
+        try {
+            for (const category of affected) {
+                await invoke('save_category', {
+                    category: { ...category, template_id: 'standard' },
+                });
+                reassignedCategories.push(category);
+            }
+            const nextTemplates = this._cloneMinutesTemplates(
+                templates.filter(item => item.id !== template.id)
+            );
+            await settingsManager.save({
+                meeting_minutes_templates: nextTemplates,
+                ...this._legacyMinutesTemplateSettings(nextTemplates),
+            });
+            this._minutesTemplates = nextTemplates;
+            this._activeTemplateId = 'standard';
+            if (this._catFilters.template_id === template.id) this._catFilters.template_id = '';
+            await this._loadProjectRegistry();
+            this._syncLiveMinutesTemplateSelector();
+            this._updateSettingsTemplateUI();
+            this._showToast(t('settings.template.deleted'), 'success');
+            this._renderSettingsCategoriesTab();
+        } catch (err) {
+            const rollbackErrors = [];
+            for (const category of reassignedCategories.reverse()) {
+                try {
+                    await invoke('save_category', { category });
+                } catch (rollbackError) {
+                    rollbackErrors.push(String(rollbackError));
+                }
+            }
+            await this._loadProjectRegistry();
+            this._renderMinutesTemplateList();
+            const error = rollbackErrors.length ? `${err}; ${rollbackErrors.join('; ')}` : err;
+            this._showToast(t('settings.template.deleteFailed', { error }), 'error');
+        }
+    }
+
     async _saveSettingsTemplates() {
-        if (this._templateEditor) {
-            this._templateDrafts[this._getCurrentTemplateKey()] = this._templateEditor.getContent();
+        const templates = this._getMinutesTemplates();
+        const template = templates.find(item => item.id === this._activeTemplateId);
+        this._saveActiveSettingsTemplateEditor();
+        const nameInput = document.getElementById('template-name-input');
+        if (template && template.id !== 'standard') {
+            const name = nameInput?.value.trim();
+            if (!name) {
+                this._showToast(t('settings.template.nameRequired'), 'error');
+                nameInput?.focus();
+                return;
+            }
+            const duplicate = templates.some(item => item.id !== template.id && item.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase());
+            if (duplicate) {
+                this._showToast(t('settings.template.nameDuplicate'), 'error');
+                nameInput?.focus();
+                return;
+            }
+            template.name = name;
         }
         try {
             await settingsManager.save({
-                template_minutes_vi: this._templateDrafts.standard_vi,
-                template_minutes_ja: this._templateDrafts.standard_ja,
-                template_minutes_en: this._templateDrafts.standard_en,
-                template_minutes_tech_vi: this._templateDrafts.tech_vi,
-                template_minutes_tech_ja: this._templateDrafts.tech_ja,
-                template_minutes_tech_en: this._templateDrafts.tech_en,
-                template_minutes_1on1_vi: this._templateDrafts.one_on_one_vi,
-                template_minutes_1on1_ja: this._templateDrafts.one_on_one_ja,
-                template_minutes_1on1_en: this._templateDrafts.one_on_one_en,
-                template_minutes_personal_vi: this._templateDrafts.personal_vi,
-                template_minutes_personal_ja: this._templateDrafts.personal_ja,
-                template_minutes_personal_en: this._templateDrafts.personal_en,
+                meeting_minutes_templates: this._cloneMinutesTemplates(templates),
+                ...this._legacyMinutesTemplateSettings(templates),
                 meeting_minutes_use_notes: document.getElementById('check-meeting-minutes-use-notes')?.checked !== false,
             });
+            this._syncLiveMinutesTemplateSelector();
+            this._updateSettingsTemplateUI();
             this._showToast(t('settings.template.saved'), 'success');
-        } catch (err) {
-            this._showToast(t('settings.template.saveFailed', { error: err }), 'error');
-        }
-    }
-
-    // ─── Settings: Note Template (standalone tab) ──────────
-
-    _initSettingsNotesTemplateTab() {
-        document.getElementById('btn-notes-template-reset')?.addEventListener('click', () => {
-            this._resetNotesTemplate();
-        });
-
-        document.getElementById('btn-notes-template-save')?.addEventListener('click', async () => {
-            await this._saveSettingsNotesTemplate();
-        });
-    }
-
-    _renderSettingsNotesTemplateTab() {
-        const container = document.getElementById('notes-template-codemirror-container');
-        if (container && !this._notesTemplateEditor) {
-            const s = settingsManager.get();
-            const initial = (s.template_notes !== undefined && s.template_notes !== null && s.template_notes !== '')
-                ? s.template_notes
-                : DEFAULT_TEMPLATE_NOTES;
-            this._notesTemplateEditor = new NotesEditor();
-            this._notesTemplateEditor.mount(container, {
-                initialContent: initial,
-                placeholderText: t('settings.template.placeholderNotes'),
-                onSave: () => {
-                    this._saveSettingsNotesTemplate();
-                },
-            });
-        }
-    }
-
-    _resetNotesTemplate() {
-        if (this._notesTemplateEditor) {
-            this._notesTemplateEditor.setContent(DEFAULT_TEMPLATE_NOTES);
-        }
-        this._showToast(t('settings.template.notesReset'), 'info');
-    }
-
-    async _saveSettingsNotesTemplate() {
-        try {
-            const content = this._notesTemplateEditor
-                ? this._notesTemplateEditor.getContent()
-                : DEFAULT_TEMPLATE_NOTES;
-            await settingsManager.save({ template_notes: content });
-            this._showToast(t('settings.template.notesSaved'), 'success');
+            this._renderSettingsCategoriesTab();
         } catch (err) {
             this._showToast(t('settings.template.saveFailed', { error: err }), 'error');
         }
@@ -3017,9 +3187,9 @@ class App {
         if (selectTransMode) selectTransMode.value = s.translation_mode || 'gemini';
         const selectTranscriptEngine = document.getElementById('select-transcript-engine');
         if (selectTranscriptEngine) {
-            const transcriptEngine = ['gemini_transcribe', 'local_mlx'].includes(s.transcript_engine)
+            const transcriptEngine = ['gemini_live_translate', 'local_mlx'].includes(s.transcript_engine)
                 ? s.transcript_engine
-                : 'gemini_transcribe';
+                : 'gemini_live_translate';
             selectTranscriptEngine.value = transcriptEngine;
             this._updateTranscriptEngineUI(transcriptEngine);
         }
@@ -3131,7 +3301,7 @@ class App {
             source_language: document.getElementById('quick-select-source-lang')?.value || settingsManager.get().source_language || 'ja',
             target_language: document.getElementById('quick-select-target-lang')?.value || settingsManager.get().target_language || 'vi',
             translation_mode: document.getElementById('select-translation-mode')?.value || 'gemini',
-            transcript_engine: document.getElementById('select-transcript-engine')?.value || settingsManager.get().transcript_engine || 'gemini_transcribe',
+            transcript_engine: document.getElementById('select-transcript-engine')?.value || settingsManager.get().transcript_engine || 'gemini_live_translate',
             translation_timing: document.getElementById('select-translation-timing')?.value || settingsManager.get().translation_timing || 'on_pause',
             inactivity_timeout_min: parseInt(document.getElementById('select-inactivity-timeout')?.value || '10', 10),
             translation_type: 'one_way',
@@ -3291,9 +3461,9 @@ class App {
             this._updateModeUI(settings.translation_mode);
         }
 
-        const transcriptEngine = ['gemini_transcribe', 'local_mlx'].includes(settings.transcript_engine)
+        const transcriptEngine = ['gemini_live_translate', 'local_mlx'].includes(settings.transcript_engine)
             ? settings.transcript_engine
-            : 'gemini_transcribe';
+            : 'gemini_live_translate';
         const transcriptSelect = document.getElementById('select-transcript-engine');
         if (transcriptSelect) transcriptSelect.value = transcriptEngine;
         this._updateTranscriptEngineUI(transcriptEngine);
@@ -3339,7 +3509,11 @@ class App {
         initShell();
         document.addEventListener('activity-changed', (e) => this._onActivityChanged(e.detail));
         const sheet = document.getElementById('shortcut-sheet');
-        const toggleSheet = (show) => { if (sheet) sheet.style.display = show ? '' : 'none'; };
+        const toggleSheet = (show) => {
+            if (sheet) sheet.style.display = show ? '' : 'none';
+            const shortcutKey = document.getElementById('memo-shortcut-key');
+            if (shortcutKey) shortcutKey.textContent = this._getMemoShortcutLabel();
+        };
         document.getElementById('btn-shortcuts')?.addEventListener('click', () => toggleSheet(true));
         sheet?.addEventListener('click', (e) => { if (e.target === sheet) toggleSheet(false); });
         this._toggleShortcutSheet = toggleSheet;
@@ -5780,7 +5954,11 @@ class App {
         if (stopAction.autoRetranscript) {
             const settings = settingsManager.get();
             const apiKey = settings.gemini_api_key?.trim();
-            if (apiKey) {
+            const transcriptEngine = settings.transcript_engine || 'gemini_live_translate';
+            const canRunLocal = transcriptEngine === 'local_mlx'
+                && this.isAppleSilicon
+                && this._isLocalMlxReady;
+            if ((transcriptEngine === 'local_mlx' && canRunLocal) || (transcriptEngine !== 'local_mlx' && apiKey)) {
                 this._retranscribeSession(savedId, false, {
                     generateMinutes: stopAction.autoGenerateMinutes,
                     minutesLang: null,
@@ -5791,7 +5969,12 @@ class App {
                 return;
             }
 
-            this._showToast(t('session.retranscriptNeedGeminiKey'), 'warning');
+            this._showToast(
+                transcriptEngine === 'local_mlx'
+                    ? t('settings.engine.transcriptLocalUnavailable')
+                    : t('session.retranscriptNeedGeminiKey'),
+                'warning',
+            );
         }
 
         if (!stopAction.autoGenerateMinutes) return;
@@ -5846,7 +6029,8 @@ class App {
         sessionStore.endChunk();
 
         const hasSegments = sessionStore.totalSegmentCount() > 0;
-        const hasNotes = Boolean(sessionStore.notes && sessionStore.notes.trim());
+        const hasNotes = Boolean(sessionStore.notes && sessionStore.notes.trim())
+            || Object.values(sessionStore.notesByMinutesTemplate || {}).some((notes) => Boolean(notes && notes.trim()));
         const hasDiagnostics = Array.isArray(sessionStore.diagnostics) && sessionStore.diagnostics.length > 0;
         const hadData = hasSegments || hasNotes || hasDiagnostics;
         const savedSessionId = sessionStore.id;
@@ -5868,6 +6052,27 @@ class App {
         }
         if (chosenScope !== undefined && chosenScope !== null) {
             sessionStore.scope = chosenScope || 'work';
+        }
+        if (!this._liveMinutesTemplateManuallySelected) {
+            const finalTemplateId = this._defaultLiveMinutesTemplateId(
+                sessionStore.category,
+                sessionStore.scope || 'work',
+            );
+            if (sessionStore.meetingMinutesTemplateId !== finalTemplateId) {
+                const templateLang = this._getTemplateLanguage();
+                const previousTemplateId = sessionStore.meetingMinutesTemplateId || 'standard';
+                const previousTemplateContent = this._getNoteTemplate(previousTemplateId, templateLang);
+                const currentContent = this._liveNotesEditor?.getContent() ?? sessionStore.notes ?? '';
+                const finalDraftKey = sessionStore.minutesTemplateDraftKey(finalTemplateId, templateLang);
+
+                const hasCustomNotes = Boolean(currentContent.trim()) && currentContent.trim() !== previousTemplateContent.trim();
+                const hasTargetDraft = Object.prototype.hasOwnProperty.call(sessionStore.notesByMinutesTemplate, finalDraftKey);
+
+                if (hasCustomNotes && !hasTargetDraft) {
+                    sessionStore.notesByMinutesTemplate[finalDraftKey] = currentContent;
+                }
+                this._switchLiveMinutesTemplate(finalTemplateId, templateLang);
+            }
         }
 
         let backgroundSave = null;
@@ -5923,6 +6128,7 @@ class App {
             sourceLang: settings.source_language || 'ja',
             targetLang: settings.target_language || 'vi',
         });
+        this._syncLiveMinutesTemplateSelector({ followCategory: true });
         this._syncLiveMeetingTitleInput();
         this._updateStartButton();
         this._setEnginePillLocked(false);
@@ -6043,6 +6249,7 @@ class App {
             sourceLang: settings.source_language || 'ja',
             targetLang: settings.target_language || 'vi',
         });
+        this._syncLiveMinutesTemplateSelector({ followCategory: true });
         this._syncLiveMeetingTitleInput();
         this._updateStatus('idle');
         this._updateStartButton();
@@ -7883,7 +8090,9 @@ class App {
             if (batchDeleteBtn) {
                 batchDeleteBtn.classList.toggle('is-visible', selectedCount > 0);
                 batchDeleteBtn.disabled = selectedCount === 0;
-                batchDeleteBtn.textContent = t('logsTable.deleteSelected', { count: selectedCount });
+                batchDeleteBtn.setAttribute('aria-label', t('logsTable.deleteSelected', { count: selectedCount }));
+                const selectedCountEl = batchDeleteBtn.querySelector('.logs-delete-selected-count');
+                if (selectedCountEl) selectedCountEl.textContent = String(selectedCount);
             }
 
             // Update sort indicators in table header
@@ -7989,7 +8198,10 @@ class App {
             </tr>
             <tr class="logs-filter-row">
                 <td colspan="2" class="logs-filter-actions-cell">
-                    <button type="button" class="btn-danger-small logs-delete-selected ${selectedCount ? 'is-visible' : ''}" data-batch-delete ${selectedCount ? '' : 'disabled'} title="${this._escAttr(t('logsTable.deleteSelectedTitle'))}">${t('logsTable.deleteSelected', { count: selectedCount })}</button>
+                    <button type="button" class="btn-danger-small logs-delete-selected ${selectedCount ? 'is-visible' : ''}" data-batch-delete ${selectedCount ? '' : 'disabled'} aria-label="${this._escAttr(t('logsTable.deleteSelected', { count: selectedCount }))}" title="${this._escAttr(t('logsTable.deleteSelectedTitle'))}">
+                        <svg class="logs-delete-selected-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>
+                        <span class="logs-delete-selected-count">${selectedCount}</span>
+                    </button>
                 </td>
                 <td><input type="search" class="logs-filter-input" data-filter-name value="${this._escAttr(this._sessionNameQuery)}" placeholder="${this._escAttr(t('logsTable.filterTitlePlaceholder'))}"></td>
                 <td></td>
@@ -10354,6 +10566,16 @@ class App {
         });
     }
 
+    _populateCategoryTemplateOptions(templateId = 'standard') {
+        const select = document.getElementById('select-modal-cat-template');
+        if (!select) return;
+        const templates = this._getMinutesTemplates();
+        select.innerHTML = templates.map(template => {
+            return `<option value="${this._escAttr(template.id)}">${this._esc(template.name)}</option>`;
+        }).join('');
+        select.value = templates.some(template => template.id === templateId) ? templateId : 'standard';
+    }
+
     _openAddCategoryModal() {
         const modal = document.getElementById('modal-edit-category');
         if (!modal) return;
@@ -10361,7 +10583,6 @@ class App {
         const nameInput = document.getElementById('input-modal-cat-name');
         const colorInput = document.getElementById('input-modal-cat-color');
         const scopeSelect = document.getElementById('select-modal-cat-scope');
-        const tmplSelect = document.getElementById('select-modal-cat-template');
         const titleEl = document.getElementById('modal-cat-title');
         const saveBtn = document.getElementById('btn-save-edit-category');
 
@@ -10371,7 +10592,7 @@ class App {
         if (nameInput) nameInput.value = '';
         if (colorInput) colorInput.value = '#10b981';
         if (scopeSelect) scopeSelect.value = (this._catScopeFilter && this._catScopeFilter !== 'all') ? this._catScopeFilter : 'work';
-        if (tmplSelect) tmplSelect.value = 'standard';
+        this._populateCategoryTemplateOptions('standard');
 
         modal.style.display = 'flex';
         setTimeout(() => nameInput?.focus(), 50);
@@ -10385,7 +10606,6 @@ class App {
         const nameInput = document.getElementById('input-modal-cat-name');
         const colorInput = document.getElementById('input-modal-cat-color');
         const scopeSelect = document.getElementById('select-modal-cat-scope');
-        const tmplSelect = document.getElementById('select-modal-cat-template');
         const titleEl = document.getElementById('modal-cat-title');
         const saveBtn = document.getElementById('btn-save-edit-category');
 
@@ -10395,7 +10615,7 @@ class App {
         if (nameInput) nameInput.value = category.name || '';
         if (colorInput) colorInput.value = category.color || '#10b981';
         if (scopeSelect) scopeSelect.value = category.scope || 'work';
-        if (tmplSelect) tmplSelect.value = category.template_id || 'standard';
+        this._populateCategoryTemplateOptions(category.template_id || 'standard');
 
         modal.style.display = 'flex';
         setTimeout(() => nameInput?.focus(), 50);
@@ -10486,41 +10706,43 @@ class App {
         if (isAllCatTab && this._catFilters.scope) {
             categories = categories.filter(c => (c.scope || 'work') === this._catFilters.scope);
         }
+        const minutesTemplates = this._getMinutesTemplates();
+        const knownTemplateIds = new Set(minutesTemplates.map(template => template.id));
+        const categoryTemplateId = category => knownTemplateIds.has(category.template_id)
+            ? category.template_id
+            : 'standard';
         if (this._catFilters.template_id) {
-            categories = categories.filter(c => (c.template_id || 'standard') === this._catFilters.template_id);
+            categories = categories.filter(c => categoryTemplateId(c) === this._catFilters.template_id);
         }
 
-        const templateLabels = {
-            standard: t('settings.template.badgeStandard'),
-            tech: t('settings.template.badgeTech'),
-            one_on_one: t('settings.template.badge1on1'),
-            personal: t('settings.template.badgePersonal'),
-        };
+        const templateLabels = Object.fromEntries(minutesTemplates.map(template => [
+            template.id,
+            template.name,
+        ]));
 
         // Sort categories
         const sortedCategories = this._sortItems(categories, this._catSort, (c, field) => {
             if (field === 'name') return c.name || '';
             if (field === 'scope') return c.scope || 'work';
-            if (field === 'template') return templateLabels[c.template_id] || t('settings.template.badgeDefault');
+            if (field === 'template') return templateLabels[categoryTemplateId(c)] || 'Standard';
             if (field === 'sessions') return sessions.filter(s => s.category === c.name || s.category === c.id).length;
             return 0;
         });
 
         const sort = this._catSort;
-        const colCount = 4 + (isAllCatTab ? 1 : 0) + 1;
 
         let rowsHtml = '';
         if (sortedCategories.length === 0) {
-            rowsHtml = `<tr><td colspan="${colCount}" style="text-align:center; padding: 24px; color: var(--md-sys-color-on-surface-variant); font-size:12px;">${t('settings.catTable.empty')}</td></tr>`;
+            rowsHtml = `<tr><td colspan="5" style="text-align:center; padding: 24px; color: var(--md-sys-color-on-surface-variant); font-size:12px;">${t('settings.catTable.empty')}</td></tr>`;
         } else {
             sortedCategories.forEach((c, idx) => {
                 const sessCount = sessions.filter(s => s.category === c.name || s.category === c.id).length;
                 const scopeBadge = c.scope === 'personal'
                     ? `<span class="scope-badge-personal">${t('scope.personal')}</span>`
                     : (c.scope === 'work' ? `<span class="scope-badge-work">${t('scope.work')}</span>` : `<span style="font-size:11px; opacity:0.6;">${t('scope.both')}</span>`);
-                const tmplBadge = c.template_id && templateLabels[c.template_id]
-                    ? `<button type="button" class="template-badge-pill btn-jump-to-template" data-template="${this._escAttr(c.template_id)}" style="cursor:pointer; font:inherit;" title="${t('settings.catTable.openTemplate', { name: templateLabels[c.template_id] })}">${templateLabels[c.template_id]} ↗</button>`
-                    : `<span style="font-size:11px; opacity:0.4;">${t('settings.catTable.defaultTemplate')}</span>`;
+                const assignedTemplateId = categoryTemplateId(c);
+                const assignedTemplateLabel = templateLabels[assignedTemplateId] || 'Standard';
+                const tmplBadge = `<button type="button" class="template-badge-pill btn-jump-to-template" data-template="${this._escAttr(assignedTemplateId)}" style="cursor:pointer; font:inherit;" title="${this._escAttr(t('settings.catTable.openTemplate', { name: assignedTemplateLabel }))}">${this._esc(assignedTemplateLabel)} ↗</button>`;
 
                 rowsHtml += `
                   <tr>
@@ -10534,55 +10756,54 @@ class App {
                     ${isAllCatTab ? `<td style="text-align: center;">${scopeBadge}</td>` : ''}
                     <td style="text-align: center;">${tmplBadge}</td>
                     <td style="text-align: center; font-weight:600; color: var(--md-sys-color-primary);">
-                      ${sessCount > 0 ? `<button type="button" class="btn-jump-to-cat-logs" data-cat="${this._escAttr(c.name)}" style="background:none; border:none; cursor:pointer; color:inherit; text-decoration:underline; font-weight:600;" title="${t('settings.catTable.jumpLogs', { name: c.name })}">${sessCount} ${t('table.meetings')}</button>` : '<span style="opacity:0.4; font-weight:normal;">0</span>'}
+                      <button type="button" class="settings-metadata-link btn-jump-to-cat-logs" data-cat="${this._escAttr(c.name)}" data-scope="${this._escAttr(c.scope || 'work')}" title="${t('settings.catTable.jumpLogs', { name: c.name })}">${sessCount}</button>
                     </td>
-                    <td style="text-align: center;">
-                      <div class="mgr-item-actions" style="justify-content: center; gap: 4px;">
-                        <button type="button" class="btn-secondary-small btn-edit-cat" data-id="${this._escAttr(c.id)}" title="${t('settings.catTable.edit')}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
-                          ✏️
-                        </button>
-                        <button type="button" class="btn-danger-small btn-del-cat" data-id="${this._escAttr(c.id)}" data-name="${this._escAttr(c.name)}" title="${t('settings.catTable.delete')}" style="padding: 4px 8px; font-size: 12px; line-height: 1;">
-                          🗑
-                        </button>
+                    <td style="text-align: right;">
+                      <div style="display:inline-flex; gap:6px;">
+                        <button type="button" class="icon-btn btn-edit-category" data-cat-id="${this._escAttr(c.id)}" data-cat-name="${this._escAttr(c.name)}" data-cat-color="${this._escAttr(c.color || '#431A46')}" data-cat-scope="${this._escAttr(c.scope || 'work')}" data-cat-template="${this._escAttr(assignedTemplateId)}" title="${t('settings.categories.edit')}">✏️</button>
+                        <button type="button" class="icon-btn btn-delete-category" data-cat-id="${this._escAttr(c.id)}" data-cat-name="${this._escAttr(c.name)}" title="${t('settings.categories.delete')}">🗑️</button>
                       </div>
                     </td>
-                  </tr>
-                `;
+                  </tr>`;
             });
         }
 
-        const html = `
-        <div class="mgr-table-container">
+        // Preserve focus
+        const focusedEl = listEl.querySelector('.mgr-filter-row :focus');
+        const activeFilterKey = focusedEl?.dataset?.filter;
+        const selStart = focusedEl?.selectionStart;
+        const selEnd = focusedEl?.selectionEnd;
+
+        listEl.innerHTML = `
+        <div class="mgr-table-wrap">
           <table class="mgr-table">
             <thead>
               <tr>
-                <th class="sortable ${sort.field === 'index' ? 'active-sort' : ''}" data-sort="index" style="width: 45px; text-align: center;"># ${this._getSortIcon(sort, 'index')}</th>
-                <th class="sortable ${sort.field === 'name' ? 'active-sort' : ''}" data-sort="name">${t('settings.catTable.name')} ${this._getSortIcon(sort, 'name')}</th>
-                ${isAllCatTab ? `<th class="sortable ${sort.field === 'scope' ? 'active-sort' : ''}" data-sort="scope" style="width: 120px; text-align: center;">${t('settings.catTable.scope')} ${this._getSortIcon(sort, 'scope')}</th>` : ''}
-                <th class="sortable ${sort.field === 'template' ? 'active-sort' : ''}" data-sort="template" style="width: 160px; text-align: center;">${t('settings.catTable.template')} ${this._getSortIcon(sort, 'template')}</th>
-                <th class="sortable ${sort.field === 'sessions' ? 'active-sort' : ''}" data-sort="sessions" style="width: 120px; text-align: center;">${t('settings.catTable.sessions')} ${this._getSortIcon(sort, 'sessions')}</th>
-                <th style="width: 90px; text-align: center;">${t('table.actions')}</th>
+                <th style="width: 44px; text-align: center;">#</th>
+                <th class="sortable" data-sort="name">${t('settings.categories.colName')} ${this._renderSortIndicator(sort, 'name')}</th>
+                ${isAllCatTab ? `<th style="width: 120px; text-align: center;" class="sortable" data-sort="scope">${t('settings.categories.colScope')} ${this._renderSortIndicator(sort, 'scope')}</th>` : ''}
+                <th style="width: 180px; text-align: center;" class="sortable" data-sort="template">${t('settings.categories.colTemplate')} ${this._renderSortIndicator(sort, 'template')}</th>
+                <th style="width: 100px; text-align: center;" class="sortable" data-sort="sessions">${t('settings.categories.colSessions')} ${this._renderSortIndicator(sort, 'sessions')}</th>
+                <th style="width: 100px; text-align: right;">${t('settings.categories.colActions')}</th>
               </tr>
               <tr class="mgr-filter-row">
                 <td></td>
-                <td><input type="search" class="mgr-filter-input" data-filter="name" value="${this._escAttr(this._catFilters.name)}" placeholder="${t('settings.catTable.filterName')}"></td>
+                <td><input type="text" class="mgr-filter-input" data-filter="name" placeholder="${t('table.filterPlaceholder')}" value="${this._escAttr(this._catFilters.name || '')}"></td>
                 ${isAllCatTab ? `
                   <td>
                     <select class="mgr-filter-select" data-filter="scope">
-                      <option value="">${t('table.all')}</option>
+                      <option value="">${t('table.allScopes')}</option>
                       <option value="work" ${this._catFilters.scope === 'work' ? 'selected' : ''}>${t('scope.work')}</option>
                       <option value="personal" ${this._catFilters.scope === 'personal' ? 'selected' : ''}>${t('scope.personal')}</option>
-                      <option value="all" ${this._catFilters.scope === 'all' ? 'selected' : ''}>${t('scope.both')}</option>
                     </select>
                   </td>
                 ` : ''}
                 <td>
                   <select class="mgr-filter-select" data-filter="template_id">
                     <option value="">${t('settings.catTable.allTemplates')}</option>
-                    <option value="standard" ${this._catFilters.template_id === 'standard' ? 'selected' : ''}>${t('settings.template.badgeStandard')}</option>
-                    <option value="tech" ${this._catFilters.template_id === 'tech' ? 'selected' : ''}>${t('settings.template.badgeTech')}</option>
-                    <option value="one_on_one" ${this._catFilters.template_id === 'one_on_one' ? 'selected' : ''}>${t('settings.template.badge1on1')}</option>
-                    <option value="personal" ${this._catFilters.template_id === 'personal' ? 'selected' : ''}>${t('settings.template.badgePersonal')}</option>
+                    ${minutesTemplates.map(template => {
+                        return `<option value="${this._escAttr(template.id)}" ${this._catFilters.template_id === template.id ? 'selected' : ''}>${this._esc(template.name)}</option>`;
+                    }).join('')}
                   </select>
                 </td>
                 <td></td>
@@ -10595,14 +10816,6 @@ class App {
           </table>
         </div>
         `;
-
-        // Preserve focus
-        const focusedEl = listEl.querySelector('.mgr-filter-row :focus');
-        const activeFilterKey = focusedEl?.dataset?.filter;
-        const selStart = focusedEl?.selectionStart;
-        const selEnd = focusedEl?.selectionEnd;
-
-        listEl.innerHTML = html;
 
         // Restore focus
         if (activeFilterKey) {
@@ -12478,11 +12691,11 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             return;
         }
         const settings = settingsManager.get();
-        const transcriptEngine = ['gemini_transcribe', 'local_mlx'].includes(settings.transcript_engine)
+        const transcriptEngine = ['gemini_live_translate', 'local_mlx'].includes(settings.transcript_engine)
             ? settings.transcript_engine
-            : 'gemini_transcribe';
+            : 'gemini_live_translate';
         const apiKey = settings.gemini_api_key?.trim() || '';
-        if (transcriptEngine === 'gemini_transcribe' && !apiKey) {
+        if (transcriptEngine === 'gemini_live_translate' && !apiKey) {
             this._showToast(t('retranscript.needGeminiKey'), 'error');
             return;
         }
@@ -12507,9 +12720,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
         const sess = (this._cachedSessions || []).find(s => s.id === id);
         const durationSec = options.durationSec || sess?.duration_sec || (this._currentSessionJson?.id === id ? this._currentSessionJson.duration_sec : 0) || 0;
-        // File dài cần thời gian upload và Gemini xử lý. Không tự hủy sớm
-        // sau 10 phút; giới hạn 60 phút vẫn bảo vệ trường hợp job bị treo.
-        const TIMEOUT_MS = Math.min(3_600_000, Math.max(1_800_000, durationSec * 350));
+        // Gemini Live Translate listens to the recording at approximately
+        // real time. Leave 50% headroom plus five minutes for connection,
+        // chunk setup, and final transcript delivery.
+        const TIMEOUT_MS = Math.min(
+            86_400_000,
+            Math.max(1_800_000, durationSec * 1_500 + 300_000),
+        );
         const timeoutId = setTimeout(() => {
             this._cancelActiveRetranscript(true);
         }, TIMEOUT_MS);
@@ -13106,7 +13323,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             isMinimized: true,
             progressInterval: null,
             backendProgress: false,
-            transcriptEngine: 'gemini_transcribe',
+            transcriptEngine: 'gemini_live_translate',
             progressBaseText: t('retranscript.progress.readingAndUploading'),
             stage: 'upload',
             text: t('retranscript.progress.readingAndUploading'),
@@ -13594,41 +13811,40 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
     }
 
+    _resolveTemplateForCategory(categoryValue) {
+        if (!categoryValue) return null;
+        const category = (this._projectRegistry?.categories || [])
+            .find(item => item.name === categoryValue || item.id === categoryValue);
+        if (!category) return null;
+
+        const templateIds = new Set(this._getStoredMinutesTemplates().map(template => template.id));
+        return category.template_id && templateIds.has(category.template_id)
+            ? category.template_id
+            : 'standard';
+    }
+
     _resolveTemplateForSession(sessionData) {
-        if (sessionData.category && this._projectRegistry?.categories) {
-            const cat = this._projectRegistry.categories.find(c => c.name === sessionData.category || c.id === sessionData.category);
-            if (cat && cat.template_id) {
-                return cat.template_id;
-            }
+        const templateIds = new Set(this._getStoredMinutesTemplates().map(template => template.id));
+        if (sessionData.meeting_minutes_template_id && templateIds.has(sessionData.meeting_minutes_template_id)) {
+            return sessionData.meeting_minutes_template_id;
+        }
+        if (sessionData.category) {
+            return this._resolveTemplateForCategory(sessionData.category) || 'standard';
         }
         const scope = sessionData.scope || 'work';
-        if (scope === 'personal') {
-            return 'personal';
-        }
-        return 'standard';
+        return scope === 'personal' && templateIds.has('personal') ? 'personal' : 'standard';
     }
 
     _getPresetMinutesTemplate(templateId, lang = 'en') {
-        const s = settingsManager.get();
-        if (templateId === 'tech') {
-            if (lang === 'vi') return (s.template_minutes_tech_vi && s.template_minutes_tech_vi.trim()) ? s.template_minutes_tech_vi : PRESET_TEMPLATE_TECH_VI;
-            if (lang === 'ja') return (s.template_minutes_tech_ja && s.template_minutes_tech_ja.trim()) ? s.template_minutes_tech_ja : PRESET_TEMPLATE_TECH_JA;
-            return (s.template_minutes_tech_en && s.template_minutes_tech_en.trim()) ? s.template_minutes_tech_en : PRESET_TEMPLATE_TECH_EN;
-        }
-        if (templateId === 'one_on_one') {
-            if (lang === 'vi') return (s.template_minutes_1on1_vi && s.template_minutes_1on1_vi.trim()) ? s.template_minutes_1on1_vi : PRESET_TEMPLATE_1ON1_VI;
-            if (lang === 'ja') return (s.template_minutes_1on1_ja && s.template_minutes_1on1_ja.trim()) ? s.template_minutes_1on1_ja : PRESET_TEMPLATE_1ON1_JA;
-            return (s.template_minutes_1on1_en && s.template_minutes_1on1_en.trim()) ? s.template_minutes_1on1_en : PRESET_TEMPLATE_1ON1_EN;
-        }
-        if (templateId === 'personal') {
-            if (lang === 'vi') return (s.template_minutes_personal_vi && s.template_minutes_personal_vi.trim()) ? s.template_minutes_personal_vi : PRESET_TEMPLATE_PERSONAL_VI;
-            if (lang === 'ja') return (s.template_minutes_personal_ja && s.template_minutes_personal_ja.trim()) ? s.template_minutes_personal_ja : PRESET_TEMPLATE_PERSONAL_JA;
-            return (s.template_minutes_personal_en && s.template_minutes_personal_en.trim()) ? s.template_minutes_personal_en : PRESET_TEMPLATE_PERSONAL_EN;
-        }
-        // default / 'standard'
-        if (lang === 'vi') return (s.template_minutes_vi && s.template_minutes_vi.trim()) ? s.template_minutes_vi : DEFAULT_TEMPLATE_MINUTES_VI;
-        if (lang === 'ja') return (s.template_minutes_ja && s.template_minutes_ja.trim()) ? s.template_minutes_ja : DEFAULT_TEMPLATE_MINUTES_JA;
-        return (s.template_minutes_en && s.template_minutes_en.trim()) ? s.template_minutes_en : DEFAULT_TEMPLATE_MINUTES_EN;
+        const templates = this._getStoredMinutesTemplates();
+        const standard = templates.find(template => template.id === 'standard')
+            || this._buildLegacyMinutesTemplates().find(template => template.id === 'standard');
+        const selected = templates.find(template => template.id === templateId) || standard;
+        const content = selected?.translations?.[lang];
+        if (typeof content === 'string' && content.trim()) return content;
+        const fallback = standard?.translations?.[lang];
+        if (typeof fallback === 'string' && fallback.trim()) return fallback;
+        return this._defaultMinutesTemplateContent('standard', lang);
     }
 
     _buildMeetingMinutesPrompt(sessionData, targetLang = 'en') {
@@ -14889,6 +15105,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     _initNotesModule() {
         const btnToggleNotes = document.getElementById('btn-toggle-notes');
         const btnCopy = document.getElementById('btn-note-copy');
+        const variableSelect = document.getElementById('select-note-variable');
         const editorContainer = document.getElementById('live-note-editor');
         const fmtButtons = document.querySelectorAll('.note-fmt-btn');
 
@@ -14915,8 +15132,14 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             });
         });
 
+        variableSelect?.addEventListener('change', () => {
+            const token = variableSelect.value;
+            if (token && this._liveNotesEditor) this._liveNotesEditor.insertText(token);
+            variableSelect.value = '';
+        });
+
         if (editorContainer && !this._liveNotesEditor) {
-            this._liveNotesEditor = new NotesEditor({
+        this._liveNotesEditor = new NotesEditor({
                 onImagePasteError: () => this._showToast(t('editor.imageTooLarge'), 'warning'),
                 onImagePaste: (asset) => {
                     sessionStore.noteImages = [
@@ -14933,14 +15156,19 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 placeholderText: t('notes.editorPlaceholder'),
                 allowImagePaste: true,
                 onChange: (val) => {
+                    const templateId = sessionStore.meetingMinutesTemplateId || 'standard';
+                    const templateLang = sessionStore.meetingMinutesTemplateLanguage || this._getTemplateLanguage();
                     if (this._suppressLiveNoteDraft) {
                         sessionStore.notes = val;
+                        sessionStore.notesByMinutesTemplate[sessionStore.minutesTemplateDraftKey(templateId, templateLang)] = val;
                     } else {
-                        sessionStore.updateNotesDraft(val);
+                        sessionStore.updateNotesDraft(val, templateId, templateLang);
                     }
-                    const usedImageIds = new Set(
-                        Array.from(val.matchAll(/attachment:([a-z0-9_-]+)/gi), (match) => match[1])
-                    );
+                    const allDrafts = Object.values(sessionStore.notesByMinutesTemplate || {});
+                    allDrafts.push(val);
+                    const usedImageIds = new Set(allDrafts.flatMap((draft) =>
+                        Array.from(String(draft || '').matchAll(/attachment:([a-z0-9_-]+)/gi), (match) => match[1])
+                    ));
                     sessionStore.noteImages = (sessionStore.noteImages || [])
                         .filter((asset) => usedImageIds.has(asset.id));
                 },
@@ -14958,6 +15186,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const selectCust = document.getElementById('select-note-customer');
         const selectProj = document.getElementById('select-note-project');
         const selectCat = document.getElementById('select-note-category');
+        const selectMinutesTemplate = document.getElementById('select-live-minutes-template');
         const inputTags = document.getElementById('input-note-tags');
         const selectScope = document.getElementById('select-note-scope');
 
@@ -14990,6 +15219,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 sessionStore.projectId = null;
             }
             this._refreshNoteTagsAutocomplete();
+            this._syncLiveMinutesTemplateSelector({ followCategory: true });
         });
 
         selectCust?.addEventListener('change', () => {
@@ -15031,6 +15261,13 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             sessionStore.category = selectCat.value || null;
             sessionStore._mutations++;
             selectCat.classList.toggle('has-value', Boolean(selectCat.value));
+            this._syncLiveMinutesTemplateSelector({ followCategory: true });
+        });
+
+        selectMinutesTemplate?.addEventListener('change', () => {
+            if (!selectMinutesTemplate.value) return;
+            this._liveMinutesTemplateManuallySelected = true;
+            this._switchLiveMinutesTemplate(selectMinutesTemplate.value);
         });
 
         inputTags?.addEventListener('input', () => {
@@ -15085,6 +15322,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             selectCat.value = curCat;
             selectCat.classList.toggle('has-value', Boolean(curCat));
         }
+        this._syncLiveMinutesTemplateSelector();
 
         if (inputTags) {
             if (!inputTags.value && sessionStore.tags && sessionStore.tags.length > 0) {
@@ -15138,6 +15376,70 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         selectProj.classList.toggle('has-value', Boolean(selectProj.value));
     }
 
+    _defaultLiveMinutesTemplateId(
+        categoryValue = document.getElementById('select-note-category')?.value || sessionStore.category,
+        scope = document.getElementById('select-note-scope')?.value || sessionStore.scope || 'work',
+    ) {
+        if (categoryValue) return this._resolveTemplateForCategory(categoryValue) || 'standard';
+        const templateIds = new Set(this._getStoredMinutesTemplates().map(template => template.id));
+        return scope === 'personal' && templateIds.has('personal') ? 'personal' : 'standard';
+    }
+
+    _syncLiveMinutesTemplateSelector({ followCategory = false } = {}) {
+        const select = document.getElementById('select-live-minutes-template');
+        if (!select) return;
+
+        const templates = this._getStoredMinutesTemplates();
+        const templateIds = new Set(templates.map(template => template.id));
+        const currentId = sessionStore.meetingMinutesTemplateId;
+        if (followCategory) this._liveMinutesTemplateManuallySelected = false;
+        const keepManualSelection = this._liveMinutesTemplateManuallySelected && templateIds.has(currentId);
+        const selectedId = keepManualSelection ? currentId : this._defaultLiveMinutesTemplateId();
+
+        select.innerHTML = templates.map(template =>
+            `<option value="${this._escAttr(template.id)}">${this._esc(template.name)}</option>`
+        ).join('');
+        select.value = templateIds.has(selectedId) ? selectedId : 'standard';
+        select.classList.toggle('has-value', Boolean(select.value));
+        const templateLang = this._getTemplateLanguage();
+        if (sessionStore.meetingMinutesTemplateId !== select.value
+            || sessionStore.meetingMinutesTemplateLanguage !== templateLang) {
+            this._switchLiveMinutesTemplate(select.value, templateLang);
+        } else if (select.value) {
+            const currentNotes = this._liveNotesEditor?.getContent() ?? sessionStore.notes ?? '';
+            const draftKey = sessionStore.minutesTemplateDraftKey(select.value, templateLang);
+            if (!Object.prototype.hasOwnProperty.call(sessionStore.notesByMinutesTemplate, draftKey)) {
+                sessionStore.notesByMinutesTemplate[draftKey] = currentNotes;
+            }
+        }
+        if (!keepManualSelection) this._liveMinutesTemplateManuallySelected = false;
+    }
+
+    _switchLiveMinutesTemplate(templateId, locale = settingsManager.get().app_language) {
+        const nextTemplateId = String(templateId || '').trim();
+        if (!nextTemplateId) return;
+        const templateLang = this._getTemplateLanguage(locale);
+
+        const currentContent = this._liveNotesEditor?.getContent() ?? sessionStore.notes ?? '';
+        const nextContent = sessionStore.switchMinutesTemplateDraft(
+            nextTemplateId,
+            currentContent,
+            this._getNoteTemplate(nextTemplateId, templateLang),
+            templateLang,
+        );
+
+        if (this._liveNotesEditor && this._liveNotesEditor.getContent() !== nextContent) {
+            this._suppressLiveNoteDraft = true;
+            try {
+                this._liveNotesEditor.setContent(nextContent);
+                this._liveNotesEditor.setImageAssets?.(sessionStore.noteImages || []);
+            } finally {
+                this._suppressLiveNoteDraft = false;
+            }
+        }
+
+    }
+
     _resetNoteMetadataSelectors() {
         const selectCust = document.getElementById('select-note-customer');
         const selectProj = document.getElementById('select-note-project');
@@ -15167,6 +15469,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             inputTags.value = '';
             inputTags.classList.remove('has-value');
         }
+        this._liveMinutesTemplateManuallySelected = false;
         this._refreshNoteTagsAutocomplete();
     }
 
@@ -15243,17 +15546,29 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         });
     }
 
-    _getNoteTemplate() {
-        const now = new Date();
-        const p = n => String(n).padStart(2, '0');
-        const dateStr = formatDate(now);
-        const timeStr = `${p(now.getHours())}:${p(now.getMinutes())}`;
-        const s = settingsManager.get();
-        const raw = (s.template_notes && s.template_notes.trim()) ? s.template_notes : t('notes.defaultTemplate');
-        return raw
-            .replace(/\{\{date\}\}/g, dateStr)
-            .replace(/\{\{time\}\}/g, timeStr)
-            .replace(/\{\{title\}\}/g, sessionStore.title || 'MTG Title');
+    _getTemplateLanguage(locale = settingsManager.get().app_language) {
+        const normalized = normalizeLocale(locale);
+        return ['ja', 'vi', 'en'].includes(normalized) ? normalized : 'en';
+    }
+
+    _getNoteTemplate(templateId = sessionStore.meetingMinutesTemplateId || 'standard', locale = settingsManager.get().app_language) {
+        const lang = this._getTemplateLanguage(locale);
+        const template = this._getStoredMinutesTemplates().find(item => item.id === templateId);
+        const raw = template?.translations?.[lang];
+        return typeof raw === 'string' ? raw : this._defaultMinutesTemplateContent(templateId, lang);
+    }
+
+    _refreshLiveMemoTemplateLanguage(locale) {
+        if (!this._liveNotesEditor) return;
+        const templateId = document.getElementById('select-live-minutes-template')?.value
+            || sessionStore.meetingMinutesTemplateId
+            || 'standard';
+        this._switchLiveMinutesTemplate(templateId, locale);
+    }
+
+    _getMemoShortcutLabel() {
+        const platform = navigator.userAgentData?.platform || navigator.platform || '';
+        return /mac|iphone|ipad/i.test(platform) ? '⌥M' : 'Alt+M';
     }
 
     _syncLiveMeetingTitleInput() {
@@ -15287,14 +15602,22 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (this._liveNotesEditor) {
                 const content = this._liveNotesEditor.getContent();
                 if (!content || !content.trim()) {
-                    const template = this._getNoteTemplate();
-                    this._suppressLiveNoteDraft = true;
-                    try {
-                        this._liveNotesEditor.setContent(template);
-                    } finally {
-                        this._suppressLiveNoteDraft = false;
+                    const templateId = sessionStore.meetingMinutesTemplateId || 'standard';
+                    const templateLang = sessionStore.meetingMinutesTemplateLanguage || this._getTemplateLanguage();
+                    const draftKey = sessionStore.minutesTemplateDraftKey(templateId, templateLang);
+                    if (!Object.prototype.hasOwnProperty.call(sessionStore.notesByMinutesTemplate, draftKey)) {
+                        const template = this._getNoteTemplate(templateId, templateLang);
+                        this._suppressLiveNoteDraft = true;
+                        try {
+                            this._liveNotesEditor.setContent(template);
+                        } finally {
+                            this._suppressLiveNoteDraft = false;
+                        }
+                        sessionStore.meetingMinutesTemplateId = templateId;
+                        sessionStore.meetingMinutesTemplateLanguage = templateLang;
+                        sessionStore.notes = template;
+                        sessionStore.notesByMinutesTemplate[draftKey] = template;
                     }
-                    sessionStore.notes = template;
                 }
                 if (shouldFocus) {
                     this._liveNotesEditor.focus();
@@ -15308,7 +15631,9 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         if (btnToggleNotes) {
             btnToggleNotes.setAttribute('aria-pressed', String(shouldOpen));
             btnToggleNotes.setAttribute('aria-expanded', String(shouldOpen));
-            btnToggleNotes.title = t(shouldOpen ? 'notes.toggle.close' : 'notes.toggle.open');
+            const shortcut = this._getMemoShortcutLabel();
+            btnToggleNotes.title = t(shouldOpen ? 'notes.toggle.close' : 'notes.toggle.open', { shortcut });
+            btnToggleNotes.setAttribute('aria-keyshortcuts', 'Alt+M');
         }
     }
 

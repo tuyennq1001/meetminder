@@ -193,16 +193,19 @@
         <div class="notes-toolbar">
           <div class="notes-toolbar-main">
             <div class="notes-tools-left">
-              <button id="btn-toggle-notes" class="btn-notes-action active" type="button" data-i18n-title="notes.toggle.open" title="Mở / thu gọn ghi chú (⌘N)" aria-pressed="true" aria-expanded="true">
+              <button id="btn-toggle-notes" class="btn-notes-action active" type="button" data-i18n-title="notes.toggle.open" title="Mở / thu gọn Memo (Alt+M)" aria-keyshortcuts="Alt+M" aria-pressed="true" aria-expanded="true">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                 </svg>
-                <span id="btn-notes-label" data-i18n="notes.toggle" data-i18n-html="true">Take <u>N</u>ote</span>
+                <span id="btn-notes-label" data-i18n="notes.toggle" data-i18n-html="true"><u>M</u>emo</span>
               </button>
               <input id="input-live-meeting-title" class="live-note-title-input" type="text" maxlength="200" data-i18n-placeholder="notes.titlePlaceholder" data-i18n-aria-label="notes.titlePlaceholder" data-i18n-title="notes.titlePlaceholder" placeholder="Tên cuộc họp" aria-label="Tên cuộc họp" title="Tên cuộc họp" autocomplete="off" />
             </div>
             <div class="notes-tools-meta">
+              <select id="select-live-minutes-template" class="note-meta-select" data-i18n-title="notes.minutesTemplate.title" data-i18n-aria-label="notes.minutesTemplate.title" aria-label="Template for this meeting" title="Template for this meeting">
+                <option value="" data-i18n="notes.minutesTemplate">📋 Template...</option>
+              </select>
               <div class="notes-sep"></div>
               <select id="select-note-scope" class="note-meta-select" data-i18n-title="notes.scope.title" title="Phạm vi: Công việc hoặc Cá nhân">
                 <option value="work" data-i18n="notes.work">💼 Công việc</option>
@@ -234,6 +237,12 @@
               <button type="button" class="note-fmt-btn" data-fmt="todo" data-i18n-title="notes.fmt.todo" title="Checklist - [ ] ">☑ To-Do</button>
               <button type="button" class="note-fmt-btn" data-fmt="code" data-i18n-title="notes.fmt.code" title="Mã code `code`"><code>&lt;/&gt;</code></button>
               <button type="button" class="note-fmt-btn" data-fmt="link" data-i18n-title="notes.fmt.link" title="Gắn liên kết Markdown [text](url)">🔗 Link</button>
+              <select id="select-note-variable" class="note-fmt-btn note-variable-select" data-i18n-title="notes.variable.title" data-i18n-aria-label="notes.variable.title" aria-label="Chèn biến vào Memo" title="Chèn biến vào Memo">
+                <option value="" selected data-i18n="notes.variable.insert">＋ Variable</option>
+                <option value="{{title}}">{{title}}</option>
+                <option value="{{date}}">{{date}}</option>
+                <option value="{{time}}">{{time}}</option>
+              </select>
             </div>
             <button type="button" id="btn-note-copy" class="note-copy-btn" data-i18n-title="notes.copy.title" title="Copy nội dung ghi chú">
               <svg class="icon-copy-svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -669,10 +678,10 @@
           <div class="settings-section" id="section-transcript-engine">
             <span class="field-label" data-i18n="settings.engine.transcriptLabel">Transcript / Re-transcript</span>
             <select id="select-transcript-engine">
-              <option value="gemini_transcribe" data-i18n="settings.engine.transcriptGemini">🎙️ Gemini 3.5 Transcribe</option>
+              <option value="gemini_live_translate" data-i18n="settings.engine.transcriptGemini">🌐 Gemini Live Translate</option>
               <option value="local_mlx" data-i18n="settings.engine.transcriptLocal">🖥️ Local MLX</option>
             </select>
-            <p class="hint" id="hint-transcript-engine" data-i18n="settings.engine.transcriptGeminiHint">Cloud · chuyên nhận dạng audio · cần Gemini API Key</p>
+            <p class="hint" id="hint-transcript-engine" data-i18n="settings.engine.transcriptGeminiHint">Cloud · dùng cùng Live Translate như cuộc họp trực tiếp · cần Gemini API Key</p>
           </div>
 
           <div class="settings-section">
@@ -937,8 +946,8 @@
 
           <!-- Note Editor Display Settings -->
           <div class="settings-group-card">
-            <div class="settings-group-header" data-i18n="settings.display.notesTitle">📝 Ghi chú cuộc họp (Take Note & Logs)</div>
-            <p class="settings-group-hint" data-i18n="settings.display.notesHint">Áp dụng cho trình soạn thảo ghi chú (Take Note) và nội dung ghi chú trong chi tiết cuộc họp.</p>
+            <div class="settings-group-header" data-i18n="settings.display.notesTitle">📝 Memo & Logs</div>
+            <p class="settings-group-hint" data-i18n="settings.display.notesHint">Áp dụng cho trình soạn thảo Memo và nội dung ghi chú trong chi tiết cuộc họp.</p>
             <div class="settings-grid-row">
               <span class="field-label" data-i18n="settings.display.fontSize">Cỡ chữ</span>
               <div class="stepper-control-wrap">
@@ -1010,26 +1019,16 @@
           </div>
         </div>
 
-        <!-- Detail: Templates (Meeting Minutes & Note Templates) -->
+        <!-- Detail: Templates -->
         <div class="settings-tab-content" id="tab-templates">
           <div class="settings-panel-header">
             <h3 class="settings-panel-title" data-i18n="settings.template.title">📋 Templates (Mẫu văn bản)</h3>
           </div>
 
-          <div class="folder-tab-bar" id="templates-main-tabs" role="tablist">
-            <button type="button" class="folder-tab-btn active" data-tmpl-tab="minutes" id="tab-btn-tmpl-minutes" data-i18n="settings.template.minutesTab">
-              📋 Meeting Minutes tự động
-            </button>
-            <button type="button" class="folder-tab-btn" data-tmpl-tab="notes" id="tab-btn-tmpl-notes" data-i18n="settings.template.notesTab">
-              📝 Ghi chép bằng tay
-            </button>
-          </div>
-
-          <!-- Tab 1: Meeting Minutes Templates -->
           <div class="template-main-pane" id="pane-template-minutes">
             <div class="settings-section" style="padding-top: 12px; padding-bottom: 4px;">
               <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;" data-i18n="settings.template.minutesHint">
-                Cung cấp 4 Mẫu Preset chuẩn mực cho từng ngữ cảnh cuộc họp. AI sẽ tự động áp dụng đúng mẫu theo Danh mục cuộc họp. Bạn có thể xem trước hoặc tuỳ biến cấu trúc mẫu bên dưới:
+                Tạo và quản lý mẫu biên bản. Mỗi Danh mục có thể sử dụng một mẫu riêng; mẫu Standard được dùng làm phương án dự phòng.
               </p>
 
               <div class="settings-grid-row template-source-setting">
@@ -1043,59 +1042,44 @@
                 Bật để AI kết hợp ghi chép bằng tay với transcript. Tắt để AI chỉ sử dụng nội dung transcript.
               </p>
 
-              <div class="templates-preset-bar folder-tab-bar" id="templates-preset-bar" role="tablist">
-                <button type="button" class="templates-preset-btn folder-tab-btn active" data-preset="standard" data-i18n="settings.template.presetStandard">🤝 Tiêu chuẩn / Khách hàng</button>
-                <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="tech" data-i18n="settings.template.presetTech">💻 Kỹ thuật / Architecture</button>
-                <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="one_on_one" data-i18n="settings.template.preset1on1">👥 1-on-1 / Đánh giá</button>
-                <button type="button" class="templates-preset-btn folder-tab-btn" data-preset="personal" data-i18n="settings.template.presetPersonal">👤 Cá nhân / Tự học</button>
-              </div>
-
-              <!-- Khung bao trùm nội dung trực thuộc Preset được chọn -->
-              <div class="templates-preset-content folder-tab-pane" id="templates-preset-content">
-                <div class="templates-subtab-container" id="templates-lang-subtabs-container">
-                  <span class="templates-subtab-label" data-i18n="settings.template.langLabel">🌐 Ngôn ngữ mẫu:</span>
-                  <div class="templates-subtab-bar" id="templates-lang-subtabs">
-                    <button type="button" class="templates-subtab" data-lang="ja" id="subtab-template-lang-ja">🇯🇵 日本語</button>
-                    <button type="button" class="templates-subtab" data-lang="vi" id="subtab-template-lang-vi">🇻🇳 Tiếng Việt</button>
-                    <button type="button" class="templates-subtab active" data-lang="en" id="subtab-template-lang-en">🇬🇧 English</button>
+              <div class="minutes-template-manager">
+                <aside class="minutes-template-sidebar" aria-label="Meeting Minutes templates">
+                  <div class="minutes-template-sidebar-header">
+                    <span data-i18n="settings.template.listTitle">Templates</span>
+                    <button type="button" id="btn-template-add" class="btn-secondary small" data-i18n-title="settings.template.addTitle" data-i18n-aria-label="settings.template.addTitle" aria-label="Add template">＋</button>
                   </div>
-                </div>
-
-                <div class="template-editor-wrapper">
-                  <div class="template-editor-info">
-                    <span id="template-editor-hint" class="hint" style="margin:0; font-size:12px;" data-i18n="settings.template.autoVarsMinutes" data-i18n-html="true">Biến tự động: <code>{{title}}</code>, <code>{{date}}</code>, <code>{{duration}}</code>, <code>{{participants}}</code></span>
-                    <div class="template-editor-actions">
-                      <button type="button" id="btn-template-reset" class="btn-secondary small" data-i18n-title="settings.template.resetTitleMinutes" data-i18n="settings.template.reset" title="Khôi phục mẫu mặc định ban đầu">🔄 Khôi phục mặc định</button>
-                      <button type="button" id="btn-template-save" class="btn-primary small" data-i18n-title="settings.template.saveTitle" data-i18n="settings.template.save" title="Lưu mẫu (⌘S)">💾 Lưu mẫu</button>
+                  <div class="templates-preset-bar minutes-template-list" id="templates-preset-bar" aria-label="Meeting Minutes templates"></div>
+                </aside>
+                <section class="templates-preset-content minutes-template-detail" id="templates-preset-content" aria-label="Template editor">
+                  <div class="template-editor-wrapper">
+                    <div class="minutes-template-name-row">
+                      <label class="field-label" for="template-name-input" data-i18n="settings.template.nameLabel">Template name</label>
+                      <span id="template-standard-badge" class="minutes-template-standard-badge" data-i18n="settings.template.standardBadge" hidden>🔒 Standard</span>
                     </div>
+                    <input id="template-name-input" class="modal-input" type="text" maxlength="80" data-i18n-placeholder="settings.template.namePlaceholder" placeholder="Template name" />
+                    <div class="templates-subtab-container" id="templates-lang-subtabs-container">
+                      <span class="templates-subtab-label" data-i18n="settings.template.langLabel">🌐 Template language:</span>
+                      <div class="templates-subtab-bar" id="templates-lang-subtabs">
+                        <button type="button" class="templates-subtab" data-lang="ja" id="subtab-template-lang-ja">🇯🇵 日本語</button>
+                        <button type="button" class="templates-subtab" data-lang="vi" id="subtab-template-lang-vi">🇻🇳 Tiếng Việt</button>
+                        <button type="button" class="templates-subtab active" data-lang="en" id="subtab-template-lang-en">🇬🇧 English</button>
+                      </div>
+                    </div>
+                    <div class="template-editor-info">
+                      <span id="template-editor-hint" class="hint" style="margin:0; font-size:12px;" data-i18n="settings.template.autoVarsMinutes" data-i18n-html="true">Automatic variables: <code>{{title}}</code>, <code>{{date}}</code>, <code>{{duration}}</code>, <code>{{participants}}</code></span>
+                      <div class="template-editor-actions">
+                        <button type="button" id="btn-template-reset" class="btn-secondary small" data-i18n-title="settings.template.resetTitleMinutes" data-i18n="settings.template.reset">🔄 Reset</button>
+                        <button type="button" id="btn-template-delete" class="btn-danger-small" data-i18n-title="settings.template.deleteTitle" data-i18n="settings.template.delete">🗑 Delete</button>
+                        <button type="button" id="btn-template-save" class="btn-primary small" data-i18n-title="settings.template.saveTitle" data-i18n="settings.template.save" title="Save template (⌘S)">💾 Save</button>
+                      </div>
+                    </div>
+                    <div id="template-codemirror-container" class="template-cm-container"></div>
                   </div>
-                  <div id="template-codemirror-container" class="template-cm-container"></div>
-                </div>
+                </section>
               </div>
             </div>
           </div>
 
-          <!-- Tab 2: Note Template -->
-          <div class="template-main-pane" id="pane-template-notes" style="display: none;">
-            <div class="settings-section" style="padding-top: 12px; padding-bottom: 4px;">
-              <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;" data-i18n="settings.template.notesHint">
-                Cấu trúc mẫu ghi chú mặc định khi bắt đầu cuộc họp mới hoặc tạo ghi chép nhanh. Bạn có thể tuỳ biến các đề mục bên dưới:
-              </p>
-
-              <div class="folder-tab-pane" style="border-radius: 8px;">
-                <div class="template-editor-wrapper">
-                  <div class="template-editor-info">
-                    <span class="hint" style="margin:0; font-size:12px;" data-i18n="settings.template.autoVarsNotes" data-i18n-html="true">Biến tự động: <code>{{date}}</code>, <code>{{time}}</code>, <code>{{title}}</code></span>
-                    <div class="template-editor-actions">
-                      <button type="button" id="btn-notes-template-reset" class="btn-secondary small" data-i18n-title="settings.template.resetTitleNotes" data-i18n="settings.template.reset" title="Khôi phục mẫu ghi chú mặc định ban đầu">🔄 Khôi phục mặc định</button>
-                      <button type="button" id="btn-notes-template-save" class="btn-primary small" data-i18n-title="settings.template.saveTitle" data-i18n="settings.template.save" title="Lưu mẫu ghi chú (⌘S)">💾 Lưu mẫu</button>
-                    </div>
-                  </div>
-                  <div id="notes-template-codemirror-container" class="template-cm-container"></div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
 
         <!-- 7. Detail: Storage -->
@@ -1268,7 +1252,7 @@
       <table class="shortcut-table">
         <tr><td><kbd>⌘S</kbd> / <kbd>⌘P</kbd> / <kbd>⌘C</kbd></td><td>Start / Pause / Continue</td></tr>
         <tr><td><kbd>⌘T</kbd></td><td>Kết thúc cuộc họp & Lưu (Save & Stop)</td></tr>
-        <tr><td><kbd>⌘N</kbd></td><td>Mở / Đóng ghi chú (Take Note)</td></tr>
+        <tr><td><kbd id="memo-shortcut-key">Alt+M</kbd></td><td data-i18n="notes.shortcut.description">Mở / Đóng Memo</td></tr>
         <tr><td><kbd>⌘1</kbd> / <kbd>⌘2</kbd> / <kbd>⌘3</kbd></td><td>Nguồn: System / Mic / Cả 2</td></tr>
         <tr><td><kbd>⌘,</kbd></td><td>Mở Cài đặt</td></tr>
         <tr><td><kbd>⌘P</kbd></td><td>Ghim cửa sổ nổi</td></tr>
@@ -1918,10 +1902,6 @@
         <div>
           <label class="field-label" for="select-modal-cat-template" style="margin-bottom: 4px; display: block; font-size: 12px; font-weight: 600;" data-i18n="modal.cat.templateLabel">Template liên kết:</label>
           <select id="select-modal-cat-template" class="modal-input modal-select">
-            <option value="standard" data-i18n="modal.cat.tmplStandard">🤝 Mẫu Tiêu chuẩn / Khách hàng</option>
-            <option value="tech" data-i18n="modal.cat.tmplTech">💻 Mẫu Kỹ thuật / Architecture</option>
-            <option value="one_on_one" data-i18n="modal.cat.tmpl1on1">👥 Mẫu 1-on-1 / Đánh giá</option>
-            <option value="personal" data-i18n="modal.cat.tmplPersonal">👤 Mẫu Cá nhân / Tự học</option>
           </select>
         </div>
       </div>

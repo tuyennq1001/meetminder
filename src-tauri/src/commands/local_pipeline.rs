@@ -77,7 +77,9 @@ pub fn start_local_pipeline(
 
     let (has_whisper, has_gemma) = are_local_models_installed(&home);
     if !has_whisper || !has_gemma {
-        let err_msg = "Local MLX models are missing or incomplete. Please install them in Settings.".to_string();
+        let err_msg =
+            "Local MLX models are missing or incomplete. Please install them in Settings."
+                .to_string();
         log_to_file(&err_msg);
         let _ = channel.send(format!(r#"{{"type":"error","message":"{}"}}"#, err_msg));
         return Err(err_msg);
@@ -174,7 +176,8 @@ pub fn start_local_pipeline(
 
     let is_ready = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let has_errored = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let recent_stderr = std::sync::Arc::new(Mutex::new(std::collections::VecDeque::<String>::new()));
+    let recent_stderr =
+        std::sync::Arc::new(Mutex::new(std::collections::VecDeque::<String>::new()));
 
     let is_ready_stdout = is_ready.clone();
     let has_errored_stdout = has_errored.clone();
@@ -455,7 +458,8 @@ pub fn get_local_models_info() -> Result<String, String> {
         return Ok(r#"{"ready":false,"size_bytes":0,"size_formatted":"0 B","has_env":false,"has_models":false}"#.to_string());
     }
 
-    let env_path = std::path::PathBuf::from(&home).join("Library/Application Support/Meet Minder/mlx-env");
+    let env_path =
+        std::path::PathBuf::from(&home).join("Library/Application Support/Meet Minder/mlx-env");
     let marker = env_path.join(".setup_complete");
     let venv_python = env_path.join("bin/python3");
     let has_env = venv_python.exists();
@@ -507,7 +511,8 @@ pub fn delete_local_models(state: tauri::State<'_, LocalPipelineState>) -> Resul
     }
 
     // 2. Calculate total bytes to free
-    let env_path = std::path::PathBuf::from(&home).join("Library/Application Support/Meet Minder/mlx-env");
+    let env_path =
+        std::path::PathBuf::from(&home).join("Library/Application Support/Meet Minder/mlx-env");
     let mut total_bytes = 0u64;
     if env_path.exists() {
         total_bytes += dir_size(&env_path);
@@ -572,4 +577,3 @@ pub fn delete_local_models(state: tauri::State<'_, LocalPipelineState>) -> Resul
         total_bytes, freed_formatted
     ))
 }
-

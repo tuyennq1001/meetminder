@@ -139,12 +139,7 @@ fn git_name_only(repo: &Path, args: &[&str]) -> Vec<String> {
 fn changed_paths_for_push(repo: &Path) -> Vec<String> {
     if let Some(upstream) = read_git_value(
         repo,
-        &[
-            "rev-parse",
-            "--abbrev-ref",
-            "--symbolic-full-name",
-            "@{u}",
-        ],
+        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
     ) {
         let range = format!("{}..HEAD", upstream);
         return git_name_only(repo, &["diff", "--name-only", &range, "--"]);
@@ -370,10 +365,7 @@ fn sync_managed_data(app: &AppHandle, repo: &Path) -> Result<(), String> {
         .path()
         .app_data_dir()
         .map_err(|e| format!("Không lấy được thư mục app data: {}", e))?;
-    copy_if_exists(
-        &app_data.join("projects.json"),
-        &repo.join("projects.json"),
-    )?;
+    copy_if_exists(&app_data.join("projects.json"), &repo.join("projects.json"))?;
 
     // Preserve any future externally-stored image assets without touching audio.
     if source_dir != repo {
@@ -588,10 +580,8 @@ mod tests {
 
     #[test]
     fn test_git_backup_stages_only_internal_backup_data() {
-        let root = std::env::temp_dir().join(format!(
-            "meet-minder-git-backup-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("meet-minder-git-backup-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(root.join("records")).unwrap();
         fs::create_dir_all(root.join("audio")).unwrap();
         fs::write(root.join("records/session-test.md"), b"meeting log").unwrap();

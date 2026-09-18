@@ -487,21 +487,28 @@ mod tests {
         // Feed 1 kHz tone (passband)
         let mut rms_1k = 0.0f32;
         for i in 0..4800 {
-            let sample = (2.0 * std::f32::consts::PI * 1000.0 * (i as f32) / sample_rate as f32).sin();
+            let sample =
+                (2.0 * std::f32::consts::PI * 1000.0 * (i as f32) / sample_rate as f32).sin();
             let filtered = filter.process(sample);
-            if i >= 480 { // Skip initial transient
+            if i >= 480 {
+                // Skip initial transient
                 rms_1k += filtered * filtered;
             }
         }
         rms_1k = (rms_1k / (4800.0 - 480.0)).sqrt();
         // 1 kHz should pass with minimal attenuation (> 0.95 amplitude)
-        assert!(rms_1k > 0.65, "1 kHz tone should pass through: rms={}", rms_1k);
+        assert!(
+            rms_1k > 0.65,
+            "1 kHz tone should pass through: rms={}",
+            rms_1k
+        );
 
         // Feed 12 kHz tone (well above 8 kHz Nyquist of 16 kHz)
         let mut filter_12k = super::Butterworth4thOrderLowPass::new(48_000, 16_000).unwrap();
         let mut rms_12k = 0.0f32;
         for i in 0..4800 {
-            let sample = (2.0 * std::f32::consts::PI * 12000.0 * (i as f32) / sample_rate as f32).sin();
+            let sample =
+                (2.0 * std::f32::consts::PI * 12000.0 * (i as f32) / sample_rate as f32).sin();
             let filtered = filter_12k.process(sample);
             if i >= 480 {
                 rms_12k += filtered * filtered;
@@ -509,7 +516,10 @@ mod tests {
         }
         rms_12k = (rms_12k / (4800.0 - 480.0)).sqrt();
         // 12 kHz should be heavily attenuated (> 20 dB suppression, RMS < 0.07)
-        assert!(rms_12k < 0.07, "12 kHz tone should be heavily attenuated: rms={}", rms_12k);
+        assert!(
+            rms_12k < 0.07,
+            "12 kHz tone should be heavily attenuated: rms={}",
+            rms_12k
+        );
     }
 }
-

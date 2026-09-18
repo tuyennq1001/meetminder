@@ -9,12 +9,12 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
-use std::process::{Command, Stdio};
 use std::path::{Path, PathBuf};
-use sha2::{Digest, Sha256};
+use std::process::{Command, Stdio};
 use tauri::{AppHandle, Emitter, Manager};
 
 // ─── Types ───────────────────────────────────────────────────────────────
@@ -161,7 +161,7 @@ pub struct Category {
     #[serde(default)]
     pub color: String,
     #[serde(default)]
-    pub template_id: Option<String>, // "standard" | "tech" | "one_on_one" | "personal"
+    pub template_id: Option<String>, // Stable template ID; missing or deleted IDs use "standard".
     #[serde(default)]
     pub scope: Option<String>, // "work" | "personal" | "all"
 }
@@ -206,6 +206,10 @@ pub struct SessionData {
     pub category: Option<String>,
     #[serde(default)]
     pub scope: Option<String>, // "work" | "personal"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meeting_minutes_template_id: Option<String>,
+    #[serde(default)]
+    pub notes_by_minutes_template: HashMap<String, String>,
     #[serde(default)]
     pub meeting_minutes: Option<String>,
     #[serde(default)]
@@ -513,8 +517,8 @@ fn storage_size_bytes(current: &Path) -> u64 {
 }
 
 fn file_sha256(path: &Path) -> Result<[u8; 32], String> {
-    let mut file = fs::File::open(path)
-        .map_err(|e| format!("Không thể mở file {}: {}", path.display(), e))?;
+    let mut file =
+        fs::File::open(path).map_err(|e| format!("Không thể mở file {}: {}", path.display(), e))?;
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
@@ -532,13 +536,8 @@ fn file_sha256(path: &Path) -> Result<[u8; 32], String> {
 fn files_identical(source: &Path, destination: &Path) -> Result<bool, String> {
     let source_meta = fs::metadata(source)
         .map_err(|e| format!("Không thể đọc metadata {}: {}", source.display(), e))?;
-    let destination_meta = fs::metadata(destination).map_err(|e| {
-        format!(
-            "Không thể đọc metadata {}: {}",
-            destination.display(),
-            e
-        )
-    })?;
+    let destination_meta = fs::metadata(destination)
+        .map_err(|e| format!("Không thể đọc metadata {}: {}", destination.display(), e))?;
     if !source_meta.is_file() || !destination_meta.is_file() {
         return Ok(false);
     }
@@ -570,9 +569,7 @@ fn storage_migration_plan(
         .map_err(|e| format!("Không thể xác định thư mục lưu trữ hiện tại: {}", e))?;
     let target = storage_target_path(app, requested)?;
 
-    if source != target
-        && (source.starts_with(&target) || target.starts_with(&source))
-    {
+    if source != target && (source.starts_with(&target) || target.starts_with(&source)) {
         return Err(
             "Thư mục đích không được nằm trong hoặc bao quanh thư mục lưu trữ hiện tại".into(),
         );
@@ -687,8 +684,7 @@ fn copy_file_atomic_verified(source: &Path, destination: &Path) -> Result<bool, 
     }
 
     if let Some(parent) = destination.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Không thể tạo thư mục đích: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| format!("Không thể tạo thư mục đích: {}", e))?;
     }
     let file_name = destination
         .file_name()
@@ -702,8 +698,8 @@ fn copy_file_atomic_verified(source: &Path, destination: &Path) -> Result<bool, 
     let copy_result = (|| -> Result<(), String> {
         fs::copy(source, &temporary)
             .map_err(|e| format!("Không thể sao chép {}: {}", source.display(), e))?;
-        let file = fs::File::open(&temporary)
-            .map_err(|e| format!("Không thể mở file tạm: {}", e))?;
+        let file =
+            fs::File::open(&temporary).map_err(|e| format!("Không thể mở file tạm: {}", e))?;
         file.sync_all()
             .map_err(|e| format!("Không thể đồng bộ file tạm: {}", e))?;
         if !files_identical(source, &temporary)? {
@@ -712,8 +708,13 @@ fn copy_file_atomic_verified(source: &Path, destination: &Path) -> Result<bool, 
                 source.display()
             ));
         }
-        fs::rename(&temporary, destination)
-            .map_err(|e| format!("Không thể hoàn tất sao chép {}: {}", destination.display(), e))?;
+        fs::rename(&temporary, destination).map_err(|e| {
+            format!(
+                "Không thể hoàn tất sao chép {}: {}",
+                destination.display(),
+                e
+            )
+        })?;
         Ok(())
     })();
     if copy_result.is_err() {
@@ -742,7 +743,11 @@ fn session_paths_for_read(dir: &Path, id: &str) -> (PathBuf, PathBuf) {
     let old_json = dir.join(format!("session-{}.json", id));
     (
         if new_md.exists() { new_md } else { old_md },
-        if new_json.exists() { new_json } else { old_json },
+        if new_json.exists() {
+            new_json
+        } else {
+            old_json
+        },
     )
 }
 
@@ -1150,12 +1155,14 @@ fn list_sessions_inner(app: &AppHandle) -> Result<Vec<SessionListItem>, String> 
         .into_iter()
         .map(|c| (c.id, (c.name, c.color, c.status)))
         .collect();
-    let project_map: std::collections::HashMap<String, (String, String, String, Option<String>, String)> =
-        registry
-            .projects
-            .into_iter()
-            .map(|p| (p.id, (p.name, p.color, p.status, p.customer_id, p.scope)))
-            .collect();
+    let project_map: std::collections::HashMap<
+        String,
+        (String, String, String, Option<String>, String),
+    > = registry
+        .projects
+        .into_iter()
+        .map(|p| (p.id, (p.name, p.color, p.status, p.customer_id, p.scope)))
+        .collect();
 
     let entries = record_files(&dir)?;
 
@@ -1490,8 +1497,8 @@ pub fn update_session_content(
     let (md_path, json_path) = session_paths(&dir, &id);
 
     if existing_json_path.exists() {
-        let json_str =
-            fs::read_to_string(&existing_json_path).map_err(|e| format!("Read json failed: {}", e))?;
+        let json_str = fs::read_to_string(&existing_json_path)
+            .map_err(|e| format!("Read json failed: {}", e))?;
         let mut data: SessionData =
             serde_json::from_str(&json_str).map_err(|e| format!("Parse json failed: {}", e))?;
         if let Some(ref t) = title {
@@ -1875,10 +1882,10 @@ pub fn update_session_langs(
 
 pub fn build_session_srt(data: &SessionData) -> String {
     let mut out = String::new();
-    let mut idx: u32 = 1;
     let mut flat: Vec<&Segment> = data.chunks.iter().flat_map(|c| c.segments.iter()).collect();
     flat.sort_by(|a, b| a.ts.cmp(&b.ts));
     for (i, seg) in flat.iter().enumerate() {
+        let idx = (i + 1) as u32;
         let start = seg.ts.clone();
         // End = next segment's ts, or +3s if last
         let end = if i + 1 < flat.len() {
@@ -1890,7 +1897,6 @@ pub fn build_session_srt(data: &SessionData) -> String {
             "{}\n{},000 --> {},000\n{}\n\n",
             idx, start, end, seg.tgt
         ));
-        idx += 1;
     }
     out
 }
@@ -1910,15 +1916,15 @@ pub fn session_item_matches_metadata(item: &SessionListItem, q: &str, tag_match:
         || item
             .customer_name
             .as_ref()
-            .map_or(false, |c| c.to_lowercase().contains(q))
+            .is_some_and(|c| c.to_lowercase().contains(q))
         || item
             .project_name
             .as_ref()
-            .map_or(false, |p| p.to_lowercase().contains(q))
+            .is_some_and(|p| p.to_lowercase().contains(q))
         || item
             .category
             .as_ref()
-            .map_or(false, |c| c.to_lowercase().contains(q))
+            .is_some_and(|c| c.to_lowercase().contains(q))
         || item.tags.iter().any(|t| {
             t.to_lowercase().contains(tag_match) || format!("#{}", t.to_lowercase()).contains(q)
         })
@@ -2160,7 +2166,11 @@ fn audio_file_info_from_path(path_str: &str) -> Result<AudioFileInfo, String> {
     if !SUPPORTED_AUDIO_EXTS.contains(&extension.as_str()) {
         return Err(format!(
             "Định dạng .{} không được hỗ trợ. Hãy chọn WAV, MP3, M4A, AAC, OGG, FLAC hoặc WebM",
-            if extension.is_empty() { "(không có phần mở rộng)" } else { &extension }
+            if extension.is_empty() {
+                "(không có phần mở rộng)"
+            } else {
+                &extension
+            }
         ));
     }
     let file_size = p
@@ -2298,12 +2308,16 @@ fn gemini_transport_error(error: &reqwest::Error) -> String {
     if let Some(query_start) = detail.find("?key=") {
         let value_start = query_start + "?key=".len();
         let value_end = detail[value_start..]
-            .find(|ch: char| matches!(ch, ')' | '&' | ' '))
+            .find(|ch: char| [')', '&', ' '].contains(&ch))
             .map(|offset| value_start + offset)
             .unwrap_or(detail.len());
         detail.replace_range(value_start..value_end, "[REDACTED]");
     }
-    format!("{} ({})", kind, detail.chars().take(500).collect::<String>())
+    format!(
+        "{} ({})",
+        kind,
+        detail.chars().take(500).collect::<String>()
+    )
 }
 
 fn emit_audio_transcript_progress(
@@ -2326,11 +2340,17 @@ fn emit_audio_transcript_progress(
 
 const AUDIO_CHUNK_SECONDS: u64 = 10 * 60;
 const AUDIO_CHUNK_THRESHOLD_SECONDS: u64 = 15 * 60;
+// A Gemini Live WebSocket connection is limited to roughly ten minutes.
+// Eight-minute parts leave time for setup and the final transcript drain.
+const GEMINI_LIVE_CHUNK_SECONDS: u64 = 8 * 60;
+const GEMINI_LIVE_CHUNK_THRESHOLD_SECONDS: u64 = GEMINI_LIVE_CHUNK_SECONDS;
 // Gemini audio input is metered as tokens. The free-tier error shown by the
 // app caps this model at 10,000 input tokens; at roughly 25 audio tokens/sec,
-// four-minute chunks leave room for request overhead and avoid a predictable
-// 429 on otherwise valid recordings.
-const GEMINI_TRANSCRIBE_CHUNK_SECONDS: u64 = 4 * 60;
+// two-minute chunks leave a generous margin for request overhead and avoid a
+// predictable 429 on otherwise valid recordings.
+#[allow(dead_code)]
+const GEMINI_TRANSCRIBE_CHUNK_SECONDS: u64 = 2 * 60;
+#[allow(dead_code)]
 const GEMINI_TRANSCRIBE_CHUNK_THRESHOLD_SECONDS: u64 = GEMINI_TRANSCRIBE_CHUNK_SECONDS;
 
 struct AudioChunkWorkspace(PathBuf);
@@ -2343,39 +2363,136 @@ impl Drop for AudioChunkWorkspace {
 
 fn find_audio_tool(name: &str) -> Option<String> {
     let candidates = match name {
-        "ffmpeg" => ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "ffmpeg"],
-        "ffprobe" => ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "ffprobe"],
+        "ffmpeg" => [
+            "/opt/homebrew/bin/ffmpeg",
+            "/usr/local/bin/ffmpeg",
+            "ffmpeg",
+        ],
+        "ffprobe" => [
+            "/opt/homebrew/bin/ffprobe",
+            "/usr/local/bin/ffprobe",
+            "ffprobe",
+        ],
         _ => return None,
     };
     candidates
         .iter()
         .find(|candidate| candidate.starts_with('/') && Path::new(candidate).is_file())
-        .or_else(|| candidates.iter().find(|candidate| !candidate.starts_with('/')))
+        .or_else(|| {
+            candidates
+                .iter()
+                .find(|candidate| !candidate.starts_with('/'))
+        })
         .map(|candidate| (*candidate).to_string())
 }
 
-fn probe_audio_duration(path: &Path) -> Option<f64> {
-    let ffprobe = find_audio_tool("ffprobe")?;
-    let output = Command::new(ffprobe)
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-        ])
+fn decode_audio_to_live_pcm(path: &Path) -> Result<Vec<u8>, String> {
+    let ffmpeg = find_audio_tool("ffmpeg").ok_or_else(|| {
+        "ffmpeg is required to stream recorded audio through Gemini Live Translate".to_string()
+    })?;
+    let output = Command::new(ffmpeg)
+        .args(["-hide_banner", "-loglevel", "error", "-i"])
         .arg(path)
+        .args([
+            "-vn",
+            "-map",
+            "0:a:0",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            "-f",
+            "s16le",
+            "pipe:1",
+        ])
         .output()
-        .ok()?;
+        .map_err(|error| {
+            format!(
+                "Could not decode audio for Gemini Live Translate: {}",
+                error
+            )
+        })?;
     if !output.status.success() {
+        return Err(format!(
+            "Could not decode audio for Gemini Live Translate: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    if output.stdout.is_empty() {
+        return Err("The decoded audio is empty".into());
+    }
+    Ok(output.stdout)
+}
+
+fn normalized_import_text(text: &str) -> String {
+    text.chars()
+        .filter(|ch| {
+            !ch.is_whitespace()
+                && !ch.is_ascii_punctuation()
+                && !"。！？、，.!?, \t\r\n".contains(*ch)
+        })
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn probe_wav_duration(path: &Path) -> Option<f64> {
+    // Saved Meet Minder recordings use a canonical PCM WAV header. Keep this
+    // fallback independent of ffprobe so a long WAV can never silently fall
+    // through to a full-file Gemini upload when ffprobe is unavailable.
+    let mut file = fs::File::open(path).ok()?;
+    let mut header = [0u8; 44];
+    file.read_exact(&mut header).ok()?;
+    if &header[0..4] != b"RIFF"
+        || &header[8..12] != b"WAVE"
+        || &header[12..16] != b"fmt "
+        || &header[36..40] != b"data"
+    {
         return None;
     }
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<f64>()
-        .ok()
-        .filter(|duration| duration.is_finite() && *duration > 0.0)
+    let sample_rate = u32::from_le_bytes(header[24..28].try_into().ok()?) as f64;
+    let block_align = u16::from_le_bytes(header[32..34].try_into().ok()?) as f64;
+    let data_bytes = u32::from_le_bytes(header[40..44].try_into().ok()?) as f64;
+    if sample_rate <= 0.0 || block_align <= 0.0 || data_bytes <= 0.0 {
+        return None;
+    }
+    Some(data_bytes / block_align / sample_rate)
+}
+
+fn probe_audio_duration(path: &Path) -> Option<f64> {
+    if let Some(ffprobe) = find_audio_tool("ffprobe") {
+        if let Ok(output) = Command::new(ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+            ])
+            .arg(path)
+            .output()
+        {
+            if output.status.success() {
+                if let Some(duration) = String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|duration| duration.is_finite() && *duration > 0.0)
+                {
+                    return Some(duration);
+                }
+            }
+        }
+    }
+    probe_wav_duration(path)
+}
+
+fn required_audio_duration(path: &Path) -> Result<f64, String> {
+    probe_audio_duration(path).ok_or_else(|| {
+        "Không thể xác định thời lượng file ghi âm để chia nhỏ an toàn. Hãy cài ffmpeg/ffprobe hoặc chọn Local MLX.".into()
+    })
 }
 
 fn create_audio_chunks(
@@ -2395,9 +2512,8 @@ fn create_audio_chunks_with_size(
     if chunk_seconds == 0 {
         return Err("Audio chunk size must be greater than zero".into());
     }
-    let ffmpeg = find_audio_tool("ffmpeg").ok_or(
-        "File ghi âm dài cần ffmpeg để chia thành nhiều phần, nhưng máy chưa có ffmpeg",
-    )?;
+    let ffmpeg = find_audio_tool("ffmpeg")
+        .ok_or("File ghi âm dài cần ffmpeg để chia thành nhiều phần, nhưng máy chưa có ffmpeg")?;
     let workspace_path = std::env::temp_dir().join(format!("meet-minder-audio-{}", id));
     fs::create_dir_all(&workspace_path)
         .map_err(|e| format!("Không thể tạo thư mục tạm để chia audio: {}", e))?;
@@ -2410,10 +2526,23 @@ fn create_audio_chunks_with_size(
         let chunk_path = workspace_path.join(format!("chunk-{:05}.wav", chunks.len() + 1));
         let output = Command::new(&ffmpeg)
             .args(["-hide_banner", "-loglevel", "error", "-y"])
+            // Seek at the input level. Placing -ss after -i makes ffmpeg
+            // decode the recording from the beginning for every chunk, which
+            // turns a long recording into an effectively quadratic operation.
+            .args(["-ss", &start_sec.to_string()])
             .arg("-i")
             .arg(source_path)
-            .args(["-ss", &start_sec.to_string(), "-t", &length_sec.to_string()])
-            .args(["-map", "0:a:0", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"])
+            .args(["-t", &length_sec.to_string()])
+            .args([
+                "-map",
+                "0:a:0",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-c:a",
+                "pcm_s16le",
+            ])
             .arg(&chunk_path)
             .output()
             .map_err(|e| format!("Không thể chạy ffmpeg để chia audio: {}", e))?;
@@ -2455,15 +2584,10 @@ async fn upload_gemini_audio_file(
     let audio_size = fs::metadata(path)
         .map_err(|e| format!("Read audio chunk metadata failed: {}", e))?
         .len();
-    let upload_start = start_gemini_audio_upload(
-        client,
-        api_key,
-        audio_size,
-        mime_type,
-        display_name,
-    )
-    .await
-    .map_err(|error| format!("Start Gemini audio upload failed: {}", error))?;
+    let upload_start =
+        start_gemini_audio_upload(client, api_key, audio_size, mime_type, display_name)
+            .await
+            .map_err(|error| format!("Start Gemini audio upload failed: {}", error))?;
     if !upload_start.status().is_success() {
         let status = upload_start.status();
         return Err(gemini_error(
@@ -2489,7 +2613,12 @@ async fn upload_gemini_audio_file(
         .body(upload_file)
         .send()
         .await
-        .map_err(|e| format!("Upload audio to Gemini failed: {}", gemini_transport_error(&e)))?;
+        .map_err(|e| {
+            format!(
+                "Upload audio to Gemini failed: {}",
+                gemini_transport_error(&e)
+            )
+        })?;
     if !upload_finish.status().is_success() {
         let status = upload_finish.status();
         return Err(gemini_error(
@@ -2529,7 +2658,12 @@ async fn upload_gemini_audio_file(
             .query(&[("key", api_key.trim())])
             .send()
             .await
-            .map_err(|e| format!("Check Gemini audio upload failed: {}", gemini_transport_error(&e)))?;
+            .map_err(|e| {
+                format!(
+                    "Check Gemini audio upload failed: {}",
+                    gemini_transport_error(&e)
+                )
+            })?;
         if !poll.status().is_success() {
             let status = poll.status();
             return Err(gemini_error(status, poll.text().await.unwrap_or_default()));
@@ -2549,7 +2683,10 @@ async fn upload_gemini_audio_file(
         .and_then(Value::as_str)
         .ok_or("Gemini upload response has no file URI")?
         .to_string();
-    Ok(GeminiUploadedAudio { file_name, file_uri })
+    Ok(GeminiUploadedAudio {
+        file_name,
+        file_uri,
+    })
 }
 
 async fn generate_gemini_audio_transcript(
@@ -2605,7 +2742,8 @@ async fn generate_gemini_audio_transcript(
                     == Some("MAX_TOKENS")
                 {
                     last_error = Some(
-                        "Gemini đã cắt transcript vì vượt giới hạn output của một phần audio".to_string(),
+                        "Gemini đã cắt transcript vì vượt giới hạn output của một phần audio"
+                            .to_string(),
                     );
                     continue;
                 }
@@ -2652,7 +2790,10 @@ async fn start_gemini_audio_upload(
             .query(&[("key", api_key.trim())])
             .header("X-Goog-Upload-Protocol", "resumable")
             .header("X-Goog-Upload-Command", "start")
-            .header("X-Goog-Upload-Header-Content-Length", audio_size.to_string())
+            .header(
+                "X-Goog-Upload-Header-Content-Length",
+                audio_size.to_string(),
+            )
             .header("X-Goog-Upload-Header-Content-Type", mime_type)
             .header("Content-Type", "application/json")
             .body(body.clone())
@@ -2714,7 +2855,10 @@ fn normalize_chunk_timestamps(segments: &mut [Segment], chunk_start_sec: u64) {
         .and_then(|segment| timestamp_seconds(&segment.ts));
     // The prompt asks for absolute timestamps. If the model still returned
     // timestamps relative to the chunk, add the chunk offset before merging.
-    if first_sec.is_some_and(|seconds| seconds < chunk_start_sec / 2) {
+    // A relative timestamp can be near the end of its chunk. Compare with the
+    // actual chunk offset instead of half of it so late speech is not left
+    // incorrectly anchored near the beginning of a long recording.
+    if first_sec.is_some_and(|seconds| seconds < chunk_start_sec) {
         for segment in segments {
             if let Some(seconds) = timestamp_seconds(&segment.ts) {
                 segment.ts = transcript_timestamp((seconds + chunk_start_sec) as f64);
@@ -2982,6 +3126,7 @@ fn extract_segments_fallback(text: &str) -> Vec<Segment> {
     segments
 }
 
+#[allow(dead_code)]
 fn extract_detected_language(text: &str) -> Option<String> {
     let key = "\"detected_language\"";
     let pos = text.find(key)?;
@@ -3166,12 +3311,30 @@ fn parse_gemini_json_value(text: &str) -> Option<Vec<Segment>> {
     }
     // Accept valid JSON that explicitly contains an empty segments/transcript array
     let is_empty_segments_shape = value.as_array().is_some_and(|arr| arr.is_empty())
-        || value.get("segments").and_then(Value::as_array).is_some_and(|arr| arr.is_empty())
-        || value.get("transcript_segments").and_then(Value::as_array).is_some_and(|arr| arr.is_empty())
-        || value.get("transcriptSegments").and_then(Value::as_array).is_some_and(|arr| arr.is_empty())
-        || value.get("transcript").and_then(Value::as_array).is_some_and(|arr| arr.is_empty())
-        || value.get("transcription").and_then(Value::as_array).is_some_and(|arr| arr.is_empty())
-        || value.get("utterances").and_then(Value::as_array).is_some_and(|arr| arr.is_empty());
+        || value
+            .get("segments")
+            .and_then(Value::as_array)
+            .is_some_and(|arr| arr.is_empty())
+        || value
+            .get("transcript_segments")
+            .and_then(Value::as_array)
+            .is_some_and(|arr| arr.is_empty())
+        || value
+            .get("transcriptSegments")
+            .and_then(Value::as_array)
+            .is_some_and(|arr| arr.is_empty())
+        || value
+            .get("transcript")
+            .and_then(Value::as_array)
+            .is_some_and(|arr| arr.is_empty())
+        || value
+            .get("transcription")
+            .and_then(Value::as_array)
+            .is_some_and(|arr| arr.is_empty())
+        || value
+            .get("utterances")
+            .and_then(Value::as_array)
+            .is_some_and(|arr| arr.is_empty());
     if is_empty_segments_shape {
         return Some(Vec::new());
     }
@@ -3282,7 +3445,10 @@ fn parse_gemini_transcript(text: &str) -> Result<Vec<Segment>, String> {
         if let Ok(payload) = serde_json::from_str::<GeminiTranscriptPayload>(&repaired) {
             let segs = build_segments_from_raw(payload.segments);
             if !segs.is_empty() {
-                eprintln!("[session_store] Warning: salvaged {} segments from repaired Gemini transcript", segs.len());
+                eprintln!(
+                    "[session_store] Warning: salvaged {} segments from repaired Gemini transcript",
+                    segs.len()
+                );
                 return Ok(segs);
             }
         }
@@ -3291,7 +3457,10 @@ fn parse_gemini_transcript(text: &str) -> Result<Vec<Segment>, String> {
     // Tier 3: Chunk-by-chunk fallback extraction (handles unescaped quotes & broken tokens)
     let segs = extract_segments_fallback(trimmed);
     if !segs.is_empty() {
-        eprintln!("[session_store] Warning: extracted {} segments via fallback scanner", segs.len());
+        eprintln!(
+            "[session_store] Warning: extracted {} segments via fallback scanner",
+            segs.len()
+        );
         return Ok(segs);
     }
 
@@ -3314,7 +3483,11 @@ fn parse_gemini_transcript(text: &str) -> Result<Vec<Segment>, String> {
     let sample: String = trimmed.chars().take(80).collect();
     Err(format!(
         "Gemini returned an invalid transcript: {}",
-        if sample.is_empty() { "(empty output)" } else { &sample }
+        if sample.is_empty() {
+            "(empty output)"
+        } else {
+            &sample
+        }
     ))
 }
 
@@ -3347,9 +3520,8 @@ pub fn cancel_retranscribe_session(id: String) -> Result<bool, String> {
 }
 
 /// Route the post-meeting transcript job to the engine selected in Settings.
-/// Live Translate has a separate setting and is intentionally not involved
-/// here: a saved recording can be processed by a more accurate, slower ASR
-/// engine after the meeting ends.
+/// Cloud jobs reuse the same Gemini Live Translate WebSocket pipeline as the
+/// active meeting instead of the separate Transcribe generateContent API.
 #[tauri::command]
 pub async fn retranscribe_session(
     app: AppHandle,
@@ -3360,19 +3532,12 @@ pub async fn retranscribe_session(
     target_lang: Option<String>,
 ) -> Result<SessionReadResult, String> {
     match transcript_engine.trim() {
-        "local_mlx" => {
-            retranscribe_session_with_local_mlx(app, id, source_lang, target_lang).await
+        "local_mlx" => retranscribe_session_with_local_mlx(app, id, source_lang, target_lang).await,
+        // Unknown and legacy `gemini_transcribe` values deliberately fall
+        // back to Live Translate so older settings files migrate safely.
+        _ => {
+            retranscribe_session_with_gemini_live(app, id, api_key, source_lang, target_lang).await
         }
-        // Unknown values deliberately fall back to the cloud engine. This
-        // keeps older settings files usable after an upgrade.
-        _ => retranscribe_session_with_gemini_transcribe(
-            app,
-            id,
-            api_key,
-            source_lang,
-            target_lang,
-        )
-        .await,
     }
 }
 
@@ -3429,14 +3594,7 @@ fn load_retranscribe_context(
         }
     }
 
-    Ok((
-        md_path,
-        json_path,
-        audio_path,
-        mime_type,
-        audio_size,
-        data,
-    ))
+    Ok((md_path, json_path, audio_path, mime_type, audio_size, data))
 }
 
 fn has_transcript_translation(data: &SessionData) -> bool {
@@ -3474,13 +3632,7 @@ fn save_retranscribed_session(
     }];
     data.engine = engine.to_string();
     data.retranscribed_at = Some(chrono::Local::now().to_rfc3339());
-    emit_audio_transcript_progress(
-        app,
-        id,
-        "save",
-        "Đang ghi Logs mới vào ổ đĩa...",
-        95,
-    );
+    emit_audio_transcript_progress(app, id, "save", "Đang ghi Logs mới vào ổ đĩa...", 95);
     let md = rebuild_session_markdown(data);
     let json_bytes = serde_json::to_vec_pretty(data)
         .map_err(|e| format!("Serialize transcript failed: {}", e))?;
@@ -3503,15 +3655,42 @@ fn retry_delay(attempt: u32) -> std::time::Duration {
     std::time::Duration::from_millis(base_ms + jitter_ms)
 }
 
+const LIVE_AUDIO_PART_MAX_ATTEMPTS: u32 = 3;
+
+fn is_retryable_live_session_error(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    [
+        "audio session ended unexpectedly",
+        "closed early:",
+        "requested a reconnect",
+        "live task failed:",
+        "ws error:",
+        "send audio:",
+        "connection reset",
+        "connection closed",
+        "connection refused",
+        "timed out",
+        "timeout",
+        "handshake failed: http 5",
+    ]
+    .iter()
+    .any(|marker| error.contains(marker))
+}
+
+#[allow(dead_code)]
 fn is_retryable_gemini_status(status: reqwest::StatusCode) -> bool {
     status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
 
+#[allow(dead_code)]
 fn is_hard_free_tier_input_quota(status: reqwest::StatusCode, body: &str) -> bool {
     status == reqwest::StatusCode::TOO_MANY_REQUESTS
-        && body.to_ascii_lowercase().contains("free_tier_input_token_count")
+        && body
+            .to_ascii_lowercase()
+            .contains("free_tier_input_token_count")
 }
 
+#[allow(dead_code)]
 fn gemini_quota_aware_error(status: reqwest::StatusCode, body: &str) -> String {
     let detail = gemini_error(status, body.to_string());
     if is_hard_free_tier_input_quota(status, body) {
@@ -3524,6 +3703,7 @@ fn gemini_quota_aware_error(status: reqwest::StatusCode, body: &str) -> String {
     }
 }
 
+#[allow(dead_code)]
 fn gemini_bcp47_code(code: &str) -> Option<String> {
     let region = match code.trim().to_lowercase().as_str() {
         "vi" => "vi-VN",
@@ -3557,6 +3737,7 @@ fn parse_audio_offset_seconds(raw: &str) -> Option<f64> {
         .or_else(|| timestamp_seconds(text).map(|seconds| seconds as f64))
 }
 
+#[allow(dead_code)]
 struct TimedTranscriptWord {
     start_sec: f64,
     end_sec: f64,
@@ -3564,6 +3745,7 @@ struct TimedTranscriptWord {
     speaker: Option<String>,
 }
 
+#[allow(dead_code)]
 struct TranscriptWordRun {
     start_sec: f64,
     last_end_sec: f64,
@@ -3571,6 +3753,7 @@ struct TranscriptWordRun {
     text: String,
 }
 
+#[allow(dead_code)]
 fn append_transcript_word(text: &mut String, word: &str, source_lang: &str) {
     let no_spaces = matches!(source_lang, "ja" | "zh");
     let starts_with_punctuation = word
@@ -3583,10 +3766,8 @@ fn append_transcript_word(text: &mut String, word: &str, source_lang: &str) {
     text.push_str(word);
 }
 
-fn flush_transcript_word_run(
-    segments: &mut Vec<Segment>,
-    run: &mut Option<TranscriptWordRun>,
-) {
+#[allow(dead_code)]
+fn flush_transcript_word_run(segments: &mut Vec<Segment>, run: &mut Option<TranscriptWordRun>) {
     if let Some(run) = run.take() {
         let text = run.text.trim().to_string();
         if !text.is_empty() {
@@ -3600,6 +3781,7 @@ fn flush_transcript_word_run(
     }
 }
 
+#[allow(dead_code)]
 fn parse_gemini_transcribe_segments(body: &Value, source_lang: &str) -> Vec<Segment> {
     let mut words = Vec::<TimedTranscriptWord>::new();
     if let Some(candidates) = body.get("candidates").and_then(Value::as_array) {
@@ -3628,9 +3810,11 @@ fn parse_gemini_transcribe_segments(body: &Value, source_lang: &str) -> Vec<Segm
                             continue;
                         }
                         let start_sec = value_seconds(item, &["startOffset", "start_offset"])
-                            .unwrap_or_else(|| words.last().map(|last| last.end_sec).unwrap_or(0.0));
-                        let end_sec = value_seconds(item, &["endOffset", "end_offset"])
-                            .unwrap_or(start_sec);
+                            .unwrap_or_else(|| {
+                                words.last().map(|last| last.end_sec).unwrap_or(0.0)
+                            });
+                        let end_sec =
+                            value_seconds(item, &["endOffset", "end_offset"]).unwrap_or(start_sec);
                         words.push(TimedTranscriptWord {
                             start_sec,
                             end_sec: end_sec.max(start_sec),
@@ -3688,6 +3872,7 @@ fn parse_gemini_transcribe_segments(body: &Value, source_lang: &str) -> Vec<Segm
     segments
 }
 
+#[allow(dead_code)]
 async fn generate_gemini_transcribe_segments(
     client: &reqwest::Client,
     api_key: &str,
@@ -3750,7 +3935,10 @@ async fn generate_gemini_transcribe_segments(
                 }
             }
             Err(error) => {
-                let message = format!("Call Gemini Transcribe failed: {}", gemini_transport_error(&error));
+                let message = format!(
+                    "Call Gemini Transcribe failed: {}",
+                    gemini_transport_error(&error)
+                );
                 last_error = Some(message.clone());
                 if attempt == 3 {
                     return Err(message);
@@ -3762,6 +3950,7 @@ async fn generate_gemini_transcribe_segments(
     Err(last_error.unwrap_or_else(|| "Gemini Transcribe failed".into()))
 }
 
+#[allow(dead_code)]
 async fn delete_gemini_audio_file(client: &reqwest::Client, api_key: &str, file_name: &str) {
     let _ = client
         .delete(format!(
@@ -3773,12 +3962,14 @@ async fn delete_gemini_audio_file(client: &reqwest::Client, api_key: &str, file_
         .await;
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 struct GeminiTranslationsPayload {
     #[serde(default)]
     translations: Vec<String>,
 }
 
+#[allow(dead_code)]
 fn parse_gemini_translations(text: &str) -> Result<Vec<String>, String> {
     let trimmed = clean_gemini_json(text);
     let value: Value = serde_json::from_str(trimmed)
@@ -3796,6 +3987,7 @@ fn parse_gemini_translations(text: &str) -> Result<Vec<String>, String> {
     Ok(translations)
 }
 
+#[allow(dead_code)]
 async fn translate_transcript_segments_with_gemini(
     client: &reqwest::Client,
     api_key: &str,
@@ -3869,7 +4061,10 @@ async fn translate_transcript_segments_with_gemini(
                         }
                     }
                     Err(error) => {
-                        let message = format!("Call Gemini translation failed: {}", gemini_transport_error(&error));
+                        let message = format!(
+                            "Call Gemini translation failed: {}",
+                            gemini_transport_error(&error)
+                        );
                         last_error = Some(message.clone());
                         if attempt == 3 {
                             return Err(message);
@@ -3887,6 +4082,198 @@ async fn translate_transcript_segments_with_gemini(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn retranscribe_live_part(
+    app: &AppHandle,
+    id: &str,
+    api_key: &str,
+    source_lang: &str,
+    target_lang: &str,
+    audio_path: &Path,
+    part_start_sec: u64,
+    part_index: usize,
+    total_parts: usize,
+    cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<Vec<Segment>, String> {
+    if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Quá trình Re-transcript đã bị hủy".into());
+    }
+    emit_audio_transcript_progress(
+        app,
+        id,
+        "transcribe",
+        &format!(
+            "Gemini Live Translate đang xử lý phần {}/{} từ {}...",
+            part_index + 1,
+            total_parts,
+            format_duration_str(part_start_sec)
+        ),
+        15 + ((part_index as u64 * 75) / total_parts.max(1) as u64) as u8,
+    );
+    let pcm = decode_audio_to_live_pcm(audio_path)?;
+    let base = 15 + ((part_index as u64 * 75) / total_parts.max(1) as u64) as u8;
+    let span = (75_u64 / total_parts.max(1) as u64).max(1) as u8;
+    let live_segments = 'attempts: {
+        for attempt in 0..LIVE_AUDIO_PART_MAX_ATTEMPTS {
+            if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err("Quá trình Re-transcript đã bị hủy".into());
+            }
+            let app_for_progress = app.clone();
+            let id_for_progress = id.to_string();
+            let result = crate::commands::gemini_realtime::translate_recorded_pcm(
+                api_key,
+                source_lang,
+                target_lang,
+                pcm.clone(),
+                cancel_flag.clone(),
+                move |sent_bytes, total_bytes| {
+                    let fraction = if total_bytes == 0 {
+                        0.0
+                    } else {
+                        sent_bytes as f64 / total_bytes as f64
+                    };
+                    let percent = base
+                        .saturating_add((fraction * span as f64).round() as u8)
+                        .min(90);
+                    emit_audio_transcript_progress(
+                        &app_for_progress,
+                        &id_for_progress,
+                        "transcribe",
+                        &format!(
+                            "Gemini Live Translate đang nghe phần {}/{} ({}%)...",
+                            part_index + 1,
+                            total_parts,
+                            (fraction * 100.0).round() as u8
+                        ),
+                        percent,
+                    );
+                },
+            )
+            .await;
+
+            match result {
+                Ok(segments) => break 'attempts segments,
+                Err(error)
+                    if attempt + 1 < LIVE_AUDIO_PART_MAX_ATTEMPTS
+                        && is_retryable_live_session_error(&error) =>
+                {
+                    let next_attempt = attempt + 2;
+                    emit_audio_transcript_progress(
+                        app,
+                        id,
+                        "transcribe",
+                        &format!(
+                            "Phiên Gemini Live bị ngắt ở phần {}/{}; đang thử lại lần {}/{}...",
+                            part_index + 1,
+                            total_parts,
+                            next_attempt,
+                            LIVE_AUDIO_PART_MAX_ATTEMPTS
+                        ),
+                        base,
+                    );
+                    tokio::time::sleep(retry_delay(attempt)).await;
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "Gemini Live Translate failed at audio part {}/{} starting at {}: {}",
+                        part_index + 1,
+                        total_parts,
+                        format_duration_str(part_start_sec),
+                        error
+                    ));
+                }
+            }
+        }
+        return Err("Gemini Live Translate exhausted retries for this audio part".into());
+    };
+
+    Ok(live_segments
+        .into_iter()
+        .map(|segment| Segment {
+            ts: transcript_timestamp(part_start_sec as f64 + segment.start_sec),
+            src: segment.original,
+            tgt: segment.translation,
+            speaker: segment.speaker,
+        })
+        .collect())
+}
+
+async fn retranscribe_session_with_gemini_live(
+    app: AppHandle,
+    id: String,
+    api_key: String,
+    source_lang: Option<String>,
+    target_lang: Option<String>,
+) -> Result<SessionReadResult, String> {
+    if api_key.trim().is_empty() {
+        return Err("Gemini API key is empty".into());
+    }
+    let (md_path, json_path, audio_path, _mime_type, _audio_size, mut data) =
+        load_retranscribe_context(&app, &id, source_lang, target_lang)?;
+    let duration_sec = required_audio_duration(&audio_path)?;
+    let (cancel_flag, _guard) = register_retranscribe_cancel(&id)?;
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "upload",
+        "Đang chuẩn bị audio cho Gemini Live Translate...",
+        10,
+    );
+
+    let mut all_segments = Vec::new();
+    if duration_sec.ceil() as u64 > GEMINI_LIVE_CHUNK_THRESHOLD_SECONDS {
+        let (_workspace, chunks) = create_audio_chunks_with_size(
+            &audio_path,
+            duration_sec,
+            &id,
+            GEMINI_LIVE_CHUNK_SECONDS,
+        )?;
+        let total_parts = chunks.len();
+        for (index, (chunk_path, start_sec, _length_sec)) in chunks.iter().enumerate() {
+            let mut segments = retranscribe_live_part(
+                &app,
+                &id,
+                &api_key,
+                &data.source_lang,
+                &data.target_lang,
+                chunk_path,
+                *start_sec,
+                index,
+                total_parts,
+                cancel_flag.clone(),
+            )
+            .await?;
+            all_segments.append(&mut segments);
+        }
+    } else {
+        all_segments = retranscribe_live_part(
+            &app,
+            &id,
+            &api_key,
+            &data.source_lang,
+            &data.target_lang,
+            &audio_path,
+            0,
+            0,
+            1,
+            cancel_flag,
+        )
+        .await?;
+    }
+
+    save_retranscribed_session(
+        &app,
+        &id,
+        &md_path,
+        &json_path,
+        &mut data,
+        "gemini-live-translate",
+        all_segments,
+        Some(duration_sec),
+    )
+}
+
+#[allow(dead_code)]
 async fn retranscribe_session_with_gemini_transcribe(
     app: AppHandle,
     id: String,
@@ -3912,13 +4299,11 @@ async fn retranscribe_session_with_gemini_transcribe(
         .timeout(std::time::Duration::from_secs(1800))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
-    let duration_sec = probe_audio_duration(&audio_path);
+    let duration_sec = required_audio_duration(&audio_path)?;
     let mut all_segments = Vec::new();
 
-    if let Some(duration) = duration_sec
-        .map(|duration| duration.ceil() as u64)
-        .filter(|duration| *duration > GEMINI_TRANSCRIBE_CHUNK_THRESHOLD_SECONDS)
-    {
+    if duration_sec.ceil() as u64 > GEMINI_TRANSCRIBE_CHUNK_THRESHOLD_SECONDS {
+        let duration = duration_sec.ceil() as u64;
         let (_workspace, chunks) = create_audio_chunks_with_size(
             &audio_path,
             duration as f64,
@@ -3950,7 +4335,17 @@ async fn retranscribe_session_with_gemini_transcribe(
                 "audio/wav",
                 &format!("Meet Minder recording part {}/{}", index + 1, total_chunks),
             )
-            .await?;
+            .await
+            .map_err(|error| {
+                format!(
+                    "Gemini upload failed at audio part {}/{} ({}–{}): {}",
+                    index + 1,
+                    total_chunks,
+                    format_duration_str(*start_sec),
+                    format_duration_str(*start_sec + *length_sec),
+                    error
+                )
+            })?;
             let generated = generate_gemini_transcribe_segments(
                 &client,
                 &api_key,
@@ -3961,7 +4356,16 @@ async fn retranscribe_session_with_gemini_transcribe(
             )
             .await;
             delete_gemini_audio_file(&client, &api_key, &uploaded.file_name).await;
-            let mut part_segments = generated?;
+            let mut part_segments = generated.map_err(|error| {
+                format!(
+                    "Gemini Transcribe failed at audio part {}/{} ({}–{}): {}",
+                    index + 1,
+                    total_chunks,
+                    format_duration_str(*start_sec),
+                    format_duration_str(*start_sec + *length_sec),
+                    error
+                )
+            })?;
             normalize_chunk_timestamps(&mut part_segments, *start_sec);
             all_segments.append(&mut part_segments);
         }
@@ -4023,7 +4427,7 @@ async fn retranscribe_session_with_gemini_transcribe(
         &mut data,
         "gemini-transcribe",
         all_segments,
-        duration_sec,
+        Some(duration_sec),
     )
 }
 
@@ -4126,7 +4530,8 @@ fn local_pipeline_home() -> String {
 }
 
 fn local_pipeline_python(home: &str) -> String {
-    let venv = PathBuf::from(home).join("Library/Application Support/Meet Minder/mlx-env/bin/python3");
+    let venv =
+        PathBuf::from(home).join("Library/Application Support/Meet Minder/mlx-env/bin/python3");
     if venv.exists() {
         venv.to_string_lossy().to_string()
     } else if Path::new("/opt/homebrew/bin/python3").exists() {
@@ -4145,9 +4550,12 @@ async fn retranscribe_session_with_local_mlx(
     let (md_path, json_path, audio_path, _mime_type, _audio_size, mut data) =
         load_retranscribe_context(&app, &id, source_lang, target_lang)?;
     let home = local_pipeline_home();
-    let (has_whisper, has_gemma) = crate::commands::local_pipeline::are_local_models_installed(&home);
+    let (has_whisper, has_gemma) =
+        crate::commands::local_pipeline::are_local_models_installed(&home);
     if !has_whisper || !has_gemma {
-        return Err("Local MLX models are missing or incomplete. Please install them in Settings.".into());
+        return Err(
+            "Local MLX models are missing or incomplete. Please install them in Settings.".into(),
+        );
     }
     let script_path = local_pipeline_script_path()?;
     let target_arg = if has_transcript_translation(&data) {
@@ -4160,7 +4568,7 @@ async fn retranscribe_session_with_local_mlx(
     } else {
         data.source_lang.clone()
     };
-    let duration_sec = probe_audio_duration(&audio_path);
+    let duration_sec = Some(required_audio_duration(&audio_path)?);
     let (cancel_flag, _guard) = register_retranscribe_cancel(&id)?;
     emit_audio_transcript_progress(
         &app,
@@ -4196,24 +4604,27 @@ async fn retranscribe_session_with_local_mlx(
         .stdout
         .take()
         .ok_or("Không thể đọc kết quả Local MLX")?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or("Không thể đọc log Local MLX")?;
+    let stderr = child.stderr.take().ok_or("Không thể đọc log Local MLX")?;
     let (sender, receiver) = std::sync::mpsc::channel::<String>();
     std::thread::spawn(move || {
         use std::io::BufRead;
-        for line in std::io::BufReader::new(stdout).lines().flatten() {
+        for line in std::io::BufReader::new(stdout)
+            .lines()
+            .map_while(Result::ok)
+        {
             let _ = sender.send(line);
         }
     });
-    let recent_stderr = std::sync::Arc::new(std::sync::Mutex::new(
-        std::collections::VecDeque::<String>::new(),
-    ));
+    let recent_stderr = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::<
+        String,
+    >::new()));
     let stderr_buffer = recent_stderr.clone();
     std::thread::spawn(move || {
         use std::io::BufRead;
-        for line in std::io::BufReader::new(stderr).lines().flatten() {
+        for line in std::io::BufReader::new(stderr)
+            .lines()
+            .map_while(Result::ok)
+        {
             if let Ok(mut buffer) = stderr_buffer.lock() {
                 if buffer.len() >= 20 {
                     buffer.pop_front();
@@ -4249,11 +4660,7 @@ async fn retranscribe_session_with_local_mlx(
     };
     // Wait for the stdout reader to close and drain the last result/done line.
     for line in receiver.iter() {
-        if let Err(error) =
-            consume_local_pipeline_line(&line, &mut segments, &app, &id, duration_sec)
-        {
-            return Err(error);
-        }
+        consume_local_pipeline_line(&line, &mut segments, &app, &id, duration_sec)?;
     }
     if !exit_status.success() {
         let detail = recent_stderr
@@ -4365,10 +4772,8 @@ pub async fn retranscribe_session_with_gemini(
     };
     let source_name = language_name(&data.source_lang);
 
-    if let Some(duration_sec) = probe_audio_duration(&audio_path)
-        .map(|duration| duration.ceil() as u64)
-        .filter(|duration| *duration > AUDIO_CHUNK_THRESHOLD_SECONDS)
-    {
+    let duration_sec = required_audio_duration(&audio_path)?.ceil() as u64;
+    if duration_sec > AUDIO_CHUNK_THRESHOLD_SECONDS {
         let (_workspace, chunks) = create_audio_chunks(&audio_path, duration_sec as f64, &id)?;
         let total_chunks = chunks.len();
         let mut all_segments = Vec::new();
@@ -4453,13 +4858,7 @@ pub async fn retranscribe_session_with_gemini(
         }];
         data.engine = "gemini".to_string();
         data.retranscribed_at = Some(chrono::Local::now().to_rfc3339());
-        emit_audio_transcript_progress(
-            &app,
-            &id,
-            "save",
-            "Đang ghi Logs mới vào ổ đĩa...",
-            95,
-        );
+        emit_audio_transcript_progress(&app, &id, "save", "Đang ghi Logs mới vào ổ đĩa...", 95);
         let md = rebuild_session_markdown(&data);
         let json_bytes = serde_json::to_vec_pretty(&data)
             .map_err(|e| format!("Serialize transcript failed: {}", e))?;
@@ -4514,7 +4913,12 @@ pub async fn retranscribe_session_with_gemini(
         .body(upload_file)
         .send()
         .await
-        .map_err(|e| format!("Upload audio to Gemini failed: {}", gemini_transport_error(&e)))?;
+        .map_err(|e| {
+            format!(
+                "Upload audio to Gemini failed: {}",
+                gemini_transport_error(&e)
+            )
+        })?;
     if !upload_finish.status().is_success() {
         let status = upload_finish.status();
         return Err(gemini_error(
@@ -4574,7 +4978,12 @@ pub async fn retranscribe_session_with_gemini(
             ))
             .send()
             .await
-            .map_err(|e| format!("Check Gemini audio upload failed: {}", gemini_transport_error(&e)))?;
+            .map_err(|e| {
+                format!(
+                    "Check Gemini audio upload failed: {}",
+                    gemini_transport_error(&e)
+                )
+            })?;
         if !poll.status().is_success() {
             let status = poll.status();
             return Err(gemini_error(status, poll.text().await.unwrap_or_default()));
@@ -4631,7 +5040,12 @@ pub async fn retranscribe_session_with_gemini(
                 .await;
             return Err("Quá trình Re-transcript đã bị hủy".into());
         }
-        let response = client.post(format!("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", model, api_key.trim()))
+        let response = client
+            .post(format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+                model,
+                api_key.trim()
+            ))
             .json(&serde_json::json!({
                 "contents": [{ "parts": [
                     { "text": prompt },
@@ -4643,7 +5057,8 @@ pub async fn retranscribe_session_with_gemini(
                     "responseMimeType": "application/json"
                 }
             }))
-            .send().await;
+            .send()
+            .await;
         match response {
             Ok(response) if response.status().is_success() => {
                 emit_audio_transcript_progress(
@@ -4715,7 +5130,10 @@ pub async fn retranscribe_session_with_gemini(
         &app,
         &id,
         "save",
-        &format!("Đã nhận {} đoạn thoại. Đang chuẩn bị lưu Logs...", segments.len()),
+        &format!(
+            "Đã nhận {} đoạn thoại. Đang chuẩn bị lưu Logs...",
+            segments.len()
+        ),
         90,
     );
     data.chunks = vec![Chunk {
@@ -4728,13 +5146,7 @@ pub async fn retranscribe_session_with_gemini(
     }];
     data.engine = "gemini".to_string();
     data.retranscribed_at = Some(chrono::Local::now().to_rfc3339());
-    emit_audio_transcript_progress(
-        &app,
-        &id,
-        "save",
-        "Đang ghi Logs mới vào ổ đĩa...",
-        95,
-    );
+    emit_audio_transcript_progress(&app, &id, "save", "Đang ghi Logs mới vào ổ đĩa...", 95);
     let md = rebuild_session_markdown(&data);
     let json_bytes = serde_json::to_vec_pretty(&data)
         .map_err(|e| format!("Serialize transcript failed: {}", e))?;
@@ -4743,6 +5155,7 @@ pub async fn retranscribe_session_with_gemini(
     Ok(SessionReadResult { md, json: data })
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 struct GeminiImportPayload {
     #[serde(default)]
@@ -4751,6 +5164,7 @@ struct GeminiImportPayload {
     segments: Vec<GeminiTranscriptSegment>,
 }
 
+#[allow(dead_code)]
 fn build_import_result(
     raw_lang: Option<String>,
     mut segments: Vec<Segment>,
@@ -4789,6 +5203,7 @@ fn build_import_result(
     Ok((source_lang, target_lang, segments))
 }
 
+#[allow(dead_code)]
 fn parse_gemini_import(text: &str) -> Result<(String, String, Vec<Segment>), String> {
     let trimmed = clean_gemini_json(text);
 
@@ -4816,7 +5231,9 @@ fn parse_gemini_import(text: &str) -> Result<(String, String, Vec<Segment>), Str
     if !segs.is_empty() {
         let detected = extract_detected_language(trimmed);
         if let Ok(res) = build_import_result(detected, segs) {
-            eprintln!("[session_store] Warning: extracted segments via fallback scanner for import");
+            eprintln!(
+                "[session_store] Warning: extracted segments via fallback scanner for import"
+            );
             return Ok(res);
         }
     }
@@ -4827,6 +5244,197 @@ fn parse_gemini_import(text: &str) -> Result<(String, String, Vec<Segment>), Str
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn import_audio_session(
+    app: AppHandle,
+    id: String,
+    file_path: String,
+    title: String,
+    customer_id: Option<String>,
+    project_id: Option<String>,
+    category: Option<String>,
+    tags: Vec<String>,
+    scope: Option<String>,
+    api_key: String,
+) -> Result<SessionReadResult, String> {
+    validate_id(&id)?;
+    if api_key.trim().is_empty() {
+        return Err("Gemini API key is empty".into());
+    }
+    let clean_scope = scope.and_then(|value| {
+        let value = value.trim().to_string();
+        (!value.is_empty()).then_some(value)
+    });
+    let source_path = PathBuf::from(file_path.trim());
+    if !source_path.exists() {
+        return Err("File ghi âm không tồn tại".into());
+    }
+    let extension = source_path
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_lowercase();
+    if !SUPPORTED_AUDIO_EXTS.contains(&extension.as_str()) {
+        return Err(format!(
+            "Định dạng .{} không được hỗ trợ",
+            if extension.is_empty() {
+                "(không có phần mở rộng)"
+            } else {
+                &extension
+            }
+        ));
+    }
+    let audio_size = fs::metadata(&source_path)
+        .map_err(|error| format!("Không thể đọc thông tin file ghi âm: {}", error))?
+        .len();
+    if audio_size <= 44 {
+        return Err("File ghi âm trống hoặc không hợp lệ".into());
+    }
+
+    let dir = sessions_dir(&app)?;
+    let (md_path, json_path) = session_paths(&dir, &id);
+    fs::create_dir_all(records_dir(&dir))
+        .map_err(|error| format!("Không thể tạo thư mục records: {}", error))?;
+    fs::create_dir_all(audio_dir(&dir))
+        .map_err(|error| format!("Không thể tạo thư mục audio: {}", error))?;
+    let dest_audio_path = audio_dir(&dir).join(format!("session-{}.{}", id, extension));
+
+    let (cancel_flag, _guard) = register_retranscribe_cancel(&id)?;
+    let duration_sec = required_audio_duration(&source_path)?;
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "upload",
+        "Đang chuẩn bị file cho Gemini Live Translate...",
+        10,
+    );
+
+    let mut segments = Vec::new();
+    if duration_sec.ceil() as u64 > GEMINI_LIVE_CHUNK_THRESHOLD_SECONDS {
+        let (_workspace, chunks) = create_audio_chunks_with_size(
+            &source_path,
+            duration_sec,
+            &id,
+            GEMINI_LIVE_CHUNK_SECONDS,
+        )?;
+        let total_parts = chunks.len();
+        for (index, (chunk_path, start_sec, _length_sec)) in chunks.iter().enumerate() {
+            let mut part = retranscribe_live_part(
+                &app,
+                &id,
+                &api_key,
+                "auto",
+                "vi",
+                chunk_path,
+                *start_sec,
+                index,
+                total_parts,
+                cancel_flag.clone(),
+            )
+            .await?;
+            segments.append(&mut part);
+        }
+    } else {
+        segments = retranscribe_live_part(
+            &app,
+            &id,
+            &api_key,
+            "auto",
+            "vi",
+            &source_path,
+            0,
+            0,
+            1,
+            cancel_flag,
+        )
+        .await?;
+    }
+    if segments.is_empty() {
+        return Err("Gemini Live Translate không trả về đoạn hội thoại nào".into());
+    }
+    segments.sort_by_key(|segment| timestamp_seconds(&segment.ts).unwrap_or(0));
+    tokio::fs::copy(&source_path, &dest_audio_path)
+        .await
+        .map_err(|error| format!("Lưu file ghi âm thất bại: {}", error))?;
+
+    let looks_vietnamese = segments
+        .iter()
+        .filter(|segment| !segment.src.trim().is_empty())
+        .count()
+        > 0
+        && segments
+            .iter()
+            .filter(|segment| {
+                !segment.src.trim().is_empty()
+                    && normalized_import_text(&segment.src) == normalized_import_text(&segment.tgt)
+            })
+            .count()
+            * 2
+            >= segments
+                .iter()
+                .filter(|segment| !segment.src.trim().is_empty())
+                .count();
+    let (source_lang, target_lang) = if looks_vietnamese {
+        for segment in &mut segments {
+            segment.tgt.clear();
+        }
+        ("vi".to_string(), String::new())
+    } else {
+        ("auto".to_string(), "vi".to_string())
+    };
+    let now = chrono::Local::now().to_rfc3339();
+    let final_title = if title.trim().is_empty() {
+        source_path
+            .file_stem()
+            .map(|value| value.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Cuộc họp import".to_string())
+    } else {
+        title
+    };
+    let data = SessionData {
+        id: id.clone(),
+        created_at: now.clone(),
+        ended_at: Some(now.clone()),
+        title: sanitize_title(&final_title),
+        engine: "gemini-live-translate".to_string(),
+        source_lang: source_lang.clone(),
+        target_lang: target_lang.clone(),
+        duration_sec: duration_sec.ceil() as u64,
+        diagnostics: Vec::new(),
+        chunks: vec![Chunk {
+            started_at: now.clone(),
+            ended_at: Some(now.clone()),
+            engine: "gemini-live-translate".to_string(),
+            source_lang,
+            target_lang,
+            segments,
+        }],
+        notes: None,
+        note_images: Vec::new(),
+        tags,
+        customer_id,
+        project_id,
+        category,
+        scope: clean_scope,
+        meeting_minutes_template_id: None,
+        notes_by_minutes_template: HashMap::new(),
+        meeting_minutes: None,
+        meeting_minutes_lang: None,
+        meeting_minutes_ja: None,
+        meeting_minutes_vi: None,
+        meeting_minutes_en: None,
+        retranscribed_at: Some(now),
+    };
+    emit_audio_transcript_progress(&app, &id, "save", "Đang lưu Meeting Logs mới...", 95);
+    let md = rebuild_session_markdown(&data);
+    let json_bytes = serde_json::to_vec_pretty(&data)
+        .map_err(|error| format!("Serialize transcript failed: {}", error))?;
+    write_atomic(&json_path, &json_bytes)?;
+    write_atomic(&md_path, md.as_bytes())?;
+    Ok(SessionReadResult { md, json: data })
+}
+
+#[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
+async fn import_audio_session_legacy(
     app: AppHandle,
     id: String,
     file_path: String,
@@ -4864,7 +5472,11 @@ pub async fn import_audio_session(
     if !SUPPORTED_AUDIO_EXTS.contains(&ext.as_str()) {
         return Err(format!(
             "Định dạng .{} không được hỗ trợ",
-            if ext.is_empty() { "(không có phần mở rộng)" } else { &ext }
+            if ext.is_empty() {
+                "(không có phần mở rộng)"
+            } else {
+                &ext
+            }
         ));
     }
     let audio_size = fs::metadata(&src_path)
@@ -4907,10 +5519,8 @@ pub async fn import_audio_session(
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
 
-    if let Some(duration_sec) = probe_audio_duration(&src_path)
-        .map(|duration| duration.ceil() as u64)
-        .filter(|duration| *duration > AUDIO_CHUNK_THRESHOLD_SECONDS)
-    {
+    let duration_sec = required_audio_duration(&src_path)?.ceil() as u64;
+    if duration_sec > AUDIO_CHUNK_THRESHOLD_SECONDS {
         let (_workspace, chunks) = create_audio_chunks(&src_path, duration_sec as f64, &id)?;
         let total_chunks = chunks.len();
         let mut all_segments = Vec::new();
@@ -4938,7 +5548,11 @@ pub async fn import_audio_session(
                 &api_key,
                 chunk_path,
                 "audio/wav",
-                &format!("Meet Minder imported recording part {}/{}", index + 1, total_chunks),
+                &format!(
+                    "Meet Minder imported recording part {}/{}",
+                    index + 1,
+                    total_chunks
+                ),
             )
             .await?;
             let prompt = format!(
@@ -5027,6 +5641,8 @@ pub async fn import_audio_session(
             project_id,
             category,
             scope: clean_scope.clone(),
+            meeting_minutes_template_id: None,
+            notes_by_minutes_template: HashMap::new(),
             meeting_minutes: None,
             meeting_minutes_lang: None,
             meeting_minutes_ja: None,
@@ -5034,13 +5650,7 @@ pub async fn import_audio_session(
             meeting_minutes_en: None,
             retranscribed_at: Some(now),
         };
-        emit_audio_transcript_progress(
-            &app,
-            &id,
-            "save",
-            "Đang ghi Logs mới vào ổ đĩa...",
-            95,
-        );
+        emit_audio_transcript_progress(&app, &id, "save", "Đang ghi Logs mới vào ổ đĩa...", 95);
         let md = rebuild_session_markdown(&data);
         let json_bytes = serde_json::to_vec_pretty(&data)
             .map_err(|e| format!("Serialize transcript failed: {}", e))?;
@@ -5097,7 +5707,12 @@ pub async fn import_audio_session(
         .body(upload_file)
         .send()
         .await
-        .map_err(|e| format!("Upload audio to Gemini failed: {}", gemini_transport_error(&e)))?;
+        .map_err(|e| {
+            format!(
+                "Upload audio to Gemini failed: {}",
+                gemini_transport_error(&e)
+            )
+        })?;
 
     if !upload_finish.status().is_success() {
         let status = upload_finish.status();
@@ -5158,7 +5773,12 @@ pub async fn import_audio_session(
             ))
             .send()
             .await
-            .map_err(|e| format!("Check Gemini audio upload failed: {}", gemini_transport_error(&e)))?;
+            .map_err(|e| {
+                format!(
+                    "Check Gemini audio upload failed: {}",
+                    gemini_transport_error(&e)
+                )
+            })?;
         if !poll.status().is_success() {
             let status = poll.status();
             return Err(gemini_error(status, poll.text().await.unwrap_or_default()));
@@ -5334,7 +5954,10 @@ start_sec must be the approximate offset in seconds.";
         &app,
         &id,
         "save",
-        &format!("Đã nhận {} đoạn thoại. Đang chuẩn bị lưu Logs...", segments.len()),
+        &format!(
+            "Đã nhận {} đoạn thoại. Đang chuẩn bị lưu Logs...",
+            segments.len()
+        ),
         90,
     );
 
@@ -5394,6 +6017,8 @@ start_sec must be the approximate offset in seconds.";
         project_id,
         category,
         scope: clean_scope.clone(),
+        meeting_minutes_template_id: None,
+        notes_by_minutes_template: HashMap::new(),
         meeting_minutes: None,
         meeting_minutes_lang: None,
         meeting_minutes_ja: None,
@@ -5402,13 +6027,7 @@ start_sec must be the approximate offset in seconds.";
         retranscribed_at: Some(now),
     };
 
-    emit_audio_transcript_progress(
-        &app,
-        &id,
-        "save",
-        "Đang ghi Logs mới vào ổ đĩa...",
-        95,
-    );
+    emit_audio_transcript_progress(&app, &id, "save", "Đang ghi Logs mới vào ổ đĩa...", 95);
     let md = rebuild_session_markdown(&data);
     let json_bytes = serde_json::to_vec_pretty(&data)
         .map_err(|e| format!("Serialize transcript failed: {}", e))?;
@@ -5427,7 +6046,10 @@ pub fn get_storage_info(app: AppHandle) -> Result<StorageInfo, String> {
 
     let mut session_count = 0;
     for path in record_files(&current)? {
-        let name = path.file_name().and_then(|value| value.to_str()).unwrap_or("");
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
         if name.ends_with(".json") && name.starts_with("session-") {
             session_count += 1;
         }
@@ -5569,6 +6191,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_live_session_retry_only_matches_transient_failures() {
+        assert!(is_retryable_live_session_error(
+            "Gemini Live audio session ended unexpectedly"
+        ));
+        assert!(is_retryable_live_session_error(
+            "ws error: connection reset"
+        ));
+        assert!(is_retryable_live_session_error(
+            "Gemini Live closed early: stream_ended"
+        ));
+        assert!(!is_retryable_live_session_error(
+            "Gemini API error (400): API key not valid"
+        ));
+        assert!(!is_retryable_live_session_error(
+            "Gemini API error (429): quota exceeded"
+        ));
+    }
+
+    #[test]
     fn test_validate_id_valid() {
         assert!(validate_id("session-260904-1610").is_ok());
         assert!(validate_id("session_123_abc").is_ok());
@@ -5584,6 +6225,35 @@ mod tests {
         assert!(validate_id("session with spaces").is_err());
         let long_id = "a".repeat(65);
         assert!(validate_id(&long_id).is_err());
+    }
+
+    #[test]
+    fn test_probe_wav_duration_from_pcm_header() {
+        let path = std::env::temp_dir().join(format!(
+            "meet-minder-duration-test-{}-{}.wav",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let data_bytes = 32_000_u32 * 7;
+        let mut header = [0u8; 44];
+        header[0..4].copy_from_slice(b"RIFF");
+        header[4..8].copy_from_slice(&data_bytes.saturating_add(36).to_le_bytes());
+        header[8..12].copy_from_slice(b"WAVE");
+        header[12..16].copy_from_slice(b"fmt ");
+        header[24..28].copy_from_slice(&16_000_u32.to_le_bytes());
+        header[32..34].copy_from_slice(&2_u16.to_le_bytes());
+        header[36..40].copy_from_slice(b"data");
+        header[40..44].copy_from_slice(&data_bytes.to_le_bytes());
+        let mut wav = header.to_vec();
+        wav.resize(44 + data_bytes as usize, 0);
+        fs::write(&path, wav).unwrap();
+
+        let duration = probe_wav_duration(&path).unwrap();
+        let _ = fs::remove_file(&path);
+        assert!((duration - 7.0).abs() < 0.001);
     }
 
     #[test]
@@ -5727,6 +6397,8 @@ mod tests {
             project_id: None,
             category: Some("Weekly".to_string()),
             scope: Some("work".to_string()),
+            meeting_minutes_template_id: None,
+            notes_by_minutes_template: HashMap::new(),
             meeting_minutes: None,
             meeting_minutes_lang: Some("vi".to_string()),
             meeting_minutes_ja: None,
@@ -5759,6 +6431,26 @@ mod tests {
         assert_eq!(
             data2.retranscribed_at,
             Some("2026-09-04T12:00:00Z".to_string())
+        );
+
+        let json_with_template = r#"{"id":"s1","created_at":"2026-09-04T10:00:00Z","title":"Test","engine":"gemini","source_lang":"ja","target_lang":"vi","duration_sec":60,"chunks":[],"meeting_minutes_template_id":"minutes_custom","notes_by_minutes_template":{"standard":"Memo Standard","minutes_custom":"Memo Interview"}}"#;
+        let data3: SessionData = serde_json::from_str(json_with_template).unwrap();
+        assert_eq!(
+            data3.meeting_minutes_template_id.as_deref(),
+            Some("minutes_custom")
+        );
+        assert_eq!(
+            data3
+                .notes_by_minutes_template
+                .get("minutes_custom")
+                .map(String::as_str),
+            Some("Memo Interview")
+        );
+        let serialized = serde_json::to_value(data3).unwrap();
+        assert_eq!(serialized["meeting_minutes_template_id"], "minutes_custom");
+        assert_eq!(
+            serialized["notes_by_minutes_template"]["standard"],
+            "Memo Standard"
         );
     }
 
@@ -5849,6 +6541,8 @@ mod tests {
             project_id: None,
             category: None,
             scope: None,
+            meeting_minutes_template_id: None,
+            notes_by_minutes_template: HashMap::new(),
             meeting_minutes: None,
             meeting_minutes_lang: None,
             meeting_minutes_ja: None,
@@ -5903,6 +6597,8 @@ mod tests {
             project_id: None,
             category: None,
             scope: None,
+            meeting_minutes_template_id: None,
+            notes_by_minutes_template: HashMap::new(),
             meeting_minutes: None,
             meeting_minutes_lang: None,
             meeting_minutes_ja: None,
@@ -5989,7 +6685,8 @@ mod tests {
             ]
         }"#;
 
-        let (src_lang, tgt_lang, segs) = parse_gemini_import(json_str).expect("Parse should succeed");
+        let (src_lang, tgt_lang, segs) =
+            parse_gemini_import(json_str).expect("Parse should succeed");
         assert_eq!(src_lang, "ja");
         assert_eq!(tgt_lang, "vi");
         assert_eq!(segs.len(), 2);
@@ -6007,7 +6704,8 @@ mod tests {
             ]
         }"#;
 
-        let (src_lang, tgt_lang, segs) = parse_gemini_import(json_str).expect("Parse should succeed");
+        let (src_lang, tgt_lang, segs) =
+            parse_gemini_import(json_str).expect("Parse should succeed");
         assert_eq!(src_lang, "vi");
         assert_eq!(tgt_lang, "");
         assert_eq!(segs.len(), 1);
@@ -6021,7 +6719,8 @@ mod tests {
         let broken = r#"{"segments":[{"start_sec":0,"text":"Line 1","translation":"Dòng 1"},{"start_sec":5,"text":"Line 2 cut off here"#;
         let repaired = try_repair_truncated_json(broken).expect("Should repair truncated json");
         assert!(repaired.ends_with("]}"));
-        let parsed: GeminiTranscriptPayload = serde_json::from_str(&repaired).expect("Repaired JSON must be valid");
+        let parsed: GeminiTranscriptPayload =
+            serde_json::from_str(&repaired).expect("Repaired JSON must be valid");
         assert_eq!(parsed.segments.len(), 1);
         assert_eq!(parsed.segments[0].text, "Line 1");
         assert_eq!(parsed.segments[0].translation, "Dòng 1");
@@ -6039,7 +6738,8 @@ mod tests {
     #[test]
     fn test_parse_gemini_transcript_truncated() {
         let broken_transcript = "```json\n{\"segments\":[{\"start_sec\":0,\"text\":\"Hello world\",\"translation\":\"Xin chào thế giới\"},{\"start_sec\":10,\"text\":\"Cut";
-        let segs = parse_gemini_transcript(broken_transcript).expect("Should parse truncated transcript");
+        let segs =
+            parse_gemini_transcript(broken_transcript).expect("Should parse truncated transcript");
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].src, "Hello world");
         assert_eq!(segs[0].tgt, "Xin chào thế giới");
@@ -6051,7 +6751,8 @@ mod tests {
             {"start_sec":0,"text":"He said "Hello" to me","translation":"Ông ấy nói "Xin chào" với tôi"},
             {"start_sec":5.5,"text":"Screen is 24" wide","translation":"Màn hình 24 inch"}
         ]}"#;
-        let segs = parse_gemini_transcript(text).expect("Should parse segments with unescaped quotes");
+        let segs =
+            parse_gemini_transcript(text).expect("Should parse segments with unescaped quotes");
         assert_eq!(segs.len(), 2);
         assert_eq!(segs[0].src, "He said \"Hello\" to me");
         assert_eq!(segs[0].tgt, "Ông ấy nói \"Xin chào\" với tôi");
@@ -6062,7 +6763,8 @@ mod tests {
     fn test_parse_gemini_transcript_cut_at_key_colon() {
         // Truncated right at a key before the colon, exactly like "expected `:` at line 1 column 162365"
         let text = r#"{"segments":[{"start_sec":0,"text":"Line 1","translation":"Dòng 1"},{"start_sec":10,"text":"Cut off","trans"#;
-        let segs = parse_gemini_transcript(text).expect("Should salvage segments even if cut at key");
+        let segs =
+            parse_gemini_transcript(text).expect("Should salvage segments even if cut at key");
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].src, "Line 1");
         assert_eq!(segs[0].tgt, "Dòng 1");
@@ -6079,7 +6781,8 @@ mod tests {
         assert_eq!(segs[0].src, "Hello");
         assert_eq!(segs[0].tgt, "Xin chào");
 
-        let wrapped = r#"{"data":{"transcript":[{"start_seconds":4,"source":"Next","target":"Tiếp"}]}}"#;
+        let wrapped =
+            r#"{"data":{"transcript":[{"start_seconds":4,"source":"Next","target":"Tiếp"}]}}"#;
         let segs = parse_gemini_transcript(wrapped).expect("Wrapped transcript should parse");
         assert_eq!(segs[0].ts, "00:00:04");
 
@@ -6091,7 +6794,10 @@ mod tests {
     #[test]
     fn test_parse_gemini_transcript_rejects_empty_equivalent_shapes() {
         assert!(parse_gemini_transcript(r#"{"data":[]}"#).is_err());
-        assert!(parse_gemini_transcript(r#"[{"start_sec":0,"translation":"only translation"}]"#).is_err());
+        assert!(
+            parse_gemini_transcript(r#"[{"start_sec":0,"translation":"only translation"}]"#)
+                .is_err()
+        );
     }
 
     #[test]
@@ -6183,7 +6889,8 @@ mod tests {
         let text = r#"{"detected_language":"ja","segments":[
             {"start_sec":1.0,"text":"先生は「"Hello"」と言いました","translation":"Thầy giáo nói "Hello""},
             {"start_sec":10.0,"text":"Incomplete cut off"#;
-        let (src_lang, tgt_lang, segs) = parse_gemini_import(text).expect("Should parse import with unescaped quotes");
+        let (src_lang, tgt_lang, segs) =
+            parse_gemini_import(text).expect("Should parse import with unescaped quotes");
         assert_eq!(src_lang, "ja");
         assert_eq!(tgt_lang, "vi");
         assert_eq!(segs.len(), 1);
@@ -6223,24 +6930,20 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         fs::create_dir_all(records_dir(&root)).unwrap();
-        fs::write(records_dir(&root).join("README.md"), b"storage instructions").unwrap();
-        fs::write(root.join("README.md"), b"storage instructions").unwrap();
-        fs::write(root.join("projects.json"), b"{}").unwrap();
         fs::write(
-            root.join("2026-03-27_10-21-05.md"),
-            b"legacy transcript",
+            records_dir(&root).join("README.md"),
+            b"storage instructions",
         )
         .unwrap();
+        fs::write(root.join("README.md"), b"storage instructions").unwrap();
+        fs::write(root.join("projects.json"), b"{}").unwrap();
+        fs::write(root.join("2026-03-27_10-21-05.md"), b"legacy transcript").unwrap();
         fs::write(
             records_dir(&root).join("session-test.md"),
             b"session transcript",
         )
         .unwrap();
-        fs::write(
-            records_dir(&root).join("session-test.json"),
-            b"{}",
-        )
-        .unwrap();
+        fs::write(records_dir(&root).join("session-test.json"), b"{}").unwrap();
 
         let files = record_files(&root).unwrap();
         let names: std::collections::HashSet<String> = files
@@ -6279,5 +6982,4 @@ mod tests {
 
         let _ = fs::remove_dir_all(root);
     }
-
 }

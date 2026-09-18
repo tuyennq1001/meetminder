@@ -149,7 +149,6 @@ pub fn run() {
             commands::session_store::inspect_audio_file,
             commands::session_store::import_audio_session,
             commands::session_store::retranscribe_session,
-            commands::session_store::retranscribe_session_with_gemini,
             commands::session_store::cancel_retranscribe_session,
             commands::session_store::get_storage_info,
             commands::session_store::select_custom_transcripts_dir,
@@ -200,7 +199,8 @@ pub fn run() {
                     api.prevent_exit();
                     let now = current_time_ms();
                     let previous = LAST_QUIT_REQUEST_MS.swap(now, Ordering::SeqCst);
-                    let confirmed = previous > 0 && now.saturating_sub(previous) <= QUIT_CONFIRM_WINDOW_MS;
+                    let confirmed =
+                        previous > 0 && now.saturating_sub(previous) <= QUIT_CONFIRM_WINDOW_MS;
 
                     if let Some(win) = app_handle.get_webview_window("main") {
                         if confirmed {

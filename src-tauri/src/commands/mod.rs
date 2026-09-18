@@ -1,8 +1,8 @@
 pub mod audio;
 pub mod edge_tts;
 pub mod gemini_realtime;
-pub mod google_free_tts;
 pub mod git_backup;
+pub mod google_free_tts;
 pub mod http_client;
 pub mod local_pipeline;
 pub mod local_tts;

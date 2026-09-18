@@ -1183,7 +1183,9 @@ mod tests {
         // Collect merged audio
         let mut received_bytes = Vec::new();
         let start = std::time::Instant::now();
-        while received_bytes.len() < num_frames * 640 && start.elapsed() < std::time::Duration::from_secs(2) {
+        while received_bytes.len() < num_frames * 640
+            && start.elapsed() < std::time::Duration::from_secs(2)
+        {
             if let Ok(chunk) = merged_rx.recv_timeout(std::time::Duration::from_millis(50)) {
                 received_bytes.extend(chunk);
             }
@@ -1229,7 +1231,9 @@ mod tests {
 
         let mut received_bytes = Vec::new();
         let start = std::time::Instant::now();
-        while received_bytes.len() < num_frames * 640 && start.elapsed() < std::time::Duration::from_secs(2) {
+        while received_bytes.len() < num_frames * 640
+            && start.elapsed() < std::time::Duration::from_secs(2)
+        {
             if let Ok(chunk) = merged_rx.recv_timeout(std::time::Duration::from_millis(50)) {
                 received_bytes.extend(chunk);
             }
@@ -1247,4 +1251,3 @@ mod tests {
         );
     }
 }
-

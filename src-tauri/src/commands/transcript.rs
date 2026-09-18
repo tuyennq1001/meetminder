@@ -10,7 +10,9 @@ fn transcript_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn records_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(crate::commands::session_store::records_dir(&transcript_dir(app)?))
+    Ok(crate::commands::session_store::records_dir(
+        &transcript_dir(app)?,
+    ))
 }
 
 /// Save a complete transcript session to a timestamped file

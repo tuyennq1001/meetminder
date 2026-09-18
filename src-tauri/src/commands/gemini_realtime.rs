@@ -7,6 +7,7 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
@@ -25,6 +26,12 @@ const TRANSLATION_MAX_ATTEMPTS: usize = 5;
 // contain up to six utterances, so one request every four seconds keeps the
 // worker below that limit without imposing a per-utterance delay.
 const TRANSLATION_PACE_DELAY: std::time::Duration = std::time::Duration::from_secs(4);
+
+type GeminiEventSink = Arc<dyn Fn(GeminiEvent) + Send + Sync>;
+
+fn emit_event(event_sink: &GeminiEventSink, event: GeminiEvent) {
+    event_sink(event);
+}
 
 #[derive(Clone, Copy)]
 enum ModelCooldownKind {
@@ -190,7 +197,12 @@ impl LiveTranslateAssembler {
         // event; only expose the still-unfinalized tail as a provisional line.
         let original = self.source_buffer.clone();
 
-        let mut translation = self.target_sentences.iter().cloned().collect::<Vec<_>>().join(" ");
+        let mut translation = self
+            .target_sentences
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" ");
         translation.push_str(&self.target_buffer);
         if !original.trim().is_empty() || !translation.trim().is_empty() {
             events.push(GeminiEvent::LivePreview {
@@ -271,23 +283,29 @@ pub async fn gemini_realtime_start(
     state.sessions.lock().unwrap().insert(session_id, session);
 
     let event_ch = on_event.clone();
+    let event_sink: GeminiEventSink = Arc::new(move |event| {
+        let _ = event_ch.send(event);
+    });
     let sessions_map = state.sessions.clone();
     let models_cache = state.models_cache.clone();
     let cooldowns = state.cooldowns.clone();
     let translation_cache = state.translation_cache.clone();
 
     tokio::spawn(async move {
-        let _ = event_ch.send(GeminiEvent::Status {
-            state: "connecting".into(),
-            message: None,
-        });
+        emit_event(
+            &event_sink,
+            GeminiEvent::Status {
+                state: "connecting".into(),
+                message: None,
+            },
+        );
 
         if let Err(e) = run_session(
             config,
             target_lang,
             audio_rx,
             stop_rx,
-            event_ch.clone(),
+            event_sink.clone(),
             models_cache,
             cooldowns,
             translation_cache,
@@ -295,13 +313,19 @@ pub async fn gemini_realtime_start(
         .await
         {
             eprintln!("[gemini-live] Session failed: {}", e);
-            let _ = event_ch.send(GeminiEvent::Error {
-                code: "session_failed".into(),
-                message: e.clone(),
-            });
-            let _ = event_ch.send(GeminiEvent::Closed {
-                reason: format!("error: {}", e),
-            });
+            emit_event(
+                &event_sink,
+                GeminiEvent::Error {
+                    code: "session_failed".into(),
+                    message: e.clone(),
+                },
+            );
+            emit_event(
+                &event_sink,
+                GeminiEvent::Closed {
+                    reason: format!("error: {}", e),
+                },
+            );
         }
         // Always clean up session from active sessions map to prevent leaks
         sessions_map.lock().unwrap().remove(&session_id);
@@ -382,7 +406,7 @@ async fn run_session(
     target_lang_ref: Arc<tokio::sync::RwLock<String>>,
     mut audio_rx: mpsc::UnboundedReceiver<Vec<u8>>,
     mut stop_rx: mpsc::UnboundedReceiver<()>,
-    event_ch: Channel<GeminiEvent>,
+    event_sink: GeminiEventSink,
     models_cache: Arc<tokio::sync::RwLock<Option<(std::time::Instant, Vec<String>)>>>,
     cooldowns: Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
     translation_cache: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
@@ -394,24 +418,26 @@ async fn run_session(
     );
 
     eprintln!("[gemini-live] Connecting to WebSocket endpoint...");
-    let (ws_stream, response) = connect_async(ws_url.as_str())
-        .await
-        .map_err(|e| match e {
-            tokio_tungstenite::tungstenite::Error::Http(response) => {
-                let status = response.status();
-                let body = response
-                    .body()
-                    .as_ref()
-                    .map(|bytes| String::from_utf8_lossy(bytes).to_string())
-                    .unwrap_or_default();
-                if body.trim().is_empty() {
-                    format!("WebSocket handshake failed: HTTP {}", status)
-                } else {
-                    format!("WebSocket handshake failed: HTTP {}: {}", status, body.trim())
-                }
+    let (ws_stream, response) = connect_async(ws_url.as_str()).await.map_err(|e| match e {
+        tokio_tungstenite::tungstenite::Error::Http(response) => {
+            let status = response.status();
+            let body = response
+                .body()
+                .as_ref()
+                .map(|bytes| String::from_utf8_lossy(bytes).to_string())
+                .unwrap_or_default();
+            if body.trim().is_empty() {
+                format!("WebSocket handshake failed: HTTP {}", status)
+            } else {
+                format!(
+                    "WebSocket handshake failed: HTTP {}: {}",
+                    status,
+                    body.trim()
+                )
             }
-            other => format!("WebSocket handshake failed: {}", other),
-        })?;
+        }
+        other => format!("WebSocket handshake failed: {}", other),
+    })?;
 
     eprintln!(
         "[gemini-live] WebSocket connected! HTTP status: {}",
@@ -440,7 +466,7 @@ async fn run_session(
         let (tx, worker) = start_translation_worker(
             &cfg,
             target_lang_ref,
-            event_ch.clone(),
+            event_sink.clone(),
             models_cache,
             cooldowns,
             translation_cache,
@@ -470,7 +496,7 @@ async fn run_session(
                             Ok(Some(Ok(Message::Text(text)))) => {
                                 handle_server_message(
                                     &text,
-                                    &event_ch,
+                                    &event_sink,
                                     None,
                                     Some(&mut live_assembler),
                                     &mut next_translation_id,
@@ -482,7 +508,7 @@ async fn run_session(
                                 if let Ok(text) = std::str::from_utf8(&bin) {
                                     handle_server_message(
                                         text,
-                                        &event_ch,
+                                        &event_sink,
                                         None,
                                         Some(&mut live_assembler),
                                         &mut next_translation_id,
@@ -494,7 +520,7 @@ async fn run_session(
                             _ => break,
                         }
                     }
-                    send_events(&event_ch, live_assembler.flush());
+                    send_events(&event_sink, live_assembler.flush());
                 }
                 let _ = ws_sink.send(Message::Close(None)).await;
                 break;
@@ -535,7 +561,7 @@ async fn run_session(
                     Some(Ok(Message::Text(text))) => {
                         handle_server_message(
                             &text,
-                            &event_ch,
+                            &event_sink,
                             translation_tx.as_ref(),
                             live_translate.then_some(&mut live_assembler),
                             &mut next_translation_id,
@@ -547,7 +573,7 @@ async fn run_session(
                         if let Ok(text) = std::str::from_utf8(&bin) {
                             handle_server_message(
                                 text,
-                                &event_ch,
+                                &event_sink,
                                 translation_tx.as_ref(),
                                 live_translate.then_some(&mut live_assembler),
                                 &mut next_translation_id,
@@ -561,7 +587,7 @@ async fn run_session(
                             .map(|f| format!("{}: {}", f.code, f.reason))
                             .unwrap_or_else(|| "remote_close".into());
                         eprintln!("[gemini-live] WebSocket closed by server: {}", reason);
-                        let _ = event_ch.send(GeminiEvent::Closed { reason: reason.clone() });
+                        emit_event(&event_sink, GeminiEvent::Closed { reason: reason.clone() });
                         finish_translation_worker(translation_tx, translation_worker).await;
                         return Ok(());
                     }
@@ -573,7 +599,7 @@ async fn run_session(
                     }
                     None => {
                         eprintln!("[gemini-live] WebSocket stream ended");
-                        let _ = event_ch.send(GeminiEvent::Closed {
+                        emit_event(&event_sink, GeminiEvent::Closed {
                             reason: "stream_ended".into(),
                         });
                         finish_translation_worker(translation_tx, translation_worker).await;
@@ -591,13 +617,295 @@ async fn run_session(
     Ok(())
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct RecordedLiveSegment {
+    pub start_sec: f64,
+    pub original: String,
+    pub translation: String,
+    pub speaker: Option<String>,
+}
+
+#[derive(Default)]
+struct RecordedLiveCollector {
+    segments: Vec<(u64, RecordedLiveSegment)>,
+    indexes: HashMap<u64, usize>,
+    next_start_ms: u64,
+}
+
+impl RecordedLiveCollector {
+    fn add_source(
+        &mut self,
+        id: u64,
+        text: String,
+        speaker: Option<String>,
+        audio_position_ms: u64,
+    ) {
+        if text.trim().is_empty() || self.indexes.contains_key(&id) {
+            return;
+        }
+        let start_ms = self.next_start_ms.min(audio_position_ms);
+        self.next_start_ms = audio_position_ms.max(start_ms.saturating_add(250));
+        let index = self.segments.len();
+        self.segments.push((
+            id,
+            RecordedLiveSegment {
+                start_sec: start_ms as f64 / 1_000.0,
+                original: text.trim().to_string(),
+                translation: String::new(),
+                speaker,
+            },
+        ));
+        self.indexes.insert(id, index);
+    }
+
+    fn add_pair(
+        &mut self,
+        id: u64,
+        original: String,
+        translation: String,
+        speaker: Option<String>,
+        audio_position_ms: u64,
+        include_translation: bool,
+    ) {
+        if !self.indexes.contains_key(&id) {
+            self.add_source(id, original.clone(), speaker.clone(), audio_position_ms);
+        }
+        if let Some(index) = self.indexes.get(&id).copied() {
+            let segment = &mut self.segments[index].1;
+            if segment.original.trim().is_empty() {
+                segment.original = original.trim().to_string();
+            }
+            if include_translation {
+                segment.translation = translation.trim().to_string();
+            }
+            if segment.speaker.is_none() {
+                segment.speaker = speaker;
+            }
+        }
+    }
+
+    fn finish(mut self) -> Vec<RecordedLiveSegment> {
+        self.segments.sort_by_key(|(id, _)| *id);
+        self.segments
+            .into_iter()
+            .map(|(_, segment)| segment)
+            .collect()
+    }
+}
+
+/// Feed a recorded 16 kHz mono PCM buffer through the same Live Translate
+/// WebSocket pipeline used by an active meeting. Google recommends 100 ms
+/// frames, so playback is intentionally paced at wall-clock speed.
+pub(crate) async fn translate_recorded_pcm<F>(
+    api_key: &str,
+    source_language: &str,
+    target_language: &str,
+    pcm: Vec<u8>,
+    cancel_flag: Arc<AtomicBool>,
+    on_progress: F,
+) -> Result<Vec<RecordedLiveSegment>, String>
+where
+    F: Fn(u64, u64),
+{
+    if api_key.trim().is_empty() {
+        return Err("Gemini API key is empty".into());
+    }
+    if pcm.is_empty() {
+        return Err("The decoded audio is empty".into());
+    }
+
+    let requested_target = target_language.trim().to_lowercase();
+    let include_translation = !requested_target.is_empty()
+        && requested_target != "none"
+        && requested_target != "off"
+        && requested_target != source_language.trim().to_lowercase();
+    let live_target =
+        if requested_target.is_empty() || requested_target == "none" || requested_target == "off" {
+            let source = source_language.trim().to_lowercase();
+            if source.is_empty() || source == "auto" {
+                "vi".to_string()
+            } else {
+                source
+            }
+        } else {
+            requested_target
+        };
+
+    let cfg = GeminiRealtimeConfig {
+        api_key: api_key.trim().to_string(),
+        source_language: source_language.to_string(),
+        target_language: live_target,
+        model: Some(LIVE_TRANSLATE_MODEL.to_string()),
+        diarization: false,
+    };
+    let target_lang_ref = Arc::new(tokio::sync::RwLock::new(cfg.target_language.clone()));
+    let (audio_tx, audio_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (stop_tx, stop_rx) = mpsc::unbounded_channel::<()>();
+    let ready = Arc::new(tokio::sync::Notify::new());
+    let setup_complete = Arc::new(AtomicBool::new(false));
+    let audio_position_ms = Arc::new(AtomicU64::new(0));
+    let feeding_done = Arc::new(AtomicBool::new(false));
+    let collector = Arc::new(Mutex::new(RecordedLiveCollector::default()));
+    let error = Arc::new(Mutex::new(None::<String>));
+
+    let sink_ready = ready.clone();
+    let sink_setup_complete = setup_complete.clone();
+    let sink_position = audio_position_ms.clone();
+    let sink_done = feeding_done.clone();
+    let sink_collector = collector.clone();
+    let sink_error = error.clone();
+    let event_sink: GeminiEventSink = Arc::new(move |event| match event {
+        GeminiEvent::Status { state, .. } if state == "ready" => {
+            sink_setup_complete.store(true, Ordering::SeqCst);
+            sink_ready.notify_one();
+        }
+        GeminiEvent::SourceTranscript {
+            id,
+            text,
+            is_final: true,
+            speaker,
+        } => {
+            if let Ok(mut collector) = sink_collector.lock() {
+                collector.add_source(id, text, speaker, sink_position.load(Ordering::Relaxed));
+            }
+        }
+        GeminiEvent::Segment {
+            id,
+            original,
+            translation,
+            speaker,
+        } => {
+            if let Ok(mut collector) = sink_collector.lock() {
+                collector.add_pair(
+                    id,
+                    original,
+                    translation,
+                    speaker,
+                    sink_position.load(Ordering::Relaxed),
+                    include_translation,
+                );
+            }
+        }
+        GeminiEvent::Error { message, .. } | GeminiEvent::TranslationFailed { message, .. } => {
+            if let Ok(mut stored) = sink_error.lock() {
+                *stored = Some(message);
+            }
+            sink_ready.notify_one();
+        }
+        GeminiEvent::Reconnecting { .. } => {
+            if let Ok(mut stored) = sink_error.lock() {
+                *stored = Some(
+                    "Gemini Live requested a reconnect before this audio part finished".into(),
+                );
+            }
+        }
+        GeminiEvent::Closed { reason } if !sink_done.load(Ordering::SeqCst) => {
+            if let Ok(mut stored) = sink_error.lock() {
+                *stored = Some(format!("Gemini Live closed early: {}", reason));
+            }
+        }
+        _ => {}
+    });
+
+    let runner = tokio::spawn(run_session(
+        cfg,
+        target_lang_ref,
+        audio_rx,
+        stop_rx,
+        event_sink,
+        Arc::new(tokio::sync::RwLock::new(None)),
+        Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+    ));
+
+    if tokio::time::timeout(std::time::Duration::from_secs(20), ready.notified())
+        .await
+        .is_err()
+    {
+        let _ = stop_tx.send(());
+        let _ = runner.await;
+        return Err(error
+            .lock()
+            .ok()
+            .and_then(|value| value.clone())
+            .unwrap_or_else(|| "Timed out connecting to Gemini Live Translate".into()));
+    }
+    if !setup_complete.load(Ordering::SeqCst) {
+        let _ = stop_tx.send(());
+        let _ = runner.await;
+        return Err(error
+            .lock()
+            .ok()
+            .and_then(|value| value.clone())
+            .unwrap_or_else(|| "Gemini Live Translate did not finish connecting".into()));
+    }
+
+    const PCM_BYTES_PER_100_MS: usize = 16_000 * 2 / 10;
+    let total_bytes = pcm.len() as u64;
+    let mut sent_bytes = 0_u64;
+    for frame in pcm.chunks(PCM_BYTES_PER_100_MS) {
+        if cancel_flag.load(Ordering::SeqCst) {
+            let _ = stop_tx.send(());
+            let _ = runner.await;
+            return Err("Quá trình Re-transcript đã bị hủy".into());
+        }
+        if let Some(message) = error.lock().ok().and_then(|value| value.clone()) {
+            let _ = stop_tx.send(());
+            let _ = runner.await;
+            return Err(message);
+        }
+        if audio_tx.send(frame.to_vec()).is_err() {
+            let _ = stop_tx.send(());
+            let recorded_error = error.lock().ok().and_then(|value| value.clone());
+            if let Some(message) = recorded_error {
+                let _ = runner.await;
+                return Err(message);
+            }
+            return match runner.await {
+                Ok(Err(message)) => Err(message),
+                Err(join_error) => Err(format!("Gemini Live task failed: {}", join_error)),
+                Ok(Ok(())) => Err("Gemini Live audio session ended unexpectedly".into()),
+            };
+        }
+        sent_bytes = sent_bytes.saturating_add(frame.len() as u64);
+        audio_position_ms.store(sent_bytes.saturating_mul(1_000) / 32_000, Ordering::Relaxed);
+        if sent_bytes == total_bytes || sent_bytes % 32_000 < PCM_BYTES_PER_100_MS as u64 {
+            on_progress(sent_bytes, total_bytes);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    feeding_done.store(true, Ordering::SeqCst);
+    drop(audio_tx);
+    let _ = stop_tx.send(());
+    match runner.await {
+        Ok(Ok(())) => {}
+        Ok(Err(message)) => return Err(message),
+        Err(error) => return Err(format!("Gemini Live task failed: {}", error)),
+    }
+    if let Some(message) = error.lock().ok().and_then(|value| value.clone()) {
+        return Err(message);
+    }
+    let collected = Arc::try_unwrap(collector)
+        .map_err(|_| "Could not finalize Gemini Live transcript".to_string())?
+        .into_inner()
+        .map_err(|error| error.to_string())?
+        .finish();
+    if collected.is_empty() {
+        return Err("Gemini Live Translate returned an empty transcript".into());
+    }
+    Ok(collected)
+}
+
 async fn translate_job(
     http_client: reqwest::Client,
     api_key: String,
     target_lang_ref: std::sync::Arc<tokio::sync::RwLock<String>>,
     job: TranslationJob,
     models_ref: std::sync::Arc<tokio::sync::RwLock<Vec<String>>>,
-    cooldowns_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
+    cooldowns_ref: std::sync::Arc<
+        tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>,
+    >,
     cache_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, String>>>,
 ) -> GeminiEvent {
     let target_lang = target_lang_ref.read().await.clone();
@@ -690,8 +998,7 @@ async fn finish_translation_worker(
     translation_tx: Option<mpsc::Sender<TranslationJob>>,
     translation_worker: Option<tokio::task::JoinHandle<()>>,
 ) {
-    let (Some(translation_tx), Some(mut translation_worker)) =
-        (translation_tx, translation_worker)
+    let (Some(translation_tx), Some(mut translation_worker)) = (translation_tx, translation_worker)
     else {
         return;
     };
@@ -709,14 +1016,11 @@ async fn finish_translation_worker(
 async fn start_translation_worker(
     cfg: &GeminiRealtimeConfig,
     target_lang_ref: Arc<tokio::sync::RwLock<String>>,
-    event_ch: Channel<GeminiEvent>,
+    event_sink: GeminiEventSink,
     models_cache: Arc<tokio::sync::RwLock<Option<(std::time::Instant, Vec<String>)>>>,
     cooldowns: Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
     translation_cache: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
-) -> (
-    mpsc::Sender<TranslationJob>,
-    tokio::task::JoinHandle<()>,
-) {
+) -> (mpsc::Sender<TranslationJob>, tokio::task::JoinHandle<()>) {
     let http_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
@@ -738,16 +1042,18 @@ async fn start_translation_worker(
             }
 
             let events = if batch.len() == 1 {
-                vec![translate_job(
-                    http_client.clone(),
-                    translation_api_key.clone(),
-                    target_lang_ref.clone(),
-                    batch.remove(0),
-                    available_models.clone(),
-                    cooldowns.clone(),
-                    translation_cache.clone(),
-                )
-                .await]
+                vec![
+                    translate_job(
+                        http_client.clone(),
+                        translation_api_key.clone(),
+                        target_lang_ref.clone(),
+                        batch.remove(0),
+                        available_models.clone(),
+                        cooldowns.clone(),
+                        translation_cache.clone(),
+                    )
+                    .await,
+                ]
             } else {
                 translate_batch_jobs(
                     http_client.clone(),
@@ -761,7 +1067,7 @@ async fn start_translation_worker(
                 .await
             };
 
-            send_events(&event_ch, events);
+            send_events(&event_sink, events);
             tokio::time::sleep(TRANSLATION_PACE_DELAY).await;
         }
     });
@@ -769,9 +1075,9 @@ async fn start_translation_worker(
     (translation_tx, worker)
 }
 
-fn send_events(event_ch: &Channel<GeminiEvent>, events: Vec<GeminiEvent>) {
+fn send_events(event_sink: &GeminiEventSink, events: Vec<GeminiEvent>) {
     for event in events {
-        let _ = event_ch.send(event);
+        emit_event(event_sink, event);
     }
 }
 
@@ -977,7 +1283,9 @@ fn split_sentences(text: &str) -> (Vec<String>, String) {
 
 fn clean_all(s: &str) -> String {
     s.chars()
-        .filter(|c| !c.is_whitespace() && !c.is_ascii_punctuation() && !"。！？、，.!?, \t\r\n".contains(*c))
+        .filter(|c| {
+            !c.is_whitespace() && !c.is_ascii_punctuation() && !"。！？、，.!?, \t\r\n".contains(*c)
+        })
         .collect::<String>()
         .to_lowercase()
 }
@@ -1032,9 +1340,20 @@ fn is_strong_sentence_end(text: &str) -> bool {
         return t.split_whitespace().count() >= 4;
     }
     let strong_endings = [
-        "ます。", "ました。", "ません。", "ましょう。",
-        "です。", "でした。", "ですね。", "ですよね。", "ですよ。",
-        "でしょうか。", "ましたね。", "ましたよ。", "と思います。", "と考えています。"
+        "ます。",
+        "ました。",
+        "ません。",
+        "ましょう。",
+        "です。",
+        "でした。",
+        "ですね。",
+        "ですよね。",
+        "ですよ。",
+        "でしょうか。",
+        "ましたね。",
+        "ましたよ。",
+        "と思います。",
+        "と考えています。",
     ];
     if strong_endings.iter().any(|&e| t.ends_with(e)) {
         return true;
@@ -1091,7 +1410,7 @@ fn parse_live_duration_ms(value: &str) -> Option<u64> {
 
 async fn handle_server_message(
     text: &str,
-    event_ch: &Channel<GeminiEvent>,
+    event_sink: &GeminiEventSink,
     translation_tx: Option<&mpsc::Sender<TranslationJob>>,
     live_assembler: Option<&mut LiveTranslateAssembler>,
     next_translation_id: &mut u64,
@@ -1106,19 +1425,19 @@ async fn handle_server_message(
     // 1. Setup complete
     if value.get("setupComplete").is_some() {
         eprintln!("[gemini-live] Setup complete received from Google!");
-        let _ = event_ch.send(GeminiEvent::Status {
-            state: "ready".into(),
-            message: Some("Gemini Live connected".into()),
-        });
+        emit_event(
+            event_sink,
+            GeminiEvent::Status {
+                state: "ready".into(),
+                message: Some("Gemini Live connected".into()),
+            },
+        );
         return;
     }
 
     // 2. Check for server errors or warnings
     if let Some(error) = value.get("error") {
-        let code = error
-            .get("code")
-            .and_then(|c| c.as_i64())
-            .unwrap_or(0);
+        let code = error.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
         let message = error
             .get("message")
             .and_then(|m| m.as_str())
@@ -1127,10 +1446,13 @@ async fn handle_server_message(
             "[gemini-live] Server error response: {} - {}",
             code, message
         );
-        let _ = event_ch.send(GeminiEvent::Error {
-            code: format!("server_error_{}", code),
-            message: message.to_string(),
-        });
+        emit_event(
+            event_sink,
+            GeminiEvent::Error {
+                code: format!("server_error_{}", code),
+                message: message.to_string(),
+            },
+        );
         return;
     }
 
@@ -1147,9 +1469,12 @@ async fn handle_server_message(
             "[gemini-live] Server sent goAway (timeLeft: {}, reconnecting in {}ms)",
             time_remaining, reconnect_delay_ms
         );
-        let _ = event_ch.send(GeminiEvent::Reconnecting {
-            delay_ms: reconnect_delay_ms,
-        });
+        emit_event(
+            event_sink,
+            GeminiEvent::Reconnecting {
+                delay_ms: reconnect_delay_ms,
+            },
+        );
     }
 
     // 3. Process serverContent
@@ -1160,21 +1485,21 @@ async fn handle_server_message(
                 .and_then(|tx| tx.get("text"))
                 .and_then(|text| text.as_str())
             {
-                send_events(event_ch, assembler.ingest_source(source));
+                send_events(event_sink, assembler.ingest_source(source));
             }
             if let Some(target) = server_content
                 .get("outputTranscription")
                 .and_then(|tx| tx.get("text"))
                 .and_then(|text| text.as_str())
             {
-                send_events(event_ch, assembler.ingest_target(target));
+                send_events(event_sink, assembler.ingest_target(target));
             }
             if server_content
                 .get("turnComplete")
                 .and_then(|complete| complete.as_bool())
                 .unwrap_or(false)
             {
-                send_events(event_ch, assembler.flush());
+                send_events(event_sink, assembler.flush());
             }
             return;
         }
@@ -1193,7 +1518,8 @@ async fn handle_server_message(
                     let (sentences, provisional) = split_sentences(speech_trimmed);
 
                     for (i, sent) in sentences.iter().enumerate() {
-                        let has_subsequent = (i < sentences.len() - 1) || (provisional.chars().count() >= 8);
+                        let has_subsequent =
+                            (i < sentences.len() - 1) || (provisional.chars().count() >= 8);
                         let sent_trimmed = sent.trim();
                         if has_subsequent && is_strong_sentence_end(sent_trimmed) {
                             if is_recent_duplicate(sent_trimmed, turn_committed, recent_committed) {
@@ -1207,12 +1533,15 @@ async fn handle_server_message(
                                 translation_id, sent_trimmed
                             );
 
-                            let _ = event_ch.send(GeminiEvent::SourceTranscript {
-                                id: translation_id,
-                                text: sent_trimmed.to_string(),
-                                is_final: true,
-                                speaker: speaker.clone(),
-                            });
+                            emit_event(
+                                event_sink,
+                                GeminiEvent::SourceTranscript {
+                                    id: translation_id,
+                                    text: sent_trimmed.to_string(),
+                                    is_final: true,
+                                    speaker: speaker.clone(),
+                                },
+                            );
 
                             if let Some(translation_tx) = translation_tx {
                                 let _ = translation_tx
@@ -1225,10 +1554,8 @@ async fn handle_server_message(
                             }
 
                             turn_committed.insert(clean_all(sent_trimmed));
-                            recent_committed.push_back((
-                                sent_trimmed.to_string(),
-                                std::time::Instant::now(),
-                            ));
+                            recent_committed
+                                .push_back((sent_trimmed.to_string(), std::time::Instant::now()));
                             if recent_committed.len() > 64 {
                                 recent_committed.pop_front();
                             }
@@ -1236,10 +1563,13 @@ async fn handle_server_message(
                     }
 
                     // Send live provisional preview for remaining unfinalized words
-                    let _ = event_ch.send(GeminiEvent::Transcript {
-                        text: provisional,
-                        is_final: false,
-                    });
+                    emit_event(
+                        event_sink,
+                        GeminiEvent::Transcript {
+                            text: provisional,
+                            is_final: false,
+                        },
+                    );
                 }
             }
         }
@@ -1256,10 +1586,13 @@ async fn handle_server_message(
                         .map(str::to_string);
 
                     // Clear provisional text in the UI immediately
-                    let _ = event_ch.send(GeminiEvent::Transcript {
-                        text: String::new(),
-                        is_final: false,
-                    });
+                    emit_event(
+                        event_sink,
+                        GeminiEvent::Transcript {
+                            text: String::new(),
+                            is_final: false,
+                        },
+                    );
 
                     let (sentences, trailing) = split_sentences(speech_clean);
                     let mut all_sentences = sentences;
@@ -1289,12 +1622,15 @@ async fn handle_server_message(
                             translation_id, sent_trimmed
                         );
 
-                        let _ = event_ch.send(GeminiEvent::SourceTranscript {
-                            id: translation_id,
-                            text: sent_trimmed.to_string(),
-                            is_final: true,
-                            speaker: speaker.clone(),
-                        });
+                        emit_event(
+                            event_sink,
+                            GeminiEvent::SourceTranscript {
+                                id: translation_id,
+                                text: sent_trimmed.to_string(),
+                                is_final: true,
+                                speaker: speaker.clone(),
+                            },
+                        );
 
                         if let Some(translation_tx) = translation_tx {
                             let _ = translation_tx
@@ -1307,10 +1643,8 @@ async fn handle_server_message(
                         }
 
                         turn_committed.insert(clean_all(sent_trimmed));
-                        recent_committed.push_back((
-                            sent_trimmed.to_string(),
-                            std::time::Instant::now(),
-                        ));
+                        recent_committed
+                            .push_back((sent_trimmed.to_string(), std::time::Instant::now()));
                         if recent_committed.len() > 64 {
                             recent_committed.pop_front();
                         }
@@ -1487,7 +1821,9 @@ async fn translate_raw_prompt(
     api_key: &str,
     prompt: &str,
     models: &[String],
-    cooldowns_ref: &Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
+    cooldowns_ref: &Arc<
+        tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>,
+    >,
 ) -> Result<Option<String>, String> {
     let now = std::time::Instant::now();
     let mut soonest_wait: Option<std::time::Duration> = None;
@@ -1548,7 +1884,8 @@ async fn translate_raw_prompt(
                 if status.is_success() {
                     match resp.text().await {
                         Ok(text_resp) => {
-                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text_resp) {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text_resp)
+                            {
                                 if let Some(translated) = json
                                     .get("candidates")
                                     .and_then(|c| c.get(0))
@@ -1563,13 +1900,22 @@ async fn translate_raw_prompt(
                                         return Ok(Some(translated));
                                     }
                                 }
-                                last_error = Some(format!("Gemini API HTTP {} returned empty translation", status));
+                                last_error = Some(format!(
+                                    "Gemini API HTTP {} returned empty translation",
+                                    status
+                                ));
                             } else {
-                                last_error = Some(format!("Gemini API HTTP {} returned invalid JSON", status));
+                                last_error = Some(format!(
+                                    "Gemini API HTTP {} returned invalid JSON",
+                                    status
+                                ));
                             }
                         }
                         Err(e) => {
-                            last_error = Some(format!("Gemini API HTTP {} response read failed: {}", status, e));
+                            last_error = Some(format!(
+                                "Gemini API HTTP {} response read failed: {}",
+                                status, e
+                            ));
                         }
                     }
                 } else {
@@ -1588,7 +1934,8 @@ async fn translate_raw_prompt(
                         format!("HTTP {}: {}", status, api_message)
                     };
                     let is_quota_error = status.as_u16() == 429 || is_quota_error_text(api_message);
-                    let is_auth_error = matches!(status.as_u16(), 401 | 403) || is_auth_error_text(api_message);
+                    let is_auth_error =
+                        matches!(status.as_u16(), 401 | 403) || is_auth_error_text(api_message);
                     last_error = Some(format!("Gemini API {}", detail));
 
                     // Extract retryDelay or default to 20s for transient errors.
@@ -1714,7 +2061,9 @@ async fn translate_text_rest(
     text: &str,
     target_lang: &str,
     models: &[String],
-    cooldowns_ref: &Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
+    cooldowns_ref: &Arc<
+        tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>,
+    >,
 ) -> Result<Option<String>, String> {
     let target_name = map_lang_name(target_lang);
     let prompt = format!(
@@ -1769,7 +2118,10 @@ fn parse_numbered_translations(text: &str, expected_count: usize) -> Vec<String>
     }
 
     if items.len() == expected_count {
-        return items.into_iter().map(|(_, t)| t.trim().to_string()).collect();
+        return items
+            .into_iter()
+            .map(|(_, t)| t.trim().to_string())
+            .collect();
     }
 
     let non_empty_lines: Vec<&str> = text
@@ -1799,7 +2151,9 @@ async fn translate_batch_jobs(
     target_lang_ref: std::sync::Arc<tokio::sync::RwLock<String>>,
     jobs: Vec<TranslationJob>,
     models_ref: std::sync::Arc<tokio::sync::RwLock<Vec<String>>>,
-    cooldowns_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
+    cooldowns_ref: std::sync::Arc<
+        tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>,
+    >,
     cache_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, String>>>,
 ) -> Vec<GeminiEvent> {
     let target_lang = target_lang_ref.read().await.clone();
@@ -1863,7 +2217,9 @@ async fn translate_batch_jobs(
         )
         .await;
         match event {
-            GeminiEvent::Segment { id, translation, .. } => {
+            GeminiEvent::Segment {
+                id, translation, ..
+            } => {
                 results.insert(id, translation);
             }
             GeminiEvent::TranslationFailed { id, message } => {
@@ -1907,27 +2263,25 @@ async fn translate_batch_jobs(
             let delay_ms = 2000u64 * (attempt as u64);
             tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         }
-        batch_text_opt = match translate_raw_prompt(
-            &http_client,
-            &api_key,
-            &prompt,
-            &models,
-            &cooldowns_ref,
-        )
-        .await
-        {
-            Ok(value) => value,
-            Err(error) => {
-                eprintln!("[gemini-live] Batch translation attempt failed: {}", error);
-                let stop_retrying = is_non_retryable_translation_error(&error);
-                batch_error = Some(error);
-                if stop_retrying {
-                    break;
+        batch_text_opt =
+            match translate_raw_prompt(&http_client, &api_key, &prompt, &models, &cooldowns_ref)
+                .await
+            {
+                Ok(value) => value,
+                Err(error) => {
+                    eprintln!("[gemini-live] Batch translation attempt failed: {}", error);
+                    let stop_retrying = is_non_retryable_translation_error(&error);
+                    batch_error = Some(error);
+                    if stop_retrying {
+                        break;
+                    }
+                    None
                 }
-                None
-            }
-        };
-        if batch_text_opt.as_ref().is_some_and(|t| !t.trim().is_empty()) {
+            };
+        if batch_text_opt
+            .as_ref()
+            .is_some_and(|t| !t.trim().is_empty())
+        {
             break;
         }
     }
@@ -1955,7 +2309,10 @@ async fn translate_batch_jobs(
         // Fallback: translate uncached items individually
         for &idx in &uncached_indices {
             let job = jobs[idx].clone();
-            if let Some(error) = batch_error.as_deref().filter(|message| is_non_retryable_translation_error(message)) {
+            if let Some(error) = batch_error
+                .as_deref()
+                .filter(|message| is_non_retryable_translation_error(message))
+            {
                 failures.insert(job.id, error.to_string());
                 continue;
             }
@@ -1970,7 +2327,9 @@ async fn translate_batch_jobs(
             )
             .await;
             match event {
-                GeminiEvent::Segment { id, translation, .. } => {
+                GeminiEvent::Segment {
+                    id, translation, ..
+                } => {
                     results.insert(id, translation);
                 }
                 GeminiEvent::TranslationFailed { id, message } => {
@@ -1983,7 +2342,10 @@ async fn translate_batch_jobs(
 
     jobs.into_iter()
         .map(|job| match failures.remove(&job.id) {
-            Some(message) => GeminiEvent::TranslationFailed { id: job.id, message },
+            Some(message) => GeminiEvent::TranslationFailed {
+                id: job.id,
+                message,
+            },
             None => {
                 let trans = results.remove(&job.id).unwrap_or_default();
                 GeminiEvent::Segment {
@@ -1996,8 +2358,6 @@ async fn translate_batch_jobs(
         })
         .collect()
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -2047,8 +2407,7 @@ mod tests {
             model: Some(LIVE_TRANSLATE_MODEL.into()),
             diarization: false,
         };
-        let parsed: serde_json::Value =
-            serde_json::from_str(&build_setup_message(&cfg)).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&build_setup_message(&cfg)).unwrap();
 
         assert_eq!(parsed["setup"]["model"], LIVE_TRANSLATE_MODEL);
         assert_eq!(
@@ -2056,13 +2415,11 @@ mod tests {
             "AUDIO"
         );
         assert_eq!(
-            parsed["setup"]["generationConfig"]["translationConfig"]
-                ["targetLanguageCode"],
+            parsed["setup"]["generationConfig"]["translationConfig"]["targetLanguageCode"],
             "vi"
         );
         assert_eq!(
-            parsed["setup"]["generationConfig"]["translationConfig"]
-                ["echoTargetLanguage"],
+            parsed["setup"]["generationConfig"]["translationConfig"]["echoTargetLanguage"],
             true
         );
         assert!(parsed["setup"].get("inputAudioTranscription").is_some());
@@ -2082,8 +2439,7 @@ mod tests {
 
         assert_eq!(normalized_model(&cfg), LIVE_TRANSLATE_MODEL);
         assert!(uses_live_translate(&cfg));
-        let parsed: serde_json::Value =
-            serde_json::from_str(&build_setup_message(&cfg)).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&build_setup_message(&cfg)).unwrap();
         assert_eq!(parsed["setup"]["model"], LIVE_TRANSLATE_MODEL);
     }
 
@@ -2147,6 +2503,27 @@ mod tests {
     }
 
     #[test]
+    fn test_recorded_live_collector_merges_source_and_translation_events() {
+        let mut collector = RecordedLiveCollector::default();
+        collector.add_source(2, "こんにちは。".into(), None, 2_000);
+        collector.add_pair(
+            2,
+            "こんにちは。".into(),
+            "Xin chào.".into(),
+            None,
+            2_000,
+            true,
+        );
+        collector.add_source(1, "おはようございます。".into(), None, 1_000);
+
+        let segments = collector.finish();
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].original, "おはようございます。");
+        assert_eq!(segments[1].original, "こんにちは。");
+        assert_eq!(segments[1].translation, "Xin chào.");
+    }
+
+    #[test]
     fn test_extract_sentences_with_no_space_period() {
         let text = "Anh cơ bản là có hai ai mà là rồi thì nó dễ.Tôi thì học xong.";
         let (sentences, provisional) = split_sentences(text);
@@ -2192,9 +2569,11 @@ mod tests {
     fn test_is_strong_sentence_end() {
         assert!(is_strong_sentence_end("インプットが入ってきます。"));
         assert!(is_strong_sentence_end("全く同じパラメーターです。"));
-        assert!(is_strong_sentence_end("昔のRNNとかよくやってたことなんですが、時間方向にぐるぐる回すんですね。"));
+        assert!(is_strong_sentence_end(
+            "昔のRNNとかよくやってたことなんですが、時間方向にぐるぐる回すんですね。"
+        ));
         assert!(is_strong_sentence_end("This is a complete sentence."));
-        
+
         // Incomplete / weak
         assert!(!is_strong_sentence_end("で、出力する。"));
         assert!(!is_strong_sentence_end("なんと。"));
@@ -2211,14 +2590,22 @@ mod tests {
         ));
 
         // Exact match with different CJK spacing
-        assert!(is_recent_duplicate("まさかの緊急収録ですね。", &turn_committed, &recent));
+        assert!(is_recent_duplicate(
+            "まさかの緊急収録ですね。",
+            &turn_committed,
+            &recent
+        ));
 
         // Turn committed match
         turn_committed.insert(clean_all("はい。"));
         assert!(is_recent_duplicate("はい。", &turn_committed, &recent));
 
         // Different sentence
-        assert!(!is_recent_duplicate("いや、本当にこれ緊急です。", &turn_committed, &recent));
+        assert!(!is_recent_duplicate(
+            "いや、本当にこれ緊急です。",
+            &turn_committed,
+            &recent
+        ));
     }
 
     #[test]

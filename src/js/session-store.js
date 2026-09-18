@@ -21,9 +21,12 @@ export class SessionStore {
         this.endedAt = null;
         this.title = '';
         this.notes = '';
+        this.notesByMinutesTemplate = {};
         this.noteImages = [];
         this.meetingMinutes = '';
         this.meetingMinutesLang = 'vi';
+        this.meetingMinutesTemplateId = null;
+        this.meetingMinutesTemplateLanguage = null;
         this.tags = [];
         this.customerId = null;
         this.projectId = null;
@@ -50,16 +53,19 @@ export class SessionStore {
         this._noteAutosaveTimer = null;
     }
 
-    init({ engine, sourceLang, targetLang, tags, customerId, projectId, category, scope } = {}) {
+    init({ engine, sourceLang, targetLang, tags, customerId, projectId, category, scope, meetingMinutesTemplateId } = {}) {
         this._cancelAutosave();
         this.id = this._generateId();
         this.createdAt = new Date().toISOString();
         this.endedAt = null;
         this.title = '';
         this.notes = '';
+        this.notesByMinutesTemplate = {};
         this.noteImages = [];
         this.meetingMinutes = '';
         this.meetingMinutesLang = 'ja';
+        this.meetingMinutesTemplateId = meetingMinutesTemplateId || null;
+        this.meetingMinutesTemplateLanguage = null;
         this.meetingMinutesJa = '';
         this.meetingMinutesVi = '';
         this.meetingMinutesEn = '';
@@ -180,6 +186,7 @@ export class SessionStore {
     async _persistNow() {
         const hasContent = this.totalSegmentCount() > 0
             || Boolean(this.notes && this.notes.trim())
+            || Object.values(this.notesByMinutesTemplate || {}).some((notes) => Boolean(notes && notes.trim()))
             || this.diagnostics.length > 0;
         if (this._mutations === this._persistedMutations || !hasContent) {
             return 'skipped';
@@ -230,12 +237,14 @@ export class SessionStore {
             endedAt: this.endedAt,
             title: this.title,
             notes: this.notes,
+            notesByMinutesTemplate: { ...(this.notesByMinutesTemplate || {}) },
             noteImages: this.noteImages,
             meetingMinutes: this.meetingMinutes,
             meetingMinutesLang: this.meetingMinutesLang,
             meetingMinutesJa: this.meetingMinutesJa,
             meetingMinutesVi: this.meetingMinutesVi,
             meetingMinutesEn: this.meetingMinutesEn,
+            meetingMinutesTemplateId: this.meetingMinutesTemplateId,
             tags: this.tags,
             customerId: this.customerId,
             projectId: this.projectId,
@@ -322,6 +331,9 @@ export class SessionStore {
 
     async setNotes(notes) {
         this.notes = notes || '';
+        const templateId = this.meetingMinutesTemplateId || 'standard';
+        const language = this.meetingMinutesTemplateLanguage || 'en';
+        this.notesByMinutesTemplate[this.minutesTemplateDraftKey(templateId, language)] = this.notes;
         this._mutations++;
         if (this.id) {
             try {
@@ -335,11 +347,58 @@ export class SessionStore {
         }
     }
 
+    minutesTemplateDraftKey(templateId, language = 'en') {
+        const id = String(templateId || '').trim();
+        const lang = String(language || 'en').trim() || 'en';
+        return `${id}::${lang}`;
+    }
+
+    switchMinutesTemplateDraft(templateId, currentContent = this.notes, defaultContent = '', language = 'en') {
+        const nextTemplateId = String(templateId || '').trim();
+        if (!nextTemplateId) return this.notes || '';
+        const nextLanguage = String(language || 'en').trim() || 'en';
+
+        const previousTemplateId = this.meetingMinutesTemplateId;
+        const previousLanguage = this.meetingMinutesTemplateLanguage;
+        const current = String(currentContent ?? this.notes ?? '');
+        if (previousTemplateId && previousLanguage) {
+            this.notesByMinutesTemplate[this.minutesTemplateDraftKey(previousTemplateId, previousLanguage)] = current;
+        } else if (previousTemplateId && current.trim()
+            && !Object.prototype.hasOwnProperty.call(this.notesByMinutesTemplate, previousTemplateId)) {
+            // Migrate a non-empty draft from older session data that did not
+            // record which template language was active.
+            this.notesByMinutesTemplate[previousTemplateId] = current;
+        }
+
+        const nextDraftKey = this.minutesTemplateDraftKey(nextTemplateId, nextLanguage);
+        let nextContent;
+        if (Object.prototype.hasOwnProperty.call(this.notesByMinutesTemplate, nextDraftKey)) {
+            nextContent = this.notesByMinutesTemplate[nextDraftKey];
+        } else if (!previousLanguage && Object.prototype.hasOwnProperty.call(this.notesByMinutesTemplate, nextTemplateId)) {
+            // Older versions keyed memo drafts by template ID only. Assign that
+            // existing draft to the language first opened in this version.
+            nextContent = this.notesByMinutesTemplate[nextTemplateId];
+            delete this.notesByMinutesTemplate[nextTemplateId];
+        } else if (!previousTemplateId && current.trim()) {
+            nextContent = current;
+        } else {
+            nextContent = String(defaultContent || '');
+        }
+
+        this.meetingMinutesTemplateId = nextTemplateId;
+        this.meetingMinutesTemplateLanguage = nextLanguage;
+        this.notes = nextContent;
+        this.notesByMinutesTemplate[nextDraftKey] = nextContent;
+        this._mutations++;
+        return nextContent;
+    }
+
     // Update the live note draft without invoking a backend write for every
     // keystroke. The short debounce makes note-only meetings recoverable even
     // when no transcript segment has arrived yet.
-    updateNotesDraft(notes) {
+    updateNotesDraft(notes, templateId = this.meetingMinutesTemplateId || 'standard', language = this.meetingMinutesTemplateLanguage || 'en') {
         this.notes = notes || '';
+        if (templateId) this.notesByMinutesTemplate[this.minutesTemplateDraftKey(templateId, language)] = this.notes;
         this._mutations++;
         this._scheduleNotesAutosave();
     }
@@ -355,7 +414,8 @@ export class SessionStore {
     isEmpty() {
         const chunkSegs = this.chunks.reduce((n, c) => n + c.segments.length, 0);
         const liveSegs = this.currentChunk?.segments.length || 0;
-        const hasNotes = Boolean(this.notes && this.notes.trim());
+        const hasNotes = Boolean(this.notes && this.notes.trim())
+            || Object.values(this.notesByMinutesTemplate || {}).some((notes) => Boolean(notes && notes.trim()));
         const hasDiagnostics = this.diagnostics.length > 0;
         return chunkSegs + liveSegs === 0 && !hasNotes && !hasDiagnostics;
     }
@@ -472,12 +532,14 @@ export class SessionStore {
             ended_at: this.endedAt,
             title: this.title || this._autoTitle(),
             notes: this.notes || '',
+            notes_by_minutes_template: this.notesByMinutesTemplate || {},
             note_images: this.noteImages || [],
             meeting_minutes: this.meetingMinutes || null,
             meeting_minutes_lang: this.meetingMinutesLang || null,
             meeting_minutes_ja: this.meetingMinutesJa || null,
             meeting_minutes_vi: this.meetingMinutesVi || null,
             meeting_minutes_en: this.meetingMinutesEn || null,
+            meeting_minutes_template_id: this.meetingMinutesTemplateId || null,
             tags: this.tags || [],
             customer_id: this.customerId || null,
             project_id: this.projectId || null,
