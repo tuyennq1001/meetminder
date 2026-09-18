@@ -7,6 +7,7 @@
 // Legacy `.md`-only files from the old `save_transcript` command are still
 // listed (with `has_legacy_only: true`) but not editable.
 
+use futures_util::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -2352,6 +2353,9 @@ const GEMINI_LIVE_CHUNK_THRESHOLD_SECONDS: u64 = GEMINI_LIVE_CHUNK_SECONDS;
 const GEMINI_TRANSCRIBE_CHUNK_SECONDS: u64 = 2 * 60;
 #[allow(dead_code)]
 const GEMINI_TRANSCRIBE_CHUNK_THRESHOLD_SECONDS: u64 = GEMINI_TRANSCRIBE_CHUNK_SECONDS;
+// File-based Gemini audio understanding can process independent recording
+// chunks concurrently without replaying each chunk at real-time speed.
+const GEMINI_FILE_CHUNK_CONCURRENCY: usize = 2;
 
 struct AudioChunkWorkspace(PathBuf);
 
@@ -3519,9 +3523,10 @@ pub fn cancel_retranscribe_session(id: String) -> Result<bool, String> {
     }
 }
 
-/// Route the post-meeting transcript job to the engine selected in Settings.
-/// Cloud jobs reuse the same Gemini Live Translate WebSocket pipeline as the
-/// active meeting instead of the separate Transcribe generateContent API.
+/// Route saved audio to the selected transcription engine. Gemini Flash uses
+/// file audio understanding, Gemini Transcribe uses its dedicated transcription
+/// path, and Local MLX stays on-device. Cloud routes do not replay audio through
+/// the real-time Live Translate session.
 #[tauri::command]
 pub async fn retranscribe_session(
     app: AppHandle,
@@ -3531,14 +3536,20 @@ pub async fn retranscribe_session(
     source_lang: Option<String>,
     target_lang: Option<String>,
 ) -> Result<SessionReadResult, String> {
-    match transcript_engine.trim() {
-        "local_mlx" => retranscribe_session_with_local_mlx(app, id, source_lang, target_lang).await,
-        // Unknown and legacy `gemini_transcribe` values deliberately fall
-        // back to Live Translate so older settings files migrate safely.
-        _ => {
-            retranscribe_session_with_gemini_live(app, id, api_key, source_lang, target_lang).await
-        }
+    if transcript_engine.trim() == "local_mlx" {
+        return retranscribe_session_with_local_mlx(app, id, source_lang, target_lang).await;
     }
+    if transcript_engine.trim() == "gemini_transcribe" {
+        return retranscribe_session_with_gemini_transcribe(
+            app,
+            id,
+            api_key,
+            source_lang,
+            target_lang,
+        )
+        .await;
+    }
+    retranscribe_session_with_gemini(app, id, api_key, source_lang, target_lang).await
 }
 
 fn register_retranscribe_cancel(
@@ -4198,6 +4209,7 @@ async fn retranscribe_live_part(
         .collect())
 }
 
+#[allow(dead_code)]
 async fn retranscribe_session_with_gemini_live(
     app: AppHandle,
     id: String,
@@ -4273,7 +4285,6 @@ async fn retranscribe_session_with_gemini_live(
     )
 }
 
-#[allow(dead_code)]
 async fn retranscribe_session_with_gemini_transcribe(
     app: AppHandle,
     id: String,
@@ -4776,72 +4787,153 @@ pub async fn retranscribe_session_with_gemini(
     if duration_sec > AUDIO_CHUNK_THRESHOLD_SECONDS {
         let (_workspace, chunks) = create_audio_chunks(&audio_path, duration_sec as f64, &id)?;
         let total_chunks = chunks.len();
-        let mut all_segments = Vec::new();
-        for (index, (chunk_path, start_sec, length_sec)) in chunks.iter().enumerate() {
-            if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
-                return Err("Quá trình Re-transcript đã bị hủy".into());
+        let completed_chunks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let results = stream::iter(chunks.into_iter().enumerate().map(
+            |(index, (chunk_path, start_sec, length_sec))| {
+                let client = client.clone();
+                let api_key = api_key.clone();
+                let cancel_flag = cancel_flag.clone();
+                let failed = failed.clone();
+                let completed_chunks = completed_chunks.clone();
+                let app = app.clone();
+                let id = id.clone();
+                let source_lang = data.source_lang.clone();
+                let source_name = source_name.clone();
+                let translation_instruction = translation_instruction.clone();
+                async move {
+                    if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                        return Err("Quá trình Re-transcript đã bị hủy".to_string());
+                    }
+                    if failed.load(std::sync::atomic::Ordering::SeqCst) {
+                        return Err("Skipped after another audio part failed".to_string());
+                    }
+                    let percent = 20
+                        + ((completed_chunks.load(std::sync::atomic::Ordering::Relaxed) as u64
+                            * 65)
+                            / total_chunks as u64) as u8;
+                    emit_audio_transcript_progress(
+                        &app,
+                        &id,
+                        "transcribe",
+                        &format!(
+                            "Đang xử lý phần {}/{} ({}–{})...",
+                            index + 1,
+                            total_chunks,
+                            format_duration_str(start_sec),
+                            format_duration_str(start_sec + length_sec)
+                        ),
+                        percent,
+                    );
+                    let part_result = async {
+                        let uploaded = upload_gemini_audio_file(
+                            &client,
+                            &api_key,
+                            &chunk_path,
+                            "audio/wav",
+                            &format!("Meet Minder recording part {}/{}", index + 1, total_chunks),
+                        )
+                        .await
+                        .map_err(|error| {
+                            format!(
+                                "Gemini upload failed at audio part {}/{} ({}–{}): {}",
+                                index + 1,
+                                total_chunks,
+                                format_duration_str(start_sec),
+                                format_duration_str(start_sec + length_sec),
+                                error
+                            )
+                        })?;
+                        let prompt = format!(
+                            "Transcribe only the audio in this chunk of a meeting recording. The spoken/source language is {source_name} (language code: {}). This chunk covers absolute time {} through {} in the original recording. Split into short chronological segments and keep all meaningful speech. start_sec must be the absolute offset from the original recording, not the offset inside this chunk. Return JSON only with this exact schema: {{\"segments\":[{{\"start_sec\":0,\"text\":\"original speech\",\"translation\":\"\"}}]}}.{}",
+                            source_lang,
+                            format_duration_str(start_sec),
+                            format_duration_str(start_sec + length_sec),
+                            translation_instruction
+                        );
+                        let generated = generate_gemini_audio_transcript(
+                            &client,
+                            &api_key,
+                            "audio/wav",
+                            &uploaded.file_uri,
+                            &prompt,
+                            &cancel_flag,
+                        )
+                        .await;
+                        delete_gemini_audio_file(&client, &api_key, &uploaded.file_name).await;
+                        let generated = generated.map_err(|error| {
+                            format!(
+                                "Gemini audio processing failed at part {}/{} ({}–{}): {}",
+                                index + 1,
+                                total_chunks,
+                                format_duration_str(start_sec),
+                                format_duration_str(start_sec + length_sec),
+                                error
+                            )
+                        })?;
+                        let mut part_segments = parse_gemini_transcript(&generated)?;
+                        normalize_chunk_timestamps(&mut part_segments, start_sec);
+                        Ok::<Vec<Segment>, String>(part_segments)
+                    }
+                    .await;
+
+                    match part_result {
+                        Ok(segments) => {
+                            let completed = completed_chunks.fetch_add(
+                                1,
+                                std::sync::atomic::Ordering::Relaxed,
+                            ) + 1;
+                            emit_audio_transcript_progress(
+                                &app,
+                                &id,
+                                "transcribe",
+                                &format!(
+                                    "Gemini đã xử lý {}/{} phần audio.",
+                                    completed, total_chunks
+                                ),
+                                20 + ((completed * 65) / total_chunks) as u8,
+                            );
+                            Ok::<(usize, Vec<Segment>), String>((index, segments))
+                        }
+                        Err(error) => {
+                            failed.store(true, std::sync::atomic::Ordering::SeqCst);
+                            Err(error)
+                        }
+                    }
+                }
+            },
+        ))
+        .buffer_unordered(GEMINI_FILE_CHUNK_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
+
+        let mut parts = std::iter::repeat_with(|| None)
+            .take(total_chunks)
+            .collect::<Vec<Option<Vec<Segment>>>>();
+        let mut first_error = None;
+        for result in results {
+            match result {
+                Ok((index, segments)) => parts[index] = Some(segments),
+                Err(error)
+                    if !error.starts_with("Skipped after another audio part failed")
+                        && first_error.is_none() =>
+                {
+                    first_error = Some(error)
+                }
+                Err(_) => {}
             }
-            emit_audio_transcript_progress(
-                &app,
-                &id,
-                "transcribe",
-                &format!(
-                    "Đang xử lý phần {}/{} ({}–{})...",
-                    index + 1,
-                    total_chunks,
-                    format_duration_str(*start_sec),
-                    format_duration_str(*start_sec + *length_sec)
-                ),
-                20 + ((index as u64 * 65) / total_chunks as u64) as u8,
-            );
-            let uploaded = upload_gemini_audio_file(
-                &client,
-                &api_key,
-                chunk_path,
-                "audio/wav",
-                &format!("Meet Minder recording part {}/{}", index + 1, total_chunks),
-            )
-            .await?;
-            let prompt = format!(
-                "Transcribe only the audio in this chunk of a meeting recording. The spoken/source language is {source_name} (language code: {}). This chunk covers absolute time {} through {} in the original recording. Split into short chronological segments and keep all meaningful speech. start_sec must be the absolute offset from the original recording, not the offset inside this chunk. Return JSON only with this exact schema: {{\"segments\":[{{\"start_sec\":0,\"text\":\"original speech\",\"translation\":\"\"}}]}}.{}",
-                data.source_lang,
-                format_duration_str(*start_sec),
-                format_duration_str(*start_sec + *length_sec),
-                translation_instruction
-            );
-            let generated = generate_gemini_audio_transcript(
-                &client,
-                &api_key,
-                "audio/wav",
-                &uploaded.file_uri,
-                &prompt,
-                &cancel_flag,
-            )
-            .await;
-            let _ = client
-                .delete(format!(
-                    "https://generativelanguage.googleapis.com/v1beta/{}",
-                    uploaded.file_name
-                ))
-                .query(&[("key", api_key.trim())])
-                .send()
-                .await;
-            let generated = generated?;
-            let mut part_segments = parse_gemini_transcript(&generated)?;
-            normalize_chunk_timestamps(&mut part_segments, *start_sec);
-            all_segments.append(&mut part_segments);
-            emit_audio_transcript_progress(
-                &app,
-                &id,
-                "transcribe",
-                &format!(
-                    "Đã nhận {} đoạn từ phần {}/{}.",
-                    all_segments.len(),
-                    index + 1,
-                    total_chunks
-                ),
-                20 + (((index + 1) as u64 * 65) / total_chunks as u64) as u8,
-            );
+        }
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("Quá trình Re-transcript đã bị hủy".into());
+        }
+        if let Some(error) = first_error {
+            return Err(error);
+        }
+        let mut all_segments = Vec::new();
+        for part in parts {
+            all_segments.extend(part.ok_or_else(|| {
+                "Gemini did not return a result for every audio part".to_string()
+            })?);
         }
         if all_segments.is_empty() {
             return Err("Không tìm thấy đoạn hội thoại nào trong file ghi âm (Gemini không phát hiện giọng nói)".into());

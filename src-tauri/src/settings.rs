@@ -487,9 +487,8 @@ fn normalize_loaded_settings(mut settings: Settings) -> Settings {
     {
         settings.gemini_model = "auto".to_string();
     }
-    if settings.transcript_engine == "gemini_transcribe" {
-        settings.transcript_engine = "gemini_live_translate".to_string();
-    } else if settings.transcript_engine != "gemini_live_translate"
+    if settings.transcript_engine != "gemini_live_translate"
+        && settings.transcript_engine != "gemini_transcribe"
         && settings.transcript_engine != "local_mlx"
     {
         settings.transcript_engine = default_transcript_engine();
@@ -576,17 +575,23 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_loaded_settings_keeps_supported_model_and_migrates_legacy() {
+    fn test_normalize_loaded_settings_keeps_supported_models_and_engines() {
         let mut settings = Settings::default();
         settings.gemini_model = "models/gemini-3.5-live-translate-preview".to_string();
+        settings.transcript_engine = "gemini_transcribe".to_string();
+        let normalized = normalize_loaded_settings(settings);
         assert_eq!(
-            normalize_loaded_settings(settings).gemini_model,
+            normalized.gemini_model,
             "models/gemini-3.5-live-translate-preview"
         );
+        assert_eq!(normalized.transcript_engine, "gemini_transcribe");
 
         let mut legacy = Settings::default();
         legacy.gemini_model = "models/gemini-2.0-flash".to_string();
-        assert_eq!(normalize_loaded_settings(legacy).gemini_model, "auto");
+        legacy.transcript_engine = "unsupported_engine".to_string();
+        let normalized = normalize_loaded_settings(legacy);
+        assert_eq!(normalized.gemini_model, "auto");
+        assert_eq!(normalized.transcript_engine, "gemini_live_translate");
     }
 
     #[test]

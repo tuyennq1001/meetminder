@@ -3187,7 +3187,7 @@ class App {
         if (selectTransMode) selectTransMode.value = s.translation_mode || 'gemini';
         const selectTranscriptEngine = document.getElementById('select-transcript-engine');
         if (selectTranscriptEngine) {
-            const transcriptEngine = ['gemini_live_translate', 'local_mlx'].includes(s.transcript_engine)
+            const transcriptEngine = ['gemini_live_translate', 'gemini_transcribe', 'local_mlx'].includes(s.transcript_engine)
                 ? s.transcript_engine
                 : 'gemini_live_translate';
             selectTranscriptEngine.value = transcriptEngine;
@@ -3461,7 +3461,7 @@ class App {
             this._updateModeUI(settings.translation_mode);
         }
 
-        const transcriptEngine = ['gemini_live_translate', 'local_mlx'].includes(settings.transcript_engine)
+        const transcriptEngine = ['gemini_live_translate', 'gemini_transcribe', 'local_mlx'].includes(settings.transcript_engine)
             ? settings.transcript_engine
             : 'gemini_live_translate';
         const transcriptSelect = document.getElementById('select-transcript-engine');
@@ -3750,6 +3750,7 @@ class App {
         if (!select || !hint) return;
 
         const isLocal = engine === 'local_mlx';
+        const isGeminiTranscribe = engine === 'gemini_transcribe';
         const settings = settingsManager.get();
         const localUnavailable = isLocal && (!this.isAppleSilicon || !this._isLocalMlxReady);
         const missingGeminiKey = !isLocal && !(settings.gemini_api_key || '').trim();
@@ -3761,7 +3762,9 @@ class App {
         } else {
             hint.textContent = isLocal
                 ? t('settings.engine.transcriptLocalHint')
-                : t('settings.engine.transcriptGeminiHint');
+                : t(isGeminiTranscribe
+                    ? 'settings.engine.transcriptTranscribeHint'
+                    : 'settings.engine.transcriptGeminiHint');
         }
         hint.classList.toggle('hint-warning', localUnavailable || missingGeminiKey);
     }
@@ -6367,6 +6370,7 @@ class App {
 
     _getLocalizedAudioTranscriptProgress(stage, active) {
         const isLocal = active?.transcriptEngine === 'local_mlx';
+        const isGeminiTranscribe = active?.transcriptEngine === 'gemini_transcribe';
         if (stage === 'upload') {
             return t(isLocal
                 ? 'retranscript.progress.uploadingLocal'
@@ -6382,14 +6386,21 @@ class App {
         if (stage === 'minutes') return t('retranscript.step.minutes');
         return t(isLocal
             ? 'retranscript.progress.transcribingLocal'
-            : 'retranscript.progress.transcribing');
+            : (isGeminiTranscribe
+                ? 'retranscript.progress.transcribingGeminiTranscribe'
+                : 'retranscript.progress.transcribing'));
     }
 
     _updateRetranscriptEngineLabels(active = this._activeRetranscribe) {
         const isLocal = active?.transcriptEngine === 'local_mlx';
+        const isGeminiTranscribe = active?.transcriptEngine === 'gemini_transcribe';
         const labels = {
             upload: isLocal ? 'retranscript.step.uploadLocal' : 'retranscript.step.upload',
-            transcribe: isLocal ? 'retranscript.step.transcribeLocal' : 'retranscript.step.transcribe',
+            transcribe: isLocal
+                ? 'retranscript.step.transcribeLocal'
+                : (isGeminiTranscribe
+                    ? 'retranscript.step.transcribeGeminiTranscribe'
+                    : 'retranscript.step.transcribe'),
         };
         Object.entries(labels).forEach(([stepName, key]) => {
             const step = document.querySelector(`[data-retranscript-step="${stepName}"]`);
@@ -12691,11 +12702,11 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             return;
         }
         const settings = settingsManager.get();
-        const transcriptEngine = ['gemini_live_translate', 'local_mlx'].includes(settings.transcript_engine)
+        const transcriptEngine = ['gemini_live_translate', 'gemini_transcribe', 'local_mlx'].includes(settings.transcript_engine)
             ? settings.transcript_engine
             : 'gemini_live_translate';
         const apiKey = settings.gemini_api_key?.trim() || '';
-        if (transcriptEngine === 'gemini_live_translate' && !apiKey) {
+        if (transcriptEngine !== 'local_mlx' && !apiKey) {
             this._showToast(t('retranscript.needGeminiKey'), 'error');
             return;
         }
@@ -12720,9 +12731,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
         const sess = (this._cachedSessions || []).find(s => s.id === id);
         const durationSec = options.durationSec || sess?.duration_sec || (this._currentSessionJson?.id === id ? this._currentSessionJson.duration_sec : 0) || 0;
-        // Gemini Live Translate listens to the recording at approximately
-        // real time. Leave 50% headroom plus five minutes for connection,
-        // chunk setup, and final transcript delivery.
+        // Cloud transcription processes uploaded file chunks, not real-time
+        // playback. Keep headroom for upload, model retries, and long meetings.
         const TIMEOUT_MS = Math.min(
             86_400_000,
             Math.max(1_800_000, durationSec * 1_500 + 300_000),
@@ -12740,13 +12750,9 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             progressInterval: null,
             backendProgress: false,
             transcriptEngine,
-            progressBaseText: t(transcriptEngine === 'local_mlx'
-                ? 'retranscript.progress.uploadingLocal'
-                : 'retranscript.progress.uploading'),
+            progressBaseText: this._getLocalizedAudioTranscriptProgress('upload', { transcriptEngine }),
             stage: 'upload',
-            text: t(transcriptEngine === 'local_mlx'
-                ? 'retranscript.progress.uploadingLocal'
-                : 'retranscript.progress.uploading'),
+            text: this._getLocalizedAudioTranscriptProgress('upload', { transcriptEngine }),
             percent: 15,
             options,
             customTitle: options.customTitle || t('retranscript.floating.title'),
