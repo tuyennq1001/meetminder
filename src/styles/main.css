@@ -1781,6 +1781,17 @@ select:focus {
   color: var(--text-muted);
 }
 
+.settings-static-value {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
 /* Radio Group */
 .radio-group {
   display: flex;

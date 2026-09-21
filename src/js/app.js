@@ -1954,18 +1954,6 @@ class App {
             if (input) input.type = input.type === 'password' ? 'text' : 'password';
         });
 
-        document.getElementById('select-gemini-model')?.addEventListener('change', (e) => {
-            const customSection = document.getElementById('section-gemini-custom-model');
-            if (customSection) {
-                customSection.style.display = e.target.value === 'custom' ? 'block' : 'none';
-            }
-            this._autoSaveSettingsFromForm();
-        });
-
-        document.getElementById('input-gemini-custom-model')?.addEventListener('input', () => {
-            this._debouncedAutoSave();
-        });
-
         document.getElementById('link-openai')?.addEventListener('click', (e) => {
             e.preventDefault();
             window.__TAURI__.opener.openUrl('https://platform.openai.com/api-keys');
@@ -3159,24 +3147,6 @@ class App {
         if (openaiKeyInput) openaiKeyInput.value = s.openai_api_key || '';
         const geminiKeyInput = document.getElementById('input-gemini-key');
         if (geminiKeyInput) geminiKeyInput.value = s.gemini_api_key || '';
-        const geminiModelSelect = document.getElementById('select-gemini-model');
-        const customModelSection = document.getElementById('section-gemini-custom-model');
-        const customModelInput = document.getElementById('input-gemini-custom-model');
-        if (geminiModelSelect) {
-            const savedModel = s.gemini_model || 'auto';
-            const standardOptions = Array.from(geminiModelSelect.options).map(o => o.value);
-            if (standardOptions.includes(savedModel)) {
-                geminiModelSelect.value = savedModel;
-                if (customModelSection) customModelSection.style.display = 'none';
-            } else {
-                // Older builds allowed arbitrary model IDs. Keep the UI on a
-                // known-compatible option instead of exposing an unsupported
-                // value that the Live Translate pipeline cannot use.
-                geminiModelSelect.value = 'auto';
-                if (customModelSection) customModelSection.style.display = 'none';
-                if (customModelInput) customModelInput.value = '';
-            }
-        }
         const qwenKeyInput = document.getElementById('input-qwen-key');
         if (qwenKeyInput) qwenKeyInput.value = s.qwen_api_key || '';
         const selectSrc = document.getElementById('select-source-lang');
@@ -3290,13 +3260,9 @@ class App {
             soniox_api_key: document.getElementById('input-api-key')?.value.trim() || '',
             openai_api_key: document.getElementById('input-openai-key')?.value.trim() || '',
             gemini_api_key: document.getElementById('input-gemini-key')?.value.trim() || '',
-            gemini_model: (() => {
-                const sel = document.getElementById('select-gemini-model')?.value;
-                if (sel === 'custom') {
-                    return document.getElementById('input-gemini-custom-model')?.value.trim() || 'auto';
-                }
-                return sel || 'auto';
-            })(),
+            // Keep this compatibility field, but do not expose a selector
+            // while Live Translate has only one supported model.
+            gemini_model: 'auto',
             qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
             source_language: document.getElementById('quick-select-source-lang')?.value || settingsManager.get().source_language || 'ja',
             target_language: document.getElementById('quick-select-target-lang')?.value || settingsManager.get().target_language || 'vi',

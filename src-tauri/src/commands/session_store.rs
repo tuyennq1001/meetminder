@@ -2341,6 +2341,17 @@ fn emit_audio_transcript_progress(
 
 const AUDIO_CHUNK_SECONDS: u64 = 10 * 60;
 const AUDIO_CHUNK_THRESHOLD_SECONDS: u64 = 15 * 60;
+const GEMINI_AUDIO_GENERATION_MAX_ATTEMPTS: u32 = 4;
+// Prefer stable Lite models for Free Tier audio transcription. They support
+// audio input and structured text output, but are designed for higher
+// throughput than the heavier Flash model. Keep exact stable model IDs ahead
+// of the moving `latest` aliases and never include retired preview models.
+const GEMINI_AUDIO_TRANSCRIPT_MODELS: &[&str] = &[
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash-lite",
+    "gemini-3.5-flash",
+];
 // A Gemini Live WebSocket connection is limited to roughly ten minutes.
 // Eight-minute parts leave time for setup and the final transcript drain.
 const GEMINI_LIVE_CHUNK_SECONDS: u64 = 8 * 60;
@@ -2353,9 +2364,10 @@ const GEMINI_LIVE_CHUNK_THRESHOLD_SECONDS: u64 = GEMINI_LIVE_CHUNK_SECONDS;
 const GEMINI_TRANSCRIBE_CHUNK_SECONDS: u64 = 2 * 60;
 #[allow(dead_code)]
 const GEMINI_TRANSCRIBE_CHUNK_THRESHOLD_SECONDS: u64 = GEMINI_TRANSCRIBE_CHUNK_SECONDS;
-// File-based Gemini audio understanding can process independent recording
-// chunks concurrently without replaying each chunk at real-time speed.
-const GEMINI_FILE_CHUNK_CONCURRENCY: usize = 2;
+// Free Tier quotas are shared by every request in the project. Sending two
+// ten-minute audio chunks at once creates a burst of audio tokens and makes a
+// temporary 429/503 much more likely, so process chunks one at a time.
+const GEMINI_FILE_CHUNK_CONCURRENCY: usize = 1;
 
 struct AudioChunkWorkspace(PathBuf);
 
@@ -2702,73 +2714,105 @@ async fn generate_gemini_audio_transcript(
     cancel_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<String, String> {
     let mut last_error = None;
-    for model in [
-        "gemini-3.5-flash",
-        "gemini-3.1-flash-lite",
-        "gemini-3.1-flash-lite-preview",
-        "gemini-flash-latest",
-    ] {
-        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err("Quá trình xử lý audio đã bị hủy".into());
-        }
-        let response = client
-            .post(format!(
-                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
-                model
-            ))
-            .query(&[("key", api_key.trim())])
-            .json(&serde_json::json!({
-                "contents": [{ "parts": [
-                    { "text": prompt },
-                    { "fileData": { "mimeType": mime_type, "fileUri": file_uri } }
-                ] }],
-                "generationConfig": {
-                    "temperature": 0.1,
-                    "maxOutputTokens": 65536,
-                    "responseMimeType": "application/json"
-                }
-            }))
-            .send()
-            .await;
-        match response {
-            Ok(response) if response.status().is_success() => {
-                let body: Value = response
-                    .json()
-                    .await
-                    .map_err(|e| format!("Read Gemini transcript failed: {}", e))?;
-                let candidate = body
-                    .get("candidates")
-                    .and_then(Value::as_array)
-                    .and_then(|candidates| candidates.first());
-                if candidate
-                    .and_then(|value| value.get("finishReason"))
-                    .and_then(Value::as_str)
-                    == Some("MAX_TOKENS")
-                {
-                    last_error = Some(
-                        "Gemini đã cắt transcript vì vượt giới hạn output của một phần audio"
-                            .to_string(),
-                    );
-                    continue;
-                }
-                if let Some(text) = extract_gemini_candidate_text(&body) {
-                    return Ok(text);
-                }
-                last_error = Some("Gemini returned an empty transcript".to_string());
+    'models: for model in GEMINI_AUDIO_TRANSCRIPT_MODELS {
+        for attempt in 0..GEMINI_AUDIO_GENERATION_MAX_ATTEMPTS {
+            if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err("Quá trình xử lý audio đã bị hủy".into());
             }
-            Ok(response) => {
-                let status = response.status();
-                last_error = Some(gemini_error(
-                    status,
-                    response.text().await.unwrap_or_default(),
-                ));
+            let response = client
+                .post(format!(
+                    "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+                    model
+                ))
+                .query(&[("key", api_key.trim())])
+                .json(&serde_json::json!({
+                    "contents": [{ "parts": [
+                        { "text": prompt },
+                        { "fileData": { "mimeType": mime_type, "fileUri": file_uri } }
+                    ] }],
+                    "generationConfig": {
+                        "temperature": 0.1,
+                        "maxOutputTokens": 65536,
+                        "responseMimeType": "application/json"
+                    }
+                }))
+                .send()
+                .await;
+            match response {
+                Ok(response) if response.status().is_success() => {
+                    let body: Value = match response.json().await {
+                        Ok(body) => body,
+                        Err(error) => {
+                            last_error = Some(format!("Read Gemini transcript failed: {}", error));
+                            if attempt + 1 == GEMINI_AUDIO_GENERATION_MAX_ATTEMPTS {
+                                break;
+                            }
+                            tokio::time::sleep(retry_delay(attempt)).await;
+                            continue;
+                        }
+                    };
+                    let candidate = body
+                        .get("candidates")
+                        .and_then(Value::as_array)
+                        .and_then(|candidates| candidates.first());
+                    if candidate
+                        .and_then(|value| value.get("finishReason"))
+                        .and_then(Value::as_str)
+                        == Some("MAX_TOKENS")
+                    {
+                        last_error = Some(
+                            "Gemini đã cắt transcript vì vượt giới hạn output của một phần audio"
+                                .to_string(),
+                        );
+                        continue 'models;
+                    }
+                    if let Some(text) = extract_gemini_candidate_text(&body) {
+                        // Do not treat an HTTP 200 as a valid transcript. A
+                        // model can still return truncated/malformed JSON;
+                        // retry that response while the same uploaded file is
+                        // available instead of failing later during parsing.
+                        if parse_gemini_transcript(&text).is_ok() {
+                            return Ok(text);
+                        }
+                        last_error = Some(
+                            "Gemini returned malformed transcript JSON; retrying the same audio part"
+                                .to_string(),
+                        );
+                        if attempt + 1 == GEMINI_AUDIO_GENERATION_MAX_ATTEMPTS {
+                            break;
+                        }
+                        tokio::time::sleep(retry_delay(attempt)).await;
+                        continue;
+                    }
+                    last_error = Some("Gemini returned an empty transcript".to_string());
+                    continue 'models;
+                }
+                Ok(response) => {
+                    let status = response.status();
+                    let body = response.text().await.unwrap_or_default();
+                    let message = gemini_quota_aware_error(status, &body);
+                    last_error = Some(format!("{}: {}", model, message));
+                    if is_hard_free_tier_input_quota(status, &body) {
+                        // Free Tier quotas are model-specific. Do not hammer
+                        // the same exhausted model, but do try the next stable
+                        // free model before failing the whole audio part.
+                        continue 'models;
+                    }
+                    if !should_retry_gemini_audio_generation(status, &body, attempt) {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    last_error = Some(format!(
+                        "Call Gemini transcription failed: {}",
+                        gemini_transport_error(&error)
+                    ));
+                    if attempt + 1 == GEMINI_AUDIO_GENERATION_MAX_ATTEMPTS {
+                        break;
+                    }
+                }
             }
-            Err(error) => {
-                last_error = Some(format!(
-                    "Call Gemini transcription failed: {}",
-                    gemini_transport_error(&error)
-                ));
-            }
+            tokio::time::sleep(retry_delay(attempt)).await;
         }
     }
     Err(last_error.unwrap_or_else(|| "Gemini transcription failed".into()))
@@ -2998,11 +3042,65 @@ fn extract_json_string_field(chunk: &str, fields: &[&str]) -> String {
                             .trim()
                             .to_string();
                     }
+
+                    // The model may stop in the middle of the final JSON
+                    // string. Preserve the text collected so far; the caller
+                    // will close the surrounding object/array conceptually by
+                    // returning the recovered segment.
+                    let raw = content
+                        .trim_end_matches(|ch: char| ch == '}' || ch == ']')
+                        .trim();
+                    if !raw.is_empty() {
+                        return raw
+                            .replace("\\\"", "\"")
+                            .replace("\\\\", "\\")
+                            .trim()
+                            .to_string();
+                    }
                 }
             }
         }
     }
     String::new()
+}
+
+fn has_unterminated_json_string(text: &str) -> bool {
+    // Inspect only the last transcript field. Earlier fields can contain
+    // unescaped quotes in model output, which would make a whole-document
+    // quote counter unreliable.
+    let Some(field_start) = ["\"translation\"", "\"text\"", "\"tgt\"", "\"src\""]
+        .iter()
+        .filter_map(|field| text.rfind(field))
+        .max()
+    else {
+        return false;
+    };
+    let Some(after_field) = text[field_start..].split_once(':').map(|(_, value)| value) else {
+        return false;
+    };
+    let after_field = after_field.trim_start();
+    let Some(value) = after_field.strip_prefix('"') else {
+        return false;
+    };
+    let mut in_str = true;
+    let mut escaped = false;
+    for ch in value.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' && in_str {
+            escaped = true;
+            continue;
+        }
+        if ch == '"' {
+            in_str = !in_str;
+            if !in_str {
+                return false;
+            }
+        }
+    }
+    in_str
 }
 
 fn extract_segments_fallback(text: &str) -> Vec<Segment> {
@@ -3013,18 +3111,32 @@ fn extract_segments_fallback(text: &str) -> Vec<Segment> {
     while i < n {
         let end = match text[i..].find('}') {
             Some(pos) => i + pos,
-            None => break,
+            // Keep an unterminated final object in the scan. This is the
+            // common shape when MAX_TOKENS cuts a long `text` value halfway
+            // through a sentence. Use `n` (an exclusive byte boundary), not
+            // `n - 1`, because the final UTF-8 character may be multibyte.
+            None => n,
         };
+        let chunk_end = if end < n { end + 1 } else { n };
 
-        let start = match text[i..end].rfind('{') {
+        let start = match text[i..chunk_end].rfind('{') {
             Some(pos) => i + pos,
             None => {
+                if end >= n {
+                    break;
+                }
                 i = end + 1;
                 continue;
             }
         };
 
-        let chunk = &text[start..=end];
+        let chunk = &text[start..chunk_end];
+        if end >= n && !has_unterminated_json_string(chunk) {
+            // A final object that only lacks its closing brace is not enough
+            // evidence that the model finished that segment. Keep the legacy
+            // behavior and salvage only a value visibly cut inside a string.
+            break;
+        }
         let has_text = [
             "\"text\"",
             "\"src\"",
@@ -3124,6 +3236,9 @@ fn extract_segments_fallback(text: &str) -> Vec<Segment> {
             }
         }
 
+        if end >= n {
+            break;
+        }
         i = end + 1;
     }
 
@@ -3690,7 +3805,19 @@ fn is_retryable_live_session_error(error: &str) -> bool {
 
 #[allow(dead_code)]
 fn is_retryable_gemini_status(status: reqwest::StatusCode) -> bool {
-    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+    status == reqwest::StatusCode::REQUEST_TIMEOUT
+        || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || status.is_server_error()
+}
+
+fn should_retry_gemini_audio_generation(
+    status: reqwest::StatusCode,
+    body: &str,
+    attempt: u32,
+) -> bool {
+    !is_hard_free_tier_input_quota(status, body)
+        && is_retryable_gemini_status(status)
+        && attempt + 1 < GEMINI_AUDIO_GENERATION_MAX_ATTEMPTS
 }
 
 #[allow(dead_code)]
@@ -3706,7 +3833,7 @@ fn gemini_quota_aware_error(status: reqwest::StatusCode, body: &str) -> String {
     let detail = gemini_error(status, body.to_string());
     if is_hard_free_tier_input_quota(status, body) {
         format!(
-            "Gemini Free Tier đã chạm giới hạn input token của model này; retry ngay sẽ không giải quyết được. Hãy chọn Local MLX hoặc nâng usage tier. Chi tiết: {}",
+            "Gemini Free Tier đã chạm giới hạn input token của model này. Meet Minder sẽ thử model miễn phí khác; nếu tất cả model đều hết quota, hãy chờ quota được đặt lại rồi thử lại. Chi tiết: {}",
             detail
         )
     } else {
@@ -5106,8 +5233,6 @@ pub async fn retranscribe_session_with_gemini(
         data.source_lang, translation_instruction
     );
 
-    let mut generated = None;
-    let mut last_error = None;
     emit_audio_transcript_progress(
         &app,
         &id,
@@ -5115,106 +5240,30 @@ pub async fn retranscribe_session_with_gemini(
         "Gemini đang xử lý toàn bộ file; API chưa trả transcript từng đoạn...",
         55,
     );
-    for model in [
-        "gemini-3.5-flash",
-        "gemini-3.1-flash-lite",
-        "gemini-3.1-flash-lite-preview",
-        "gemini-flash-latest",
-    ] {
-        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
-            let _ = client
-                .delete(format!(
-                    "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
-                    file_name,
-                    api_key.trim()
-                ))
-                .send()
-                .await;
-            return Err("Quá trình Re-transcript đã bị hủy".into());
-        }
-        let response = client
-            .post(format!(
-                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-                model,
-                api_key.trim()
-            ))
-            .json(&serde_json::json!({
-                "contents": [{ "parts": [
-                    { "text": prompt },
-                    { "fileData": { "mimeType": mime_type, "fileUri": file_uri } }
-                ] }],
-                "generationConfig": {
-                    "temperature": 0.1,
-                    "maxOutputTokens": 65536,
-                    "responseMimeType": "application/json"
-                }
-            }))
-            .send()
-            .await;
-        match response {
-            Ok(response) if response.status().is_success() => {
-                emit_audio_transcript_progress(
-                    &app,
-                    &id,
-                    "transcribe",
-                    "Gemini đã trả kết quả. Đang phân tích các đoạn thoại...",
-                    82,
-                );
-                let body: Value = response
-                    .json()
-                    .await
-                    .map_err(|e| format!("Read Gemini transcript failed: {}", e))?;
-                let finish_reason = body
-                    .get("candidates")
-                    .and_then(Value::as_array)
-                    .and_then(|candidates| candidates.first())
-                    .and_then(|candidate| candidate.get("finishReason"))
-                    .and_then(Value::as_str);
-                if finish_reason == Some("MAX_TOKENS") {
-                    last_error = Some(
-                        "Gemini đã cắt transcript vì vượt giới hạn output. File dài cần được chia thành nhiều phần trước khi xử lý.".to_string(),
-                    );
-                    continue;
-                }
-                if let Some(text) = extract_gemini_candidate_text(&body) {
-                    generated = Some(text);
-                    break;
-                }
-                last_error = Some("Gemini returned an empty transcript".to_string());
-            }
-            Ok(response) => {
-                let status = response.status();
-                last_error = Some(gemini_error(
-                    status,
-                    response.text().await.unwrap_or_default(),
-                ));
-            }
-            Err(error) => {
-                last_error = Some(format!(
-                    "Call Gemini transcription failed: {}",
-                    gemini_transport_error(&error)
-                ))
-            }
-        }
-    }
+    let generated = generate_gemini_audio_transcript(
+        &client,
+        &api_key,
+        mime_type,
+        &file_uri,
+        &prompt,
+        &cancel_flag,
+    )
+    .await;
     // Best-effort cleanup of the temporary file stored by Gemini.
-    let _ = client
-        .delete(format!(
-            "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
-            file_name,
-            api_key.trim()
-        ))
-        .send()
-        .await;
+    delete_gemini_audio_file(&client, &api_key, &file_name).await;
 
     if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
         return Err("Quá trình Re-transcript đã bị hủy".into());
     }
 
-    let segments = parse_gemini_transcript(
-        &generated
-            .ok_or_else(|| last_error.unwrap_or_else(|| "Gemini transcription failed".into()))?,
-    )?;
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "transcribe",
+        "Gemini đã trả kết quả. Đang phân tích các đoạn thoại...",
+        82,
+    );
+    let segments = parse_gemini_transcript(&generated?)?;
     if segments.is_empty() {
         return Err("Không tìm thấy đoạn hội thoại nào trong file ghi âm (Gemini không phát hiện giọng nói)".into());
     }
@@ -5918,8 +5967,6 @@ Return JSON only, with this exact schema:
 }
 start_sec must be the approximate offset in seconds.";
 
-    let mut generated = None;
-    let mut last_error = None;
     emit_audio_transcript_progress(
         &app,
         &id,
@@ -5927,119 +5974,31 @@ start_sec must be the approximate offset in seconds.";
         "Gemini đang xử lý toàn bộ file; API chưa trả transcript từng đoạn...",
         55,
     );
-    for model in [
-        "gemini-3.5-flash",
-        "gemini-3.1-flash-lite",
-        "gemini-3.1-flash-lite-preview",
-        "gemini-flash-latest",
-    ] {
-        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
-            let _ = client
-                .delete(format!(
-                    "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
-                    file_name,
-                    api_key.trim()
-                ))
-                .send()
-                .await;
-            return Err("Quá trình Import đã bị hủy".into());
-        }
-        let response = client
-            .post(format!(
-                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-                model,
-                api_key.trim()
-            ))
-            .json(&serde_json::json!({
-                "contents": [{ "parts": [
-                    { "text": prompt },
-                    { "fileData": { "mimeType": mime_type, "fileUri": file_uri } }
-                ] }],
-                "generationConfig": {
-                    "temperature": 0.1,
-                    "maxOutputTokens": 65536,
-                    "responseMimeType": "application/json"
-                }
-            }))
-            .send()
-            .await;
-
-        match response {
-            Ok(response) if response.status().is_success() => {
-                emit_audio_transcript_progress(
-                    &app,
-                    &id,
-                    "transcribe",
-                    "Gemini đã trả kết quả. Đang phân tích các đoạn thoại...",
-                    82,
-                );
-                let body: Value = response
-                    .json()
-                    .await
-                    .map_err(|e| format!("Read Gemini transcript failed: {}", e))?;
-                let finish_reason = body
-                    .get("candidates")
-                    .and_then(Value::as_array)
-                    .and_then(|candidates| candidates.first())
-                    .and_then(|candidate| candidate.get("finishReason"))
-                    .and_then(Value::as_str);
-                if finish_reason == Some("MAX_TOKENS") {
-                    last_error = Some(
-                        "Gemini đã cắt transcript vì vượt giới hạn output. File dài cần được chia thành nhiều phần trước khi xử lý.".to_string(),
-                    );
-                    continue;
-                }
-                let text = body
-                    .get("candidates")
-                    .and_then(Value::as_array)
-                    .and_then(|candidates| candidates.first())
-                    .and_then(|candidate| candidate.get("content"))
-                    .and_then(|content| content.get("parts"))
-                    .and_then(Value::as_array)
-                    .map(|parts| {
-                        parts
-                            .iter()
-                            .filter_map(|part| part.get("text").and_then(Value::as_str))
-                            .collect::<String>()
-                    });
-                if let Some(text) = text.filter(|value| !value.trim().is_empty()) {
-                    generated = Some(text);
-                    break;
-                }
-                last_error = Some("Gemini returned an empty transcript".to_string());
-            }
-            Ok(response) => {
-                let status = response.status();
-                last_error = Some(gemini_error(
-                    status,
-                    response.text().await.unwrap_or_default(),
-                ));
-            }
-            Err(error) => {
-                last_error = Some(format!(
-                    "Call Gemini transcription failed: {}",
-                    gemini_transport_error(&error)
-                ))
-            }
-        }
-    }
+    let generated = generate_gemini_audio_transcript(
+        &client,
+        &api_key,
+        mime_type,
+        &file_uri,
+        prompt,
+        &cancel_flag,
+    )
+    .await;
 
     // Best-effort cleanup of remote file
-    let _ = client
-        .delete(format!(
-            "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
-            file_name,
-            api_key.trim()
-        ))
-        .send()
-        .await;
+    delete_gemini_audio_file(&client, &api_key, &file_name).await;
 
     if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
         return Err("Quá trình Import đã bị hủy".into());
     }
 
-    let generated_text = generated
-        .ok_or_else(|| last_error.unwrap_or_else(|| "Gemini transcription failed".into()))?;
+    emit_audio_transcript_progress(
+        &app,
+        &id,
+        "transcribe",
+        "Gemini đã trả kết quả. Đang phân tích các đoạn thoại...",
+        82,
+    );
+    let generated_text = generated?;
 
     let (source_lang, target_lang, segments) = parse_gemini_import(&generated_text)?;
     emit_audio_transcript_progress(
@@ -6298,6 +6257,47 @@ mod tests {
         ));
         assert!(!is_retryable_live_session_error(
             "Gemini API error (429): quota exceeded"
+        ));
+    }
+
+    #[test]
+    fn test_gemini_audio_retry_targets_temporary_server_errors() {
+        assert_eq!(
+            GEMINI_AUDIO_TRANSCRIPT_MODELS.first().copied(),
+            Some("gemini-3.5-flash-lite")
+        );
+        assert!(!GEMINI_AUDIO_TRANSCRIPT_MODELS
+            .iter()
+            .any(|model| model.contains("preview") || model.ends_with("latest")));
+        assert!(should_retry_gemini_audio_generation(
+            reqwest::StatusCode::REQUEST_TIMEOUT,
+            "request timed out",
+            0
+        ));
+        assert!(should_retry_gemini_audio_generation(
+            reqwest::StatusCode::SERVICE_UNAVAILABLE,
+            "temporary overload",
+            0
+        ));
+        assert!(should_retry_gemini_audio_generation(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            "temporary server error",
+            2
+        ));
+        assert!(!should_retry_gemini_audio_generation(
+            reqwest::StatusCode::SERVICE_UNAVAILABLE,
+            "temporary overload",
+            GEMINI_AUDIO_GENERATION_MAX_ATTEMPTS - 1
+        ));
+        assert!(!should_retry_gemini_audio_generation(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            "free_tier_input_token_count exceeded",
+            0
+        ));
+        assert!(!should_retry_gemini_audio_generation(
+            reqwest::StatusCode::BAD_REQUEST,
+            "invalid request",
+            0
         ));
     }
 
@@ -6863,6 +6863,16 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_gemini_transcript_salvages_unterminated_final_string() {
+        let text =
+            r#"{"segments":[{"start_sec":0,"text":"脳骨手続きは完了せずに離脱してしまう人とかうん"#;
+        let segs = parse_gemini_transcript(text)
+            .expect("An unterminated final transcript string should be salvageable");
+        assert_eq!(segs.len(), 1);
+        assert!(segs[0].src.starts_with("脳骨手続き"));
+    }
+
+    #[test]
     fn test_parse_gemini_transcript_equivalent_json_shapes() {
         let direct_array = r#"[
             {"start": "00:00:02", "original_text": "Hello", "translated_text": "Xin chào"}
@@ -6985,7 +6995,8 @@ mod tests {
             parse_gemini_import(text).expect("Should parse import with unescaped quotes");
         assert_eq!(src_lang, "ja");
         assert_eq!(tgt_lang, "vi");
-        assert_eq!(segs.len(), 1);
+        assert_eq!(segs.len(), 2);
+        assert_eq!(segs[1].src, "Incomplete cut off");
     }
 
     #[test]

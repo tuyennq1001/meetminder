@@ -479,14 +479,10 @@ fn normalize_loaded_settings(mut settings: Settings) -> Settings {
     {
         settings.target_language = "vi".to_string();
     }
-    // Keep a user-selected compatible model. Older Transcribe/Flash/custom
-    // values are no longer valid for this product and fall back to Auto.
-    if settings.gemini_model.trim().is_empty()
-        || (settings.gemini_model != "auto"
-            && settings.gemini_model != "models/gemini-3.5-live-translate-preview")
-    {
-        settings.gemini_model = "auto".to_string();
-    }
+    // Live Translate currently has one supported model. Normalize legacy
+    // explicit/experimental selections to Auto so the compatibility field
+    // cannot preserve a misleading UI choice.
+    settings.gemini_model = "auto".to_string();
     if settings.transcript_engine != "gemini_live_translate"
         && settings.transcript_engine != "gemini_transcribe"
         && settings.transcript_engine != "local_mlx"
@@ -575,15 +571,12 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_loaded_settings_keeps_supported_models_and_engines() {
+    fn test_normalize_loaded_settings_uses_auto_model_and_supported_engines() {
         let mut settings = Settings::default();
         settings.gemini_model = "models/gemini-3.5-live-translate-preview".to_string();
         settings.transcript_engine = "gemini_transcribe".to_string();
         let normalized = normalize_loaded_settings(settings);
-        assert_eq!(
-            normalized.gemini_model,
-            "models/gemini-3.5-live-translate-preview"
-        );
+        assert_eq!(normalized.gemini_model, "auto");
         assert_eq!(normalized.transcript_engine, "gemini_transcribe");
 
         let mut legacy = Settings::default();

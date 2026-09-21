@@ -760,16 +760,11 @@
         <div class="settings-section" id="section-gemini-key" style="display:none">
           <div style="margin-bottom: 14px;">
             <span class="field-label" data-i18n="settings.engine.geminiModel">Gemini Model</span>
-            <select id="select-gemini-model">
-              <option value="auto" data-i18n="settings.engine.geminiAuto">✨ Tự động — Gemini Live Translate (Khuyên dùng)</option>
-              <option value="models/gemini-3.5-live-translate-preview" data-i18n="settings.engine.gemini35LiveTranslate">🌐 Gemini 3.5 Live Translate Preview</option>
-            </select>
-            <p class="hint" data-i18n="settings.engine.geminiModelHint">Chỉ hiển thị các model hỗ trợ Live Translate; Auto sẽ dùng model tương thích được khuyến nghị.</p>
+            <div class="settings-static-value" role="status">
+              <span data-i18n="settings.engine.geminiAuto">✨ Tự động — Gemini Live Translate (Khuyên dùng)</span>
+            </div>
+            <p class="hint" data-i18n="settings.engine.geminiModelHint">Live Translate hiện tự động dùng model tương thích được khuyến nghị; không cần chọn thủ công.</p>
           </div>
-          <div id="section-gemini-custom-model" style="display:none; margin-top: 6px;">
-            <input type="text" id="input-gemini-custom-model" placeholder="VD: models/gemini-3.5-transcribe" />
-          </div>
-
           <span class="field-label">
             <span data-i18n="settings.engine.geminiApiKeyLabel">Gemini API Key</span>
             <span id="key-status-gemini" class="key-status"></span>
