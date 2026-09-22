@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.0.0-blueviolet?style=flat-square" alt="Version 1.0.0">
+  <img src="https://img.shields.io/badge/version-v1.0.1-blueviolet?style=flat-square" alt="Version 1.0.1">
   <img src="https://img.shields.io/badge/built_with-Tauri_v2-24C8D8?logo=tauri&logoColor=white&style=flat-square" alt="Built with Tauri v2">
   <img src="https://img.shields.io/badge/backend-Rust_2021-DEA584?logo=rust&logoColor=white&style=flat-square" alt="Rust 2021">
   <img src="https://img.shields.io/badge/macOS-Apple_Silicon_%7C_Intel-black?logo=apple&logoColor=white&style=flat-square" alt="macOS">
@@ -45,15 +45,15 @@ It seamlessly unifies **dual-channel system audio & microphone capture**, **real
 
 ---
 
-## ⬇️ Downloads (v1.0.0)
+## ⬇️ Downloads (v1.0.1)
 
 Download pre-built installers directly from [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest).
 
 | Operating System | Architecture / Devices | Installer Package | Guide |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `MeetMinder_1.0.0_aarch64.dmg` | [macOS Installation Guide](docs/installation_guide.md) |
-| **macOS** | **Intel Mac** (i5 / i7 / i9) | `MeetMinder_1.0.0_x64.dmg` | [macOS Installation Guide](docs/installation_guide.md) |
-| **Windows** | **Windows 10 / 11** (64-bit) | `MeetMinder_1.0.0_x64-setup.exe` | [Windows Installation Guide](docs/installation_guide_win.md) |
+| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.1_aarch64.dmg` | [macOS Installation Guide](docs/installation_guide.md) |
+| **macOS** | **Intel Mac** (i5 / i7 / i9) | `Meet.Minder_1.0.1_x64.dmg` | [macOS Installation Guide](docs/installation_guide.md) |
+| **Windows** | **Windows 10 / 11** (64-bit) | `Meet.Minder_1.0.1_x64-setup.exe` | [Windows Installation Guide](docs/installation_guide_win.md) |
 
 ---
 

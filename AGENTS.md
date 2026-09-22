@@ -34,6 +34,7 @@ Mô hình 2 phiên bản độc lập và luồng phát hành chuẩn của dự
    - `src-tauri/tauri.conf.json` (`"version": "X.Y.Z"`)
    - `src-tauri/Cargo.toml` (`version = "X.Y.Z"`)
    - Cập nhật ghi chú phát hành trong `docs/project-changelog.md` dưới mục `## vX.Y.Z`.
+   - Cập nhật nội dung tải xuống trong cả `README.md`, `README.vi.md` và `README.ja.md`: version badge, tiêu đề download, và tên installer cho từng nền tảng phải khớp với các asset thực tế của release; rà soát các nội dung README khác có thay đổi theo phiên bản để giữ đồng bộ.
 3. **Commit & Push Git Tag:**
    - Commit thay đổi: `git commit -am "chore: release vX.Y.Z"`
    - Merge vào `main` và push: `git push origin main`
