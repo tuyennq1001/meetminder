@@ -5,6 +5,14 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.1 - 2026-09-23
+
+### Fixed
+
+- **Gemini Free Tier re-transcript reliability**: Added stable Lite-first model fallback, bounded exponential backoff with jitter for transient `408/429/5xx` errors, and sequential chunk processing to reduce Free Tier overload.
+- **Malformed transcript recovery**: Retries invalid candidate JSON and salvages UTF-8 transcript segments when Gemini cuts output mid-string instead of failing the entire re-transcription.
+- **Settings clarity**: Removed the redundant Gemini Live model selector; Live Translate now uses the recommended compatible model automatically.
+
 ## v1.0.0 - 2026-09-12
 
 ### Highlights & Key Features
