@@ -483,6 +483,9 @@ class App {
         this._activeMinutesGeneration = null;
         this._lastCompletedMinutes = null;
         this._minutesDismissTimeout = null;
+        this._retranscriptQueue = [];
+        this._retranscriptFailureOpen = false;
+        this._retranscriptCancellationPending = false;
         this._suppressNextShowSessions = false;
         this._sessionNameQuery = '';
         // Independent full-text search state. It intentionally does not reuse
@@ -11853,6 +11856,18 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             return;
         }
 
+        const queuedIndex = (this._retranscriptQueue || []).findIndex((item) => item.id === json?.id);
+        if (queuedIndex >= 0) {
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = `<span class="retranscript-spinner-inline"></span> ${this._esc(t('retranscript.queue.waitingBtn'))}`;
+            }
+            status.textContent = t('retranscript.queue.position', { position: queuedIndex + 1 });
+            status.style.display = '';
+            status.classList.remove('is-running');
+            return;
+        }
+
         if (btn) {
             btn.disabled = false;
             btn.innerHTML = this._getRetranscriptButtonMarkup();
@@ -12210,6 +12225,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
         if (progressText) progressText.textContent = text;
         if (status) status.textContent = text;
+        this._retranscriptFailureOpen = false;
         if (fill) fill.style.width = `${percent}%`;
         if (pct) pct.textContent = `${percent}%`;
 
@@ -12245,6 +12261,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const floatingBar = document.getElementById('retranscript-floating-bar');
 
         if (!modal) return;
+
+        this._retranscriptFailureOpen = true;
 
         if (floatingBar) {
             floatingBar.style.display = 'none';
@@ -12329,6 +12347,32 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             return;
         }
         this._hideRetranscriptProgress();
+        this._retranscriptFailureOpen = false;
+        this._drainRetranscriptQueue();
+    }
+
+    _updateRetranscriptQueueStatus() {
+        const count = this._retranscriptQueue?.length || 0;
+        const text = count ? t('retranscript.queue.status', { count }) : '';
+        for (const id of ['retranscript-queue-status', 'retranscript-floating-queue-status']) {
+            const element = document.getElementById(id);
+            if (!element) continue;
+            element.textContent = text;
+            element.style.display = count ? '' : 'none';
+        }
+    }
+
+    _drainRetranscriptQueue() {
+        if (this._activeRetranscribe || this._retranscriptFailureOpen || !this._retranscriptQueue?.length) {
+            this._updateRetranscriptQueueStatus();
+            return;
+        }
+        const next = this._retranscriptQueue.shift();
+        this._updateRetranscriptQueueStatus();
+        if (this._currentViewedSession?.id === next.id && this._currentSessionJson) {
+            this._updateRetranscriptStatus(this._currentSessionJson);
+        }
+        this._retranscribeSession(next.id, next.isLegacy, { ...next.options, fromQueue: true });
     }
 
     _showRetranscriptCompleted(id, titleText = null) {
@@ -12495,7 +12539,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     async _cancelActiveRetranscript(isTimeout = false) {
         if (!this._activeRetranscribe) return;
         const { id, isImport, stage } = this._activeRetranscribe;
+        const remainingQueueCount = isTimeout ? 0 : (this._retranscriptQueue?.length || 0);
+        this._retranscriptCancellationPending = true;
         this._cleanupActiveRetranscribe();
+        if (this._currentSessionJson) this._updateRetranscriptStatus(this._currentSessionJson);
         try {
             await invoke('cancel_retranscribe_session', { id });
         } catch (e) {
@@ -12508,7 +12555,12 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 stage || 'transcribe',
             );
         } else {
-            this._showToast(t('common.cancel'), 'info');
+            this._showToast(
+                remainingQueueCount > 0
+                    ? t('retranscript.queue.currentCancelled', { count: remainingQueueCount })
+                    : t('common.cancel'),
+                'info',
+            );
         }
     }
 
@@ -12568,16 +12620,19 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     }
 
     async _retranscribeSession(id, isLegacy = false, options = {}) {
+        this._retranscriptQueue ||= [];
+        if (this._activeRetranscribe?.id === id || this._retranscriptQueue.some((item) => item.id === id)) {
+            this._showToast(t('retranscript.queue.duplicate'), 'info');
+            return;
+        }
         if (isLegacy) {
             this._showToast(t('retranscript.legacyNoAudio'), 'info');
+            if (options.fromQueue) this._drainRetranscriptQueue();
             return;
         }
         if (id === sessionStore.id && (this.isRunning || this.isPaused)) {
             this._showToast(t('retranscript.activeMeetingWarning'), 'info');
-            return;
-        }
-        if (this._activeRetranscribe) {
-            this._showToast(t('retranscript.alreadyRunning'), 'info');
+            if (options.fromQueue) this._drainRetranscriptQueue();
             return;
         }
         const settings = settingsManager.get();
@@ -12587,10 +12642,25 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const apiKey = settings.gemini_api_key?.trim() || '';
         if (transcriptEngine !== 'local_mlx' && !apiKey) {
             this._showToast(t('retranscript.needGeminiKey'), 'error');
+            if (options.fromQueue) this._drainRetranscriptQueue();
             return;
         }
         if (transcriptEngine === 'local_mlx' && (!this.isAppleSilicon || !this._isLocalMlxReady)) {
             this._showToast(t('settings.engine.transcriptLocalUnavailable'), 'error');
+            if (options.fromQueue) this._drainRetranscriptQueue();
+            return;
+        }
+
+        if (this._activeRetranscribe || this._retranscriptFailureOpen || this._retranscriptCancellationPending
+            || (this._retranscriptQueue.length > 0 && !options.fromQueue)) {
+            const session = (this._cachedSessions || []).find((item) => item.id === id);
+            const title = session?.title || id;
+            this._retranscriptQueue.push({ id, isLegacy, options: { ...options, fromQueue: false } });
+            this._updateRetranscriptQueueStatus();
+            this._showToast(t('retranscript.queue.added', { title, count: this._retranscriptQueue.length }), 'info');
+            if (this._currentViewedSession?.id === id && this._currentSessionJson) {
+                this._updateRetranscriptStatus(this._currentSessionJson);
+            }
             return;
         }
 
@@ -12736,7 +12806,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             }
 
             this._lastCompletedRetranscribeId = id;
-            this._activeRetranscribe = null;
 
             if (this._currentViewedSession?.id === id) {
                 const refreshed = await invoke('read_session', { id });
@@ -12754,6 +12823,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 this._renderCurrentMinutesSubtab();
             }
 
+            this._activeRetranscribe = null;
+
             const compTitle = shouldGenerateMinutes
                 ? t('retranscript.floating.doneWithMinutes')
                 : t('retranscript.floating.done');
@@ -12764,6 +12835,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 : t('retranscript.toast.done');
             this._showToast(toastMsg, 'success');
             await this._showSessions();
+            this._drainRetranscriptQueue();
         } catch (err) {
             clearInterval(progressInterval);
             if (this._activeRetranscribe?.id === id) {
@@ -12774,6 +12846,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                     console.error('[App] Re-transcript failed:', err);
                     this._showRetranscriptFailed(t('retranscript.error.prefix', { error: err }), false, failedStage);
                 }
+                if (isCancelled) {
+                    this._retranscriptCancellationPending = false;
+                    this._drainRetranscriptQueue();
+                }
+            } else {
+                this._retranscriptCancellationPending = false;
+                if (!this._retranscriptFailureOpen) this._drainRetranscriptQueue();
             }
         }
     }
@@ -13295,7 +13374,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 clearTimeout(this._activeRetranscribe.timeoutId);
             }
             this._lastCompletedRetranscribeId = id;
-            this._activeRetranscribe = null;
 
             this._showRetranscriptCompleted(id, t('retranscript.floating.doneImport', { title }));
             this._showToast(t('retranscript.toast.doneImport'), 'success');
@@ -13306,7 +13384,9 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                     this._activeCustomerFilter = [];
                 }
             }
+            this._activeRetranscribe = null;
             await this._showSessions();
+            this._drainRetranscriptQueue();
         } catch (err) {
             clearInterval(progressInterval);
             if (this._activeRetranscribe?.id === id) {
@@ -13317,6 +13397,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                     console.error('[App] Import audio failed:', err);
                     this._showRetranscriptFailed(t('retranscript.error.importPrefix', { error: err }), true, failedStage);
                 }
+                if (isCancelled) {
+                    this._retranscriptCancellationPending = false;
+                    this._drainRetranscriptQueue();
+                }
+            } else {
+                this._retranscriptCancellationPending = false;
+                if (!this._retranscriptFailureOpen) this._drainRetranscriptQueue();
             }
         }
     }

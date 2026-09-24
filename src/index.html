@@ -1345,6 +1345,7 @@
             <svg class="icon-copy-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
           </button>
         </div>
+        <p id="retranscript-queue-status" class="modal-desc" aria-live="polite" style="display:none;margin-top:8px"></p>
         <div class="modal-actions retranscript-modal-actions">
           <button type="button" id="btn-retranscript-run-bg" class="btn-secondary small" data-i18n="retranscript.modal.runBg" data-i18n-title="retranscript.modal.runBgTooltip" title="Tiếp tục xử lý ngầm, cho phép bạn làm việc khác">⬇ Chạy ngầm</button>
           <button type="button" id="btn-retranscript-abort" class="btn-danger small" data-i18n="common.cancel" data-i18n-title="retranscript.modal.cancelTooltip" title="Hủy bỏ tiến trình Re-transcript này">✕ Hủy bỏ</button>
@@ -1386,6 +1387,7 @@
           <div id="retranscript-floating-progress-fill" class="retranscript-floating-progress-fill" style="width: 0%;"></div>
         </div>
         <div id="retranscript-floating-status" class="retranscript-floating-status" data-i18n="retranscript.floating.processing">Đang xử lý...</div>
+        <div id="retranscript-floating-queue-status" class="retranscript-floating-status" aria-live="polite" style="display:none"></div>
       </div>
     </div>
     <div class="retranscript-floating-actions">
