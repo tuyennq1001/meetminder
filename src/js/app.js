@@ -5933,7 +5933,6 @@ class App {
                     minutesLang: null,
                     customTitle: t('modal.stop.retranscriptLabel'),
                     durationSec: savedJson?.duration_sec,
-                    confirm: false,
                 }).catch(err => console.error('[App] Auto retranscript error:', err));
                 return;
             }
@@ -9034,91 +9033,6 @@ class App {
 
     // ─── Settings Data Management Tabs ─────────────────────────────────────
 
-    // ─── Universal Confirm Delete Modal ─────────────────────────────────────
-
-    _promptConfirmRetranscript() {
-        const modal = document.getElementById('modal-confirm-retranscript');
-        const title = t('session.retranscriptConfirmTitle');
-        const description = t('session.retranscriptConfirmDesc');
-        const keepMessage = t('session.retranscriptConfirmKeep');
-
-        if (!modal) {
-            return window.confirm(`${title}\n\n${description}\n\n${keepMessage}`);
-        }
-
-        if (this._isRetranscriptConfirmOpen) return Promise.resolve(false);
-        this._isRetranscriptConfirmOpen = true;
-
-        const titleEl = document.getElementById('confirm-retranscript-title-text');
-        const descriptionEl = document.getElementById('confirm-retranscript-description');
-        const agreeBtn = document.getElementById('btn-agree-confirm-retranscript');
-        const cancelBtn = document.getElementById('btn-cancel-confirm-retranscript');
-        const closeBtn = document.getElementById('btn-close-confirm-retranscript');
-        const previousFocus = document.activeElement;
-
-        if (titleEl) titleEl.textContent = title;
-        if (descriptionEl) descriptionEl.textContent = description;
-        if (agreeBtn) agreeBtn.textContent = t('session.retranscriptConfirmAction');
-        modal.style.display = 'flex';
-
-        return new Promise((resolve) => {
-            const focusable = () => Array.from(modal.querySelectorAll(
-                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-            )).filter((element) => !element.disabled && element.offsetParent !== null);
-
-            const cleanup = () => {
-                modal.style.display = 'none';
-                agreeBtn?.removeEventListener('click', onAgree);
-                cancelBtn?.removeEventListener('click', onCancel);
-                closeBtn?.removeEventListener('click', onCancel);
-                modal.removeEventListener('click', onBackdrop);
-                window.removeEventListener('keydown', onKeyDown);
-                this._isRetranscriptConfirmOpen = false;
-                if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
-            };
-
-            const onAgree = () => {
-                cleanup();
-                resolve(true);
-            };
-            const onCancel = () => {
-                cleanup();
-                resolve(false);
-            };
-            const onBackdrop = (event) => {
-                if (event.target === modal) onCancel();
-            };
-            const onKeyDown = (event) => {
-                if (event.key === 'Escape') {
-                    event.preventDefault();
-                    onCancel();
-                } else if (event.key === 'Enter') {
-                    event.preventDefault();
-                    onAgree();
-                } else if (event.key === 'Tab') {
-                    const elements = focusable();
-                    if (elements.length === 0) return;
-                    const first = elements[0];
-                    const last = elements[elements.length - 1];
-                    if (event.shiftKey && document.activeElement === first) {
-                        event.preventDefault();
-                        last.focus();
-                    } else if (!event.shiftKey && document.activeElement === last) {
-                        event.preventDefault();
-                        first.focus();
-                    }
-                }
-            };
-
-            agreeBtn?.addEventListener('click', onAgree);
-            cancelBtn?.addEventListener('click', onCancel);
-            closeBtn?.addEventListener('click', onCancel);
-            modal.addEventListener('click', onBackdrop);
-            window.addEventListener('keydown', onKeyDown);
-            setTimeout(() => cancelBtn?.focus(), 0);
-        });
-    }
-
     _promptConfirmDelete({
         title = t('modal.delete.title'),
         message = t('modal.delete.message'),
@@ -12186,7 +12100,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 sourceLang: src,
                 targetLang: tgt,
                 customTitle: t('modal.sessionLangs.customTitle'),
-                confirm: false,
             });
         } finally {
             if (btn) {
@@ -12679,11 +12592,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (transcriptEngine === 'local_mlx' && (!this.isAppleSilicon || !this._isLocalMlxReady)) {
             this._showToast(t('settings.engine.transcriptLocalUnavailable'), 'error');
             return;
-        }
-
-        if (options.confirm !== false) {
-            const agreed = await this._promptConfirmRetranscript();
-            if (!agreed) return;
         }
 
         const buttonsToDisable = [
