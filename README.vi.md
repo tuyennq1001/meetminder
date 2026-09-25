@@ -142,7 +142,9 @@ Trình cài đặt tự nhận diện Apple Silicon hoặc Intel và tải đún
 
 ### 5. Quản lý & Tìm kiếm Cuộc họp
 
-![Minh họa quản lý khách hàng, dự án, category, tag và tìm kiếm cuộc họp](docs/user_manual/meeting-management-overview.svg)
+![Ảnh chụp thật màn hình quản lý khách hàng, category và tag trong Meet Minder Dev](docs/user_manual/customer-management-dev.png)
+
+![Ảnh chụp thật màn hình tìm kiếm cuộc họp trong Meet Minder Dev](docs/user_manual/meeting-search-dev.png)
 
 - **Quản lý dữ liệu tập trung**: Tạo và quản lý khách hàng, dự án, category cuộc họp và tag trong phần Cài đặt. Phân chia dự án, category và tag theo Công việc hoặc Cá nhân.
 - **Phân loại cuộc họp**: Đánh dấu mỗi cuộc họp là Công việc hoặc Cá nhân; gán khách hàng, dự án, category và một hoặc nhiều tag để sắp xếp kho lưu trữ.

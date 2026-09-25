@@ -135,7 +135,9 @@
 
 ### 5. 会議の管理と検索
 
-![取引先、プロジェクト、カテゴリ、タグの管理と会議検索のイメージ](docs/user_manual/meeting-management-overview.svg)
+![Meet Minder Devの取引先・カテゴリ・タグ管理画面](docs/user_manual/customer-management-dev.png)
+
+![Meet Minder Devの会議検索画面](docs/user_manual/meeting-search-dev.png)
 
 - **データの一元管理**: 設定画面で取引先、プロジェクト、会議カテゴリ、タグを作成・管理できます。プロジェクト、カテゴリ、タグは仕事用または個人用に分類できます。
 - **会議の整理**: 各会議を仕事用または個人用に分類し、取引先、プロジェクト、カテゴリ、1つ以上のタグを割り当ててアーカイブを整理できます。

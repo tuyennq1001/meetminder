@@ -142,7 +142,9 @@ The installer detects Apple Silicon or Intel and downloads the matching signed D
 
 ### 5. Meeting Management & Search
 
-![Illustration of customer, project, category, tag, and meeting search management](docs/user_manual/meeting-management-overview.svg)
+![Real Meet Minder Dev screenshot of customer, category, and tag management](docs/user_manual/customer-management-dev.png)
+
+![Real Meet Minder Dev screenshot of meeting search](docs/user_manual/meeting-search-dev.png)
 
 - **Centralized Data Management**: Create and manage customers, projects, meeting categories, and tags in Settings. Organize projects, categories, and tags by Work or Personal scope.
 - **Meeting Organization**: Classify each meeting as Work or Personal, then assign a customer, project, category, and one or more tags to organize the archive.
