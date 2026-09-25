@@ -132,19 +132,25 @@ Download pre-built installers directly from [**GitHub Releases**](https://github
 
 ---
 
-### 5. Audio Recording Import (Transcribe & Generate Minutes from Audio)
+### 5. Meeting Management & Search
+
+- **Centralized Data Management**: Create and manage customers, projects, meeting categories, and tags in Settings. Organize projects, categories, and tags by Work or Personal scope.
+- **Meeting Organization**: Classify each meeting as Work or Personal, then assign a customer, project, category, and one or more tags to organize the archive.
+- **Full-Text Search**: Search saved meeting titles, logs, and notes, and narrow results to Work, Personal, or All.
+
+---
+
+### 6. Audio Recording Import (Transcribe & Generate Minutes from Audio)
 
 - **Universal Format Support**: Import existing recordings in `.mp3`, `.m4a`, `.wav`, `.aac`, `.ogg`, and `.flac`.
 - **Drag & Drop Workflow**: Drag audio files directly into the import dialog or browse local folders.
 - **Rich Metadata Organization**: Tag meetings by Customer, Project, Category, Custom Tags, and Scope (Work vs. Personal).
-- **Centralized Data Management**: Create and manage customers, projects, meeting categories, and tags in Settings; organize projects, categories, and tags by Work or Personal scope.
-- **Meeting Search & Organization**: Search meeting titles, logs, and notes, with results scoped to Work, Personal, or All. Assign a customer, project, category, and multiple tags to each meeting for easier organization and retrieval.
 - **Automated AI Minutes**: Automatically transcribes speech in the background and generates structured meeting minutes with action items.
 - **Full Meeting Archive**: Creates a complete session identical to live recordings, complete with interactive audio player, speaker timeline, notes, and meeting minutes.
 
 ---
 
-### 6. Multi-Language User Interface (i18n)
+### 7. Multi-Language User Interface (i18n)
 
 Meet Minder features full internationalization across all views, modals, and notifications:
 - 🇺🇸 **English** (`en`) — Default

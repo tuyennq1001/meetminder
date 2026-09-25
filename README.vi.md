@@ -132,19 +132,25 @@ Tải phiên bản mới nhất từ trang [**GitHub Releases**](https://github.
 
 ---
 
-### 5. Import File Ghi Âm Cuộc Họp (Transcribe & Tự Động Tạo Biên Bản)
+### 5. Quản lý & Tìm kiếm Cuộc họp
+
+- **Quản lý dữ liệu tập trung**: Tạo và quản lý khách hàng, dự án, category cuộc họp và tag trong phần Cài đặt. Phân chia dự án, category và tag theo Công việc hoặc Cá nhân.
+- **Phân loại cuộc họp**: Đánh dấu mỗi cuộc họp là Công việc hoặc Cá nhân; gán khách hàng, dự án, category và một hoặc nhiều tag để sắp xếp kho lưu trữ.
+- **Tìm kiếm toàn văn**: Tìm trong tên cuộc họp, Logs và ghi chú đã lưu; thu hẹp kết quả theo Công việc, Cá nhân hoặc Tất cả.
+
+---
+
+### 6. Import File Ghi Âm Cuộc Họp (Transcribe & Tự Động Tạo Biên Bản)
 
 - **Hỗ trợ đa dạng định dạng âm thanh**: Nhập file ghi âm từ điện thoại, máy ghi âm hoặc phần mềm họp online: `.mp3`, `.m4a`, `.wav`, `.aac`, `.ogg`, `.flac`.
 - **Kéo thả tiện lợi**: Kéo thả trực tiếp file âm thanh vào hộp thoại Import hoặc duyệt chọn từ ổ đĩa.
 - **Gán Metadata quản lý chuyên nghiệp**: Phân loại theo Khách hàng, Dự án, Category cuộc họp, Thẻ (Tags) và Phân vùng (Công việc / Cá nhân).
-- **Quản lý dữ liệu tập trung**: Tạo và quản lý danh sách khách hàng, dự án, category cuộc họp và tag trong phần Cài đặt; phân chia dự án, category và tag theo Công việc hoặc Cá nhân.
-- **Tìm kiếm và phân loại cuộc họp**: Tìm trong tên cuộc họp, Logs và ghi chú; giới hạn kết quả theo Công việc, Cá nhân hoặc Tất cả. Gán khách hàng, dự án, category và nhiều tag cho từng cuộc họp để dễ lọc và tra cứu trong kho lưu trữ.
 - **Tự động nhận diện & Tạo Meeting Minutes**: Hệ thống tự động chuyển đổi âm thanh thành văn bản chạy ngầm và gọi Google Gemini tổng hợp biên bản với danh sách việc cần làm.
 - **Lưu trữ phiên họp đầy đủ**: Phiên họp import sở hữu đầy đủ thanh phát âm thanh đồng bộ, timeline phát biểu từng câu, ghi chú và biên bản tương tự như cuộc họp trực tiếp.
 
 ---
 
-### 6. Giao diện Đa ngôn ngữ (Multi-Language UI)
+### 7. Giao diện Đa ngôn ngữ (Multi-Language UI)
 
 Meet Minder hỗ trợ bản địa hóa giao diện 3 ngôn ngữ:
 - 🇺🇸 **English** (`en`) — Tiếng Anh
