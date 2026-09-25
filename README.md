@@ -49,6 +49,14 @@ It seamlessly unifies **dual-channel system audio & microphone capture**, **real
 
 Download pre-built installers directly from [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest).
 
+On macOS, install and open the latest version with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tuyennq1001/meetminder/main/install.sh | bash
+```
+
+The installer detects Apple Silicon or Intel and downloads the matching signed DMG. You can also download the DMG manually below.
+
 | Operating System | Architecture / Devices | Installer Package | Guide |
 | :--- | :--- | :--- | :--- |
 | **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.2_aarch64.dmg` | [macOS Installation Guide](docs/installation_guide.md) |

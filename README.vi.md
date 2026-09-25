@@ -49,6 +49,14 @@
 
 Tải phiên bản mới nhất từ trang [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest).
 
+Trên macOS, cài và mở phiên bản mới nhất bằng một lệnh:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tuyennq1001/meetminder/main/install.sh | bash
+```
+
+Trình cài đặt tự nhận diện Apple Silicon hoặc Intel và tải đúng file DMG đã ký. Bạn cũng có thể tải file DMG thủ công bên dưới.
+
 | Hệ điều hành | Kiến trúc / Thiết bị | File cài đặt | Hướng dẫn |
 | :--- | :--- | :--- | :--- |
 | **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.2_aarch64.dmg` | [Hướng dẫn macOS](docs/installation_guide_vi.md) |
