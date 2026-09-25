@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.0.1-blueviolet?style=flat-square" alt="Version 1.0.1">
+  <img src="https://img.shields.io/badge/version-v1.0.2-blueviolet?style=flat-square" alt="Version 1.0.2">
   <img src="https://img.shields.io/badge/built_with-Tauri_v2-24C8D8?logo=tauri&logoColor=white&style=flat-square" alt="Built with Tauri v2">
   <img src="https://img.shields.io/badge/backend-Rust_2021-DEA584?logo=rust&logoColor=white&style=flat-square" alt="Rust 2021">
   <img src="https://img.shields.io/badge/macOS-Apple_Silicon_%7C_Intel-black?logo=apple&logoColor=white&style=flat-square" alt="macOS">
@@ -45,15 +45,15 @@ It seamlessly unifies **dual-channel system audio & microphone capture**, **real
 
 ---
 
-## ⬇️ Downloads (v1.0.1)
+## ⬇️ Downloads (v1.0.2)
 
 Download pre-built installers directly from [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest).
 
 | Operating System | Architecture / Devices | Installer Package | Guide |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.1_aarch64.dmg` | [macOS Installation Guide](docs/installation_guide.md) |
-| **macOS** | **Intel Mac** (i5 / i7 / i9) | `Meet.Minder_1.0.1_x64.dmg` | [macOS Installation Guide](docs/installation_guide.md) |
-| **Windows** | **Windows 10 / 11** (64-bit) | `Meet.Minder_1.0.1_x64-setup.exe` | [Windows Installation Guide](docs/installation_guide_win.md) |
+| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.2_aarch64.dmg` | [macOS Installation Guide](docs/installation_guide.md) |
+| **macOS** | **Intel Mac** (i5 / i7 / i9) | `Meet.Minder_1.0.2_x64.dmg` | [macOS Installation Guide](docs/installation_guide.md) |
+| **Windows** | **Windows 10 / 11** (64-bit) | `Meet.Minder_1.0.2_x64-setup.exe` | [Windows Installation Guide](docs/installation_guide_win.md) |
 
 ---
 
@@ -208,28 +208,19 @@ Speed up your meeting workflow with native hotkeys:
    cd meetminder
    ```
 
-2. **Install frontend dependencies**:
+2. **Install dependencies and start the development app**:
    ```bash
-   npm install
+   npm install && npm run dev
    ```
+   `npm run dev` builds the CodeMirror 6 bundle automatically, so there is no need to run `npm run build:editor` separately.
 
-3. **Build the CodeMirror 6 bundle**:
-   ```bash
-   npm run build:editor
-   ```
-
-4. **Launch development build**:
-   ```bash
-   npm run dev
-   ```
-
-5. **Lint and format**:
+3. **Optional: lint and format**:
    ```bash
    npm run lint     # Runs Cargo clippy
    npm run format   # Runs Cargo fmt
    ```
 
-6. **Compile production release**:
+4. **Optional: compile a production build**:
    ```bash
    npm run build
    ```

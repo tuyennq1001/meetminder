@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.0.1-blueviolet?style=flat-square" alt="Version 1.0.1">
+  <img src="https://img.shields.io/badge/version-v1.0.2-blueviolet?style=flat-square" alt="Version 1.0.2">
   <img src="https://img.shields.io/badge/built_with-Tauri_v2-24C8D8?logo=tauri&logoColor=white&style=flat-square" alt="Built with Tauri v2">
   <img src="https://img.shields.io/badge/backend-Rust_2021-DEA584?logo=rust&logoColor=white&style=flat-square" alt="Rust 2021">
   <img src="https://img.shields.io/badge/macOS-Apple_Silicon_%7C_Intel-black?logo=apple&logoColor=white&style=flat-square" alt="macOS">
@@ -45,15 +45,15 @@
 
 ---
 
-## ⬇️ Tải về bản cài đặt (v1.0.1)
+## ⬇️ Tải về bản cài đặt (v1.0.2)
 
 Tải phiên bản mới nhất từ trang [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest).
 
 | Hệ điều hành | Kiến trúc / Thiết bị | File cài đặt | Hướng dẫn |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.1_aarch64.dmg` | [Hướng dẫn macOS](docs/installation_guide_vi.md) |
-| **macOS** | **Intel Mac** (i5 / i7 / i9) | `Meet.Minder_1.0.1_x64.dmg` | [Hướng dẫn macOS](docs/installation_guide_vi.md) |
-| **Windows** | **Windows 10 / 11** (64-bit) | `Meet.Minder_1.0.1_x64-setup.exe` | [Hướng dẫn Windows](docs/installation_guide_win_vi.md) |
+| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.2_aarch64.dmg` | [Hướng dẫn macOS](docs/installation_guide_vi.md) |
+| **macOS** | **Intel Mac** (i5 / i7 / i9) | `Meet.Minder_1.0.2_x64.dmg` | [Hướng dẫn macOS](docs/installation_guide_vi.md) |
+| **Windows** | **Windows 10 / 11** (64-bit) | `Meet.Minder_1.0.2_x64-setup.exe` | [Hướng dẫn Windows](docs/installation_guide_win_vi.md) |
 
 ---
 
@@ -181,22 +181,12 @@ Meet Minder hỗ trợ bản địa hóa giao diện 3 ngôn ngữ:
 git clone https://github.com/tuyennq1001/meetminder.git
 cd meetminder
 
-# 2. Cài đặt dependencies
-npm install
-
-# 3. Build CodeMirror 6 bundle
-npm run build:editor
-
-# 4. Chạy môi trường phát triển
-npm run dev
-
-# 5. Kiểm tra mã nguồn (lint & format)
-npm run lint
-npm run format
-
-# 6. Đóng gói bản phát hành chính thức
-npm run build
+# Cài dependencies, tự build CodeMirror và chạy ứng dụng
+npm install && npm run dev
 ```
+
+`npm run dev` tự build CodeMirror 6 bundle, nên không cần chạy `npm run build:editor` riêng.
+Các lệnh tùy chọn: `npm run lint`, `npm run format` và `npm run build` để đóng gói.
 
 ---
 
