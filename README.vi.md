@@ -134,6 +134,8 @@ Tải phiên bản mới nhất từ trang [**GitHub Releases**](https://github.
 
 ### 5. Quản lý & Tìm kiếm Cuộc họp
 
+![Minh họa quản lý khách hàng, dự án, category, tag và tìm kiếm cuộc họp](docs/user_manual/meeting-management-overview.svg)
+
 - **Quản lý dữ liệu tập trung**: Tạo và quản lý khách hàng, dự án, category cuộc họp và tag trong phần Cài đặt. Phân chia dự án, category và tag theo Công việc hoặc Cá nhân.
 - **Phân loại cuộc họp**: Đánh dấu mỗi cuộc họp là Công việc hoặc Cá nhân; gán khách hàng, dự án, category và một hoặc nhiều tag để sắp xếp kho lưu trữ.
 - **Tìm kiếm toàn văn**: Tìm trong tên cuộc họp, Logs và ghi chú đã lưu; thu hẹp kết quả theo Công việc, Cá nhân hoặc Tất cả.
