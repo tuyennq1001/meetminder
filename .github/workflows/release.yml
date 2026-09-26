@@ -31,8 +31,12 @@ jobs:
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
           if [ -z "${CERTIFICATE:-}" ]; then
-            echo "APPLE_CERTIFICATE is not configured. Skipping certificate installation."
-            exit 0
+            echo "::error::APPLE_CERTIFICATE is required for notarized macOS releases."
+            exit 1
+          fi
+          if [ -z "${CERTIFICATE_PASSWORD:-}" ]; then
+            echo "::error::APPLE_CERTIFICATE_PASSWORD is required."
+            exit 1
           fi
 
           CERT_PATH=$RUNNER_TEMP/certificate.p12
@@ -71,12 +75,31 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [ -n "${APPLE_CERTIFICATE:-}" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
-            npm run tauri build -- --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
-          else
-            unset APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
-            npm run tauri build -- --config src-tauri/tauri.release.conf.json
+          for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is required for signed and notarized macOS releases."
+              exit 1
+            fi
+          done
+          if [[ "$APPLE_SIGNING_IDENTITY" != Developer\ ID\ Application:* ]]; then
+            echo "::error::APPLE_SIGNING_IDENTITY must be a Developer ID Application identity."
+            exit 1
           fi
+          npm run tauri build -- --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
+
+      - name: Verify notarized DMG
+        shell: bash
+        run: |
+          shopt -s nullglob
+          dmgs=(src-tauri/target/release/bundle/dmg/*.dmg)
+          if [ ${#dmgs[@]} -eq 0 ]; then
+            echo "::error::No macOS DMG was produced."
+            exit 1
+          fi
+          for dmg in "${dmgs[@]}"; do
+            xcrun stapler validate "$dmg"
+            spctl --assess --type open --context context:primary-signature --verbose "$dmg"
+          done
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
@@ -110,8 +133,12 @@ jobs:
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
           if [ -z "${CERTIFICATE:-}" ]; then
-            echo "APPLE_CERTIFICATE is not configured. Skipping certificate installation."
-            exit 0
+            echo "::error::APPLE_CERTIFICATE is required for notarized macOS releases."
+            exit 1
+          fi
+          if [ -z "${CERTIFICATE_PASSWORD:-}" ]; then
+            echo "::error::APPLE_CERTIFICATE_PASSWORD is required."
+            exit 1
           fi
 
           CERT_PATH=$RUNNER_TEMP/certificate.p12
@@ -152,12 +179,31 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [ -n "${APPLE_CERTIFICATE:-}" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
-            npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
-          else
-            unset APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
-            npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json
+          for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is required for signed and notarized macOS releases."
+              exit 1
+            fi
+          done
+          if [[ "$APPLE_SIGNING_IDENTITY" != Developer\ ID\ Application:* ]]; then
+            echo "::error::APPLE_SIGNING_IDENTITY must be a Developer ID Application identity."
+            exit 1
           fi
+          npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
+
+      - name: Verify notarized DMG (Intel)
+        shell: bash
+        run: |
+          shopt -s nullglob
+          dmgs=(src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg)
+          if [ ${#dmgs[@]} -eq 0 ]; then
+            echo "::error::No Intel macOS DMG was produced."
+            exit 1
+          fi
+          for dmg in "${dmgs[@]}"; do
+            xcrun stapler validate "$dmg"
+            spctl --assess --type open --context context:primary-signature --verbose "$dmg"
+          done
 
       - name: Upload macOS Intel artifacts
         uses: actions/upload-artifact@v4

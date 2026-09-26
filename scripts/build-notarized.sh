@@ -2,10 +2,9 @@
 # Build signed + notarized macOS DMG.
 #
 # Prerequisites:
-#   1. Developer ID Application cert installed (signingIdentity in tauri.conf.json).
-#   2. App-specific password stored via:
-#        xcrun notarytool store-credentials "meet-minder" \
-#          --apple-id "tuyennq1001@gmail.com" --team-id "75EN938B6L"
+#   1. Developer ID Application cert installed in the login keychain.
+#   2. APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, and APPLE_TEAM_ID
+#      configured in the ignored .env file or exported in the environment.
 #
 # Usage:  ./scripts/build-notarized.sh
 #
@@ -24,21 +23,42 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
   set +a
 fi
 
-APPLE_ID="${APPLE_ID:-tuyennq1001@gmail.com}"
-APPLE_TEAM_ID="${APPLE_TEAM_ID:-75EN938B6L}"
+for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+  if [[ -z "${!name:-}" ]]; then
+    echo "ERROR: $name is required for a signed and notarized build." >&2
+    exit 1
+  fi
+done
 
-if [[ -z "${APPLE_PASSWORD:-}" ]]; then
-  echo "ERROR: APPLE_PASSWORD not set." >&2
-  echo "Create .env in repo root with: APPLE_PASSWORD=xxxx-xxxx-xxxx-xxxx" >&2
+if [[ "$APPLE_SIGNING_IDENTITY" != Developer\ ID\ Application:* ]]; then
+  echo "ERROR: APPLE_SIGNING_IDENTITY must be a Developer ID Application identity." >&2
+  exit 1
+fi
+
+if ! security find-identity -v -p codesigning 2>/dev/null | grep -Fq -- "$APPLE_SIGNING_IDENTITY"; then
+  echo "ERROR: The configured Developer ID Application identity is not installed in the Keychain." >&2
+  echo "Import the Developer ID .p12 certificate, then retry." >&2
   exit 1
 fi
 
 export APPLE_ID APPLE_TEAM_ID APPLE_PASSWORD
 
-echo "Building with notarization..."
+echo "Building and notarizing the macOS distribution..."
 echo "  APPLE_ID=$APPLE_ID"
 echo "  APPLE_TEAM_ID=$APPLE_TEAM_ID"
 echo "  APPLE_PASSWORD=*** (${#APPLE_PASSWORD} chars)"
 echo
 
-npm run tauri build
+npm run tauri build -- --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
+
+DMG_PATH="$REPO_ROOT/src-tauri/target/release/bundle/dmg"
+shopt -s nullglob
+DMGS=("$DMG_PATH"/*.dmg)
+if [[ ${#DMGS[@]} -eq 0 ]]; then
+  echo "ERROR: Tauri did not produce a DMG in $DMG_PATH" >&2
+  exit 1
+fi
+for dmg in "${DMGS[@]}"; do
+  xcrun stapler validate "$dmg"
+  spctl --assess --type open --context context:primary-signature --verbose "$dmg"
+done

@@ -5,6 +5,13 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.2 - 2026-09-25
+
+### Improved
+
+- **Audio re-transcription queue**: Queue multiple meeting recordings and process them one at a time. Cancelling stops only the current task; queued recordings continue automatically.
+- **Faster re-transcription**: Removed the extra confirmation dialog and moved the replacement details into the action tooltip.
+
 ## v1.0.1 - 2026-09-23
 
 ### Fixed
