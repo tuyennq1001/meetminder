@@ -75,6 +75,7 @@ git push origin v0.9.2
   - macOS Intel (x86_64)
   - Windows (x86_64)
 - Tự động ký chữ ký số Tauri (`TAURI_SIGNING_PRIVATE_KEY`).
+- Ký app macOS bằng **Developer ID Application** và gửi app/DMG đến dịch vụ notarization của Apple. Workflow sẽ dừng nếu thiếu chứng chỉ hoặc thông tin notarization; không tạo bản ad-hoc để phát hành.
 - Dùng thêm `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` nếu private key được tạo có mật khẩu; để trống secret này nếu key không có mật khẩu.
 - Workflow bật updater artifacts qua `src-tauri/tauri.release.conf.json`, nên build Dev vẫn giữ `createUpdaterArtifacts: false` và không cần signing key updater.
 - Tự động tạo các gói update nén `.app.tar.gz`, chữ ký `.sig` và file định tuyến `latest.json`.
@@ -99,12 +100,30 @@ Khi bản Release được Publish trên GitHub:
 
 ---
 
-## 3. Quản lý Chữ ký số (Code Signing) & Quyền Screen Recording
+## 3. Cấu hình Apple Developer cho phát hành macOS trực tiếp
+
+Trước lần phát hành đầu tiên:
+
+1. Trong Apple Developer, tạo chứng chỉ **Developer ID Application** và xuất cùng private key thành `.p12`.
+2. Tạo app-specific password cho Apple ID dùng notarization.
+3. Thêm các GitHub Actions Repository Secrets sau (không commit giá trị vào repo):
+   - `APPLE_CERTIFICATE`: nội dung `.p12` đã base64 encode.
+   - `APPLE_CERTIFICATE_PASSWORD`: mật khẩu lúc xuất `.p12`.
+   - `APPLE_SIGNING_IDENTITY`: tên identity đầy đủ, dạng `Developer ID Application: Tên (TEAMID)`.
+   - `APPLE_ID`: email Apple ID.
+   - `APPLE_PASSWORD`: app-specific password.
+   - `APPLE_TEAM_ID`: Team ID trong Apple Developer.
+   - `TAURI_SIGNING_PRIVATE_KEY` và `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (nếu có): ký artifacts cho in-app updater như trước.
+4. Có thể thử build cục bộ bằng cách đặt bốn biến `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` trong `.env` đã gitignore, cài certificate Developer ID vào Keychain, rồi chạy `./scripts/build-notarized.sh`.
+
+Tauri sẽ ký với hardened runtime, notarize và staple ticket vào DMG. Script cục bộ kiểm tra ticket đã staple và Gatekeeper chấp nhận DMG trước khi báo hoàn tất. Không dùng certificate Apple Development hoặc ad-hoc (`-`) cho bản phát hành.
+
+## 4. Quản lý quyền Screen Recording
 
 - **Bảo toàn quyền Screen Recording qua các lần update:**
   macOS TCC ghi nhớ quyền dựa trên Bundle ID và Identity của chứng chỉ ký số. Khi mọi bản release đều dùng **cùng một Certificate ổn định**, người dùng **không bao giờ phải cấp lại quyền** sau mỗi lần update.
 - **Đối với máy người dùng mới (Cài lần đầu):**
-  - Tải file `.dmg` từ GitHub Releases ➔ Kéo vào `/Applications`.
-  - Mở Terminal chạy lệnh: `xattr -cr "/Applications/Meet Minder.app"` (chỉ cần làm 1 lần duy nhất để vượt Gatekeeper).
-  - Cấp quyền Screen Recording trong System Settings.
+  - Tải DMG đã ký và notarize từ GitHub Releases, mở DMG và kéo app vào `/Applications`.
+  - Mở app như bình thường; không cần chạy lệnh Terminal để bỏ qua Gatekeeper.
+  - Cấp quyền Screen Recording và Microphone trong System Settings khi macOS yêu cầu.
   - Các lần update tiếp theo app sẽ tự update qua in-app updater mà không bị hỏi lại quyền.
