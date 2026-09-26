@@ -87,7 +87,11 @@ jobs:
           fi
           npm run tauri build -- --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
 
-      - name: Verify notarized DMG
+      - name: Notarize and verify DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         shell: bash
         run: |
           shopt -s nullglob
@@ -97,6 +101,8 @@ jobs:
             exit 1
           fi
           for dmg in "${dmgs[@]}"; do
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+            xcrun stapler staple "$dmg"
             xcrun stapler validate "$dmg"
             spctl --assess --type open --context context:primary-signature --verbose "$dmg"
           done
@@ -191,7 +197,11 @@ jobs:
           fi
           npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
 
-      - name: Verify notarized DMG (Intel)
+      - name: Notarize and verify DMG (Intel)
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         shell: bash
         run: |
           shopt -s nullglob
@@ -201,6 +211,8 @@ jobs:
             exit 1
           fi
           for dmg in "${dmgs[@]}"; do
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+            xcrun stapler staple "$dmg"
             xcrun stapler validate "$dmg"
             spctl --assess --type open --context context:primary-signature --verbose "$dmg"
           done

@@ -59,6 +59,12 @@ if [[ ${#DMGS[@]} -eq 0 ]]; then
   exit 1
 fi
 for dmg in "${DMGS[@]}"; do
+  xcrun notarytool submit "$dmg" \
+    --apple-id "$APPLE_ID" \
+    --password "$APPLE_PASSWORD" \
+    --team-id "$APPLE_TEAM_ID" \
+    --wait
+  xcrun stapler staple "$dmg"
   xcrun stapler validate "$dmg"
   spctl --assess --type open --context context:primary-signature --verbose "$dmg"
 done

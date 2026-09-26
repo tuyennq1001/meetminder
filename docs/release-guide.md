@@ -116,7 +116,7 @@ Trước lần phát hành đầu tiên:
    - `TAURI_SIGNING_PRIVATE_KEY` và `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (nếu có): ký artifacts cho in-app updater như trước.
 4. Có thể thử build cục bộ bằng cách đặt bốn biến `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` trong `.env` đã gitignore, cài certificate Developer ID vào Keychain, rồi chạy `./scripts/build-notarized.sh`.
 
-Tauri sẽ ký với hardened runtime, notarize và staple ticket vào DMG. Script cục bộ kiểm tra ticket đã staple và Gatekeeper chấp nhận DMG trước khi báo hoàn tất. Không dùng certificate Apple Development hoặc ad-hoc (`-`) cho bản phát hành.
+Tauri ký app với hardened runtime, gửi app notarize và staple ticket vào app. Sau khi tạo DMG, workflow CI và script build cục bộ gửi chính DMG đi notarize riêng, staple ticket vào DMG, rồi xác minh ticket và Gatekeeper trước khi phát hành. Không dùng certificate Apple Development hoặc ad-hoc (`-`) cho bản phát hành.
 
 ## 4. Quản lý quyền Screen Recording
 
