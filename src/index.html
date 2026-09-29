@@ -365,9 +365,15 @@
                 <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
               </svg>
             </button>
-            <button id="btn-session-delete-single" class="icon-btn small delete-btn-single" data-i18n-title="session.delete" title="Xóa cuộc họp này">
-              🗑
+            <button id="btn-session-delete-single" class="icon-btn small delete-btn-single" data-i18n-title="session.delete" data-i18n-aria-label="session.delete" aria-label="Xóa cuộc họp này" title="Xóa cuộc họp này">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <path d="M3 6h18" />
+                <path d="M8 6V4h8v2" />
+                <path d="m19 6-1 14H6L5 6" />
+                <path d="M10 11v6M14 11v6" />
+              </svg>
             </button>
+            <button type="button" id="btn-session-obsidian-save" class="icon-btn small obsidian-export-button" style="display:none" data-i18n-title="session.obsidianSaveCombined" data-i18n-aria-label="session.obsidianSaveCombined" aria-label="Lưu note vào Obsidian" title="Lưu note vào Obsidian"><img class="obsidian-brand-icon obsidian-action-icon" src="./assets/obsidian-icon.png" alt="" aria-hidden="true" /></button>
           </div>
         </div>
 
@@ -424,9 +430,7 @@
               </div>
               <div class="minutes-actions-group">
               <button type="button" id="btn-minutes-regenerate" class="btn-secondary small instant-tooltip" data-i18n-title="session.minutesRegenerateTitle"><svg class="session-action-icon minutes-action-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="m12 3-1.5 4.5L6 9l4.5 1.5L12 15l1.5-4.5L18 9l-4.5-1.5L12 3Z"></path><path d="m5 3-.5 1.5L3 5l1.5.5L5 7l.5-1.5L7 5l-1.5-.5L5 3Z"></path><path d="m19 15-.5 1.5L17 17l1.5.5L19 19l.5-1.5L19 15Z"></path></svg><span data-i18n="session.minutesRegenerate">Tạo lại biên bản</span></button>
-              <button type="button" id="btn-minutes-edit" class="btn-secondary small" data-i18n-title="session.minutesEditTitle" title="Sửa biên bản"><svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="13" height="13" style="margin-right:3px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg><span data-i18n="session.minutesEdit">Sửa</span></button>
-              <button type="button" id="btn-minutes-save" class="btn-primary small" style="display:none" data-i18n-title="session.minutesSaveTitle" title="Lưu biên bản (⌘S)"><span data-i18n="session.minutesSave">💾 Lưu</span></button>
-              <button type="button" id="btn-minutes-cancel" class="btn-secondary small" style="display:none" data-i18n-title="session.minutesCancelTitle" title="Huỷ (Esc)"><span data-i18n="session.minutesCancel">✕ Huỷ</span></button>
+              <span id="session-minutes-autosave-status" class="subbar-info" role="status" aria-live="polite"></span>
               </div>
             </div>
             <div class="minutes-actions-group minutes-utility-actions">
@@ -1026,6 +1030,7 @@
               <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;" data-i18n="settings.template.minutesHint">
                 Tạo và quản lý mẫu biên bản. Mỗi Danh mục có thể sử dụng một mẫu riêng; mẫu Standard được dùng làm phương án dự phòng.
               </p>
+              <p class="hint" style="margin-top:-6px; margin-bottom:12px;" data-i18n="settings.template.autosaveHint">Mọi thay đổi được tự động lưu.</p>
 
               <div class="settings-grid-row template-source-setting">
                 <span class="field-label" data-i18n="settings.template.sourceLabel">Nguồn tạo biên bản</span>
@@ -1066,7 +1071,7 @@
                       <div class="template-editor-actions">
                         <button type="button" id="btn-template-reset" class="btn-secondary small" data-i18n-title="settings.template.resetTitleMinutes" data-i18n="settings.template.reset">🔄 Reset</button>
                         <button type="button" id="btn-template-delete" class="btn-danger-small" data-i18n-title="settings.template.deleteTitle" data-i18n="settings.template.delete">🗑 Delete</button>
-                        <button type="button" id="btn-template-save" class="btn-primary small" data-i18n-title="settings.template.saveTitle" data-i18n="settings.template.save" title="Save template (⌘S)">💾 Save</button>
+                        <span id="template-autosave-status" class="hint" role="status" aria-live="polite"></span>
                       </div>
                     </div>
                     <div id="template-codemirror-container" class="template-cm-container"></div>
@@ -1104,6 +1109,22 @@
               </button>
             </div>
             <div id="storage-migration-status" class="storage-migration-status" role="status" aria-live="polite" style="display:none; margin-top:12px;"></div>
+          </div>
+          <div class="settings-section" style="margin-top:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+              <div>
+                <span class="field-label obsidian-setting-title" style="margin:0;"><img class="obsidian-brand-icon" src="./assets/obsidian-icon.png" alt="" aria-hidden="true" /><span data-i18n="settings.storage.obsidianTitle">Obsidian</span></span>
+                <p class="hint" style="margin:4px 0 0;" data-i18n="settings.storage.obsidianDesc">Automatically save AI-generated Meeting Minutes to your vault.</p>
+              </div>
+              <label class="switch-control" data-i18n-title="settings.storage.obsidianSwitchTitle" title="Enable Obsidian export">
+                <input type="checkbox" id="check-obsidian-export-enabled" aria-controls="obsidian-export-details" />
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+            <div id="obsidian-export-details" style="display:none; margin-top:12px;">
+              <div id="obsidian-vault-path" class="git-backup-repo-summary" role="status" aria-live="polite" style="margin-bottom:10px; word-break:break-all;">No vault selected</div>
+              <button type="button" id="btn-select-obsidian-vault" class="btn-secondary-small" data-i18n="settings.storage.obsidianChoose">Choose vault...</button>
+            </div>
           </div>
           <div class="settings-section git-backup-section" style="margin-top: 14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:6px;">
@@ -1519,13 +1540,23 @@
               </div>
             </label>
           </div>
+
+          <div id="stop-obsidian-export-option" style="display:none; padding: 10px 12px; background: rgba(126, 62, 135, 0.08); border: 1px solid rgba(126, 62, 135, 0.2); border-radius: 8px;">
+            <label for="chk-stop-obsidian-export" style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; user-select: none;">
+              <input type="checkbox" id="chk-stop-obsidian-export" checked style="width: 16px; height: 16px; margin-top: 1px; accent-color: var(--md-sys-color-primary); cursor: pointer;" />
+              <div>
+                <span class="obsidian-stop-label"><img class="obsidian-brand-icon" src="./assets/obsidian-icon.png" alt="" aria-hidden="true" /><span style="font-size: 12px; font-weight: 600; color: var(--md-sys-color-on-surface);" data-i18n="modal.stop.obsidianLabel">Lưu AI Meeting Minutes vào Obsidian</span></span>
+                <div style="margin-top: 4px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;" data-i18n="modal.stop.obsidianHint">Tự tạo note sau khi transcript hoàn tất và lưu vào vault đã chọn.</div>
+              </div>
+            </label>
+          </div>
         </div>
 
         <p class="modal-desc" style="margin-top:10px;" data-i18n="modal.stop.desc">Phiên dịch sẽ dừng lại. Toàn bộ bản ghi âm, bản dịch và ghi chú sẽ được lưu vào tab 📚 Meeting Logs theo khách hàng, dự án và danh mục đã chọn.</p>
       </div>
       <div class="modal-footer">
         <button type="button" id="btn-cancel-confirm-stop" class="secondary-btn modal-action-btn" data-i18n="modal.cancel">Huỷ</button>
-        <button type="button" id="btn-discard-confirm-stop" class="danger-btn modal-action-btn" data-i18n="modal.stop.discard">🗑 Xoá</button>
+        <button type="button" id="btn-discard-confirm-stop" class="danger-btn modal-action-btn" aria-label="Xoá cuộc họp và bản ghi âm"><svg class="trash-can-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg><span data-i18n="modal.stop.discard">Xoá</span></button>
         <button type="button" id="btn-agree-confirm-stop" class="primary-action-btn modal-action-btn" data-i18n="modal.stop.save">💾 Kết thúc & Lưu</button>
       </div>
     </div>
@@ -1700,7 +1731,7 @@
     <div class="modal-card" style="max-width: 420px;">
       <div class="modal-header">
         <h3 id="confirm-delete-title" style="color: #ef4444; display: flex; align-items: center; gap: 6px;">
-          <span id="confirm-delete-title-icon">🗑️</span> <span id="confirm-delete-title-text" data-i18n="modal.delete.title">Xác nhận xoá</span>
+          <span id="confirm-delete-title-icon"><svg class="trash-can-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg></span> <span id="confirm-delete-title-text" data-i18n="modal.delete.title">Xác nhận xoá</span>
         </h3>
         <button type="button" id="btn-close-confirm-delete" class="icon-btn close-btn" data-i18n-title="modal.close" title="Đóng">×</button>
       </div>
@@ -1710,6 +1741,24 @@
       <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
         <button type="button" id="btn-cancel-confirm-delete" class="secondary-btn" data-i18n="modal.cancel">Huỷ</button>
         <button type="button" id="btn-agree-confirm-delete" class="danger-btn modal-action-btn" data-i18n="modal.delete.confirm">Xoá</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-obsidian-save-preview" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="obsidian-preview-title" aria-describedby="obsidian-preview-description">
+    <div class="modal-card obsidian-preview-card">
+      <div class="modal-header">
+        <h3 id="obsidian-preview-title"><img class="obsidian-brand-icon" src="./assets/obsidian-icon.png" alt="" aria-hidden="true" /><span data-i18n="session.obsidianPreviewTitle">Xem lại nội dung Obsidian</span></h3>
+        <button type="button" id="btn-close-obsidian-preview" class="icon-btn close-btn" data-i18n-title="modal.close" data-i18n-aria-label="modal.close" title="Đóng" aria-label="Đóng">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="obsidian-preview-description" class="modal-desc" data-i18n="session.obsidianPreviewDescription">Kiểm tra hoặc chỉnh sửa nội dung sẽ lưu vào vault.</p>
+        <label for="obsidian-preview-content" class="field-label" data-i18n="session.obsidianPreviewContentLabel">Nội dung note (Markdown)</label>
+        <textarea id="obsidian-preview-content" class="obsidian-preview-content" rows="18" spellcheck="false"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btn-cancel-obsidian-preview" class="secondary-btn" data-i18n="common.cancel">Huỷ</button>
+        <button type="button" id="btn-confirm-obsidian-preview" class="primary-action-btn" data-i18n="session.obsidianConfirmSave">Lưu vào Obsidian</button>
       </div>
     </div>
   </div>

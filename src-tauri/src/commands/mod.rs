@@ -7,6 +7,7 @@ pub mod http_client;
 pub mod local_pipeline;
 pub mod local_tts;
 pub mod microsoft_tts;
+pub mod obsidian;
 pub mod openai_realtime;
 pub mod qwen_realtime;
 pub mod session_store;

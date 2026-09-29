@@ -68,7 +68,7 @@ if (identifier) {
   const baseName = readConfValue('productName') || 'Meet Minder';
   const targetAppName = isReleaseLocal
     ? baseName
-    : (baseName.endsWith(' Dev') ? baseName : `${baseName} Dev`);
+    : (process.env.APP_NAME || (baseName.endsWith(' Dev') ? baseName : `${baseName} Dev`));
   // Ad-hoc signatures change on every rebuild, which makes macOS Screen-Recording and
   // Microphone permissions expire. Require an explicit stable certificate instead of
   // silently falling back to ad-hoc signing and creating a permission-reset trap.

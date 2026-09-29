@@ -105,6 +105,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::settings::get_settings,
             commands::settings::save_settings,
+            commands::obsidian::select_obsidian_vault,
+            commands::obsidian::save_note_to_obsidian,
+            commands::obsidian::open_obsidian_note,
             commands::audio::start_capture,
             commands::audio::stop_capture,
             commands::audio::get_capture_status,

@@ -37,6 +37,7 @@ const LANGUAGE_DISPLAY = {
 };
 
 const PENCIL_YELLOW_ICON = `<svg class="icon-pencil-yellow" viewBox="0 0 20 20" width="13" height="13" style="display:inline-block;vertical-align:-2px;margin-right:3px;" aria-hidden="true"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>`;
+const TRASH_CAN_ICON = `<svg class="trash-can-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
 
 const DEFAULT_TEMPLATE_MINUTES_JA = `# 📋 会議議事録 (Meeting Minutes)
 
@@ -458,7 +459,13 @@ class App {
         this._pausedAt = null;
         this._totalPausedMs = 0;
         this._lastLiveNoteContent = '';
-        this._isMinutesEditing = false;
+        this._minutesAutosaveTimer = null;
+        this._pendingMinutesAutosave = null;
+        this._minutesAutosaveQueue = Promise.resolve();
+        this._suppressMinutesAutosave = false;
+        this._templateAutosaveTimer = null;
+        this._templateAutosaveQueue = Promise.resolve();
+        this._suppressTemplateAutosave = false;
         this._isNotesEditing = false;
         this._hasUnsavedMeetingData = false;
         this._inactivityTimer = null;
@@ -1897,6 +1904,27 @@ class App {
             await this._changeStorageDirectory(null, { resetting: true });
         });
 
+        document.getElementById('check-obsidian-export-enabled')?.addEventListener('change', async (event) => {
+            const enabled = event.target.checked;
+            if (enabled && !settingsManager.get().obsidian_vault_path) {
+                event.target.checked = false;
+                await this._chooseObsidianVault(true);
+                return;
+            }
+            try {
+                await settingsManager.save({ obsidian_export_enabled: enabled });
+                this._renderObsidianSettingsUI();
+                this._renderCurrentMinutesSubtab();
+            } catch (err) {
+                event.target.checked = !enabled;
+                this._showToast(t('settings.storage.obsidianFailed', { error: err }), 'error');
+            }
+        });
+        document.getElementById('btn-select-obsidian-vault')?.addEventListener('click', () => this._chooseObsidianVault(false));
+        document.getElementById('btn-session-obsidian-save')?.addEventListener('click', () => {
+            this._exportCurrentMeetingToObsidian();
+        });
+
         // Optional Git backup. Git itself, the repository and credentials are
         // configured by the user; Meet Minder only manages its own data paths.
         document.getElementById('check-git-backup-enabled')?.addEventListener('change', async (e) => {
@@ -2358,7 +2386,7 @@ class App {
                 if (hasModifier && (e.key === 's' || e.key === 'S')) {
                     e.preventDefault();
                     if (this._currentSettingsScreen === 'tab-templates') {
-                        this._saveSettingsTemplates();
+                        this._flushSettingsTemplatesAutosave();
                     }
                     return;
                 }
@@ -2738,12 +2766,13 @@ class App {
             if (!template || template.id === 'standard') return;
             template.name = event.currentTarget.value;
             this._renderMinutesTemplateList();
+            this._scheduleSettingsTemplatesAutosave();
         });
 
         document.getElementById('template-name-input')?.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
-                this._saveSettingsTemplates();
+                this._flushSettingsTemplatesAutosave();
             }
         });
 
@@ -2760,10 +2789,6 @@ class App {
 
         document.getElementById('btn-template-reset')?.addEventListener('click', () => {
             this._resetCurrentSettingsTemplate();
-        });
-
-        document.getElementById('btn-template-save')?.addEventListener('click', async () => {
-            await this._saveSettingsTemplates();
         });
 
         document.getElementById('btn-template-delete')?.addEventListener('click', async () => {
@@ -2909,26 +2934,30 @@ class App {
                 initialContent: this._getMinutesTemplates().find(item => item.id === this._activeTemplateId)?.translations?.[this._activeTemplateLang] || '',
                 placeholderText: t('settings.template.placeholderMinutes'),
                 onChange: content => {
+                    if (this._suppressTemplateAutosave) return;
                     const template = this._getMinutesTemplates().find(item => item.id === this._activeTemplateId);
                     if (!template) return;
                     if (!template.translations) template.translations = {};
                     template.translations[this._activeTemplateLang] = content;
+                    this._scheduleSettingsTemplatesAutosave();
                 },
-                onSave: () => this._saveSettingsTemplates(),
+                onSave: () => this._flushSettingsTemplatesAutosave(),
             });
         }
         this._updateSettingsTemplateUI();
     }
 
-    _switchSettingsTemplatePreset(templateId) {
+    async _switchSettingsTemplatePreset(templateId) {
         if (!this._getMinutesTemplates().some(template => template.id === templateId)) return;
         this._saveActiveSettingsTemplateEditor();
+        if (!await this._flushSettingsTemplatesAutosave()) return;
         this._activeTemplateId = templateId;
         this._updateSettingsTemplateUI();
     }
 
-    _switchSettingsTemplateLang(lang) {
+    async _switchSettingsTemplateLang(lang) {
         this._saveActiveSettingsTemplateEditor();
+        if (!await this._flushSettingsTemplatesAutosave()) return;
         this._activeTemplateLang = lang;
         this._updateSettingsTemplateUI();
     }
@@ -2962,7 +2991,9 @@ class App {
         const hint = document.getElementById('template-editor-hint');
         if (hint) hint.innerHTML = t('settings.template.autoVarsMinutes');
         if (this._templateEditor) {
+            this._suppressTemplateAutosave = true;
             this._templateEditor.setContent(this._getActiveSettingsTemplateContent(template));
+            this._suppressTemplateAutosave = false;
         }
     }
 
@@ -2987,6 +3018,7 @@ class App {
                 || this._defaultMinutesTemplateContent('standard', this._activeTemplateLang);
         }
         this._updateSettingsTemplateUI();
+        this._scheduleSettingsTemplatesAutosave();
         this._showToast(t('settings.template.resetMinutes'), 'info');
     }
 
@@ -3011,6 +3043,7 @@ class App {
 
     async _addMeetingMinutesTemplate() {
         this._saveActiveSettingsTemplateEditor();
+        if (!await this._flushSettingsTemplatesAutosave()) return;
         const templates = this._getMinutesTemplates();
         const standard = templates.find(template => template.id === 'standard');
         const id = globalThis.crypto?.randomUUID?.() || `minutes_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -3049,6 +3082,7 @@ class App {
 
     async _deleteMeetingMinutesTemplate() {
         this._saveActiveSettingsTemplateEditor();
+        if (!await this._flushSettingsTemplatesAutosave()) return;
         const templates = this._getMinutesTemplates();
         const template = templates.find(item => item.id === this._activeTemplateId);
         if (!template || template.id === 'standard') return;
@@ -3103,7 +3137,29 @@ class App {
         }
     }
 
-    async _saveSettingsTemplates() {
+    _setTemplateAutosaveStatus(key) {
+        const status = document.getElementById('template-autosave-status');
+        if (status) status.textContent = key ? t(key) : '';
+    }
+
+    _scheduleSettingsTemplatesAutosave() {
+        if (this._suppressTemplateAutosave) return;
+        this._setTemplateAutosaveStatus('settings.template.autosavePending');
+        clearTimeout(this._templateAutosaveTimer);
+        this._templateAutosaveTimer = setTimeout(() => {
+            this._templateAutosaveTimer = null;
+            this._saveSettingsTemplates({ quiet: true });
+        }, 650);
+    }
+
+    async _flushSettingsTemplatesAutosave() {
+        clearTimeout(this._templateAutosaveTimer);
+        this._templateAutosaveTimer = null;
+        this._saveActiveSettingsTemplateEditor();
+        return this._saveSettingsTemplates({ quiet: true });
+    }
+
+    async _saveSettingsTemplates({ quiet = false } = {}) {
         const templates = this._getMinutesTemplates();
         const template = templates.find(item => item.id === this._activeTemplateId);
         this._saveActiveSettingsTemplateEditor();
@@ -3111,30 +3167,47 @@ class App {
         if (template && template.id !== 'standard') {
             const name = nameInput?.value.trim();
             if (!name) {
-                this._showToast(t('settings.template.nameRequired'), 'error');
-                nameInput?.focus();
-                return;
+                this._setTemplateAutosaveStatus('settings.template.nameRequired');
+                if (!quiet) {
+                    this._showToast(t('settings.template.nameRequired'), 'error');
+                    nameInput?.focus();
+                }
+                return false;
             }
             const duplicate = templates.some(item => item.id !== template.id && item.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase());
             if (duplicate) {
-                this._showToast(t('settings.template.nameDuplicate'), 'error');
-                nameInput?.focus();
-                return;
+                this._setTemplateAutosaveStatus('settings.template.nameDuplicate');
+                if (!quiet) {
+                    this._showToast(t('settings.template.nameDuplicate'), 'error');
+                    nameInput?.focus();
+                }
+                return false;
             }
             template.name = name;
         }
+        const snapshot = this._cloneMinutesTemplates(templates);
+        const changes = {
+            meeting_minutes_templates: snapshot,
+            ...this._legacyMinutesTemplateSettings(snapshot),
+            meeting_minutes_use_notes: document.getElementById('check-meeting-minutes-use-notes')?.checked !== false,
+        };
+        this._setTemplateAutosaveStatus('settings.template.autosaving');
+        const persist = async () => settingsManager.save(changes);
+        this._templateAutosaveQueue = this._templateAutosaveQueue
+            .catch(() => {})
+            .then(persist);
         try {
-            await settingsManager.save({
-                meeting_minutes_templates: this._cloneMinutesTemplates(templates),
-                ...this._legacyMinutesTemplateSettings(templates),
-                meeting_minutes_use_notes: document.getElementById('check-meeting-minutes-use-notes')?.checked !== false,
-            });
+            await this._templateAutosaveQueue;
             this._syncLiveMinutesTemplateSelector();
-            this._updateSettingsTemplateUI();
-            this._showToast(t('settings.template.saved'), 'success');
+            this._renderMinutesTemplateList();
+            this._setTemplateAutosaveStatus('settings.template.autosaved');
             this._renderSettingsCategoriesTab();
+            if (!quiet) this._showToast(t('settings.template.saved'), 'success');
+            return true;
         } catch (err) {
-            this._showToast(t('settings.template.saveFailed', { error: err }), 'error');
+            this._setTemplateAutosaveStatus('settings.template.autosaveFailed');
+            if (!quiet) this._showToast(t('settings.template.saveFailed', { error: err }), 'error');
+            return false;
         }
     }
 
@@ -5593,6 +5666,8 @@ class App {
         chkAutoRetranscript?.addEventListener('change', onAutoRetranscriptChange);
 
         const chkAutoMinutes = document.getElementById('chk-stop-auto-minutes');
+        const chkObsidianExport = document.getElementById('chk-stop-obsidian-export');
+        const obsidianExportOption = document.getElementById('stop-obsidian-export-option');
 
         const savedAutoMinutes = localStorage.getItem('meet_minder_auto_minutes');
         if (chkAutoMinutes) {
@@ -5629,6 +5704,11 @@ class App {
 
         const currentSettings = settingsManager.get();
         const autoMinutesLang = currentSettings.meeting_minutes_lang || 'en';
+        const obsidianAvailable = currentSettings.obsidian_export_enabled === true && !!currentSettings.obsidian_vault_path;
+        const excludedSessions = currentSettings.obsidian_export_excluded_sessions || [];
+        if (obsidianExportOption) obsidianExportOption.style.display = obsidianAvailable ? '' : 'none';
+        if (chkObsidianExport) chkObsidianExport.checked = obsidianAvailable
+            && !excludedSessions.includes(sessionStore.id);
 
         if (!modal) {
             const entered = prompt(t('modal.stop.promptFallback'), defaultTitle);
@@ -5641,6 +5721,7 @@ class App {
                 scope: sessionStore.scope || 'work',
                 autoRetranscript: chkAutoRetranscript ? chkAutoRetranscript.checked : (savedAutoRetranscript !== 'false'),
                 autoGenerateMinutes: chkAutoMinutes ? chkAutoMinutes.checked : false,
+                saveToObsidian: chkObsidianExport ? chkObsidianExport.checked : false,
                 minutesLang: autoMinutesLang,
                 discard: false
             } : null;
@@ -5675,6 +5756,7 @@ class App {
                     const chosenCategory = selectCat?.value || null;
                     const autoRetranscript = chkAutoRetranscript ? chkAutoRetranscript.checked : false;
                     const autoGenerateMinutes = chkAutoMinutes ? chkAutoMinutes.checked : false;
+                    const saveToObsidian = chkObsidianExport ? chkObsidianExport.checked : false;
                     modal.style.display = 'none';
                     resolve({
                         title: chosenTitle,
@@ -5685,6 +5767,7 @@ class App {
                         scope: chosenScope,
                         autoRetranscript,
                         autoGenerateMinutes,
+                        saveToObsidian,
                         minutesLang: autoMinutesLang,
                         discard: false,
                     });
@@ -5923,8 +6006,11 @@ class App {
             console.warn('[App] Could not read the just-saved session metadata:', err);
         }
 
+        const settings = settingsManager.get();
+        const shouldGenerateMinutes = stopAction.autoGenerateMinutes === true
+            || this._isObsidianExportEnabledForSession(savedId);
+
         if (stopAction.autoRetranscript) {
-            const settings = settingsManager.get();
             const apiKey = settings.gemini_api_key?.trim();
             const transcriptEngine = settings.transcript_engine || 'gemini_live_translate';
             const canRunLocal = transcriptEngine === 'local_mlx'
@@ -5932,7 +6018,7 @@ class App {
                 && this._isLocalMlxReady;
             if ((transcriptEngine === 'local_mlx' && canRunLocal) || (transcriptEngine !== 'local_mlx' && apiKey)) {
                 this._retranscribeSession(savedId, false, {
-                    generateMinutes: stopAction.autoGenerateMinutes,
+                    generateMinutes: shouldGenerateMinutes,
                     minutesLang: null,
                     customTitle: t('modal.stop.retranscriptLabel'),
                     durationSec: savedJson?.duration_sec,
@@ -5948,7 +6034,7 @@ class App {
             );
         }
 
-        if (!stopAction.autoGenerateMinutes) return;
+        if (!shouldGenerateMinutes) return;
         try {
             const mLangs = this._getMinutesLangsForSession(savedJson || {});
             for (const mLang of mLangs) {
@@ -6132,6 +6218,15 @@ class App {
                     stopAction.category,
                     stopAction.scope
                 );
+
+                const obsidianSettings = settingsManager.get();
+                const stoppedSessionId = stopResult?.backgroundSave?.id || sessionStore.id;
+                if (obsidianSettings.obsidian_export_enabled === true && stoppedSessionId) {
+                    const excluded = new Set(obsidianSettings.obsidian_export_excluded_sessions || []);
+                    if (stopAction.saveToObsidian) excluded.delete(stoppedSessionId);
+                    else excluded.add(stoppedSessionId);
+                    await settingsManager.save({ obsidian_export_excluded_sessions: [...excluded] });
+                }
 
                 if (stopResult?.backgroundSave) {
                     this._startBackgroundSessionSave(stopResult.backgroundSave, stopAction);
@@ -8254,7 +8349,7 @@ class App {
             <td class="logs-title-cell"><button type="button" class="logs-title-link" data-open-session="${this._escAttr(session.id)}">${scopeBadge}${this._esc(session.title || t('logsTable.untitled'))}</button></td>
             <td class="logs-date">${this._formatSessionDate(session.created_at)}</td>
             <td class="logs-duration">${duration}</td>${customerTd}<td>${project}</td><td>${category}</td><td><div class="logs-tags" title="${this._escAttr(tagsTitle)}">${tags}</div></td>
-            <td><div class="logs-actions">${playButton}${editButton}<button type="button" class="session-btn-action" data-copy-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.copyTooltip'))}">⧉</button><button type="button" class="session-delete-btn" data-delete-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.deleteTooltip'))}">×</button></div></td>
+            <td><div class="logs-actions">${playButton}${editButton}<button type="button" class="session-btn-action" data-copy-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.copyTooltip'))}">⧉</button><button type="button" class="session-delete-btn" data-delete-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.deleteTooltip'))}"><svg class="session-delete-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg></button></div></td>
         </tr>`;
     }
 
@@ -8744,7 +8839,7 @@ class App {
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                         </svg>
                     </button>
-                    <button type="button" class="session-delete-btn" data-id="${this._escAttr(s.id)}" title="${this._escAttr(t('logsTable.deleteTooltip'))}">×</button>
+                    <button type="button" class="session-delete-btn" data-id="${this._escAttr(s.id)}" title="${this._escAttr(t('logsTable.deleteTooltip'))}"><svg class="session-delete-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg></button>
                 </div>
             </div>
             <div class="session-item-row2">
@@ -9061,7 +9156,10 @@ class App {
             }
 
             if (titleEl) titleEl.textContent = title;
-            if (titleIconEl) titleIconEl.textContent = icon;
+            if (titleIconEl) {
+                if (icon === '🗑️') titleIconEl.innerHTML = TRASH_CAN_ICON;
+                else titleIconEl.textContent = icon;
+            }
             if (titleHeading) {
                 titleHeading.style.color = variant === 'primary'
                     ? 'var(--md-sys-color-primary)'
@@ -9593,6 +9691,258 @@ class App {
         }
         this._renderGitBackupSettingsUI();
         this._renderGitBackupStatus();
+        this._renderObsidianSettingsUI();
+    }
+
+    _renderObsidianSettingsUI() {
+        const settings = settingsManager.get();
+        const toggle = document.getElementById('check-obsidian-export-enabled');
+        const details = document.getElementById('obsidian-export-details');
+        const pathEl = document.getElementById('obsidian-vault-path');
+        const enabled = settings.obsidian_export_enabled === true && !!settings.obsidian_vault_path;
+        if (toggle) {
+            toggle.checked = enabled;
+            toggle.setAttribute('aria-expanded', String(enabled));
+        }
+        if (details) details.style.display = 'block';
+        if (pathEl) pathEl.textContent = settings.obsidian_vault_path || t('settings.storage.obsidianNoVault');
+        this._renderCurrentMinutesSubtab();
+        this._renderSessionObsidianButton();
+    }
+
+    _renderSessionObsidianButton() {
+        const settings = settingsManager.get();
+        const enabled = settings.obsidian_export_enabled === true && !!settings.obsidian_vault_path;
+        const canSave = enabled && !!this._currentViewedSession && !this._currentViewedSession.isLegacy;
+        const saveButton = document.getElementById('btn-session-obsidian-save');
+        if (saveButton) saveButton.style.display = canSave ? '' : 'none';
+    }
+
+    async _chooseObsidianVault(enableAfterSelect = false) {
+        try {
+            const path = await invoke('select_obsidian_vault');
+            if (!path) return;
+            await settingsManager.save({
+                obsidian_vault_path: path,
+                ...(enableAfterSelect ? { obsidian_export_enabled: true } : {}),
+            });
+            this._renderObsidianSettingsUI();
+        } catch (err) {
+            this._renderObsidianSettingsUI();
+            this._showToast(t('settings.storage.obsidianFailed', { error: err }), 'error');
+        }
+    }
+
+    _isObsidianExportEnabledForSession(sessionId) {
+        const settings = settingsManager.get();
+        return settings.obsidian_export_enabled === true
+            && !!settings.obsidian_vault_path
+            && !(settings.obsidian_export_excluded_sessions || []).includes(sessionId);
+    }
+
+    _getObsidianPrimaryLang(sessionJson) {
+        const supported = ['ja', 'vi', 'en'];
+        const sourceLang = String(sessionJson?.source_lang || '').trim().toLowerCase();
+        if (supported.includes(sourceLang)) return sourceLang;
+        // With source language set to Auto, transcription stores its detected
+        // language in source_lang. Older sessions may only have a Minutes lang.
+        const detectedLang = String(sessionJson?.detected_language || '').trim().toLowerCase();
+        if (supported.includes(detectedLang)) return detectedLang;
+        const legacyLang = String(sessionJson?.meeting_minutes_lang || '').trim().toLowerCase();
+        if (supported.includes(legacyLang)) return legacyLang;
+        const configuredLang = String(settingsManager.get().meeting_minutes_lang || '').trim().toLowerCase();
+        return supported.includes(configuredLang) ? configuredLang : 'en';
+    }
+
+    async _buildObsidianMetadata(sessionJson) {
+        const registry = await this._loadProjectRegistry();
+        const customer = (registry.customers || []).find(item => item.id === sessionJson.customer_id);
+        const project = (registry.projects || []).find(item => item.id === sessionJson.project_id);
+        const title = sessionJson.title || sessionJson.id;
+        const values = [
+            ['meeting_id', sessionJson.id],
+            ['title', title],
+            ['date', sessionJson.created_at?.slice(0, 10)],
+            ['created_at', sessionJson.created_at],
+            ['ended_at', sessionJson.ended_at],
+            ['scope', sessionJson.scope],
+            ['customer', customer?.name || sessionJson.customer_name],
+            ['customer_id', sessionJson.customer_id],
+            ['project', project?.name || sessionJson.project_name],
+            ['project_id', sessionJson.project_id],
+            ['category', sessionJson.category],
+            ['source_language', sessionJson.source_lang],
+            ['target_language', sessionJson.target_lang],
+            ['minutes_language', this._getObsidianPrimaryLang(sessionJson)],
+            ['duration_seconds', Number.isFinite(Number(sessionJson.duration_sec)) ? Number(sessionJson.duration_sec) : null],
+        ];
+        const properties = values
+            .filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '')
+            .map(([key, value]) => `${key}: ${typeof value === 'number' ? value : JSON.stringify(String(value))}`);
+        const tags = Array.isArray(sessionJson.tags) ? sessionJson.tags.filter(tag => String(tag).trim()) : [];
+        if (tags.length) properties.push(`tags:\n${tags.map(tag => `  - ${JSON.stringify(String(tag))}`).join('\n')}`);
+        return `---\n${properties.join('\n')}\n---\n\n# ${title}\n\n`;
+    }
+
+    async _exportToObsidian(sessionId, title, lang, content, userConfirmed = false, contentType = 'minutes', silent = false) {
+        const settings = settingsManager.get();
+        if (!settings.obsidian_export_enabled || !settings.obsidian_vault_path
+            || (contentType !== 'combined' && !content?.trim())) return null;
+        if (userConfirmed && (settings.obsidian_export_excluded_sessions || []).includes(sessionId)) {
+            await settingsManager.save({
+                obsidian_export_excluded_sessions: settings.obsidian_export_excluded_sessions.filter(id => id !== sessionId),
+            });
+        } else if (!userConfirmed && (settings.obsidian_export_excluded_sessions || []).includes(sessionId)) {
+            return null;
+        }
+        try {
+            const sessionJson = this._currentSessionJson?.id === sessionId
+                ? this._currentSessionJson
+                : (await invoke('read_session', { id: sessionId }))?.json;
+            const primaryLang = this._getObsidianPrimaryLang(sessionJson);
+            if (contentType !== 'raw' && lang !== primaryLang) return null;
+            const languageChoices = [...new Set([
+                primaryLang,
+            ].filter(language => ['en', 'ja', 'vi'].includes(language)))];
+            let exportLang = primaryLang;
+            const loadedMinutes = this._currentViewedSession?.id === sessionId ? this._loadedMinutes : null;
+            const minutesForLanguage = (language) => loadedMinutes?.[language]
+                || sessionJson?.[`meeting_minutes_${language}`]
+                || (sessionJson?.meeting_minutes_lang === language ? sessionJson?.meeting_minutes : '')
+                || '';
+            let aiMinutes = contentType === 'minutes' ? content : '';
+            if (contentType !== 'minutes' && contentType !== 'raw') {
+                const foundLang = languageChoices.find(language => minutesForLanguage(language).trim());
+                if (foundLang) {
+                    exportLang = foundLang;
+                    aiMinutes = minutesForLanguage(foundLang);
+                }
+            }
+            const manualNotes = contentType === 'notes' ? content : (sessionJson?.notes || '');
+            const sections = [];
+            if (aiMinutes.trim()) {
+                sections.push(`## ${t('settings.storage.obsidianAiHeading')}\n\n${aiMinutes.trim()}`);
+            }
+            if (manualNotes.trim()) {
+                sections.push(`## ${t('settings.storage.obsidianManualHeading')}\n\n${manualNotes.trim()}`);
+            }
+            let combinedContent = contentType === 'raw' ? content : sections.join('\n\n---\n\n');
+            if (!combinedContent) {
+                this._showToast(t('settings.storage.obsidianNothingToSave'), 'info');
+                return null;
+            }
+            if (contentType !== 'raw') {
+                combinedContent = `${await this._buildObsidianMetadata(sessionJson)}${combinedContent}`;
+            }
+            const result = await invoke('save_note_to_obsidian', {
+                sessionId,
+                title: title || sessionId,
+                noteType: 'minutes',
+                lang: exportLang,
+                content: combinedContent,
+                userConfirmed,
+            });
+            if (result.status === 'saved') {
+                if (!silent) this._showToast(t('settings.storage.obsidianSaved'), 'success');
+            } else if (result.status === 'review_required') {
+                this._showToast(t('settings.storage.obsidianReview'), 'warning');
+            } else if (result.status === 'conflict') {
+                this._showToast(t('settings.storage.obsidianConflict'), 'warning');
+            }
+            return result;
+        } catch (err) {
+            this._showToast(t('settings.storage.obsidianFailed', { error: err }), 'error');
+            return null;
+        }
+    }
+
+    async _exportCurrentMeetingToObsidian() {
+        const current = this._currentViewedSession;
+        if (!current || current.isLegacy) return;
+        try {
+            if (this._isNotesEditing && this._sessionNotesEditor) {
+                const notes = this._sessionNotesEditor.getContent();
+                await invoke('update_session_notes', { id: current.id, notes });
+                if (this._currentSessionJson?.id === current.id) this._currentSessionJson.notes = notes;
+                this._exitNotesEditMode();
+            }
+            await this._flushMinutesAutosave();
+            const sessionJson = (await invoke('read_session', { id: current.id }))?.json;
+            if (!sessionJson) throw new Error(`Could not load meeting ${current.id}`);
+            if (this._currentViewedSession?.id === current.id) this._currentSessionJson = sessionJson;
+
+            const lang = this._getObsidianPrimaryLang(sessionJson);
+            const aiMinutes = this._currentViewedSession?.id === current.id
+                ? (this._loadedMinutes?.[lang] || sessionJson[`meeting_minutes_${lang}`]
+                    || (sessionJson.meeting_minutes_lang === lang ? sessionJson.meeting_minutes : '') || '')
+                : (sessionJson[`meeting_minutes_${lang}`]
+                    || (sessionJson.meeting_minutes_lang === lang ? sessionJson.meeting_minutes : '') || '');
+            const sections = [];
+            if (aiMinutes.trim()) sections.push(`## ${t('settings.storage.obsidianAiHeading')}\n\n${aiMinutes.trim()}`);
+            if (sessionJson.notes?.trim()) sections.push(`## ${t('settings.storage.obsidianManualHeading')}\n\n${sessionJson.notes.trim()}`);
+            const content = sections.join('\n\n---\n\n');
+            if (!content) {
+                this._showToast(t('settings.storage.obsidianNothingToSave'), 'info');
+                return;
+            }
+
+            const contentWithMetadata = `${await this._buildObsidianMetadata(sessionJson)}${content}`;
+            const editedContent = await this._promptObsidianSavePreview(contentWithMetadata);
+            if (editedContent === null) return;
+            await this._exportToObsidian(current.id, sessionJson.title || current.id, lang, editedContent, true, 'raw');
+        } catch (err) {
+            this._showToast(t('settings.storage.obsidianFailed', { error: err }), 'error');
+        }
+    }
+
+    _promptObsidianSavePreview(content) {
+        const modal = document.getElementById('modal-obsidian-save-preview');
+        const textarea = document.getElementById('obsidian-preview-content');
+        const confirmButton = document.getElementById('btn-confirm-obsidian-preview');
+        const cancelButton = document.getElementById('btn-cancel-obsidian-preview');
+        const closeButton = document.getElementById('btn-close-obsidian-preview');
+        if (!modal || !textarea || !confirmButton || !cancelButton || !closeButton) return Promise.resolve(null);
+
+        const opener = document.activeElement;
+        textarea.value = content;
+        modal.style.display = 'flex';
+        requestAnimationFrame(() => textarea.focus());
+
+        return new Promise(resolve => {
+            let settled = false;
+            const finish = value => {
+                if (settled) return;
+                settled = true;
+                modal.style.display = 'none';
+                confirmButton.removeEventListener('click', onConfirm);
+                cancelButton.removeEventListener('click', onCancel);
+                closeButton.removeEventListener('click', onCancel);
+                modal.removeEventListener('keydown', onKeydown);
+                if (opener?.isConnected) opener.focus();
+                resolve(value);
+            };
+            const onConfirm = () => finish(textarea.value);
+            const onCancel = () => finish(null);
+            const onKeydown = event => {
+                if (event.key !== 'Tab') return;
+                const focusable = [...modal.querySelectorAll('button:not([disabled]), textarea:not([disabled])')]
+                    .filter(element => element.offsetParent !== null);
+                if (!focusable.length) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first.focus();
+                }
+            };
+            confirmButton.addEventListener('click', onConfirm);
+            cancelButton.addEventListener('click', onCancel);
+            closeButton.addEventListener('click', onCancel);
+            modal.addEventListener('keydown', onKeydown);
+        });
     }
 
     _renderGitBackupSettingsUI() {
@@ -11594,9 +11944,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         document.getElementById('btn-session-edit-langs')?.addEventListener('click', () => this._handleEditSessionLangs());
 
         // Tab Minutes actions
-        document.getElementById('btn-minutes-edit')?.addEventListener('click', () => this._enterMinutesEditMode());
-        document.getElementById('btn-minutes-save')?.addEventListener('click', () => this._saveMinutesEdit());
-        document.getElementById('btn-minutes-cancel')?.addEventListener('click', () => this._exitMinutesEditMode({ restore: true }));
         document.getElementById('btn-minutes-copy-rich')?.addEventListener('click', () => this._copyRichMeetingMinutes());
         document.getElementById('btn-minutes-copy-md')?.addEventListener('click', async () => {
             if (this._sessionMinutesEditor) {
@@ -11673,7 +12020,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         return `<svg class="session-action-icon retranscript-action-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M3 12h2l1.5-5 3 10 1.5-5h2l1.5-4 2 8 1.5-4H21"></path></svg><span>${this._esc(t('session.retranscriptBtn'))}</span>`;
     }
 
-    _switchMinutesSubtab(lang) {
+    async _switchMinutesSubtab(lang) {
+        await this._flushMinutesAutosave();
         this._activeMinutesLang = lang || 'en';
         const subtabs = ['ja', 'vi', 'en'];
         subtabs.forEach(l => {
@@ -11681,14 +12029,12 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (btn) btn.classList.toggle('active', l === this._activeMinutesLang);
         });
 
-        this._exitMinutesEditMode();
         this._renderCurrentMinutesSubtab();
     }
 
     _renderCurrentMinutesSubtab() {
         const lang = this._activeMinutesLang || 'en';
-        const content = (this._loadedMinutes && this._loadedMinutes[lang]) ? this._loadedMinutes[lang].trim() : '';
-
+        const content = (this._loadedMinutes?.[lang] || '').trim();
         const emptyEl = document.getElementById('minutes-empty');
         const loadingEl = document.getElementById('minutes-loading');
         const editorContainer = document.getElementById('session-minutes-editor-container');
@@ -11713,8 +12059,12 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (emptyEl) emptyEl.style.display = 'none';
             if (editorContainer) editorContainer.style.display = '';
             if (this._sessionMinutesEditor) {
-                this._sessionMinutesEditor.setContent(content);
-                this._sessionMinutesEditor.setReadOnly(true);
+                if (this._sessionMinutesEditor.getContent() !== content) {
+                    this._suppressMinutesAutosave = true;
+                    this._sessionMinutesEditor.setContent(content);
+                    this._suppressMinutesAutosave = false;
+                }
+                this._sessionMinutesEditor.setReadOnly(false);
             }
         } else {
             if (emptyEl) emptyEl.style.display = 'flex';
@@ -11734,8 +12084,12 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                         : '✨ Tạo Meeting Minutes (Tiếng Việt 🇻🇳)');
             }
             if (this._sessionMinutesEditor) {
-                this._sessionMinutesEditor.setContent('');
-                this._sessionMinutesEditor.setReadOnly(true);
+                if (this._sessionMinutesEditor.getContent()) {
+                    this._suppressMinutesAutosave = true;
+                    this._sessionMinutesEditor.setContent('');
+                    this._suppressMinutesAutosave = false;
+                }
+                this._sessionMinutesEditor.setReadOnly(false);
             }
         }
     }
@@ -11764,14 +12118,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             this._sessionMinutesEditor = new NotesEditor();
             this._sessionMinutesEditor.mount(minCont, {
                 initialContent: '',
-                readOnly: true,
+                readOnly: false,
                 placeholderText: t('session.minutesPlaceholder'),
-                onSave: () => {
-                    if (this._isMinutesEditing) this._saveMinutesEdit();
-                },
-                onCancel: () => {
-                    if (this._isMinutesEditing) this._exitMinutesEditMode({ restore: true });
-                },
+                onChange: content => this._scheduleMinutesAutosave(content),
+                onSave: () => this._flushMinutesAutosave(),
             });
         }
 
@@ -12767,7 +13117,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 this._updateRetranscriptStatus(result.json);
             }
 
-            const shouldGenerateMinutes = options.generateMinutes !== false;
+            const obsidianEnabled = this._isObsidianExportEnabledForSession(id);
+            const shouldGenerateMinutes = options.generateMinutes !== false || obsidianEnabled;
             if (shouldGenerateMinutes) {
                 // Tự động tạo lại Meeting Minutes ở các ngôn ngữ được chọn
                 const minutesLangs = options.minutesLang
@@ -13348,7 +13699,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
             this._setRetranscriptProgress('save', t('retranscript.progress.savingImport'), 90, `Import: ${title}`);
 
-            if (autoMinutes) {
+            const obsidianEnabled = this._isObsidianExportEnabledForSession(id);
+            if (autoMinutes || obsidianEnabled) {
                 const minutesLangs = this._getMinutesLangsForSession(result.json);
                 const totalLangs = minutesLangs.length;
                 for (let i = 0; i < totalLangs; i++) {
@@ -14024,11 +14376,14 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (this._currentViewedSession?.id === sessionId) {
                 if (!this._loadedMinutes) this._loadedMinutes = {};
                 this._loadedMinutes[lang] = resultText;
+                if (this._currentSessionJson?.id === sessionId) this._currentSessionJson[`meeting_minutes_${lang}`] = resultText;
                 this._updateMinutesBadges();
                 if (this._activeMinutesLang === lang) {
                     this._renderCurrentMinutesSubtab();
                 }
             }
+            const title = res.json.title || sessionId;
+            await this._exportToObsidian(sessionId, title, lang, resultText, false);
         }
 
         return resultText;
@@ -14133,70 +14488,54 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         }
     }
 
-    _enterMinutesEditMode() {
-        const cur = this._currentViewedSession;
-        if (!cur || !this._sessionMinutesEditor) return;
-        this._minutesEditOriginal = {
-            lang: this._activeMinutesLang || 'en',
-            content: this._sessionMinutesEditor.getContent(),
-        };
-        this._isMinutesEditing = true;
-        this._sessionMinutesEditor.setReadOnly(false);
-        this._sessionMinutesEditor.focus();
-        const editBtn = document.getElementById('btn-minutes-edit');
-        if (editBtn) editBtn.style.display = 'none';
-        const saveBtn = document.getElementById('btn-minutes-save');
-        if (saveBtn) saveBtn.style.display = '';
-        const cancelBtn = document.getElementById('btn-minutes-cancel');
-        if (cancelBtn) cancelBtn.style.display = '';
-        const copyRich = document.getElementById('btn-minutes-copy-rich');
-        if (copyRich) copyRich.style.display = 'none';
-        const copyMd = document.getElementById('btn-minutes-copy-md');
-        if (copyMd) copyMd.style.display = 'none';
-        const regen = document.getElementById('btn-minutes-regenerate');
-        if (regen) regen.style.display = 'none';
+    _setMinutesAutosaveStatus(key) {
+        const status = document.getElementById('session-minutes-autosave-status');
+        if (status) status.textContent = key ? t(key) : '';
     }
 
-    _exitMinutesEditMode({ restore = false } = {}) {
-        const original = this._minutesEditOriginal;
-        if (restore && original && this._sessionMinutesEditor && original.lang === (this._activeMinutesLang || 'en')) {
-            this._sessionMinutesEditor.setContent(original.content);
-        }
-        this._minutesEditOriginal = null;
-        this._isMinutesEditing = false;
-        if (this._sessionMinutesEditor) {
-            this._sessionMinutesEditor.setReadOnly(true);
-        }
-        const editBtn = document.getElementById('btn-minutes-edit');
-        if (editBtn) editBtn.style.display = '';
-        const saveBtn = document.getElementById('btn-minutes-save');
-        if (saveBtn) saveBtn.style.display = 'none';
-        const cancelBtn = document.getElementById('btn-minutes-cancel');
-        if (cancelBtn) cancelBtn.style.display = 'none';
-        const copyRich = document.getElementById('btn-minutes-copy-rich');
-        if (copyRich) copyRich.style.display = '';
-        const copyMd = document.getElementById('btn-minutes-copy-md');
-        if (copyMd) copyMd.style.display = '';
-        const regen = document.getElementById('btn-minutes-regenerate');
-        if (regen) regen.style.display = '';
-    }
-
-    async _saveMinutesEdit() {
-        const cur = this._currentViewedSession;
-        if (!cur || !this._sessionMinutesEditor) return;
+    _scheduleMinutesAutosave(content) {
+        const current = this._currentViewedSession;
+        if (!current || current.isLegacy || this._suppressMinutesAutosave) return;
         const lang = this._activeMinutesLang || 'en';
-        const newMinutes = this._sessionMinutesEditor.getContent();
-        try {
-            await invoke('update_session_meeting_minutes', {
-                id: cur.id,
-                minutes: newMinutes,
-                lang,
+        const snapshot = { id: current.id, title: this._currentSessionJson?.title || current.id, lang, content };
+        this._loadedMinutes ||= {};
+        this._loadedMinutes[lang] = content;
+        if (this._currentSessionJson?.id === current.id) this._currentSessionJson[`meeting_minutes_${lang}`] = content;
+        this._updateMinutesBadges();
+        this._pendingMinutesAutosave = snapshot;
+        this._setMinutesAutosaveStatus('session.minutesAutosavePending');
+        clearTimeout(this._minutesAutosaveTimer);
+        this._minutesAutosaveTimer = setTimeout(() => {
+            this._minutesAutosaveTimer = null;
+            this._flushMinutesAutosave();
+        }, 700);
+    }
+
+    async _flushMinutesAutosave() {
+        clearTimeout(this._minutesAutosaveTimer);
+        this._minutesAutosaveTimer = null;
+        const snapshot = this._pendingMinutesAutosave;
+        this._pendingMinutesAutosave = null;
+        if (!snapshot) return this._minutesAutosaveQueue;
+        this._minutesAutosaveQueue = this._minutesAutosaveQueue
+            .catch(() => {})
+            .then(async () => {
+                if (this._currentViewedSession?.id === snapshot.id) this._setMinutesAutosaveStatus('session.minutesAutosaving');
+                await invoke('update_session_meeting_minutes', {
+                    id: snapshot.id,
+                    minutes: snapshot.content,
+                    lang: snapshot.lang,
+                });
+                if (this._currentSessionJson?.id === snapshot.id) {
+                    this._currentSessionJson[`meeting_minutes_${snapshot.lang}`] = snapshot.content;
+                }
+                await this._exportToObsidian(snapshot.id, snapshot.title, snapshot.lang, snapshot.content, false, 'minutes', true);
+                if (this._currentViewedSession?.id === snapshot.id) this._setMinutesAutosaveStatus('session.minutesAutosaved');
             });
-            this._loadedMinutes[lang] = newMinutes;
-            this._updateMinutesBadges();
-            this._exitMinutesEditMode();
-            this._showToast(t('session.minutesUpdatedSuccess', { lang: this._minutesLangName(lang) }), 'success');
+        try {
+            await this._minutesAutosaveQueue;
         } catch (err) {
+            if (this._currentViewedSession?.id === snapshot.id) this._setMinutesAutosaveStatus('session.minutesAutosaveFailed');
             this._showToast(t('session.minutesSaveError', { error: err }), 'error');
         }
     }
@@ -14245,6 +14584,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 id: cur.id,
                 notes: newNotes,
             });
+            if (this._currentSessionJson) this._currentSessionJson.notes = newNotes;
             this._exitNotesEditMode();
             this._showToast(t('session.notesSavedSuccess'), 'success');
         } catch (err) {
@@ -14289,10 +14629,10 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     }
 
     async _openSession(id, isLegacy = false, { fromSearch = false } = {}) {
+        await this._flushMinutesAutosave();
         this._sessionReturnToSearch = fromSearch;
         this._setSessionBackContext(fromSearch);
         this._exitSessionEditMode();
-        this._exitMinutesEditMode();
         this._exitNotesEditMode();
 
         const listPanel = document.getElementById('sessions-list-panel');
@@ -14320,6 +14660,8 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (duration) duration.textContent = this._formatPlayerTime(knownDuration);
         }
         this._currentViewedSession = { id, isLegacy };
+        this._renderSessionObsidianButton();
+        this._setMinutesAutosaveStatus('');
         this._syncSessionMiniPlayerUI();
 
         this._ensureSessionViewerEditorsMounted();
@@ -14440,7 +14782,6 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                     this._sessionNotesEditor.setContent(notesText);
                     this._sessionNotesEditor.setReadOnly(true);
                 }
-
                 // 3. Logs Tab — same single/dual layout as the Live transcript.
                 this._renderSessionLogs(json);
 

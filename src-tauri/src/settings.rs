@@ -158,6 +158,14 @@ pub struct Settings {
     /// Default language for generated meeting minutes
     #[serde(default = "default_meeting_minutes_lang")]
     pub meeting_minutes_lang: String,
+    /// Automatically save generated Meeting Minutes to the configured Obsidian vault.
+    #[serde(default)]
+    pub obsidian_export_enabled: bool,
+    #[serde(default)]
+    pub obsidian_export_excluded_sessions: Vec<String>,
+    /// Local filesystem path to the selected Obsidian vault.
+    #[serde(default)]
+    pub obsidian_vault_path: String,
     /// User-managed Meeting Minutes templates keyed by stable ID.
     #[serde(default)]
     pub meeting_minutes_templates: Vec<MeetingMinutesTemplate>,
@@ -281,6 +289,9 @@ impl Default for Settings {
             template_notes: None,
             meeting_minutes_use_notes: true,
             meeting_minutes_lang: default_meeting_minutes_lang(),
+            obsidian_export_enabled: false,
+            obsidian_export_excluded_sessions: Vec::new(),
+            obsidian_vault_path: String::new(),
             meeting_minutes_templates: Vec::new(),
             template_minutes_vi: None,
             template_minutes_ja: None,

@@ -4174,6 +4174,82 @@ input[type="range"]::-webkit-slider-thumb:hover {
   background: rgba(20, 20, 30, 0.2);
 }
 
+.obsidian-brand-icon {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  mix-blend-mode: screen;
+  vertical-align: middle;
+}
+
+.obsidian-action-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.obsidian-export-button {
+  width: 32px !important;
+  height: 32px !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.obsidian-export-button:hover {
+  background: var(--bg-hover) !important;
+}
+
+.trash-can-icon {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  vertical-align: -2px;
+}
+
+.obsidian-setting-title,
+.obsidian-stop-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.obsidian-preview-card {
+  width: min(860px, calc(100vw - 32px));
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+}
+
+.obsidian-preview-card .modal-body {
+  min-height: 0;
+  overflow: auto;
+}
+
+.obsidian-preview-content {
+  display: block;
+  width: 100%;
+  min-height: min(52vh, 520px);
+  box-sizing: border-box;
+  margin-top: 6px;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 8px);
+  background: var(--md-sys-color-surface, #17171c);
+  color: var(--md-sys-color-on-surface, #f2f2f4);
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  tab-size: 2;
+}
+
+.obsidian-preview-content:focus-visible {
+  outline: 2px solid var(--accent, #c792d4);
+  outline-offset: 2px;
+}
+
 /* The mini-player stays visible while the user moves between Live, Logs and detail. */
 .session-mini-player {
   position: fixed;
@@ -4488,6 +4564,9 @@ input.session-player-timeline:focus-visible {
 }
 
 .session-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   width: 22px;
   height: 22px;
@@ -4495,11 +4574,14 @@ input.session-player-timeline:focus-visible {
   border-radius: 4px;
   background: transparent;
   color: var(--text-muted);
-  font-size: 16px;
-  line-height: 1;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
   -webkit-app-region: no-drag;
+}
+
+.session-delete-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .session-delete-btn:hover {
