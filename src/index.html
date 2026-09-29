@@ -373,7 +373,7 @@
                 <path d="M10 11v6M14 11v6" />
               </svg>
             </button>
-            <button type="button" id="btn-session-obsidian-save" class="icon-btn small obsidian-export-button" style="display:none" data-i18n-title="session.obsidianSaveCombined" data-i18n-aria-label="session.obsidianSaveCombined" aria-label="Lưu note vào Obsidian" title="Lưu note vào Obsidian"><img class="obsidian-brand-icon obsidian-action-icon" src="./assets/obsidian-icon.png" alt="" aria-hidden="true" /></button>
+            <button type="button" id="btn-session-obsidian-save" class="icon-btn small obsidian-export-button" style="display:none" data-i18n-title="session.obsidianSaveCombined" data-i18n-aria-label="session.obsidianSaveCombined" aria-label="Xuất Markdown" title="Xuất Markdown"><svg class="markdown-file-icon obsidian-action-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 2.75h8l4.5 4.5v14H6a2 2 0 0 1-2-2v-14a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2.75v5h4.5M7.5 13h9M7.5 16h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 18.5h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
           </div>
         </div>
 
@@ -1113,17 +1113,17 @@
           <div class="settings-section" style="margin-top:14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
               <div>
-                <span class="field-label obsidian-setting-title" style="margin:0;"><img class="obsidian-brand-icon" src="./assets/obsidian-icon.png" alt="" aria-hidden="true" /><span data-i18n="settings.storage.obsidianTitle">Obsidian</span></span>
-                <p class="hint" style="margin:4px 0 0;" data-i18n="settings.storage.obsidianDesc">Automatically save AI-generated Meeting Minutes to your vault.</p>
+                <span class="field-label obsidian-setting-title" style="margin:0;"><svg class="markdown-file-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 2.75h8l4.5 4.5v14H6a2 2 0 0 1-2-2v-14a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2.75v5h4.5M7.5 13h9M7.5 16h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 18.5h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span data-i18n="settings.storage.obsidianTitle">Markdown</span></span>
+                <p class="hint" style="margin:4px 0 0;" data-i18n="settings.storage.obsidianDesc">Automatically export AI-generated Meeting Minutes as Markdown.</p>
               </div>
-              <label class="switch-control" data-i18n-title="settings.storage.obsidianSwitchTitle" title="Enable Obsidian export">
+              <label class="switch-control" data-i18n-title="settings.storage.obsidianSwitchTitle" title="Enable Markdown export">
                 <input type="checkbox" id="check-obsidian-export-enabled" aria-controls="obsidian-export-details" />
                 <span class="switch-slider"></span>
               </label>
             </div>
             <div id="obsidian-export-details" style="display:none; margin-top:12px;">
-              <div id="obsidian-vault-path" class="git-backup-repo-summary" role="status" aria-live="polite" style="margin-bottom:10px; word-break:break-all;">No vault selected</div>
-              <button type="button" id="btn-select-obsidian-vault" class="btn-secondary-small" data-i18n="settings.storage.obsidianChoose">Choose vault...</button>
+              <div id="obsidian-vault-path" class="git-backup-repo-summary" role="status" aria-live="polite" style="margin-bottom:10px; word-break:break-all;">No export folder selected</div>
+              <button type="button" id="btn-select-obsidian-vault" class="btn-secondary-small" data-i18n="settings.storage.obsidianChoose">Choose folder...</button>
             </div>
           </div>
           <div class="settings-section git-backup-section" style="margin-top: 14px;">
@@ -1545,8 +1545,8 @@
             <label for="chk-stop-obsidian-export" style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; user-select: none;">
               <input type="checkbox" id="chk-stop-obsidian-export" checked style="width: 16px; height: 16px; margin-top: 1px; accent-color: var(--md-sys-color-primary); cursor: pointer;" />
               <div>
-                <span class="obsidian-stop-label"><img class="obsidian-brand-icon" src="./assets/obsidian-icon.png" alt="" aria-hidden="true" /><span style="font-size: 12px; font-weight: 600; color: var(--md-sys-color-on-surface);" data-i18n="modal.stop.obsidianLabel">Lưu AI Meeting Minutes vào Obsidian</span></span>
-                <div style="margin-top: 4px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;" data-i18n="modal.stop.obsidianHint">Tự tạo note sau khi transcript hoàn tất và lưu vào vault đã chọn.</div>
+                <span class="obsidian-stop-label"><svg class="markdown-file-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 2.75h8l4.5 4.5v14H6a2 2 0 0 1-2-2v-14a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2.75v5h4.5M7.5 13h9M7.5 16h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 18.5h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span style="font-size: 12px; font-weight: 600; color: var(--md-sys-color-on-surface);" data-i18n="modal.stop.obsidianLabel">Xuất Meeting Minutes dạng Markdown</span></span>
+                <div style="margin-top: 4px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;" data-i18n="modal.stop.obsidianHint">Tự tạo file Markdown sau khi transcript hoàn tất và lưu vào thư mục đã chọn.</div>
               </div>
             </label>
           </div>
@@ -1748,17 +1748,17 @@
   <div id="modal-obsidian-save-preview" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="obsidian-preview-title" aria-describedby="obsidian-preview-description">
     <div class="modal-card obsidian-preview-card">
       <div class="modal-header">
-        <h3 id="obsidian-preview-title"><img class="obsidian-brand-icon" src="./assets/obsidian-icon.png" alt="" aria-hidden="true" /><span data-i18n="session.obsidianPreviewTitle">Xem lại nội dung Obsidian</span></h3>
+        <h3 id="obsidian-preview-title"><svg class="markdown-file-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 2.75h8l4.5 4.5v14H6a2 2 0 0 1-2-2v-14a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2.75v5h4.5M7.5 13h9M7.5 16h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 18.5h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span data-i18n="session.obsidianPreviewTitle">Xem trước Markdown</span></h3>
         <button type="button" id="btn-close-obsidian-preview" class="icon-btn close-btn" data-i18n-title="modal.close" data-i18n-aria-label="modal.close" title="Đóng" aria-label="Đóng">×</button>
       </div>
       <div class="modal-body">
-        <p id="obsidian-preview-description" class="modal-desc" data-i18n="session.obsidianPreviewDescription">Kiểm tra hoặc chỉnh sửa nội dung sẽ lưu vào vault.</p>
+        <p id="obsidian-preview-description" class="modal-desc" data-i18n="session.obsidianPreviewDescription">Kiểm tra hoặc chỉnh sửa nội dung file Markdown trước khi xuất.</p>
         <label for="obsidian-preview-content" class="field-label" data-i18n="session.obsidianPreviewContentLabel">Nội dung note (Markdown)</label>
         <textarea id="obsidian-preview-content" class="obsidian-preview-content" rows="18" spellcheck="false"></textarea>
       </div>
       <div class="modal-footer">
         <button type="button" id="btn-cancel-obsidian-preview" class="secondary-btn" data-i18n="common.cancel">Huỷ</button>
-        <button type="button" id="btn-confirm-obsidian-preview" class="primary-action-btn" data-i18n="session.obsidianConfirmSave">Lưu vào Obsidian</button>
+        <button type="button" id="btn-confirm-obsidian-preview" class="primary-action-btn" data-i18n="session.obsidianConfirmSave">Xuất Markdown</button>
       </div>
     </div>
   </div>
