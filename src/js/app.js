@@ -637,6 +637,15 @@ class App {
         }
 
         try {
+            await this.appWindow.listen('open-help', async () => {
+                this._showView('settings');
+                await this._showSettingsScreen('tab-help');
+            });
+        } catch (err) {
+            console.warn('[App] Could not bind Help menu event:', err);
+        }
+
+        try {
             await this._bindStorageMigrationProgressEvents();
         } catch (err) {
             console.warn('[App] Could not bind storage migration progress events:', err);

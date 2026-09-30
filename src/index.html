@@ -557,6 +557,10 @@
             <span class="settings-nav-icon">📂</span>
             <span class="settings-nav-label" data-i18n="settings.storage">Lưu trữ &amp; backup</span>
           </button>
+          <button type="button" class="settings-nav-item" data-screen="tab-help">
+            <span class="settings-nav-icon">❔</span>
+            <span class="settings-nav-label" data-i18n="settings.help">Trợ giúp</span>
+          </button>
           <button type="button" class="settings-nav-item" data-screen="tab-about">
             <span class="settings-nav-icon">ℹ️</span>
             <span class="settings-nav-label" data-i18n="settings.about">Giới thiệu phần mềm</span>
@@ -566,6 +570,32 @@
 
       <!-- Right Content Panel -->
       <div class="settings-content-panel">
+        <div class="settings-tab-content" id="tab-help">
+          <div class="settings-panel-header">
+            <h3 class="settings-panel-title" data-i18n="settings.help.title">❔ Meet Minder Help</h3>
+          </div>
+          <div class="settings-section">
+            <h4 data-i18n="settings.help.startTitle">Start a live meeting</h4>
+            <p class="hint" data-i18n="settings.help.startBody">Choose the spoken and translation languages, select an audio source, then click Start. Allow microphone or screen-audio access when macOS asks.</p>
+          </div>
+          <div class="settings-section">
+            <h4 data-i18n="settings.help.notesTitle">Save notes and meeting minutes</h4>
+            <p class="hint" data-i18n="settings.help.notesBody">Add a meeting title and optional customer or project before or during a session. Stop the session to save it, then open Meeting Logs to review transcripts, notes, and generated minutes.</p>
+          </div>
+          <div class="settings-section">
+            <h4 data-i18n="settings.help.importTitle">Import a recording</h4>
+            <p class="hint" data-i18n="settings.help.importBody">Open Meeting Logs and choose Import meeting recording. Select an audio file, enter a title, and start the import to create a transcript and meeting record.</p>
+          </div>
+          <div class="settings-section">
+            <h4 data-i18n="settings.help.troubleTitle">If audio is not captured</h4>
+            <p class="hint" data-i18n="settings.help.troubleBody">Open Settings → Engine &amp; Translation to check the selected engine and language options. In macOS System Settings → Privacy &amp; Security, allow the required microphone or screen and system audio permissions, then reopen Meet Minder.</p>
+          </div>
+          <div class="settings-section">
+            <h4 data-i18n="settings.help.contactTitle">Need more help?</h4>
+            <p class="hint"><span data-i18n="settings.help.contactBody">Contact support at</span> <a href="mailto:tuyennq.1001@gmail.com">tuyennq.1001@gmail.com</a>.</p>
+          </div>
+        </div>
+
         <!-- 1. Detail: Customers -->
         <div class="settings-tab-content active" id="tab-customers">
           <div class="settings-panel-header">
