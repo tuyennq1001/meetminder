@@ -11,6 +11,8 @@ use commands::local_tts::LocalTtsState;
 use commands::openai_realtime::OpenAiState;
 use commands::qwen_realtime::QwenState;
 use settings::{Settings, SettingsState};
+use tauri::menu::{Menu, MenuItem, MenuItemKind, HELP_SUBMENU_ID};
+use tauri::Emitter;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
@@ -79,6 +81,27 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // Tauri's default macOS menu contains an empty Help submenu. Add a
+            // real entry so the system Help menu always takes users to the
+            // in-app guide instead of appearing inert.
+            let menu = Menu::default(app.handle())?;
+            if let Some(MenuItemKind::Submenu(help_menu)) = menu.get(HELP_SUBMENU_ID) {
+                let open_help = MenuItem::with_id(
+                    app.handle(),
+                    "meet-minder-help",
+                    "Meet Minder Help",
+                    true,
+                    None::<&str>,
+                )?;
+                help_menu.append(&open_help)?;
+            }
+            app.set_menu(menu)?;
+            app.on_menu_event(|app, event| {
+                if event.id() == "meet-minder-help" {
+                    let _ = app.emit("open-help", ());
+                }
+            });
+
             #[cfg(desktop)]
             {
                 app.handle()
