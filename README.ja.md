@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.0.2-blueviolet?style=flat-square" alt="Version 1.0.2">
+  <img src="https://img.shields.io/badge/version-v1.0.3-blueviolet?style=flat-square" alt="Version 1.0.3">
   <img src="https://img.shields.io/badge/built_with-Tauri_v2-24C8D8?logo=tauri&logoColor=white&style=flat-square" alt="Built with Tauri v2">
   <img src="https://img.shields.io/badge/backend-Rust_2021-DEA584?logo=rust&logoColor=white&style=flat-square" alt="Rust 2021">
   <img src="https://img.shields.io/badge/macOS-Apple_Silicon_%7C_Intel-black?logo=apple&logoColor=white&style=flat-square" alt="macOS">
@@ -45,15 +45,15 @@
 
 ---
 
-## ⬇️ ダウンロード (v1.0.2)
+## ⬇️ ダウンロード (v1.0.3)
 
 最新のインストーラーは [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest) からダウンロードできます。
 
 | OS | アーキテクチャ / 対象端末 | インストーラー | ガイド |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.2_aarch64.dmg` | [macOS インストール手順](docs/installation_guide_ja.md) |
-| **macOS** | **Intel Mac** (i5 / i7 / i9) | `Meet.Minder_1.0.2_x64.dmg` | [macOS インストール手順](docs/installation_guide_ja.md) |
-| **Windows** | **Windows 10 / 11** (64-bit) | `Meet.Minder_1.0.2_x64-setup.exe` | [Windows インストール手順](docs/installation_guide_win.md) |
+| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.3_aarch64.dmg` | [macOS インストール手順](docs/installation_guide_ja.md) |
+| **macOS** | **Intel Mac** (i5 / i7 / i9) | `Meet.Minder_1.0.3_x64.dmg` | [macOS インストール手順](docs/installation_guide_ja.md) |
+| **Windows** | **Windows 10 / 11** (64-bit) | `Meet.Minder_1.0.3_x64-setup.exe` | [Windows インストール手順](docs/installation_guide_win.md) |
 
 ---
 
@@ -188,7 +188,7 @@
 ## 👤 開発者 ＆ サポート
 
 - **開発者**: **Terry**
-- **メール**: [tuyennq1001@gmail.com](mailto:tuyennq1001@gmail.com)
+- **メール**: [tuyennq.1001@gmail.com](mailto:tuyennq.1001@gmail.com)
 - **GitHub**: [https://github.com/tuyennq1001/meetminder](https://github.com/tuyennq1001/meetminder)
 - **Issue報告**: [https://github.com/tuyennq1001/meetminder/issues](https://github.com/tuyennq1001/meetminder/issues)
 

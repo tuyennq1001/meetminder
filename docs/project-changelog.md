@@ -5,6 +5,18 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.3 - 2026-10-01
+
+### Added
+
+- **Markdown meeting export**: Export AI Meeting Minutes in the source and target languages, along with manual notes, into Markdown files. Choose which sections to include in Settings and review or edit the export before saving.
+- **Project and customer context**: Include meeting metadata such as project and customer in exported Markdown.
+
+### Improved
+
+- **Matching source and target languages**: Allow the same language on both sides and handle Gemini's paired response without forcing a different target language.
+- **Help menu and contact details**: Make the app help menu functional and standardize the support email as `tuyennq.1001@gmail.com`.
+
 ## v1.0.2 - 2026-09-25
 
 ### Improved
@@ -53,7 +65,7 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 - **Keyboard Shortcuts**:
   - Fast keyboard navigation: `⌘S` (Start/Pause), `⌘C` (Continue), `⌘T` (Save & Stop), `⌘N` (Take Note), `⌘L` (Live view), `⌘O` (Logs), `⌘1/2/3` (Audio source), `⌘,` (Settings), `?` (Shortcuts cheat sheet).
 - **Authorship & Support**:
-  - Created & developed by Terry ([tuyennq1001@gmail.com](mailto:tuyennq1001@gmail.com)).
+  - Created & developed by Terry ([tuyennq.1001@gmail.com](mailto:tuyennq.1001@gmail.com)).
 - **Cleaned Codebase**:
   - Removed deprecated TTS Read Mode to focus 100% on live meeting transcription and intelligence.
 

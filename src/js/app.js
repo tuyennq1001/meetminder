@@ -15155,7 +15155,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         // Author contact
         document.getElementById('link-author-email')?.addEventListener('click', (e) => {
             e.preventDefault();
-            window.__TAURI__?.opener?.openUrl('mailto:tuyennq1001@gmail.com');
+            window.__TAURI__?.opener?.openUrl('mailto:tuyennq.1001@gmail.com');
         });
 
         // GitHub links

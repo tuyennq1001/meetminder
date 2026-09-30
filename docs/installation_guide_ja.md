@@ -171,6 +171,6 @@ Meet Minderは、会議の全ログ、Markdownメモ、および音声ファイ�
 ## ℹ️ 開発者 ＆ テクニカルサポート
 
 - **開発者**: **Terry**
-- **サポートメール**: [tuyennq1001@gmail.com](mailto:tuyennq1001@gmail.com)
+- **サポートメール**: [tuyennq.1001@gmail.com](mailto:tuyennq.1001@gmail.com)
 - **GitHub リポジトリ**: [https://github.com/tuyennq1001/meetminder](https://github.com/tuyennq1001/meetminder)
 - **バグ報告・フィードバック**: [https://github.com/tuyennq1001/meetminder/issues](https://github.com/tuyennq1001/meetminder/issues)

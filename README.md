@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.0.2-blueviolet?style=flat-square" alt="Version 1.0.2">
+  <img src="https://img.shields.io/badge/version-v1.0.3-blueviolet?style=flat-square" alt="Version 1.0.3">
   <img src="https://img.shields.io/badge/built_with-Tauri_v2-24C8D8?logo=tauri&logoColor=white&style=flat-square" alt="Built with Tauri v2">
   <img src="https://img.shields.io/badge/backend-Rust_2021-DEA584?logo=rust&logoColor=white&style=flat-square" alt="Rust 2021">
   <img src="https://img.shields.io/badge/macOS-Apple_Silicon_%7C_Intel-black?logo=apple&logoColor=white&style=flat-square" alt="macOS">
@@ -45,7 +45,7 @@ It seamlessly unifies **dual-channel system audio & microphone capture**, **real
 
 ---
 
-## ⬇️ Downloads (v1.0.2)
+## ⬇️ Downloads (v1.0.3)
 
 Download pre-built installers directly from [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest).
 
@@ -59,9 +59,9 @@ The installer detects Apple Silicon or Intel and downloads the matching signed D
 
 | Operating System | Architecture / Devices | Installer Package | Guide |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.2_aarch64.dmg` | [macOS Installation Guide](docs/installation_guide.md) |
-| **macOS** | **Intel Mac** (i5 / i7 / i9) | `Meet.Minder_1.0.2_x64.dmg` | [macOS Installation Guide](docs/installation_guide.md) |
-| **Windows** | **Windows 10 / 11** (64-bit) | `Meet.Minder_1.0.2_x64-setup.exe` | [Windows Installation Guide](docs/installation_guide_win.md) |
+| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.3_aarch64.dmg` | [macOS Installation Guide](docs/installation_guide.md) |
+| **macOS** | **Intel Mac** (i5 / i7 / i9) | `Meet.Minder_1.0.3_x64.dmg` | [macOS Installation Guide](docs/installation_guide.md) |
+| **Windows** | **Windows 10 / 11** (64-bit) | `Meet.Minder_1.0.3_x64-setup.exe` | [Windows Installation Guide](docs/installation_guide_win.md) |
 
 ---
 
@@ -248,7 +248,7 @@ Speed up your meeting workflow with native hotkeys:
 ## 👤 Author & Support
 
 - **Author & Creator**: **Terry**
-- **Email**: [tuyennq1001@gmail.com](mailto:tuyennq1001@gmail.com)
+- **Email**: [tuyennq.1001@gmail.com](mailto:tuyennq.1001@gmail.com)
 - **GitHub Repository**: [https://github.com/tuyennq1001/meetminder](https://github.com/tuyennq1001/meetminder)
 - **Issue Tracker**: [https://github.com/tuyennq1001/meetminder/issues](https://github.com/tuyennq1001/meetminder/issues)
 

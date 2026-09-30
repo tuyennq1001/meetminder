@@ -11,10 +11,10 @@ use commands::local_tts::LocalTtsState;
 use commands::openai_realtime::OpenAiState;
 use commands::qwen_realtime::QwenState;
 use settings::{Settings, SettingsState};
-use tauri::menu::{Menu, MenuItem, MenuItemKind, HELP_SUBMENU_ID};
-use tauri::Emitter;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
+use tauri::menu::{Menu, MenuItem, MenuItemKind, HELP_SUBMENU_ID};
+use tauri::Emitter;
 
 // Set once the frontend has flushed the session (or the exit deadline elapsed),
 // so the ExitRequested handler stops preventing exit and the app can quit.

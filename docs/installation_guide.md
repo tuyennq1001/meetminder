@@ -170,6 +170,6 @@ Press <kbd>⌘</kbd> + <kbd>O</kbd> or click **📚 Meeting Logs** to review pas
 ## ℹ️ Author & Support
 
 - **Author & Developer**: **Terry**
-- **Support Email**: [tuyennq1001@gmail.com](mailto:tuyennq1001@gmail.com)
+- **Support Email**: [tuyennq.1001@gmail.com](mailto:tuyennq.1001@gmail.com)
 - **GitHub Repository**: [https://github.com/tuyennq1001/meetminder](https://github.com/tuyennq1001/meetminder)
 - **Report Bugs & Issues**: [https://github.com/tuyennq1001/meetminder/issues](https://github.com/tuyennq1001/meetminder/issues)

@@ -170,6 +170,6 @@ Nhấn <kbd>⌘</kbd> + <kbd>O</kbd> hoặc click **📚 Meeting Logs** để m�
 ## ℹ️ Thông tin Tác giả & Hỗ trợ kỹ thuật
 
 - **Tác giả & Phát triển**: **Terry**
-- **Email hỗ trợ**: [tuyennq1001@gmail.com](mailto:tuyennq1001@gmail.com)
+- **Email hỗ trợ**: [tuyennq.1001@gmail.com](mailto:tuyennq.1001@gmail.com)
 - **GitHub Repository**: [https://github.com/tuyennq1001/meetminder](https://github.com/tuyennq1001/meetminder)
 - **Báo lỗi & Đóng góp ý kiến**: [https://github.com/tuyennq1001/meetminder/issues](https://github.com/tuyennq1001/meetminder/issues)
