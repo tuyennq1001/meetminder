@@ -38,6 +38,7 @@ const DEFAULT_SETTINGS = {
   meeting_minutes_use_notes: true,
   meeting_minutes_lang: 'en',
   obsidian_export_enabled: false,
+  obsidian_export_contents: ['source_minutes', 'target_minutes', 'manual_notes'],
   obsidian_export_excluded_sessions: [],
   obsidian_vault_path: '',
   meeting_minutes_templates: [],

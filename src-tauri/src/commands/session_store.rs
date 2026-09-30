@@ -4134,7 +4134,7 @@ async fn translate_transcript_segments_with_gemini(
     segments: &mut [Segment],
     cancel_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), String> {
-    if segments.is_empty() || source_lang == target_lang {
+    if segments.is_empty() {
         return Ok(());
     }
     let target_name = language_name(target_lang);
@@ -4897,8 +4897,7 @@ pub async fn retranscribe_session_with_gemini(
         .unwrap_or_else(|_| reqwest::Client::new());
     let has_translation = !data.target_lang.trim().is_empty()
         && data.target_lang != "none"
-        && data.target_lang != "off"
-        && data.target_lang != data.source_lang;
+        && data.target_lang != "off";
     let translation_instruction = if has_translation {
         let target_name = language_name(&data.target_lang);
         format!(

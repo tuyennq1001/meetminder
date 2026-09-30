@@ -1124,6 +1124,12 @@
             <div id="obsidian-export-details" style="display:none; margin-top:12px;">
               <div id="obsidian-vault-path" class="git-backup-repo-summary" role="status" aria-live="polite" style="margin-bottom:10px; word-break:break-all;">No export folder selected</div>
               <button type="button" id="btn-select-obsidian-vault" class="btn-secondary-small" data-i18n="settings.storage.obsidianChoose">Choose folder...</button>
+              <div class="markdown-export-content-options" role="group" aria-labelledby="markdown-export-content-label">
+                <div id="markdown-export-content-label" class="field-label" data-i18n="settings.storage.obsidianContentLabel">Content to export</div>
+                <label><input type="checkbox" id="check-markdown-export-source" /> <span data-i18n="settings.storage.obsidianContentSource">Meeting Minutes — source language</span></label>
+                <label><input type="checkbox" id="check-markdown-export-target" /> <span data-i18n="settings.storage.obsidianContentTarget">Meeting Minutes — target language</span></label>
+                <label><input type="checkbox" id="check-markdown-export-manual" /> <span data-i18n="settings.storage.obsidianContentManual">Manual notes</span></label>
+              </div>
             </div>
           </div>
           <div class="settings-section git-backup-section" style="margin-top: 14px;">

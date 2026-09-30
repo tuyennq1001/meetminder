@@ -1921,6 +1921,15 @@ class App {
             }
         });
         document.getElementById('btn-select-obsidian-vault')?.addEventListener('click', () => this._chooseObsidianVault(false));
+        [
+            ['check-markdown-export-source', 'source_minutes'],
+            ['check-markdown-export-target', 'target_minutes'],
+            ['check-markdown-export-manual', 'manual_notes'],
+        ].forEach(([id]) => {
+            document.getElementById(id)?.addEventListener('change', (event) => {
+                this._saveMarkdownExportContents(event.target);
+            });
+        });
         document.getElementById('btn-session-obsidian-save')?.addEventListener('click', () => {
             this._exportCurrentMeetingToObsidian();
         });
@@ -3521,8 +3530,6 @@ class App {
             const validTgts = ['vi', 'ja', 'en', 'none'];
             quickTgt.value = validTgts.includes(settings.target_language) ? settings.target_language : 'none';
         }
-        this._syncTargetLanguageOptions(quickSrc, quickTgt);
-
         const timing = settings.translation_timing || 'on_pause';
         const timingSel = document.getElementById('select-translation-timing');
         if (timingSel) timingSel.value = timing;
@@ -6899,51 +6906,8 @@ class App {
         return this._liveEngineRestart;
     }
 
-    _syncTargetLanguageOptions(sourceSelect, targetSelect) {
-        if (!sourceSelect || !targetSelect) return null;
-        const src = sourceSelect.value;
-        const curTgt = targetSelect.value;
-
-        let hasDisabledCurrent = false;
-        for (const opt of targetSelect.options) {
-            if (src && src !== 'auto' && opt.value === src) {
-                opt.disabled = true;
-                if (curTgt === opt.value) {
-                    hasDisabledCurrent = true;
-                }
-            } else {
-                opt.disabled = false;
-            }
-        }
-
-        if (hasDisabledCurrent) {
-            const fallbackOrder = src === 'vi' ? ['ja', 'en']
-                : (src === 'ja' ? ['vi', 'en']
-                : ['vi', 'ja', 'en']);
-            const nextValid = fallbackOrder.find(lang => {
-                const opt = Array.from(targetSelect.options).find(o => o.value === lang);
-                return opt && !opt.disabled;
-            }) || Array.from(targetSelect.options).find(o => !o.disabled)?.value || curTgt;
-            targetSelect.value = nextValid;
-            return nextValid;
-        }
-        return curTgt;
-    }
-
     async _handleQuickSourceLangChange(srcLang) {
-        const quickSrc = document.getElementById('quick-select-source-lang');
-        const quickTgt = document.getElementById('quick-select-target-lang');
-        const syncedTgt = this._syncTargetLanguageOptions(quickSrc, quickTgt);
-
-        const updates = { source_language: srcLang };
-        if (syncedTgt && syncedTgt !== settingsManager.get().target_language) {
-            updates.target_language = syncedTgt;
-            if (this.transcriptUI) {
-                this.transcriptUI.configure({ targetLanguage: syncedTgt });
-            }
-        }
-
-        const s = await this._saveQuickLanguageSettings(updates);
+        const s = await this._saveQuickLanguageSettings({ source_language: srcLang });
         const srcName = this._getQuickLangName(srcLang);
         this._showToast(t('toast.sourceLanguage', { language: srcName }), 'info');
         const langEl = document.getElementById('live-lang');
@@ -7003,9 +6967,6 @@ class App {
 
         if (quickSrc) quickSrc.value = newSrc;
         if (quickTgt) quickTgt.value = newTgt;
-
-        const syncedTgt = this._syncTargetLanguageOptions(quickSrc, quickTgt);
-        if (syncedTgt) newTgt = syncedTgt;
 
         await this._saveQuickLanguageSettings({
             source_language: newSrc,
@@ -8786,7 +8747,7 @@ class App {
         const engineBadge = s.has_legacy_only
             ? `<span class="session-badge badge-legacy">legacy</span>`
             : `<span class="session-badge badge-engine">${this._esc(engine)}</span>`;
-        const isSingleLanguage = !s.target_lang || s.target_lang === 'none' || s.target_lang === 'off' || s.target_lang === s.source_lang;
+        const isSingleLanguage = !s.target_lang || s.target_lang === 'none' || s.target_lang === 'off';
         const langPair = s.source_lang
             ? (isSingleLanguage
                 ? `<span class="session-badge session-language-pair">${this._formatLanguage(s.source_lang)}</span>`
@@ -9696,6 +9657,9 @@ class App {
 
     _renderObsidianSettingsUI() {
         const settings = settingsManager.get();
+        const exportContents = new Set(Array.isArray(settings.obsidian_export_contents)
+            ? settings.obsidian_export_contents
+            : ['source_minutes', 'target_minutes', 'manual_notes']);
         const toggle = document.getElementById('check-obsidian-export-enabled');
         const details = document.getElementById('obsidian-export-details');
         const pathEl = document.getElementById('obsidian-vault-path');
@@ -9706,8 +9670,40 @@ class App {
         }
         if (details) details.style.display = 'block';
         if (pathEl) pathEl.textContent = settings.obsidian_vault_path || t('settings.storage.obsidianNoVault');
+        const sourceCheckbox = document.getElementById('check-markdown-export-source');
+        const targetCheckbox = document.getElementById('check-markdown-export-target');
+        const manualCheckbox = document.getElementById('check-markdown-export-manual');
+        if (sourceCheckbox) sourceCheckbox.checked = exportContents.has('source_minutes');
+        if (targetCheckbox) targetCheckbox.checked = exportContents.has('target_minutes');
+        if (manualCheckbox) manualCheckbox.checked = exportContents.has('manual_notes');
         this._renderCurrentMinutesSubtab();
         this._renderSessionObsidianButton();
+    }
+
+    async _saveMarkdownExportContents(changedCheckbox) {
+        const options = [
+            ['check-markdown-export-source', 'source_minutes'],
+            ['check-markdown-export-target', 'target_minutes'],
+            ['check-markdown-export-manual', 'manual_notes'],
+        ];
+        const selected = options
+            .filter(([id]) => document.getElementById(id)?.checked)
+            .map(([, value]) => value);
+        if (!selected.length) {
+            if (changedCheckbox) changedCheckbox.checked = true;
+            this._showToast(t('settings.storage.obsidianContentRequired'), 'info');
+            return;
+        }
+        const save = () => settingsManager.save({ obsidian_export_contents: selected });
+        this._markdownExportSettingsSaveQueue = (this._markdownExportSettingsSaveQueue || Promise.resolve())
+            .catch(() => {})
+            .then(save);
+        try {
+            await this._markdownExportSettingsSaveQueue;
+        } catch (err) {
+            this._renderObsidianSettingsUI();
+            this._showToast(t('settings.storage.obsidianFailed', { error: err }), 'error');
+        }
     }
 
     _renderSessionObsidianButton() {
@@ -9752,6 +9748,50 @@ class App {
         if (supported.includes(legacyLang)) return legacyLang;
         const configuredLang = String(settingsManager.get().meeting_minutes_lang || '').trim().toLowerCase();
         return supported.includes(configuredLang) ? configuredLang : 'en';
+    }
+
+    _getObsidianExportLanguages(sessionJson) {
+        const sourceLang = this._getObsidianPrimaryLang(sessionJson);
+        const targetLang = String(sessionJson?.target_lang || '').trim().toLowerCase();
+        const supported = ['ja', 'vi', 'en'];
+        return [
+            { lang: sourceLang, role: 'source' },
+            ...(supported.includes(targetLang)
+                ? [{ lang: targetLang, role: 'target' }]
+                : []),
+        ];
+    }
+
+    _getObsidianMinutesForLanguage(sessionJson, lang) {
+        const loadedMinutes = this._currentViewedSession?.id === sessionJson?.id ? this._loadedMinutes : null;
+        return loadedMinutes?.[lang]
+            || sessionJson?.[`meeting_minutes_${lang}`]
+            || (sessionJson?.meeting_minutes_lang === lang ? sessionJson?.meeting_minutes : '')
+            || '';
+    }
+
+    _buildObsidianMeetingSections(sessionJson, updatedMinutes = null) {
+        const sections = [];
+        const selectedContents = new Set(settingsManager.get().obsidian_export_contents
+            || ['source_minutes', 'target_minutes', 'manual_notes']);
+        for (const { lang, role } of this._getObsidianExportLanguages(sessionJson)) {
+            const contentOption = role === 'source' ? 'source_minutes' : 'target_minutes';
+            if (!selectedContents.has(contentOption)) continue;
+            const minutes = updatedMinutes?.lang === lang
+                ? updatedMinutes.content
+                : this._getObsidianMinutesForLanguage(sessionJson, lang);
+            if (!minutes?.trim()) continue;
+            const headingKey = role === 'source'
+                ? 'settings.storage.obsidianAiSourceHeading'
+                : 'settings.storage.obsidianAiTargetHeading';
+            const heading = t(headingKey, { lang: this._minutesLangName(lang) });
+            sections.push(`## ${heading}\n\n${minutes.trim()}`);
+        }
+        const manualNotes = selectedContents.has('manual_notes') ? (sessionJson?.notes || '') : '';
+        if (manualNotes.trim()) {
+            sections.push(`## ${t('settings.storage.obsidianManualHeading')}\n\n${manualNotes.trim()}`);
+        }
+        return sections;
     }
 
     async _buildObsidianMetadata(sessionJson) {
@@ -9800,32 +9840,16 @@ class App {
                 ? this._currentSessionJson
                 : (await invoke('read_session', { id: sessionId }))?.json;
             const primaryLang = this._getObsidianPrimaryLang(sessionJson);
-            if (contentType !== 'raw' && lang !== primaryLang) return null;
-            const languageChoices = [...new Set([
-                primaryLang,
-            ].filter(language => ['en', 'ja', 'vi'].includes(language)))];
-            let exportLang = primaryLang;
-            const loadedMinutes = this._currentViewedSession?.id === sessionId ? this._loadedMinutes : null;
-            const minutesForLanguage = (language) => loadedMinutes?.[language]
-                || sessionJson?.[`meeting_minutes_${language}`]
-                || (sessionJson?.meeting_minutes_lang === language ? sessionJson?.meeting_minutes : '')
-                || '';
-            let aiMinutes = contentType === 'minutes' ? content : '';
-            if (contentType !== 'minutes' && contentType !== 'raw') {
-                const foundLang = languageChoices.find(language => minutesForLanguage(language).trim());
-                if (foundLang) {
-                    exportLang = foundLang;
-                    aiMinutes = minutesForLanguage(foundLang);
-                }
-            }
-            const manualNotes = contentType === 'notes' ? content : (sessionJson?.notes || '');
-            const sections = [];
-            if (aiMinutes.trim()) {
-                sections.push(`## ${t('settings.storage.obsidianAiHeading')}\n\n${aiMinutes.trim()}`);
-            }
-            if (manualNotes.trim()) {
-                sections.push(`## ${t('settings.storage.obsidianManualHeading')}\n\n${manualNotes.trim()}`);
-            }
+            const exportLanguages = this._getObsidianExportLanguages(sessionJson);
+            if (contentType === 'minutes' && !exportLanguages.some(item => item.lang === lang)) return null;
+            if (contentType === 'minutes') sessionJson[`meeting_minutes_${lang}`] = content;
+            const exportLang = primaryLang;
+            const sections = contentType === 'raw'
+                ? []
+                : this._buildObsidianMeetingSections(
+                    sessionJson,
+                    contentType === 'minutes' ? { lang, content } : null,
+                );
             let combinedContent = contentType === 'raw' ? content : sections.join('\n\n---\n\n');
             if (!combinedContent) {
                 this._showToast(t('settings.storage.obsidianNothingToSave'), 'info');
@@ -9872,14 +9896,7 @@ class App {
             if (this._currentViewedSession?.id === current.id) this._currentSessionJson = sessionJson;
 
             const lang = this._getObsidianPrimaryLang(sessionJson);
-            const aiMinutes = this._currentViewedSession?.id === current.id
-                ? (this._loadedMinutes?.[lang] || sessionJson[`meeting_minutes_${lang}`]
-                    || (sessionJson.meeting_minutes_lang === lang ? sessionJson.meeting_minutes : '') || '')
-                : (sessionJson[`meeting_minutes_${lang}`]
-                    || (sessionJson.meeting_minutes_lang === lang ? sessionJson.meeting_minutes : '') || '');
-            const sections = [];
-            if (aiMinutes.trim()) sections.push(`## ${t('settings.storage.obsidianAiHeading')}\n\n${aiMinutes.trim()}`);
-            if (sessionJson.notes?.trim()) sections.push(`## ${t('settings.storage.obsidianManualHeading')}\n\n${sessionJson.notes.trim()}`);
+            const sections = this._buildObsidianMeetingSections(sessionJson);
             const content = sections.join('\n\n---\n\n');
             if (!content) {
                 this._showToast(t('settings.storage.obsidianNothingToSave'), 'info');
@@ -12182,7 +12199,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
     _sessionHasTranslation(json) {
         return !!json?.target_lang && json.target_lang !== 'none' && json.target_lang !== 'off'
-            && json.target_lang !== json.source_lang
             && (json.chunks || []).some(chunk => (chunk.segments || []).some(segment => (segment.tgt || '').trim()));
     }
 
@@ -12379,12 +12395,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const validTgt = ['ja', 'vi', 'en', 'none'];
             selectSrc.value = validSrc.includes(curSrc) ? curSrc : 'ja';
             selectTgt.value = validTgt.includes(curTgt) ? curTgt : 'vi';
-            this._syncTargetLanguageOptions(selectSrc, selectTgt);
-            const onSrcChange = () => {
-                this._syncTargetLanguageOptions(selectSrc, selectTgt);
-            };
-            selectSrc.addEventListener('change', onSrcChange);
-
             if (currentEl) {
                 const srcLabel = this._getQuickLangName(curSrc);
                 const tgtLabel = this._getQuickLangName(curTgt);
@@ -12393,7 +12403,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
             const cleanup = () => {
                 modal.style.display = 'none';
-                selectSrc.removeEventListener('change', onSrcChange);
                 saveBtn?.removeEventListener('click', onSave);
                 cancelBtn?.removeEventListener('click', onCancel);
                 closeBtn?.removeEventListener('click', onCancel);
@@ -12950,7 +12959,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     _getMinutesLangsForSession(sessionData) {
         const src = (sessionData?.source_lang || 'en').toLowerCase();
         const tgt = (sessionData?.target_lang || '').toLowerCase();
-        const hasTranslation = !!tgt && tgt !== 'none' && tgt !== 'off' && tgt !== src;
+        const hasTranslation = !!tgt && tgt !== 'none' && tgt !== 'off';
 
         if (hasTranslation) {
             // Có bản dịch: tạo lại cho cả ngôn ngữ gốc và ngôn ngữ dịch
