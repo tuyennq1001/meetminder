@@ -6333,6 +6333,65 @@ body.resizing-vertical * {
   line-height: 1.65 !important;
 }
 
+/* Obsidian-style indentation guides make nested note lists easier to scan. */
+.cm-line.cm-md-list-level-1,
+.cm-line.cm-md-list-level-2,
+.cm-line.cm-md-list-level-3 {
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  background-image: linear-gradient(
+    to right,
+    transparent 9px,
+    rgba(161, 161, 170, 0.28) 9px,
+    rgba(161, 161, 170, 0.28) 10px,
+    transparent 10px
+  );
+}
+
+.cm-line.cm-md-list-level-2,
+.cm-line.cm-md-list-level-3 {
+  background-image:
+    linear-gradient(
+      to right,
+      transparent 41px,
+      rgba(161, 161, 170, 0.28) 41px,
+      rgba(161, 161, 170, 0.28) 42px,
+      transparent 42px
+    ),
+    linear-gradient(
+      to right,
+      transparent 9px,
+      rgba(161, 161, 170, 0.28) 9px,
+      rgba(161, 161, 170, 0.28) 10px,
+      transparent 10px
+    );
+}
+
+.cm-line.cm-md-list-level-3 {
+  background-image:
+    linear-gradient(
+      to right,
+      transparent 73px,
+      rgba(161, 161, 170, 0.28) 73px,
+      rgba(161, 161, 170, 0.28) 74px,
+      transparent 74px
+    ),
+    linear-gradient(
+      to right,
+      transparent 41px,
+      rgba(161, 161, 170, 0.28) 41px,
+      rgba(161, 161, 170, 0.28) 42px,
+      transparent 42px
+    ),
+    linear-gradient(
+      to right,
+      transparent 9px,
+      rgba(161, 161, 170, 0.28) 9px,
+      rgba(161, 161, 170, 0.28) 10px,
+      transparent 10px
+    );
+}
+
 .cm-line.cm-md-list-item + .cm-line.cm-md-list-item {
   padding-top: 2px !important;
 }
