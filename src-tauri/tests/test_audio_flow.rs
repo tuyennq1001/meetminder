@@ -1,12 +1,4 @@
 #[test]
-fn test_settings_load() {
-    let settings = meet_minder_lib::settings::Settings::load();
-    println!("API key present: {}", !settings.gemini_api_key.is_empty());
-    println!("Selected model: {}", settings.gemini_model);
-    assert!(!settings.gemini_api_key.is_empty());
-}
-
-#[test]
 #[ignore = "requires a real microphone and macOS microphone permission"]
 fn test_mic_capture_init() {
     let mut mic = meet_minder_lib::audio::microphone::MicCapture::new();

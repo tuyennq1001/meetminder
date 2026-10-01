@@ -444,24 +444,26 @@ impl Settings {
     /// Load settings from disk, or return defaults
     pub fn load() -> Self {
         let path = settings_path();
+        let fallback_path =
+            (settings_identifier() != RELEASE_IDENTIFIER).then(release_settings_path);
+
+        Self::load_from_paths(&path, fallback_path.as_deref())
+    }
+
+    fn load_from_paths(path: &std::path::Path, fallback_path: Option<&std::path::Path>) -> Self {
         if path.exists() {
-            match fs::read_to_string(&path) {
-                Ok(content) => {
-                    normalize_loaded_settings(serde_json::from_str(&content).unwrap_or_default())
-                }
-                Err(_) => Self::default(),
-            }
-        } else if settings_identifier() != RELEASE_IDENTIFIER {
-            // First Dev launch starts with the user's existing preferences but
-            // all subsequent saves stay isolated under the Dev bundle id.
-            fs::read_to_string(release_settings_path())
+            return fs::read_to_string(path)
                 .ok()
                 .and_then(|content| serde_json::from_str(&content).ok())
                 .map(normalize_loaded_settings)
-                .unwrap_or_default()
-        } else {
-            Self::default()
+                .unwrap_or_default();
         }
+
+        fallback_path
+            .and_then(|path| fs::read_to_string(path).ok())
+            .and_then(|content| serde_json::from_str(&content).ok())
+            .map(normalize_loaded_settings)
+            .unwrap_or_default()
     }
 
     /// Save settings to disk
@@ -509,6 +511,68 @@ pub struct SettingsState(pub Mutex<Settings>);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn temporary_settings_directory() -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "meet-minder-settings-test-{}",
+            uuid::Uuid::new_v4()
+        ))
+    }
+
+    #[test]
+    fn test_load_settings_from_isolated_path_and_prefer_primary() {
+        let directory = temporary_settings_directory();
+        fs::create_dir_all(&directory).expect("should create test settings directory");
+        let primary_path = directory.join("settings.json");
+        let fallback_path = directory.join("release-settings.json");
+        fs::write(
+            &primary_path,
+            r#"{"gemini_api_key":"test-key","target_language":"none","transcript_engine":"legacy"}"#,
+        )
+        .expect("should write primary test settings");
+        fs::write(
+            &fallback_path,
+            r#"{"gemini_api_key":"fallback-key","target_language":"ja"}"#,
+        )
+        .expect("should write fallback test settings");
+
+        let settings = Settings::load_from_paths(&primary_path, Some(&fallback_path));
+
+        assert_eq!(settings.gemini_api_key, "test-key");
+        assert_eq!(settings.target_language, "vi");
+        assert_eq!(settings.transcript_engine, "gemini_live_translate");
+        fs::remove_dir_all(directory).expect("should remove test settings directory");
+    }
+
+    #[test]
+    fn test_load_settings_uses_fallback_only_when_primary_is_missing() {
+        let directory = temporary_settings_directory();
+        fs::create_dir_all(&directory).expect("should create test settings directory");
+        let primary_path = directory.join("settings.json");
+        let fallback_path = directory.join("release-settings.json");
+        fs::write(
+            &fallback_path,
+            r#"{"gemini_api_key":"fallback-key","target_language":"ja"}"#,
+        )
+        .expect("should write fallback test settings");
+
+        let settings = Settings::load_from_paths(&primary_path, Some(&fallback_path));
+
+        assert_eq!(settings.gemini_api_key, "fallback-key");
+        assert_eq!(settings.target_language, "ja");
+        fs::remove_dir_all(directory).expect("should remove test settings directory");
+    }
+
+    #[test]
+    fn test_load_settings_without_files_returns_defaults() {
+        let directory = temporary_settings_directory();
+        let primary_path = directory.join("settings.json");
+
+        let settings = Settings::load_from_paths(&primary_path, None);
+
+        assert_eq!(settings.gemini_api_key, "");
+        assert_eq!(settings.target_language, "vi");
+    }
 
     #[test]
     fn test_default_settings() {
