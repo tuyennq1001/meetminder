@@ -5,6 +5,18 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.4 - 2026-10-01
+
+### Added
+
+- **Nested Markdown list guides**: Show indentation guides while editing nested lists in meeting notes.
+
+### Improved
+
+- **Storage reliability and localized errors**: Make storage changes safer and show clearer errors in the selected app language.
+- **Markdown export settings**: Keep content choices disabled until Markdown export is enabled.
+- **Settings readability**: Keep screen, group, and detail text in a consistent hierarchy that follows the chosen Settings font size.
+
 ## v1.0.3 - 2026-10-01
 
 ### Added
