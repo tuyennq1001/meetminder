@@ -14,6 +14,12 @@
     "build:release": "npm run build:editor && node scripts/tauri-with-env.mjs build:release",
     "release:local": "npm run build:editor && node scripts/tauri-with-env.mjs build:release",
     "build:editor": "node scripts/build-editor.mjs",
+    "check:js": "node scripts/check-js-syntax.mjs",
+    "check:code-size": "node scripts/check-code-size.mjs",
+    "test:js": "node --test src/js/*.test.js",
+    "test:rust": "cd src-tauri && cargo test",
+    "check:rust": "cd src-tauri && cargo fmt --check && cargo clippy --lib",
+    "quality": "npm run check:js && npm run check:code-size && npm run test:js && npm run test:rust && npm run check:rust",
     "lint": "cd src-tauri && cargo clippy",
     "format": "cd src-tauri && cargo fmt"
   },

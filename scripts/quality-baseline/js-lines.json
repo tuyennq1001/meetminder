@@ -1,0 +1,21 @@
+{
+  "scripts/build-editor.mjs": 28,
+  "scripts/tauri-with-env.mjs": 166,
+  "src/js/app.js": 16079,
+  "src/js/editor-entry.js": 1386,
+  "src/js/gemini-realtime-client.js": 136,
+  "src/js/i18n.js": 3346,
+  "src/js/notes-editor.js": 3,
+  "src/js/openai-audio-output-queue.js": 71,
+  "src/js/openai-realtime-client.js": 150,
+  "src/js/qwen-langs.js": 75,
+  "src/js/qwen-realtime-client.js": 97,
+  "src/js/session-store.js": 674,
+  "src/js/session-store.test.js": 101,
+  "src/js/settings.js": 129,
+  "src/js/soniox.js": 522,
+  "src/js/tauri-mock.js": 169,
+  "src/js/ui-shell.js": 157,
+  "src/js/ui.js": 1033,
+  "src/js/updater.js": 134
+}

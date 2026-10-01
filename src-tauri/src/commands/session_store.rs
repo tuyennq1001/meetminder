@@ -24,6 +24,7 @@ pub const SUPPORTED_AUDIO_EXTS: &[&str] = &["wav", "mp3", "m4a", "aac", "ogg", "
 pub const RECORDS_DIR_NAME: &str = "records";
 pub const AUDIO_DIR_NAME: &str = "audio";
 pub const IMAGES_DIR_NAME: &str = "images";
+const STORAGE_MIGRATION_ERROR_PREFIX: &str = "MEET_MINDER_STORAGE_ERROR:";
 
 pub fn audio_mime_type(ext: &str) -> &'static str {
     match ext.to_ascii_lowercase().as_str() {
@@ -305,6 +306,8 @@ pub struct StorageMigrationPreview {
     pub source_total_size_bytes: u64,
     pub target_file_count: usize,
     pub target_total_size_bytes: u64,
+    pub conflict_count: usize,
+    pub conflict_examples: Vec<String>,
     pub same_path: bool,
 }
 
@@ -317,6 +320,7 @@ pub struct StorageMigrationResult {
     pub total_files: usize,
     pub total_size_bytes: u64,
     pub source_retained: bool,
+    pub data_migrated: bool,
     pub storage: StorageInfo,
 }
 
@@ -336,6 +340,7 @@ struct StorageMigrationPlan {
     skipped_files: usize,
     skipped_size_bytes: u64,
     total_size_bytes: u64,
+    conflicting_files: Vec<String>,
 }
 
 // ─── Path helpers ────────────────────────────────────────────────────────
@@ -564,6 +569,7 @@ fn storage_target_path(app: &AppHandle, requested: Option<&str>) -> Result<PathB
 fn storage_migration_plan(
     app: &AppHandle,
     requested: Option<&str>,
+    reject_conflicts: bool,
 ) -> Result<StorageMigrationPlan, String> {
     let source = sessions_dir(app)?
         .canonicalize()
@@ -610,18 +616,8 @@ fn storage_migration_plan(
         }
     }
 
-    if !conflicting_files.is_empty() {
-        let examples = conflicting_files
-            .iter()
-            .take(3)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", ");
-        return Err(format!(
-            "Thư mục đích có {} file trùng tên nhưng khác nội dung (ví dụ: {}). Hãy chọn thư mục khác hoặc xử lý thủ công để tránh ghi đè.",
-            conflicting_files.len(),
-            examples
-        ));
+    if reject_conflicts && !conflicting_files.is_empty() {
+        return Err(storage_target_conflicts_error(&conflicting_files));
     }
 
     Ok(StorageMigrationPlan {
@@ -632,7 +628,17 @@ fn storage_migration_plan(
         skipped_files,
         skipped_size_bytes,
         total_size_bytes,
+        conflicting_files,
     })
+}
+
+fn storage_target_conflicts_error(conflicting_files: &[String]) -> String {
+    let payload = serde_json::json!({
+        "code": "target_conflicts",
+        "count": conflicting_files.len(),
+        "examples": conflicting_files.iter().take(3).collect::<Vec<_>>(),
+    });
+    format!("{STORAGE_MIGRATION_ERROR_PREFIX}{payload}")
 }
 
 fn emit_storage_migration_progress(
@@ -6137,7 +6143,7 @@ pub fn preview_storage_dir_change(
     app: AppHandle,
     target_path: Option<String>,
 ) -> Result<StorageMigrationPreview, String> {
-    let plan = storage_migration_plan(&app, target_path.as_deref())?;
+    let plan = storage_migration_plan(&app, target_path.as_deref(), false)?;
     let mut target_files = Vec::new();
     collect_storage_files(&plan.target, &plan.target, &mut target_files)?;
 
@@ -6148,6 +6154,8 @@ pub fn preview_storage_dir_change(
         source_total_size_bytes: plan.total_size_bytes,
         target_file_count: target_files.len(),
         target_total_size_bytes: target_files.iter().map(|file| file.size).sum(),
+        conflict_count: plan.conflicting_files.len(),
+        conflict_examples: plan.conflicting_files.iter().take(3).cloned().collect(),
         same_path: plan.source == plan.target,
     })
 }
@@ -6156,30 +6164,41 @@ pub fn preview_storage_dir_change(
 pub fn set_custom_transcripts_dir(
     app: AppHandle,
     path: Option<String>,
+    migrate_data: bool,
 ) -> Result<StorageMigrationResult, String> {
-    let plan = storage_migration_plan(&app, path.as_deref())?;
-    let total_files = plan.source_files.len();
-    let total_size_bytes = plan.total_size_bytes;
-    let mut completed_files = plan.skipped_files;
-    let mut completed_bytes = plan.skipped_size_bytes;
+    let plan = storage_migration_plan(&app, path.as_deref(), migrate_data)?;
+    let total_files = if migrate_data {
+        plan.source_files.len()
+    } else {
+        0
+    };
+    let total_size_bytes = if migrate_data {
+        plan.total_size_bytes
+    } else {
+        0
+    };
+    let mut completed_files = if migrate_data { plan.skipped_files } else { 0 };
+    let mut completed_bytes = if migrate_data {
+        plan.skipped_size_bytes
+    } else {
+        0
+    };
     let mut files_copied = 0;
-    let mut files_skipped = plan.skipped_files;
+    let mut files_skipped = if migrate_data { plan.skipped_files } else { 0 };
 
-    emit_storage_migration_progress(
-        &app,
-        "preparing",
-        completed_files,
-        total_files,
-        completed_bytes,
-        total_size_bytes,
-        if total_files == 0 {
-            "Không có dữ liệu cần di chuyển"
-        } else {
-            "Đang chuẩn bị di chuyển dữ liệu..."
-        },
-    );
+    if migrate_data {
+        emit_storage_migration_progress(
+            &app,
+            "preparing",
+            completed_files,
+            total_files,
+            completed_bytes,
+            total_size_bytes,
+            "preparing",
+        );
+    }
 
-    for source_file in &plan.copy_files {
+    for source_file in plan.copy_files.iter().filter(|_| migrate_data) {
         let destination = plan.target.join(&source_file.relative_path);
         if copy_file_atomic_verified(&source_file.full_path, &destination)? {
             files_copied += 1;
@@ -6215,15 +6234,17 @@ pub fn set_custom_transcripts_dir(
     }
     save_project_registry(&app, &reg)?;
     let storage = get_storage_info(app.clone())?;
-    emit_storage_migration_progress(
-        &app,
-        "done",
-        total_files,
-        total_files,
-        total_size_bytes,
-        total_size_bytes,
-        "Đã di chuyển dữ liệu lưu trữ thành công",
-    );
+    if migrate_data {
+        emit_storage_migration_progress(
+            &app,
+            "done",
+            total_files,
+            total_files,
+            total_size_bytes,
+            total_size_bytes,
+            "done",
+        );
+    }
     Ok(StorageMigrationResult {
         source_path: plan.source.to_string_lossy().to_string(),
         target_path: plan.target.to_string_lossy().to_string(),
@@ -6232,6 +6253,7 @@ pub fn set_custom_transcripts_dir(
         total_files,
         total_size_bytes,
         source_retained: true,
+        data_migrated: migrate_data,
         storage,
     })
 }
@@ -6239,6 +6261,29 @@ pub fn set_custom_transcripts_dir(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn storage_conflict_error_uses_a_stable_localizable_payload() {
+        let conflicts = vec![
+            "records/README.md".to_string(),
+            ".DS_Store".to_string(),
+            "projects.json".to_string(),
+            "fourth.json".to_string(),
+        ];
+
+        let error = storage_target_conflicts_error(&conflicts);
+        let payload: Value = serde_json::from_str(
+            error
+                .strip_prefix(STORAGE_MIGRATION_ERROR_PREFIX)
+                .expect("error should have its stable prefix"),
+        )
+        .expect("error payload should be valid JSON");
+
+        assert_eq!(payload["code"], "target_conflicts");
+        assert_eq!(payload["count"], 4);
+        assert_eq!(payload["examples"].as_array().unwrap().len(), 3);
+        assert_eq!(payload["examples"][0], "records/README.md");
+    }
 
     #[test]
     fn test_live_session_retry_only_matches_transient_failures() {
