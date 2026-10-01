@@ -9350,6 +9350,12 @@ class App {
         const sourceCheckbox = document.getElementById('check-markdown-export-source');
         const targetCheckbox = document.getElementById('check-markdown-export-target');
         const manualCheckbox = document.getElementById('check-markdown-export-manual');
+        const optionsGroup = document.querySelector('.markdown-export-content-options');
+        if (optionsGroup) optionsGroup.setAttribute('aria-disabled', String(!enabled));
+        [sourceCheckbox, targetCheckbox, manualCheckbox].forEach((checkbox) => {
+            if (!checkbox) return;
+            checkbox.disabled = !enabled;
+        });
         if (sourceCheckbox) sourceCheckbox.checked = exportContents.has('source_minutes');
         if (targetCheckbox) targetCheckbox.checked = exportContents.has('target_minutes');
         if (manualCheckbox) manualCheckbox.checked = exportContents.has('manual_notes');
@@ -9358,6 +9364,11 @@ class App {
     }
 
     async _saveMarkdownExportContents(changedCheckbox) {
+        const settings = settingsManager.get();
+        if (settings.obsidian_export_enabled !== true || !settings.obsidian_vault_path) {
+            this._renderObsidianSettingsUI();
+            return;
+        }
         const options = [
             ['check-markdown-export-source', 'source_minutes'],
             ['check-markdown-export-target', 'target_minutes'],

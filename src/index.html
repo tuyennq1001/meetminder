@@ -1120,11 +1120,11 @@
           </div>
           <div class="settings-section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-              <span class="field-label" style="margin:0;" data-i18n="settings.storage.currentDir">Thư mục lưu trữ hiện tại</span>
+              <span class="field-label settings-subsection-title" style="margin:0;" data-i18n="settings.storage.currentDir">Thư mục lưu trữ hiện tại</span>
               <span id="storage-type-badge" class="status-pill active">Mặc định</span>
             </div>
             <p class="hint" style="margin-bottom: 10px;" data-i18n="settings.storage.desc">Toàn bộ meeting log (.md & .json), bản ghi âm và danh mục dữ liệu được lưu an toàn tại máy cục bộ.</p>
-            <div style="background: var(--md-sys-color-surface-container); padding: 10px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); margin-bottom: 12px; font-family: monospace; font-size: 11px; word-break: break-all; color: var(--md-sys-color-primary);" id="storage-dir-path-text">
+            <div style="background: var(--md-sys-color-surface-container); padding: 10px 14px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); margin-bottom: 12px; font-family: monospace; font-size: var(--menu-font-size, 12px); word-break: break-all; color: var(--md-sys-color-primary);" id="storage-dir-path-text">
               ~/Library/Application Support/com.meetminder.app/transcripts
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -1143,7 +1143,7 @@
           <div class="settings-section" style="margin-top:14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
               <div>
-                <span class="field-label obsidian-setting-title" style="margin:0;"><svg class="markdown-file-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 2.75h8l4.5 4.5v14H6a2 2 0 0 1-2-2v-14a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2.75v5h4.5M7.5 13h9M7.5 16h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 18.5h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span data-i18n="settings.storage.obsidianTitle">Markdown</span></span>
+                <span class="field-label settings-subsection-title obsidian-setting-title" style="margin:0;"><svg class="markdown-file-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 2.75h8l4.5 4.5v14H6a2 2 0 0 1-2-2v-14a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2.75v5h4.5M7.5 13h9M7.5 16h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 18.5h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span data-i18n="settings.storage.obsidianTitle">Markdown</span></span>
                 <p class="hint" style="margin:4px 0 0;" data-i18n="settings.storage.obsidianDesc">Automatically export AI-generated Meeting Minutes as Markdown.</p>
               </div>
               <label class="switch-control" data-i18n-title="settings.storage.obsidianSwitchTitle" title="Enable Markdown export">
@@ -1155,7 +1155,7 @@
               <div id="obsidian-vault-path" class="git-backup-repo-summary" role="status" aria-live="polite" style="margin-bottom:10px; word-break:break-all;">No export folder selected</div>
               <button type="button" id="btn-select-obsidian-vault" class="btn-secondary-small" data-i18n="settings.storage.obsidianChoose">Choose folder...</button>
               <div class="markdown-export-content-options" role="group" aria-labelledby="markdown-export-content-label">
-                <div id="markdown-export-content-label" class="field-label" data-i18n="settings.storage.obsidianContentLabel">Content to export</div>
+                <div id="markdown-export-content-label" class="field-label settings-subsection-title" data-i18n="settings.storage.obsidianContentLabel">Content to export</div>
                 <label><input type="checkbox" id="check-markdown-export-source" /> <span data-i18n="settings.storage.obsidianContentSource">Meeting Minutes — source language</span></label>
                 <label><input type="checkbox" id="check-markdown-export-target" /> <span data-i18n="settings.storage.obsidianContentTarget">Meeting Minutes — target language</span></label>
                 <label><input type="checkbox" id="check-markdown-export-manual" /> <span data-i18n="settings.storage.obsidianContentManual">Manual notes</span></label>
@@ -1165,7 +1165,7 @@
           <div class="settings-section git-backup-section" style="margin-top: 14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:6px;">
               <div>
-                <span class="field-label" style="margin:0;" data-i18n="settings.storage.gitTitle">💾 Backup qua Git</span>
+                <span class="field-label settings-subsection-title" style="margin:0;" data-i18n="settings.storage.gitTitle">💾 Backup qua Git</span>
                 <p class="hint" style="margin:4px 0 0;" data-i18n="settings.storage.gitDesc">Git do bạn tự cài đặt và cấu hình. Meet Minder chỉ commit dữ liệu meeting, ảnh và danh mục; audio và API key không được đưa vào repo.</p>
               </div>
               <label class="switch-control" data-i18n-title="settings.storage.gitSwitchTitle" title="Bật hoặc tắt backup qua Git">
@@ -1175,7 +1175,7 @@
             </div>
             <div id="git-backup-details" style="display:none; margin-top:14px;">
               <div class="git-backup-repo-summary" role="group" aria-label="Thư mục Git repository">
-                <div class="field-label" style="margin:0 0 5px;" data-i18n="settings.storage.gitSharedDir">📍 Dùng chung thư mục lưu trữ hiện tại</div>
+                <div class="field-label settings-subsection-title" style="margin:0 0 5px;" data-i18n="settings.storage.gitSharedDir">📍 Dùng chung thư mục lưu trữ hiện tại</div>
                 <code id="git-backup-repo-path">Đang tải đường dẫn...</code>
                 <p class="hint" style="margin:7px 0 0;" data-i18n="settings.storage.gitRepoHint" data-i18n-html="true">Bạn cần tự chạy <code>git init</code> và cấu hình remote trong thư mục này trước. App chỉ commit dữ liệu meeting/ảnh/danh mục; audio và API key luôn được bỏ qua.</p>
               </div>
@@ -1214,7 +1214,7 @@
               </div>
               <div id="git-backup-status" class="git-backup-status" role="status" aria-live="polite" style="margin-top:12px;">Đang kiểm tra Git...</div>
               <div class="git-backup-history" role="region" aria-labelledby="git-backup-history-title">
-                <div id="git-backup-history-title" class="field-label" data-i18n="settings.storage.gitRecentPushes">5 lần push gần nhất</div>
+                <div id="git-backup-history-title" class="field-label settings-subsection-title" data-i18n="settings.storage.gitRecentPushes">5 lần push gần nhất</div>
                 <div id="git-backup-history-empty" class="hint" data-i18n="settings.storage.gitNoPushes">Chưa có lần push nào được ghi nhận trên thiết bị này.</div>
                 <div class="git-backup-history-table-wrap" style="display:none;">
                   <table class="git-backup-history-table">
@@ -1228,7 +1228,7 @@
             </div>
           </div>
           <div class="settings-section" style="margin-top: 14px;">
-            <span class="field-label" data-i18n="settings.storage.statsTitle">Thống kê dữ liệu</span>
+            <span class="field-label settings-subsection-title" data-i18n="settings.storage.statsTitle">Thống kê dữ liệu</span>
             <div id="storage-stats-info" style="font-size: 12px; color: var(--md-sys-color-on-surface-variant); line-height: 1.8;">
               Đang tính toán thống kê...
             </div>

@@ -1609,7 +1609,7 @@ body:not(.activity-live) .header-divider {
 
 .settings-panel-title {
   font-family: var(--menu-font-family);
-  font-size: 15px;
+  font-size: calc(var(--menu-font-size, 12px) + 4px);
   font-weight: var(--menu-font-weight-bold, 700);
   color: var(--md-sys-color-on-surface);
   margin: 0;
@@ -1922,7 +1922,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 .settings-group-header {
   font-family: var(--menu-font-family);
-  font-size: 11px;
+  font-size: calc(var(--menu-font-size, 12px) + 2px);
   font-weight: var(--menu-font-weight-bold, 700);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1963,6 +1963,15 @@ input[type="range"]::-webkit-slider-thumb:hover {
   font-size: var(--menu-font-size, 12px);
   font-weight: var(--menu-font-weight, 500);
   color: var(--text-primary, #e2e8f0);
+}
+
+/* Section headings stay one level above the labels and values they group. */
+#settings-view .settings-section > .field-label,
+#settings-view .settings-section > h4 {
+  font-family: var(--menu-font-family);
+  font-size: calc(var(--menu-font-size, 12px) + 2px);
+  font-weight: var(--menu-font-weight-bold, 700);
+  color: var(--md-sys-color-on-surface, var(--text-primary));
 }
 
 .settings-grid-row .slider-control-wrap {
@@ -4230,11 +4239,41 @@ input[type="range"]::-webkit-slider-thumb:hover {
   cursor: pointer;
 }
 
+/* Storage is part of Settings, so its small labels and hints follow the
+   System Menu & Navigation typography controls too. */
+#tab-storage .field-label,
+#tab-storage .hint,
+#tab-storage .markdown-export-content-options > label,
+#obsidian-vault-path {
+  font-family: var(--menu-font-family);
+  font-size: var(--menu-font-size, 12px);
+}
+
+#tab-storage .field-label {
+  font-weight: var(--menu-font-weight, 500);
+}
+
+#tab-storage .settings-subsection-title {
+  font-size: calc(var(--menu-font-size, 12px) + 2px);
+  font-weight: var(--menu-font-weight-bold, 700);
+  color: var(--md-sys-color-on-surface, var(--text-primary));
+}
+
+.markdown-export-content-options[aria-disabled="true"] > label {
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .markdown-export-content-options input[type="checkbox"] {
   width: 16px;
   height: 16px;
   margin: 0;
   accent-color: var(--md-sys-color-primary);
+}
+
+.markdown-export-content-options[aria-disabled="true"] input[type="checkbox"] {
+  cursor: not-allowed;
 }
 
 .obsidian-preview-card {
@@ -7084,8 +7123,9 @@ body.expanded #library-panel { padding: 8px 6%; }
 
 /* Settings Group Headers */
 .settings-group-header {
-  font-size: 11px;
-  font-weight: 700;
+  font-family: var(--menu-font-family);
+  font-size: calc(var(--menu-font-size, 12px) + 2px);
+  font-weight: var(--menu-font-weight-bold, 700);
   letter-spacing: 0.06em;
   color: var(--md-sys-color-primary);
   margin: 10px 0 6px 4px;
