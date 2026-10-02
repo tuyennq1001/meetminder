@@ -5,6 +5,16 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.6 - 2026-10-02
+
+### Added
+
+- **Menu shortcuts**: Add Check for Updates to Help and move Settings to the macOS Meet Minder menu.
+
+### Fixed
+
+- **Updater download URLs**: Normalize release asset filenames and validate generated manifest URLs to prevent 404 errors on macOS and Windows updates.
+
 ## v1.0.5 - 2026-10-02
 
 ### Improved
