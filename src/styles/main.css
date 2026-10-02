@@ -2353,9 +2353,11 @@ input[type="range"]::-webkit-slider-thumb:hover {
 /* ─── Material Design 3 Toast Notification ─────────────────── */
 .toast {
   position: fixed;
-  top: 70px;
-  left: 50%;
-  transform: translateX(-50%) translateY(-10px);
+  top: auto;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(72px, calc(env(safe-area-inset-bottom) + 64px));
+  left: auto;
+  transform: translateY(10px);
   padding: 6px 12px 6px 18px;
   border-radius: var(--radius-pill);
   font-size: 12px;
@@ -2364,7 +2366,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   opacity: 0;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 10000;
-  max-width: 90%;
+  max-width: min(90vw, 520px);
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -2381,7 +2383,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 .toast.show {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: translateY(0);
 }
 
 .toast.success {
@@ -6392,10 +6394,10 @@ body.resizing-vertical * {
   background-image:
     linear-gradient(
       to right,
-      transparent 41px,
-      rgba(161, 161, 170, 0.28) 41px,
-      rgba(161, 161, 170, 0.28) 42px,
-      transparent 42px
+      transparent 25px,
+      rgba(161, 161, 170, 0.28) 25px,
+      rgba(161, 161, 170, 0.28) 26px,
+      transparent 26px
     ),
     linear-gradient(
       to right,
@@ -6410,17 +6412,17 @@ body.resizing-vertical * {
   background-image:
     linear-gradient(
       to right,
-      transparent 73px,
-      rgba(161, 161, 170, 0.28) 73px,
-      rgba(161, 161, 170, 0.28) 74px,
-      transparent 74px
-    ),
-    linear-gradient(
-      to right,
       transparent 41px,
       rgba(161, 161, 170, 0.28) 41px,
       rgba(161, 161, 170, 0.28) 42px,
       transparent 42px
+    ),
+    linear-gradient(
+      to right,
+      transparent 25px,
+      rgba(161, 161, 170, 0.28) 25px,
+      rgba(161, 161, 170, 0.28) 26px,
+      transparent 26px
     ),
     linear-gradient(
       to right,
@@ -7629,6 +7631,34 @@ body.expanded #library-panel { padding: 8px 6%; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+#session-minutes-autosave-status,
+#session-notes-autosave-status {
+  position: fixed;
+  z-index: 9999;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  max-width: min(80vw, 360px);
+  padding: 7px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface-variant);
+  box-shadow: var(--elevation-2);
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(6px);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+}
+
+#session-minutes-autosave-status.is-visible,
+#session-notes-autosave-status.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 
 .minutes-state-card {
