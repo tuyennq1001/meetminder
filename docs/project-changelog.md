@@ -5,6 +5,15 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.5 - 2026-10-02
+
+### Improved
+
+- **Manual Notes editing**: Edit notes directly and save them automatically while keeping edits when switching meetings.
+- **Meeting Minutes language handling**: Show empty-state, progress, autosave, and result notices in the selected app language.
+- **Notification placement**: Keep frequent toast and autosave notices in the lower-right corner.
+- **Markdown list guides**: Align nested-list vertical guides with their indentation levels.
+
 ## v1.0.4 - 2026-10-01
 
 ### Added
