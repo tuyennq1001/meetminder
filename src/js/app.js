@@ -273,6 +273,15 @@ class App {
         }
 
         try {
+            await this.appWindow.listen('open-about', async () => {
+                this._showView('settings');
+                await this._showSettingsScreen('tab-about');
+            });
+        } catch (err) {
+            console.warn('[App] Could not bind About menu event:', err);
+        }
+
+        try {
             await this.appWindow.listen('open-help', async () => {
                 this._showView('settings');
                 await this._showSettingsScreen('tab-help');
