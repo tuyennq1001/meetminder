@@ -995,6 +995,16 @@ const LOCALES = {
         'session.minutesAutosaving': 'Đang lưu…',
         'session.minutesAutosaved': 'Đã tự lưu',
         'session.minutesAutosaveFailed': 'Lỗi tự lưu',
+        'session.notesAutosavePending': 'Ghi chú có thay đổi chưa lưu…',
+        'session.notesAutosaving': 'Đang lưu ghi chú…',
+        'session.notesAutosaved': 'Ghi chú đã tự lưu',
+        'session.notesAutosaveFailed': 'Không thể tự lưu ghi chú',
+        'minutes.progress.analyzing': 'Đang phân tích dữ liệu cuộc họp...',
+        'minutes.progress.drafting': 'Đang tổng hợp & soạn thảo biên bản...',
+        'minutes.progress.retryingModel': 'Đang gọi {{model}}{{attemptText}}...',
+        'minutes.progress.retryAttempt': ' (thử lại lần {{attempt}})',
+        'minutes.progress.modelOverloaded': '{{model}} quá tải tạm thời ({{status}}), thử lại sau {{seconds}}s...',
+        'minutes.progress.fallbackOpenAI': 'Gemini quá tải, đang chuyển sang OpenAI gpt-4o-mini...',
         'session.minutesOpenObsidian': 'Mở file Markdown',
         'updater.updateAvailable': '🆕 Có bản cập nhật v{{version}}',
         'updater.downloadingBackground': 'Đang tải ngầm...',
@@ -2069,6 +2079,16 @@ const LOCALES = {
         'session.minutesAutosaving': 'Saving…',
         'session.minutesAutosaved': 'Saved automatically',
         'session.minutesAutosaveFailed': 'Autosave failed',
+        'session.notesAutosavePending': 'Unsaved note changes…',
+        'session.notesAutosaving': 'Saving notes…',
+        'session.notesAutosaved': 'Notes saved automatically',
+        'session.notesAutosaveFailed': 'Could not save notes automatically',
+        'minutes.progress.analyzing': 'Analyzing meeting data...',
+        'minutes.progress.drafting': 'Summarizing and drafting the minutes...',
+        'minutes.progress.retryingModel': 'Calling {{model}}{{attemptText}}...',
+        'minutes.progress.retryAttempt': ' (retry {{attempt}})',
+        'minutes.progress.modelOverloaded': '{{model}} is temporarily overloaded ({{status}}); retrying in {{seconds}}s...',
+        'minutes.progress.fallbackOpenAI': 'Gemini is overloaded; switching to OpenAI gpt-4o-mini...',
         'session.minutesOpenObsidian': 'Open Markdown file',
         'updater.updateAvailable': '🆕 Update available: v{{version}}',
         'updater.downloadingBackground': 'Downloading in background...',
@@ -3143,6 +3163,16 @@ const LOCALES = {
         'session.minutesAutosaving': '保存中…',
         'session.minutesAutosaved': '自動保存しました',
         'session.minutesAutosaveFailed': '自動保存に失敗しました',
+        'session.notesAutosavePending': '未保存のメモがあります…',
+        'session.notesAutosaving': 'メモを保存中…',
+        'session.notesAutosaved': 'メモを自動保存しました',
+        'session.notesAutosaveFailed': 'メモを自動保存できませんでした',
+        'minutes.progress.analyzing': '会議データを分析しています…',
+        'minutes.progress.drafting': '議事録を要約・作成しています…',
+        'minutes.progress.retryingModel': '{{model}}を呼び出しています{{attemptText}}…',
+        'minutes.progress.retryAttempt': '（{{attempt}}回目の再試行）',
+        'minutes.progress.modelOverloaded': '{{model}}が一時的に過負荷です（{{status}}）。{{seconds}}秒後に再試行します…',
+        'minutes.progress.fallbackOpenAI': 'Geminiが過負荷のため、OpenAI gpt-4o-miniに切り替えています…',
         'session.minutesOpenObsidian': 'Markdownファイルを開く',
         'updater.updateAvailable': '🆕 アップデートがあります: v{{version}}',
         'updater.downloadingBackground': 'バックグラウンドでダウンロード中...',
@@ -3243,7 +3273,12 @@ export function getCurrentLocale() {
 }
 
 export function t(key, vars = {}) {
-    const dictionary = LOCALES[currentLocale] || LOCALES.en;
+    return tForLocale(currentLocale, key, vars);
+}
+
+export function tForLocale(locale, key, vars = {}) {
+    const normalizedLocale = normalizeLocale(locale);
+    const dictionary = LOCALES[normalizedLocale] || LOCALES.en;
     const fallback = LOCALES.en[key] ?? LOCALES.vi[key] ?? key;
     return interpolate(dictionary[key] ?? fallback, vars);
 }

@@ -25,7 +25,7 @@ import { updater } from './updater.js';
 import { sessionStore, SessionStore } from './session-store.js';
 import { QWEN_LANGS } from './qwen-langs.js';
 import { NotesEditor } from './notes-editor.js';
-import { applyLocale, normalizeLocale, t, formatDateTime } from './i18n.js';
+import { applyLocale, normalizeLocale, t, tForLocale, formatDateTime } from './i18n.js';
 import {
     getStorageLocationChoice,
     getStorageLocationSuccess,
@@ -88,10 +88,13 @@ class App {
         this._pendingMinutesAutosave = null;
         this._minutesAutosaveQueue = Promise.resolve();
         this._suppressMinutesAutosave = false;
+        this._notesAutosaveTimer = null;
+        this._pendingNotesAutosave = null;
+        this._notesAutosaveQueue = Promise.resolve();
+        this._suppressNotesAutosave = false;
         this._templateAutosaveTimer = null;
         this._templateAutosaveQueue = Promise.resolve();
         this._suppressTemplateAutosave = false;
-        this._isNotesEditing = false;
         this._hasUnsavedMeetingData = false;
         this._inactivityTimer = null;
         this._captureHealthTimer = null;
@@ -978,7 +981,8 @@ class App {
         });
 
         // Back from session viewer to session list
-        document.getElementById('btn-session-back-to-list')?.addEventListener('click', () => {
+        document.getElementById('btn-session-back-to-list')?.addEventListener('click', async () => {
+            await this._flushNotesAutosave();
             this._exitSessionEditMode();
             if (this._sessionReturnToSearch) {
                 this._returnToSessionSearch();
@@ -9557,9 +9561,9 @@ class App {
             if (result.status === 'saved') {
                 if (!silent) this._showToast(t('settings.storage.obsidianSaved'), 'success');
             } else if (result.status === 'review_required') {
-                this._showToast(t('settings.storage.obsidianReview'), 'warning');
+                this._showToast(tForLocale(lang || settings.app_language, 'settings.storage.obsidianReview'), 'warning');
             } else if (result.status === 'conflict') {
-                this._showToast(t('settings.storage.obsidianConflict'), 'warning');
+                this._showToast(tForLocale(lang || settings.app_language, 'settings.storage.obsidianConflict'), 'warning');
             }
             return result;
         } catch (err) {
@@ -9572,12 +9576,7 @@ class App {
         const current = this._currentViewedSession;
         if (!current || current.isLegacy) return;
         try {
-            if (this._isNotesEditing && this._sessionNotesEditor) {
-                const notes = this._sessionNotesEditor.getContent();
-                await invoke('update_session_notes', { id: current.id, notes });
-                if (this._currentSessionJson?.id === current.id) this._currentSessionJson.notes = notes;
-                this._exitNotesEditMode();
-            }
+            await this._flushNotesAutosave();
             await this._flushMinutesAutosave();
             const sessionJson = (await invoke('read_session', { id: current.id }))?.json;
             if (!sessionJson) throw new Error(`Could not load meeting ${current.id}`);
@@ -11671,9 +11670,6 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         });
 
         // Tab Notes actions
-        document.getElementById('btn-notes-edit')?.addEventListener('click', () => this._enterNotesEditMode());
-        document.getElementById('btn-notes-save')?.addEventListener('click', () => this._saveNotesEdit());
-        document.getElementById('btn-notes-cancel')?.addEventListener('click', () => this._exitNotesEditMode());
         document.getElementById('btn-notes-copy-rich')?.addEventListener('click', () => this._copyRichNotes());
         document.getElementById('btn-notes-copy-md')?.addEventListener('click', async () => {
             if (this._sessionNotesEditor) {
@@ -11699,6 +11695,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
     _switchSessionTab(tab) {
         this._activeSessionTab = tab;
+        this._setMinutesAutosaveStatus('');
+        this._setNotesAutosaveStatus('');
         const tabs = ['minutes', 'notes', 'logs'];
         tabs.forEach(t => {
             const btn = document.getElementById(`tab-btn-${t}`);
@@ -11728,6 +11726,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     async _switchMinutesSubtab(lang) {
         await this._flushMinutesAutosave();
         this._activeMinutesLang = lang || 'en';
+        this._setMinutesAutosaveStatus('');
         const subtabs = ['ja', 'vi', 'en'];
         subtabs.forEach(l => {
             const btn = document.getElementById(`subtab-btn-minutes-${l}`);
@@ -11739,11 +11738,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
     _renderCurrentMinutesSubtab() {
         const lang = this._activeMinutesLang || 'en';
+        const uiLocale = settingsManager.get().app_language;
         const content = (this._loadedMinutes?.[lang] || '').trim();
         const emptyEl = document.getElementById('minutes-empty');
         const loadingEl = document.getElementById('minutes-loading');
         const editorContainer = document.getElementById('session-minutes-editor-container');
         const emptyTitle = document.getElementById('minutes-empty-title');
+        const emptyDesc = document.getElementById('minutes-empty-desc');
         const emptyBtn = document.getElementById('btn-minutes-generate-empty');
 
         if (this._activeMinutesGeneration && this._activeMinutesGeneration.id === this._currentViewedSession?.id && this._activeMinutesGeneration.lang === lang) {
@@ -11753,7 +11754,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const regenBtn = document.getElementById('btn-minutes-regenerate');
             if (regenBtn) {
                 regenBtn.disabled = true;
-                regenBtn.innerHTML = '<span class="spinner-ring button-spinner-inline"></span> Đang tạo...';
+                regenBtn.innerHTML = `<span class="spinner-ring button-spinner-inline"></span> ${this._esc(tForLocale(uiLocale, 'session.minutesGeneratingBtn'))}`;
             }
             return;
         }
@@ -11774,20 +11775,9 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         } else {
             if (emptyEl) emptyEl.style.display = 'flex';
             if (editorContainer) editorContainer.style.display = 'none';
-            if (emptyTitle) {
-                emptyTitle.textContent = lang === 'ja'
-                    ? 'Chưa có Meeting Minutes tiếng Nhật cho cuộc họp này'
-                    : (lang === 'en'
-                        ? 'No English Meeting Minutes for this meeting yet'
-                        : 'Chưa có Meeting Minutes tiếng Việt cho cuộc họp này');
-            }
-            if (emptyBtn) {
-                emptyBtn.textContent = lang === 'ja'
-                    ? '✨ Tạo Meeting Minutes (Tiếng Nhật 🇯🇵)'
-                    : (lang === 'en'
-                        ? '✨ Create Meeting Minutes (English 🇬🇧)'
-                        : '✨ Tạo Meeting Minutes (Tiếng Việt 🇻🇳)');
-            }
+            if (emptyTitle) emptyTitle.textContent = tForLocale(uiLocale, 'session.minutesEmptyTitle');
+            if (emptyDesc) emptyDesc.textContent = tForLocale(uiLocale, 'session.minutesEmptyDesc');
+            if (emptyBtn) emptyBtn.textContent = tForLocale(uiLocale, 'session.minutesGenerateEmpty');
             if (this._sessionMinutesEditor) {
                 if (this._sessionMinutesEditor.getContent()) {
                     this._suppressMinutesAutosave = true;
@@ -11836,14 +11826,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             this._sessionNotesEditor.mount(notesCont, {
                 initialContent: '',
                 imageAssets: [],
-                readOnly: true,
+                readOnly: false,
                 placeholderText: t('session.notesPlaceholder'),
-                onSave: () => {
-                    if (this._isNotesEditing) this._saveNotesEdit();
-                },
-                onCancel: () => {
-                    if (this._isNotesEditing) this._exitNotesEditMode();
-                },
+                onChange: content => this._scheduleNotesAutosave(content),
+                onSave: () => this._flushNotesAutosave(),
             });
         }
 
@@ -12524,8 +12510,9 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (floatingSpinner) floatingSpinner.style.display = '';
         if (floatingCheck) floatingCheck.style.display = 'none';
 
-        const langName = this._minutesLangName(lang);
-        if (floatingTitle) floatingTitle.textContent = t('minutes.floating.generating', { lang: langName });
+        const uiLocale = settingsManager.get().app_language;
+        const langName = tForLocale(uiLocale, `lang.name.${lang}`);
+        if (floatingTitle) floatingTitle.textContent = tForLocale(uiLocale, 'minutes.floating.generating', { lang: langName });
         if (floatingStatus) floatingStatus.textContent = text;
         if (floatingFill) floatingFill.style.width = `${percent}%`;
         if (floatingPct) floatingPct.textContent = `${percent}%`;
@@ -12557,9 +12544,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (floatingSpinner) floatingSpinner.style.display = 'none';
         if (floatingCheck) floatingCheck.style.display = 'flex';
 
-        const langName = this._minutesLangName(lang);
-        if (floatingTitle) floatingTitle.textContent = t('minutes.floating.done', { lang: langName });
-        if (floatingStatus) floatingStatus.textContent = t('minutes.floating.viewDetails');
+        const uiLocale = settingsManager.get().app_language;
+        const langName = tForLocale(uiLocale, `lang.name.${lang}`);
+        if (floatingTitle) floatingTitle.textContent = tForLocale(uiLocale, 'minutes.floating.done', { lang: langName });
+        if (floatingStatus) floatingStatus.textContent = tForLocale(uiLocale, 'minutes.floating.viewDetails');
         if (floatingFill) floatingFill.style.width = '100%';
         if (floatingPct) floatingPct.textContent = '100%';
 
@@ -14088,6 +14076,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
     async _generateMeetingMinutesForSession(sessionId, targetLang = null) {
         const lang = targetLang || this._activeMinutesLang || 'en';
+        const uiLocale = settingsManager.get().app_language;
         const loadingEl = document.getElementById('minutes-loading');
         const emptyEl = document.getElementById('minutes-empty');
         const editorContainer = document.getElementById('session-minutes-editor-container');
@@ -14099,14 +14088,14 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (loadingEl) loadingEl.style.display = 'flex';
             if (emptyEl) emptyEl.style.display = 'none';
             if (editorContainer) editorContainer.style.display = 'none';
-            if (loadingText) loadingText.textContent = t('session.minutesAnalyzingLang', { lang: this._minutesLangName(lang) });
+            if (loadingText) loadingText.textContent = tForLocale(uiLocale, 'session.minutesAnalyzingLang', { lang: tForLocale(uiLocale, `lang.name.${lang}`) });
             if (regenBtn) {
                 regenBtn.disabled = true;
-                regenBtn.innerHTML = `<span class="retranscript-spinner-inline"></span> ${t('session.minutesGeneratingBtn')}`;
+                regenBtn.innerHTML = `<span class="retranscript-spinner-inline"></span> ${this._esc(tForLocale(uiLocale, 'session.minutesGeneratingBtn'))}`;
             }
             if (emptyBtn) {
                 emptyBtn.disabled = true;
-                emptyBtn.innerHTML = `<span class="retranscript-spinner-inline"></span> ${t('session.minutesGeneratingBtn')}`;
+                emptyBtn.innerHTML = `<span class="retranscript-spinner-inline"></span> ${this._esc(tForLocale(uiLocale, 'session.minutesGeneratingBtn'))}`;
             }
         }
 
@@ -14122,10 +14111,10 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             }
             if (emptyBtn) {
                 emptyBtn.disabled = false;
-                emptyBtn.innerHTML = t('session.minutesGenerateEmpty');
+                emptyBtn.innerHTML = this._esc(tForLocale(uiLocale, 'session.minutesGenerateEmpty'));
             }
             this._renderCurrentMinutesSubtab();
-            this._showToast(t('session.minutesApiKeyRequired'), 'error');
+            this._showToast(tForLocale(uiLocale, 'session.minutesApiKeyRequired'), 'error');
             return;
         }
 
@@ -14136,20 +14125,31 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             lang,
             timer: null,
         };
-        this._setMinutesProgress('Đang phân tích dữ liệu cuộc họp...', currentPct, lang);
+        this._setMinutesProgress(tForLocale(uiLocale, 'minutes.progress.analyzing'), currentPct, lang);
 
         const progressTimer = setInterval(() => {
             if (currentPct < 90) {
                 currentPct += (currentPct < 60 ? 5 : 2);
-                this._setMinutesProgress('Đang tổng hợp & soạn thảo biên bản...', currentPct, lang);
+                this._setMinutesProgress(tForLocale(uiLocale, 'minutes.progress.drafting'), currentPct, lang);
             }
         }, 900);
         this._activeMinutesGeneration.timer = progressTimer;
 
         try {
             const onStatusUpdate = (msg) => {
-                if (loadingText) loadingText.textContent = msg;
-                this._setMinutesProgress(msg, Math.max(currentPct, 50), lang);
+                let localized = tForLocale(uiLocale, 'minutes.progress.drafting');
+                const retry = msg.match(/^Đang gọi (.+?)(?: \(thử lại lần (\d+)\))?\.\.\.$/);
+                const overloaded = msg.match(/^(.+?) quá tải tạm thời \((\d+)\), thử lại sau ([\d.]+)s\.\.\.$/);
+                if (retry) {
+                    const attemptText = retry[2]
+                        ? tForLocale(uiLocale, 'minutes.progress.retryAttempt', { attempt: retry[2] })
+                        : '';
+                    localized = tForLocale(uiLocale, 'minutes.progress.retryingModel', { model: retry[1], attemptText });
+                }
+                else if (overloaded) localized = tForLocale(uiLocale, 'minutes.progress.modelOverloaded', { model: overloaded[1], status: overloaded[2], seconds: overloaded[3] });
+                else if (msg === 'Gemini quá tải, đang chuyển sang OpenAI gpt-4o-mini...') localized = tForLocale(uiLocale, 'minutes.progress.fallbackOpenAI');
+                if (loadingText) loadingText.textContent = localized;
+                this._setMinutesProgress(localized, Math.max(currentPct, 50), lang);
             };
 
             await this._generateMinutesCore(sessionId, lang, onStatusUpdate);
@@ -14160,7 +14160,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (this._currentViewedSession?.id === sessionId) {
                 this._switchMinutesSubtab(lang);
             }
-            this._showToast(t('session.minutesSavedSuccess', { lang: this._minutesLangName(lang) }), 'success');
+            this._showToast(tForLocale(uiLocale, 'session.minutesSavedSuccess', { lang: tForLocale(uiLocale, `lang.name.${lang}`) }), 'success');
         } catch (err) {
             clearInterval(progressTimer);
             this._hideMinutesProgress();
@@ -14169,9 +14169,9 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._renderCurrentMinutesSubtab();
             const errMsg = err.message || String(err);
             if (errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('quá tải')) {
-                this._showToast(t('session.minutesAiOverloaded'), 'error');
+                this._showToast(tForLocale(uiLocale, 'session.minutesAiOverloaded'), 'error');
             } else {
-                this._showToast(t('session.minutesGenerateError', { error: errMsg }), 'error');
+                this._showToast(tForLocale(uiLocale, 'session.minutesGenerateError', { error: errMsg }), 'error');
             }
         } finally {
             if (regenBtn) {
@@ -14180,14 +14180,63 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             }
             if (emptyBtn) {
                 emptyBtn.disabled = false;
-                emptyBtn.innerHTML = t('session.minutesGenerateEmpty');
+                emptyBtn.innerHTML = this._esc(tForLocale(uiLocale, 'session.minutesGenerateEmpty'));
             }
         }
     }
 
     _setMinutesAutosaveStatus(key) {
         const status = document.getElementById('session-minutes-autosave-status');
-        if (status) status.textContent = key ? t(key) : '';
+        if (status) {
+            const locale = settingsManager.get().app_language;
+            const visibleKey = this._activeSessionTab === 'minutes' ? key : '';
+            status.textContent = visibleKey ? tForLocale(locale, visibleKey) : '';
+            status.classList.toggle('is-visible', Boolean(visibleKey));
+        }
+    }
+
+    _setNotesAutosaveStatus(key) {
+        const status = document.getElementById('session-notes-autosave-status');
+        if (!status) return;
+        const visibleKey = this._activeSessionTab === 'notes' ? key : '';
+        status.textContent = visibleKey ? t(visibleKey) : '';
+        status.classList.toggle('is-visible', Boolean(visibleKey));
+    }
+
+    _scheduleNotesAutosave(content) {
+        const current = this._currentViewedSession;
+        if (!current || current.isLegacy || this._suppressNotesAutosave) return;
+        const snapshot = { id: current.id, notes: content };
+        this._pendingNotesAutosave = snapshot;
+        if (this._currentSessionJson?.id === current.id) this._currentSessionJson.notes = content;
+        this._setNotesAutosaveStatus('session.notesAutosavePending');
+        clearTimeout(this._notesAutosaveTimer);
+        this._notesAutosaveTimer = setTimeout(() => {
+            this._notesAutosaveTimer = null;
+            this._flushNotesAutosave();
+        }, 700);
+    }
+
+    async _flushNotesAutosave() {
+        clearTimeout(this._notesAutosaveTimer);
+        this._notesAutosaveTimer = null;
+        const snapshot = this._pendingNotesAutosave;
+        this._pendingNotesAutosave = null;
+        if (!snapshot) return this._notesAutosaveQueue;
+        this._notesAutosaveQueue = this._notesAutosaveQueue
+            .catch(() => {})
+            .then(async () => {
+                if (this._currentViewedSession?.id === snapshot.id) this._setNotesAutosaveStatus('session.notesAutosaving');
+                await invoke('update_session_notes', { id: snapshot.id, notes: snapshot.notes });
+                if (this._currentSessionJson?.id === snapshot.id) this._currentSessionJson.notes = snapshot.notes;
+                if (this._currentViewedSession?.id === snapshot.id) this._setNotesAutosaveStatus('session.notesAutosaved');
+            });
+        try {
+            await this._notesAutosaveQueue;
+        } catch (err) {
+            if (this._currentViewedSession?.id === snapshot.id) this._setNotesAutosaveStatus('session.notesAutosaveFailed');
+            this._showToast(t('session.notesSaveError', { error: err }), 'error');
+        }
     }
 
     _scheduleMinutesAutosave(content) {
@@ -14237,58 +14286,6 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         }
     }
 
-    _enterNotesEditMode() {
-        const cur = this._currentViewedSession;
-        if (!cur || !this._sessionNotesEditor) return;
-        this._isNotesEditing = true;
-        this._sessionNotesEditor.setReadOnly(false);
-        this._sessionNotesEditor.focus();
-        const editBtn = document.getElementById('btn-notes-edit');
-        if (editBtn) editBtn.style.display = 'none';
-        const saveBtn = document.getElementById('btn-notes-save');
-        if (saveBtn) saveBtn.style.display = '';
-        const cancelBtn = document.getElementById('btn-notes-cancel');
-        if (cancelBtn) cancelBtn.style.display = '';
-        const copyRich = document.getElementById('btn-notes-copy-rich');
-        if (copyRich) copyRich.style.display = 'none';
-        const copyMd = document.getElementById('btn-notes-copy-md');
-        if (copyMd) copyMd.style.display = 'none';
-    }
-
-    _exitNotesEditMode() {
-        this._isNotesEditing = false;
-        if (this._sessionNotesEditor) {
-            this._sessionNotesEditor.setReadOnly(true);
-        }
-        const editBtn = document.getElementById('btn-notes-edit');
-        if (editBtn) editBtn.style.display = '';
-        const saveBtn = document.getElementById('btn-notes-save');
-        if (saveBtn) saveBtn.style.display = 'none';
-        const cancelBtn = document.getElementById('btn-notes-cancel');
-        if (cancelBtn) cancelBtn.style.display = 'none';
-        const copyRich = document.getElementById('btn-notes-copy-rich');
-        if (copyRich) copyRich.style.display = '';
-        const copyMd = document.getElementById('btn-notes-copy-md');
-        if (copyMd) copyMd.style.display = '';
-    }
-
-    async _saveNotesEdit() {
-        const cur = this._currentViewedSession;
-        if (!cur || !this._sessionNotesEditor) return;
-        const newNotes = this._sessionNotesEditor.getContent();
-        try {
-            await invoke('update_session_notes', {
-                id: cur.id,
-                notes: newNotes,
-            });
-            if (this._currentSessionJson) this._currentSessionJson.notes = newNotes;
-            this._exitNotesEditMode();
-            this._showToast(t('session.notesSavedSuccess'), 'success');
-        } catch (err) {
-            this._showToast(t('session.notesSaveError', { error: err }), 'error');
-        }
-    }
-
     async _copyRichMeetingMinutes() {
         if (!this._sessionMinutesEditor) return;
         const md = this._sessionMinutesEditor.getContent();
@@ -14326,11 +14323,11 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     }
 
     async _openSession(id, isLegacy = false, { fromSearch = false } = {}) {
+        await this._flushNotesAutosave();
         await this._flushMinutesAutosave();
         this._sessionReturnToSearch = fromSearch;
         this._setSessionBackContext(fromSearch);
         this._exitSessionEditMode();
-        this._exitNotesEditMode();
 
         const listPanel = document.getElementById('sessions-list-panel');
         const viewer = document.getElementById('session-viewer');
@@ -14476,8 +14473,13 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 const notesText = json.notes || '';
                 if (this._sessionNotesEditor) {
                     this._sessionNotesEditor.setImageAssets(json.note_images || []);
-                    this._sessionNotesEditor.setContent(notesText);
-                    this._sessionNotesEditor.setReadOnly(true);
+                    this._suppressNotesAutosave = true;
+                    try {
+                        this._sessionNotesEditor.setContent(notesText);
+                    } finally {
+                        this._suppressNotesAutosave = false;
+                    }
+                    this._sessionNotesEditor.setReadOnly(false);
                 }
                 // 3. Logs Tab — same single/dual layout as the Live transcript.
                 this._renderSessionLogs(json);
