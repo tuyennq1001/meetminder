@@ -88,9 +88,13 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 // The first default macOS menu is the app menu (Meet Minder).
-                // Put Settings after About and its separator, following macOS conventions.
+                // Keep app-specific navigation here while putting About under Help.
                 let menu_items = menu.items()?;
                 if let Some(MenuItemKind::Submenu(app_menu)) = menu_items.first() {
+                    // Tauri's default About item lives in the app menu on macOS.
+                    // Remove it (and its following separator) so Help is its only entry point.
+                    app_menu.remove_at(0)?;
+                    app_menu.remove_at(0)?;
                     let settings = MenuItem::with_id(
                         app.handle(),
                         "meet-minder-settings",
@@ -99,11 +103,24 @@ pub fn run() {
                         None::<&str>,
                     )?;
                     let separator = PredefinedMenuItem::separator(app.handle())?;
-                    app_menu.insert(&settings, 2)?;
-                    app_menu.insert(&separator, 3)?;
+                    app_menu.insert(&settings, 0)?;
+                    app_menu.insert(&separator, 1)?;
                 }
             }
             if let Some(MenuItemKind::Submenu(help_menu)) = menu.get(HELP_SUBMENU_ID) {
+                #[cfg(not(target_os = "macos"))]
+                {
+                    // On Windows, Tauri's default Help menu starts with a native About item.
+                    // Replace it with the same in-app About page used on macOS.
+                    help_menu.remove_at(0)?;
+                }
+                let open_about = MenuItem::with_id(
+                    app.handle(),
+                    "meet-minder-about",
+                    "About Meet Minder",
+                    true,
+                    None::<&str>,
+                )?;
                 let open_help = MenuItem::with_id(
                     app.handle(),
                     "meet-minder-help",
@@ -118,6 +135,7 @@ pub fn run() {
                     true,
                     None::<&str>,
                 )?;
+                help_menu.append(&open_about)?;
                 help_menu.append(&open_help)?;
                 help_menu.append(&check_for_updates)?;
             }
@@ -125,6 +143,8 @@ pub fn run() {
             app.on_menu_event(|app, event| {
                 if event.id() == "meet-minder-settings" {
                     let _ = app.emit("open-settings", ());
+                } else if event.id() == "meet-minder-about" {
+                    let _ = app.emit("open-about", ());
                 } else if event.id() == "meet-minder-help" {
                     let _ = app.emit("open-help", ());
                 } else if event.id() == "check-for-updates" {
