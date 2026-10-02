@@ -13,7 +13,7 @@ use commands::qwen_realtime::QwenState;
 use settings::{Settings, SettingsState};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
-use tauri::menu::{Menu, MenuItem, MenuItemKind, HELP_SUBMENU_ID};
+use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem, HELP_SUBMENU_ID};
 use tauri::Emitter;
 
 // Set once the frontend has flushed the session (or the exit deadline elapsed),
@@ -85,6 +85,24 @@ pub fn run() {
             // real entry so the system Help menu always takes users to the
             // in-app guide instead of appearing inert.
             let menu = Menu::default(app.handle())?;
+            #[cfg(target_os = "macos")]
+            {
+                // The first default macOS menu is the app menu (Meet Minder).
+                // Put Settings after About and its separator, following macOS conventions.
+                let menu_items = menu.items()?;
+                if let Some(MenuItemKind::Submenu(app_menu)) = menu_items.first() {
+                    let settings = MenuItem::with_id(
+                        app.handle(),
+                        "meet-minder-settings",
+                        "Settings",
+                        true,
+                        None::<&str>,
+                    )?;
+                    let separator = PredefinedMenuItem::separator(app.handle())?;
+                    app_menu.insert(&settings, 2)?;
+                    app_menu.insert(&separator, 3)?;
+                }
+            }
             if let Some(MenuItemKind::Submenu(help_menu)) = menu.get(HELP_SUBMENU_ID) {
                 let open_help = MenuItem::with_id(
                     app.handle(),
@@ -93,12 +111,24 @@ pub fn run() {
                     true,
                     None::<&str>,
                 )?;
+                let check_for_updates = MenuItem::with_id(
+                    app.handle(),
+                    "check-for-updates",
+                    "Check for Updates…",
+                    true,
+                    None::<&str>,
+                )?;
                 help_menu.append(&open_help)?;
+                help_menu.append(&check_for_updates)?;
             }
             app.set_menu(menu)?;
             app.on_menu_event(|app, event| {
-                if event.id() == "meet-minder-help" {
+                if event.id() == "meet-minder-settings" {
+                    let _ = app.emit("open-settings", ());
+                } else if event.id() == "meet-minder-help" {
                     let _ = app.emit("open-help", ());
+                } else if event.id() == "check-for-updates" {
+                    let _ = app.emit("check-for-updates", ());
                 }
             });
 

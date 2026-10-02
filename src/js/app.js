@@ -265,12 +265,30 @@ class App {
         }
 
         try {
+            await this.appWindow.listen('open-settings', () => {
+                this._showView('settings');
+            });
+        } catch (err) {
+            console.warn('[App] Could not bind Settings menu event:', err);
+        }
+
+        try {
             await this.appWindow.listen('open-help', async () => {
                 this._showView('settings');
                 await this._showSettingsScreen('tab-help');
             });
         } catch (err) {
             console.warn('[App] Could not bind Help menu event:', err);
+        }
+
+        try {
+            await this.appWindow.listen('check-for-updates', async () => {
+                this._showView('settings');
+                await this._showSettingsScreen('tab-about');
+                this._triggerUpdateCheck();
+            });
+        } catch (err) {
+            console.warn('[App] Could not bind Check for Updates menu event:', err);
         }
 
         try {

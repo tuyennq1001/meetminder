@@ -328,6 +328,20 @@ jobs:
           echo "Renamed artifacts:"
           find artifacts -name "*.tar.gz*" -type f
 
+      - name: Normalize release asset filenames
+        run: |
+          set -euo pipefail
+
+          while IFS= read -r -d '' file; do
+            normalized="${file// /.}"
+            if [[ "$file" != "$normalized" ]]; then
+              mv "$file" "$normalized"
+            fi
+          done < <(find artifacts -type f -name '* *' -print0)
+
+          echo "Normalized release assets:"
+          find artifacts -type f | sort
+
       - name: Generate latest.json for updater
         run: |
           set -euo pipefail
@@ -384,6 +398,15 @@ jobs:
 
           echo "Generated latest.json:"
           cat artifacts/latest.json
+
+          while IFS= read -r url; do
+            asset_name="${url##*/}"
+            asset_path=$(find artifacts -type f -name "$asset_name" -print -quit)
+            if [ -z "$asset_path" ]; then
+              echo "::error::Updater URL has no matching release asset: $url"
+              exit 1
+            fi
+          done < <(jq -r '.platforms[].url' artifacts/latest.json)
 
       - name: Extract release notes from changelog
         id: notes
