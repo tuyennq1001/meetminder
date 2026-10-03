@@ -6416,10 +6416,10 @@ body.resizing-vertical * {
   background-size: 100% 100%;
   background-image: linear-gradient(
     to right,
-    transparent 9px,
-    rgba(161, 161, 170, 0.28) 9px,
-    rgba(161, 161, 170, 0.28) 10px,
-    transparent 10px
+    transparent 7px,
+    rgba(161, 161, 170, 0.28) 7px,
+    rgba(161, 161, 170, 0.28) 8px,
+    transparent 8px
   );
 }
 
@@ -6428,17 +6428,17 @@ body.resizing-vertical * {
   background-image:
     linear-gradient(
       to right,
-      transparent 25px,
-      rgba(161, 161, 170, 0.28) 25px,
-      rgba(161, 161, 170, 0.28) 26px,
-      transparent 26px
+      transparent 23px,
+      rgba(161, 161, 170, 0.28) 23px,
+      rgba(161, 161, 170, 0.28) 24px,
+      transparent 24px
     ),
     linear-gradient(
       to right,
-      transparent 9px,
-      rgba(161, 161, 170, 0.28) 9px,
-      rgba(161, 161, 170, 0.28) 10px,
-      transparent 10px
+      transparent 7px,
+      rgba(161, 161, 170, 0.28) 7px,
+      rgba(161, 161, 170, 0.28) 8px,
+      transparent 8px
     );
 }
 
@@ -6446,24 +6446,24 @@ body.resizing-vertical * {
   background-image:
     linear-gradient(
       to right,
-      transparent 41px,
-      rgba(161, 161, 170, 0.28) 41px,
-      rgba(161, 161, 170, 0.28) 42px,
-      transparent 42px
+      transparent 39px,
+      rgba(161, 161, 170, 0.28) 39px,
+      rgba(161, 161, 170, 0.28) 40px,
+      transparent 40px
     ),
     linear-gradient(
       to right,
-      transparent 25px,
-      rgba(161, 161, 170, 0.28) 25px,
-      rgba(161, 161, 170, 0.28) 26px,
-      transparent 26px
+      transparent 23px,
+      rgba(161, 161, 170, 0.28) 23px,
+      rgba(161, 161, 170, 0.28) 24px,
+      transparent 24px
     ),
     linear-gradient(
       to right,
-      transparent 9px,
-      rgba(161, 161, 170, 0.28) 9px,
-      rgba(161, 161, 170, 0.28) 10px,
-      transparent 10px
+      transparent 7px,
+      rgba(161, 161, 170, 0.28) 7px,
+      rgba(161, 161, 170, 0.28) 8px,
+      transparent 8px
     );
 }
 

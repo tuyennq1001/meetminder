@@ -5,6 +5,12 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.7 - 2026-10-03
+
+### Fixed
+
+- **Markdown list guides**: Align nested-list vertical guides with their parent bullet markers.
+
 ## v1.0.6 - 2026-10-02
 
 ### Added
