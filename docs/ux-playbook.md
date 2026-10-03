@@ -121,6 +121,10 @@ này sang dự án khác, cần đưa ba hạng mục đó vào Definition of Do
   danh sách; chỉ reset khi họ chủ động chọn reset.
 - Nếu nội dung đang stream hoặc auto-scroll, tôn trọng việc người dùng đã kéo
   lên đọc lịch sử: dừng auto-scroll và cung cấp một nút “về cuối”.
+- Với các khung song song có scrollbar riêng, thao tác cuộn ở một khung cần
+  đồng bộ tiến độ scrollbar ở các khung còn lại. Đặt header ngoài vùng cuộn và
+  dùng cùng biên trên/dưới để thumb giữ thẳng hàng dù nội dung xuống dòng khác
+  nhau; thao tác chọn một bản ghi vẫn có thể định vị theo chỉ số bản ghi.
 
 ## 5. Trạng thái và feedback
 
