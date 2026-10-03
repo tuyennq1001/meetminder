@@ -11978,19 +11978,25 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }
 
         const jumpBottomButton = `<button type="button" class="live-jump-bottom-btn session-log-scroll-bottom" aria-label="${this._escAttr(t('session.scrollBottomTooltip'))}" title="${this._escAttr(t('session.scrollBottomTooltip'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="4" x2="12" y2="19"></line><polyline points="19 13 12 20 5 13"></polyline></svg><span>${this._esc(t('session.latest'))}</span></button>`;
+        const jumpTopButton = `<button type="button" class="live-jump-bottom-btn session-log-scroll-top" aria-label="${this._escAttr(t('session.scrollTopTooltip'))}" title="${this._escAttr(t('session.scrollTopTooltip'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="5"></line><polyline points="5 11 12 4 19 11"></polyline></svg><span>${this._esc(t('session.start'))}</span></button>`;
 
         if (!hasTranslation) {
-            container.innerHTML = `<div class="session-logs-live session-logs-single"><section class="session-log-column"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', this._escAttr(t('session.copySourceTooltip')), 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map((segment, index) => singleRow(segment, index, segment.src)).join('')}</div></section>${jumpBottomButton}</div>`;
+            container.innerHTML = `<div class="session-logs-live session-logs-single"><section class="session-log-column"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', this._escAttr(t('session.copySourceTooltip')), 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map((segment, index) => singleRow(segment, index, segment.src)).join('')}</div></section>${jumpTopButton}${jumpBottomButton}</div>`;
             const singleScroll = container.querySelector('.session-log-scroll');
             const scrollBottom = container.querySelector('.session-log-scroll-bottom');
+            const scrollTop = container.querySelector('.session-log-scroll-top');
             const updateScrollButton = () => {
-                if (!singleScroll || !scrollBottom) return;
+                if (!singleScroll) return;
                 const isAwayFromBottom = singleScroll.scrollHeight - singleScroll.scrollTop - singleScroll.clientHeight > 120;
-                scrollBottom.classList.toggle('is-visible', isAwayFromBottom);
+                scrollBottom?.classList.toggle('is-visible', isAwayFromBottom);
+                scrollTop?.classList.toggle('is-visible', singleScroll.scrollTop > 120);
             };
             singleScroll?.addEventListener('scroll', updateScrollButton, { passive: true });
             scrollBottom?.addEventListener('click', () => {
                 singleScroll?.scrollTo({ top: singleScroll.scrollHeight, behavior: 'smooth' });
+            });
+            scrollTop?.addEventListener('click', () => {
+                singleScroll?.scrollTo({ top: 0, behavior: 'smooth' });
             });
             this._bindSessionLogCopy(container, segments, false);
             updateScrollButton();
@@ -12000,9 +12006,11 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         container.innerHTML = `<div class="session-logs-live session-logs-dual">
             <section class="session-log-column" data-log-panel="source"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', this._escAttr(t('session.copySourceTooltip')), 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.src)).join('')}</div></section>
             <div class="session-log-timeline-wrap">
-              <div class="session-log-timeline" data-log-panel="timeline"><header class="panel-column-header panel-time-header"><span class="panel-header-title">Timeline</span></header>${segments.map((segment, index) => timelineRow(index, segment)).join('')}</div>
+              <header class="panel-column-header panel-time-header"><span class="panel-header-title">Timeline</span></header>
+              <div class="session-log-timeline" data-log-panel="timeline">${segments.map((segment, index) => timelineRow(index, segment)).join('')}</div>
             </div>
             <section class="session-log-column" data-log-panel="translation"><header class="panel-column-header"><span class="panel-header-title">🌐 ${esc(targetName)}</span>${copyButton('translation', this._escAttr(t('session.copyTranslationTooltip')), 'btn-copy-translation')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.tgt || '—')).join('')}</div></section>
+            ${jumpTopButton}
             ${jumpBottomButton}
         </div>`;
 
@@ -12010,11 +12018,82 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const targetScroll = container.querySelector('[data-log-panel="translation"] .session-log-scroll');
         const timeline = container.querySelector('[data-log-panel="timeline"]');
         const scrollBottom = container.querySelector('.session-log-scroll-bottom');
+        const scrollTop = container.querySelector('.session-log-scroll-top');
+        const logPanels = [sourceScroll, timeline, targetScroll].filter(Boolean);
+        let scrollSyncFrame = 0;
+        let scrollSyncSource = null;
+        let scrollSyncTimer = 0;
+        const programmaticScrollTimers = new Map();
+        const markProgrammaticScroll = (panel, duration = 180) => {
+            const previousTimer = programmaticScrollTimers.get(panel);
+            if (previousTimer) clearTimeout(previousTimer);
+            programmaticScrollTimers.set(panel, setTimeout(() => {
+                programmaticScrollTimers.delete(panel);
+            }, duration));
+        };
+        const markUserScrollSource = (panel) => {
+            const programmaticTimer = programmaticScrollTimers.get(panel);
+            if (programmaticTimer) clearTimeout(programmaticTimer);
+            programmaticScrollTimers.delete(panel);
+            scrollSyncSource = panel;
+            clearTimeout(scrollSyncTimer);
+            scrollSyncTimer = setTimeout(() => {
+                scrollSyncSource = null;
+                scrollSyncTimer = 0;
+            }, 180);
+        };
+        const syncLogPanelScroll = (sourcePanel) => {
+            const sourceMax = Math.max(0, sourcePanel.scrollHeight - sourcePanel.clientHeight);
+            const progress = sourceMax > 0 ? sourcePanel.scrollTop / sourceMax : 0;
+
+            logPanels.forEach(targetPanel => {
+                if (targetPanel === sourcePanel) return;
+                const targetMax = Math.max(0, targetPanel.scrollHeight - targetPanel.clientHeight);
+                const targetTop = progress * targetMax;
+                if (Math.abs(targetPanel.scrollTop - targetTop) > 1) {
+                    markProgrammaticScroll(targetPanel);
+                    targetPanel.scrollTop = targetTop;
+                }
+            });
+        };
+        logPanels.forEach(panel => {
+            panel.addEventListener('wheel', () => markUserScrollSource(panel), { passive: true });
+            panel.addEventListener('touchstart', () => markUserScrollSource(panel), { passive: true });
+            panel.addEventListener('pointerdown', (event) => {
+                // Clicking a timeline row already moves every pane to that row.
+                if (panel === timeline && event.target.closest('[data-segment-index]')) return;
+                markUserScrollSource(panel);
+            }, { passive: true });
+            panel.addEventListener('keydown', (event) => {
+                if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '].includes(event.key)) {
+                    markUserScrollSource(panel);
+                }
+            });
+            panel.addEventListener('scroll', () => {
+                // Native scrollbar drags may not emit pointerdown on every
+                // platform, so accept untagged scroll events as user input.
+                // Writes made by syncLogPanelScroll are tagged and ignored.
+                if (programmaticScrollTimers.has(panel)) return;
+                scrollSyncSource = panel;
+                clearTimeout(scrollSyncTimer);
+                scrollSyncTimer = setTimeout(() => {
+                    scrollSyncSource = null;
+                    scrollSyncTimer = 0;
+                }, 180);
+                if (scrollSyncFrame) return;
+                scrollSyncFrame = requestAnimationFrame(() => {
+                    const sourcePanel = scrollSyncSource;
+                    scrollSyncFrame = 0;
+                    if (sourcePanel) syncLogPanelScroll(sourcePanel);
+                });
+            }, { passive: true });
+        });
         const scrollToSegment = (index) => {
             const selector = `[data-segment-index="${index}"]`;
             const sourceLine = sourceScroll?.querySelector(selector);
             const targetLine = targetScroll?.querySelector(selector);
             const timeLine = timeline?.querySelector(selector);
+            [sourceScroll, targetScroll, timeline].forEach(panel => panel && markProgrammaticScroll(panel, 800));
             [sourceLine, targetLine, timeLine].forEach(line => line?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
             container.querySelectorAll('.session-log-line-active, .session-log-timeline-active').forEach(line => {
                 line.classList.remove('session-log-line-active', 'session-log-timeline-active');
@@ -12033,17 +12112,29 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (item) scrollToSegment(item.dataset.segmentIndex);
         });
         const updateScrollButton = () => {
-            if (!scrollBottom) return;
+            if (!scrollBottom && !scrollTop) return;
             const ref = timeline || sourceScroll;
             if (!ref) return;
             const isAwayFromBottom = ref.scrollHeight - ref.scrollTop - ref.clientHeight > 120;
-            scrollBottom.classList.toggle('is-visible', isAwayFromBottom);
+            scrollBottom?.classList.toggle('is-visible', isAwayFromBottom);
+            scrollTop?.classList.toggle('is-visible', ref.scrollTop > 120);
         };
-        [sourceScroll, timeline, targetScroll].forEach(panel => {
+        logPanels.forEach(panel => {
             panel?.addEventListener('scroll', updateScrollButton, { passive: true });
         });
         scrollBottom?.addEventListener('click', () => {
-            [sourceScroll, timeline, targetScroll].forEach(panel => panel?.scrollTo({ top: panel.scrollHeight, behavior: 'smooth' }));
+            [sourceScroll, timeline, targetScroll].forEach(panel => {
+                if (!panel) return;
+                markProgrammaticScroll(panel, 800);
+                panel.scrollTo({ top: panel.scrollHeight, behavior: 'smooth' });
+            });
+        });
+        scrollTop?.addEventListener('click', () => {
+            [sourceScroll, timeline, targetScroll].forEach(panel => {
+                if (!panel) return;
+                markProgrammaticScroll(panel, 800);
+                panel.scrollTo({ top: 0, behavior: 'smooth' });
+            });
         });
         this._bindSessionLogCopy(container, segments, true);
         updateScrollButton();
