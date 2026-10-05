@@ -5,6 +5,12 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.10 - 2026-10-05
+
+### Fixed
+
+- **GitHub Release publishing**: Publish completed releases publicly with their installer and updater assets.
+
 ## v1.0.9 - 2026-10-05
 
 ### Fixed
