@@ -5,6 +5,12 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.9 - 2026-10-05
+
+### Fixed
+
+- **macOS notarization**: Sign the regenerated DMG before notarization and verify its Developer ID signature.
+
 ## v1.0.8 - 2026-10-05
 
 ### Fixed

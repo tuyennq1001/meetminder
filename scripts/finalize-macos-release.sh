@@ -52,3 +52,5 @@ hdiutil create \
   -ov \
   -format UDZO \
   "$dmg_path"
+codesign --force --sign "$signing_identity" --timestamp "$dmg_path"
+codesign --verify --verbose=2 "$dmg_path"
