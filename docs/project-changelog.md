@@ -5,6 +5,14 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.8 - 2026-10-05
+
+### Fixed
+
+- **macOS Release signatures**: Finalize the app signature after Tauri bundling, verify the expected Developer ID, and regenerate the updater archive and notarized DMG from the verified app.
+- **Dev update isolation**: Prevent Dev builds from consuming the Release update feed and replacing their separate macOS app identity.
+- **Markdown list guides**: Align nested-list vertical guides with their parent bullet markers.
+
 ## v1.0.7 - 2026-10-03
 
 ### Fixed

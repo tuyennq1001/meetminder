@@ -87,6 +87,12 @@ jobs:
           fi
           npm run tauri build -- --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
 
+      - name: Finalize and verify signed macOS artifacts
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash scripts/finalize-macos-release.sh src-tauri/target/release/bundle
+
       - name: Notarize and verify DMG
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -196,6 +202,12 @@ jobs:
             exit 1
           fi
           npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
+
+      - name: Finalize and verify signed macOS artifacts (Intel)
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash scripts/finalize-macos-release.sh src-tauri/target/x86_64-apple-darwin/release/bundle
 
       - name: Notarize and verify DMG (Intel)
         env:

@@ -15,6 +15,20 @@ class Updater {
      * Check for updates - try plugin API first, then invoke
      */
     async checkForUpdates() {
+        // Never let a Dev build consume the Release update feed. Tauri's
+        // updater replaces the running bundle's files before relaunch, so a
+        // Dev bundle must be excluded by its application identifier.
+        const getIdentifier = window.__TAURI__?.app?.getIdentifier;
+        if (typeof getIdentifier !== 'function') {
+            console.warn('[Updater] Cannot verify app identifier; update check skipped');
+            return;
+        }
+        const appIdentifier = await getIdentifier();
+        if (appIdentifier !== 'com.meetminder.desktop') {
+            console.info(`[Updater] Disabled for ${appIdentifier}`);
+            return;
+        }
+
         // Method 1: Plugin API (this worked in the original toast version)
         const check = window.__TAURI__?.updater?.check;
         if (check) {
