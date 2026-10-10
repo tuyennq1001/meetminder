@@ -427,7 +427,7 @@ class App {
             this._localMlxInfo = null;
         }
         this._updateMlxSettingsUI();
-        this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_live_translate');
+        this._updateTranscriptEngineUI(settingsManager.get().translation_mode || 'gemini');
         return this._isLocalMlxReady;
     }
 
@@ -438,7 +438,7 @@ class App {
         const sizeTag = document.getElementById('local-mlx-size');
         const desc = document.getElementById('local-mlx-desc');
         if (!badge || !btnInstall) {
-            this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_live_translate');
+            this._updateTranscriptEngineUI(settingsManager.get().translation_mode || 'gemini');
             return;
         }
 
@@ -449,7 +449,7 @@ class App {
             if (btnDelete) btnDelete.style.display = 'none';
             if (sizeTag) sizeTag.style.display = 'none';
             if (desc) desc.textContent = t('settings.engine.mlxAppleSiliconOnly');
-            this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_live_translate');
+            this._updateTranscriptEngineUI(settingsManager.get().translation_mode || 'gemini');
             return;
         }
 
@@ -485,7 +485,7 @@ class App {
             btnInstall.textContent = t('settings.engine.mlxInstallBtn');
             if (desc) desc.textContent = t('settings.engine.mlxNotInstalledDesc');
         }
-        this._updateTranscriptEngineUI(settingsManager.get().transcript_engine || 'gemini_live_translate');
+        this._updateTranscriptEngineUI(settingsManager.get().translation_mode || 'gemini');
     }
 
     async _handleInstallMlxClick() {
@@ -1665,19 +1665,22 @@ class App {
 
         sonioxInput?.addEventListener('input', () => {
             this._refreshKeyStatus();
+            this._updateTranscriptEngineUI(settingsManager.get().translation_mode || 'gemini');
             this._debouncedAutoSave();
         });
         openaiInput?.addEventListener('input', () => {
             this._refreshKeyStatus();
+            this._updateTranscriptEngineUI(settingsManager.get().translation_mode || 'gemini');
             this._debouncedAutoSave();
         });
         geminiInput?.addEventListener('input', () => {
             this._refreshKeyStatus();
-            this._updateTranscriptEngineUI(document.getElementById('select-transcript-engine')?.value || 'gemini_live_translate');
+            this._updateTranscriptEngineUI(settingsManager.get().translation_mode || 'gemini');
             this._debouncedAutoSave();
         });
         qwenInput?.addEventListener('input', () => {
             this._refreshKeyStatus();
+            this._updateTranscriptEngineUI(settingsManager.get().translation_mode || 'gemini');
             this._debouncedAutoSave();
         });
 
@@ -1694,11 +1697,6 @@ class App {
             if (this.isRunning) {
                 await this._hotSwapToEngine(newMode);
             }
-        });
-
-        document.getElementById('select-transcript-engine')?.addEventListener('change', async (e) => {
-            this._updateTranscriptEngineUI(e.target.value);
-            await this._autoSaveSettingsFromForm();
         });
 
         // Translation timing (configured in Settings, not the compact toolbar)
@@ -2879,14 +2877,7 @@ class App {
         if (selectTgt) selectTgt.value = s.target_language || 'ja';
         const selectTransMode = document.getElementById('select-translation-mode');
         if (selectTransMode) selectTransMode.value = s.translation_mode || 'gemini';
-        const selectTranscriptEngine = document.getElementById('select-transcript-engine');
-        if (selectTranscriptEngine) {
-            const transcriptEngine = ['gemini_live_translate', 'gemini_transcribe', 'local_mlx'].includes(s.transcript_engine)
-                ? s.transcript_engine
-                : 'gemini_live_translate';
-            selectTranscriptEngine.value = transcriptEngine;
-            this._updateTranscriptEngineUI(transcriptEngine);
-        }
+        this._updateTranscriptEngineUI(s.translation_mode || 'gemini');
         const selectTiming = document.getElementById('select-translation-timing');
         if (selectTiming) selectTiming.value = s.translation_timing || 'on_pause';
         const inactSelect = document.getElementById('select-inactivity-timeout');
@@ -2991,7 +2982,7 @@ class App {
             source_language: document.getElementById('quick-select-source-lang')?.value || settingsManager.get().source_language || 'en',
             target_language: document.getElementById('quick-select-target-lang')?.value || settingsManager.get().target_language || 'ja',
             translation_mode: document.getElementById('select-translation-mode')?.value || 'gemini',
-            transcript_engine: document.getElementById('select-transcript-engine')?.value || settingsManager.get().transcript_engine || 'gemini_live_translate',
+            transcript_engine: settingsManager.get().transcript_engine || 'gemini_live_translate',
             translation_timing: document.getElementById('select-translation-timing')?.value || settingsManager.get().translation_timing || 'on_pause',
             inactivity_timeout_min: parseInt(document.getElementById('select-inactivity-timeout')?.value || '10', 10),
             translation_type: 'one_way',
@@ -3147,12 +3138,7 @@ class App {
             this._updateModeUI(settings.translation_mode);
         }
 
-        const transcriptEngine = ['gemini_live_translate', 'gemini_transcribe', 'local_mlx'].includes(settings.transcript_engine)
-            ? settings.transcript_engine
-            : 'gemini_live_translate';
-        const transcriptSelect = document.getElementById('select-transcript-engine');
-        if (transcriptSelect) transcriptSelect.value = transcriptEngine;
-        this._updateTranscriptEngineUI(transcriptEngine);
+        this._updateTranscriptEngineUI(settings.translation_mode || 'gemini');
 
         // Update quick language and timing in toolbar
         const quickSrc = document.getElementById('quick-select-source-lang');
@@ -3394,10 +3380,9 @@ class App {
         const sectionOpenAiKey = document.getElementById('section-openai-key');
         const sectionGeminiKey = document.getElementById('section-gemini-key');
         const sectionQwenKey = document.getElementById('section-qwen-key');
-        const transcriptUsesGemini = s.transcript_engine !== 'local_mlx';
         if (sectionApiKey) sectionApiKey.style.display = isSoniox ? '' : 'none';
         if (sectionOpenAiKey) sectionOpenAiKey.style.display = isOpenAi ? '' : 'none';
-        if (sectionGeminiKey) sectionGeminiKey.style.display = (isGemini || transcriptUsesGemini) ? '' : 'none';
+        if (sectionGeminiKey) sectionGeminiKey.style.display = isGemini ? '' : 'none';
         if (sectionQwenKey) sectionQwenKey.style.display = isQwen ? '' : 'none';
 
         const sectionStrictLang = document.getElementById('section-strict-lang');
@@ -3426,31 +3411,59 @@ class App {
         // rejects "auto" on real mic input.
         this._refreshTargetLangList(mode);
         this._refreshSourceLangList(mode);
+        this._updateTranscriptEngineUI(mode);
     }
 
     _updateTranscriptEngineUI(engine) {
-        const select = document.getElementById('select-transcript-engine');
         const hint = document.getElementById('hint-transcript-engine');
-        if (!select || !hint) return;
-
-        const isLocal = engine === 'local_mlx';
-        const isGeminiTranscribe = engine === 'gemini_transcribe';
+        if (!hint) return;
         const settings = settingsManager.get();
+        const mode = ['gemini', 'openai', 'soniox', 'qwen', 'local'].includes(engine)
+            ? engine
+            : (settings.translation_mode || this.translationMode || 'gemini');
+        const isLocal = mode === 'local';
+        const { apiKey, providerLabel } = this._getRetranscriptionProvider(mode, settings);
+        const missingKey = !isLocal && !apiKey;
         const localUnavailable = isLocal && (!this.isAppleSilicon || !this._isLocalMlxReady);
-        const missingGeminiKey = !isLocal && !(settings.gemini_api_key || '').trim();
 
-        if (missingGeminiKey) {
-            hint.textContent = t('settings.engine.transcriptGeminiMissingKey');
-        } else if (isLocal && !this.isAppleSilicon) {
+        if (localUnavailable) {
             hint.textContent = t('settings.engine.transcriptLocalUnsupported');
         } else {
-            hint.textContent = isLocal
-                ? t('settings.engine.transcriptLocalHint')
-                : t(isGeminiTranscribe
-                    ? 'settings.engine.transcriptTranscribeHint'
-                    : 'settings.engine.transcriptGeminiHint');
+            hint.textContent = t('settings.engine.transcriptFollowsTranslation', { engine: providerLabel });
+            if (!isLocal) hint.textContent += ` ${t('settings.engine.transcriptCloudNotice')}`;
+            if (missingKey) {
+                hint.textContent += ` ${t('settings.engine.missingKeyWarning', { name: providerLabel })}`;
+            }
         }
-        hint.classList.toggle('hint-warning', localUnavailable || missingGeminiKey);
+        hint.classList.toggle('hint-warning', localUnavailable || missingKey);
+    }
+
+    _getRetranscriptionProvider(mode = settingsManager.get().translation_mode, settings = settingsManager.get()) {
+        const translationEngine = ['gemini', 'openai', 'soniox', 'qwen', 'local'].includes(mode)
+            ? mode
+            : 'gemini';
+        const inputIds = {
+            gemini: 'input-gemini-key',
+            openai: 'input-openai-key',
+            soniox: 'input-api-key',
+            qwen: 'input-qwen-key',
+        };
+        const settingKeys = {
+            gemini: 'gemini_api_key',
+            openai: 'openai_api_key',
+            soniox: 'soniox_api_key',
+            qwen: 'qwen_api_key',
+        };
+        const input = inputIds[translationEngine]
+            ? document.getElementById(inputIds[translationEngine])
+            : null;
+        return {
+            translationEngine,
+            apiKey: translationEngine === 'local'
+                ? ''
+                : (input ? input.value : settings[settingKeys[translationEngine]] || '').trim(),
+            providerLabel: t(`settings.engine.${translationEngine}`),
+        };
     }
 
     _refreshTargetLangList(mode) {
@@ -5653,12 +5666,11 @@ class App {
             || this._isObsidianExportEnabledForSession(savedId);
 
         if (stopAction.autoRetranscript) {
-            const apiKey = settings.gemini_api_key?.trim();
-            const transcriptEngine = settings.transcript_engine || 'gemini_live_translate';
-            const canRunLocal = transcriptEngine === 'local_mlx'
+            const { translationEngine, apiKey, providerLabel } = this._getRetranscriptionProvider(settings.translation_mode, settings);
+            const canRunLocal = translationEngine === 'local'
                 && this.isAppleSilicon
                 && this._isLocalMlxReady;
-            if ((transcriptEngine === 'local_mlx' && canRunLocal) || (transcriptEngine !== 'local_mlx' && apiKey)) {
+            if ((translationEngine === 'local' && canRunLocal) || (translationEngine !== 'local' && apiKey)) {
                 this._retranscribeSession(savedId, false, {
                     generateMinutes: shouldGenerateMinutes,
                     minutesLang: null,
@@ -5669,9 +5681,9 @@ class App {
             }
 
             this._showToast(
-                transcriptEngine === 'local_mlx'
+                translationEngine === 'local'
                     ? t('settings.engine.transcriptLocalUnavailable')
-                    : t('session.retranscriptNeedGeminiKey'),
+                    : t('retranscript.needProviderKey', { provider: providerLabel }),
                 'warning',
             );
         }
@@ -6076,14 +6088,12 @@ class App {
     }
 
     _getLocalizedAudioTranscriptProgress(stage, active) {
-        const isLocal = active?.transcriptEngine === 'local_mlx';
-        const isGeminiTranscribe = active?.transcriptEngine === 'gemini_transcribe';
+        const isLocal = active?.transcriptEngine === 'local';
+        const provider = t(`settings.engine.${active?.transcriptEngine || 'gemini'}`);
         if (stage === 'upload') {
             return t(isLocal
                 ? 'retranscript.progress.uploadingLocal'
-                : (active?.isImport
-                ? 'retranscript.progress.readingAndUploading'
-                : 'retranscript.progress.uploading'));
+                : 'retranscript.progress.uploadingProvider', { provider });
         }
         if (stage === 'save') {
             return t(active?.isImport
@@ -6093,28 +6103,21 @@ class App {
         if (stage === 'minutes') return t('retranscript.step.minutes');
         return t(isLocal
             ? 'retranscript.progress.transcribingLocal'
-            : (isGeminiTranscribe
-                ? 'retranscript.progress.transcribingGeminiTranscribe'
-                : 'retranscript.progress.transcribing'));
+            : 'retranscript.progress.transcribingProvider', { provider });
     }
 
     _updateRetranscriptEngineLabels(active = this._activeRetranscribe) {
-        const isLocal = active?.transcriptEngine === 'local_mlx';
-        const isGeminiTranscribe = active?.transcriptEngine === 'gemini_transcribe';
-        const labels = {
-            upload: isLocal ? 'retranscript.step.uploadLocal' : 'retranscript.step.upload',
-            transcribe: isLocal
-                ? 'retranscript.step.transcribeLocal'
-                : (isGeminiTranscribe
-                    ? 'retranscript.step.transcribeGeminiTranscribe'
-                    : 'retranscript.step.transcribe'),
-        };
+        const isLocal = active?.transcriptEngine === 'local';
+        const provider = t(`settings.engine.${active?.transcriptEngine || 'gemini'}`);
+        const labels = isLocal
+            ? { upload: 'retranscript.step.uploadLocal', transcribe: 'retranscript.step.transcribeLocal' }
+            : { upload: 'retranscript.step.uploadProvider', transcribe: 'retranscript.step.transcribeProvider' };
         Object.entries(labels).forEach(([stepName, key]) => {
             const step = document.querySelector(`[data-retranscript-step="${stepName}"]`);
             const text = step?.querySelector('.step-text');
             if (!text) return;
             text.dataset.i18n = key;
-            text.textContent = t(key);
+            text.textContent = t(key, { provider });
         });
     }
 
@@ -12819,16 +12822,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             return;
         }
         const settings = settingsManager.get();
-        const transcriptEngine = ['gemini_live_translate', 'gemini_transcribe', 'local_mlx'].includes(settings.transcript_engine)
-            ? settings.transcript_engine
-            : 'gemini_live_translate';
-        const apiKey = settings.gemini_api_key?.trim() || '';
-        if (transcriptEngine !== 'local_mlx' && !apiKey) {
-            this._showToast(t('retranscript.needGeminiKey'), 'error');
+        const { translationEngine, apiKey, providerLabel } = this._getRetranscriptionProvider(settings.translation_mode, settings);
+        if (translationEngine !== 'local' && !apiKey) {
+            this._showToast(t('retranscript.needProviderKey', { provider: providerLabel }), 'error');
             if (options.fromQueue) this._drainRetranscriptQueue();
             return;
         }
-        if (transcriptEngine === 'local_mlx' && (!this.isAppleSilicon || !this._isLocalMlxReady)) {
+        if (translationEngine === 'local' && (!this.isAppleSilicon || !this._isLocalMlxReady)) {
             this._showToast(t('settings.engine.transcriptLocalUnavailable'), 'error');
             if (options.fromQueue) this._drainRetranscriptQueue();
             return;
@@ -12876,10 +12876,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             isMinimized: true,
             progressInterval: null,
             backendProgress: false,
-            transcriptEngine,
-            progressBaseText: this._getLocalizedAudioTranscriptProgress('upload', { transcriptEngine }),
+            transcriptEngine: translationEngine,
+            progressBaseText: this._getLocalizedAudioTranscriptProgress('upload', { transcriptEngine: translationEngine }),
             stage: 'upload',
-            text: this._getLocalizedAudioTranscriptProgress('upload', { transcriptEngine }),
+            text: this._getLocalizedAudioTranscriptProgress('upload', { transcriptEngine: translationEngine }),
             percent: 15,
             options,
             customTitle: options.customTitle || t('retranscript.floating.title'),
@@ -12936,7 +12936,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const result = await invoke('retranscribe_session', {
                 id,
                 apiKey,
-                transcriptEngine,
+                translationEngine,
                 sourceLang: options.sourceLang || null,
                 targetLang: options.targetLang || null,
             });
