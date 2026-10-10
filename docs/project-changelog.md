@@ -5,6 +5,13 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.11 - 2026-10-10
+
+### Fixed
+
+- **Settings navigation**: Restore the in-app Settings button and remove the duplicate macOS menu item.
+- **Meeting Logs localization**: Refresh the logs screen when the app language changes and translate its Japanese navigation label.
+
 ## v1.0.10 - 2026-10-05
 
 ### Fixed

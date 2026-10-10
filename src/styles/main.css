@@ -3134,10 +3134,6 @@ input[type="range"]::-webkit-slider-thumb:hover {
   position: relative;
 }
 
-.platform-macos #btn-settings {
-  display: none;
-}
-
 .settings-badge {
   position: absolute;
   top: 4px;

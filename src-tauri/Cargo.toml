@@ -1,6 +1,6 @@
 [package]
 name = "meet-minder"
-version = "1.0.10"
+version = "1.0.11"
 description = "Meet Minder — real-time speech translation for meetings"
 authors = ["Terry <tuyennq.1001@gmail.com>"]
 edition = "2021"

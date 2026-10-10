@@ -13,7 +13,7 @@ use commands::qwen_realtime::QwenState;
 use settings::{Settings, SettingsState};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
-use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem, HELP_SUBMENU_ID};
+use tauri::menu::{Menu, MenuItem, MenuItemKind, HELP_SUBMENU_ID};
 use tauri::Emitter;
 
 // Set once the frontend has flushed the session (or the exit deadline elapsed),
@@ -95,16 +95,6 @@ pub fn run() {
                     // Remove it (and its following separator) so Help is its only entry point.
                     app_menu.remove_at(0)?;
                     app_menu.remove_at(0)?;
-                    let settings = MenuItem::with_id(
-                        app.handle(),
-                        "meet-minder-settings",
-                        "Settings",
-                        true,
-                        None::<&str>,
-                    )?;
-                    let separator = PredefinedMenuItem::separator(app.handle())?;
-                    app_menu.insert(&settings, 0)?;
-                    app_menu.insert(&separator, 1)?;
                 }
             }
             if let Some(MenuItemKind::Submenu(help_menu)) = menu.get(HELP_SUBMENU_ID) {
@@ -141,9 +131,7 @@ pub fn run() {
             }
             app.set_menu(menu)?;
             app.on_menu_event(|app, event| {
-                if event.id() == "meet-minder-settings" {
-                    let _ = app.emit("open-settings", ());
-                } else if event.id() == "meet-minder-about" {
+                if event.id() == "meet-minder-about" {
                     let _ = app.emit("open-about", ());
                 } else if event.id() == "meet-minder-help" {
                     let _ = app.emit("open-help", ());

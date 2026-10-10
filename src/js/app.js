@@ -266,14 +266,6 @@ class App {
         }
 
         try {
-            await this.appWindow.listen('open-settings', () => {
-                this._showView('settings');
-            });
-        } catch (err) {
-            console.warn('[App] Could not bind Settings menu event:', err);
-        }
-
-        try {
             await this.appWindow.listen('open-about', async () => {
                 this._showView('settings');
                 await this._showSettingsScreen('tab-about');
@@ -964,13 +956,7 @@ class App {
             if (this._currentSettingsScreen) {
                 this._showSettingsScreen(this._currentSettingsScreen);
             }
-            if (this._cachedSessions) {
-                this._renderFilteredSessions();
-            }
-            if (this._currentSessionJson) {
-                this._renderSessionViewerMetadata(this._currentSessionJson);
-                this._updateRetranscriptStatus(this._currentSessionJson);
-            }
+            this._refreshMeetingLogsLocale();
             this._populateNoteMetadataSelectors?.();
             try {
                 await settingsManager.save({ app_language: nextLocale });
@@ -985,13 +971,7 @@ class App {
                 if (this._currentSettingsScreen) {
                     this._showSettingsScreen(this._currentSettingsScreen);
                 }
-                if (this._cachedSessions) {
-                    this._renderFilteredSessions();
-                }
-                if (this._currentSessionJson) {
-                    this._renderSessionViewerMetadata(this._currentSessionJson);
-                    this._updateRetranscriptStatus(this._currentSessionJson);
-                }
+                this._refreshMeetingLogsLocale();
                 this._populateNoteMetadataSelectors?.();
                 this._showToast(t('settings.saveFailed', { error: err }), 'error');
             }
@@ -7674,8 +7654,7 @@ class App {
             this._renderTagFilterSelect();
 
             if (this._cachedSessions.length === 0) {
-                listEl.innerHTML = `<div class="sessions-empty">${this._esc(t('logsTable.emptyNoLogs'))}<br><span class="empty-import-hint">${this._esc(t('library.importHint'))}</span><button type="button" class="btn-primary small" id="btn-empty-import-audio" style="margin-top:12px;">${this._esc(t('library.import'))}</button></div>`;
-                document.getElementById('btn-empty-import-audio')?.addEventListener('click', () => this._handleOpenImportAudio());
+                this._renderEmptySessionList();
                 this._updateBatchSelectionUI();
                 this._syncSessionMiniPlayerUI();
                 return;
@@ -7693,7 +7672,45 @@ class App {
         }
     }
 
-    _renderFilteredSessions() {
+    _renderEmptySessionList() {
+        const listEl = document.getElementById('sessions-list');
+        if (!listEl) return;
+        listEl.innerHTML = `<div class="sessions-empty">${this._esc(t('logsTable.emptyNoLogs'))}<br><span class="empty-import-hint">${this._esc(t('library.importHint'))}</span><button type="button" class="btn-primary small" id="btn-empty-import-audio" style="margin-top:12px;">${this._esc(t('library.import'))}</button></div>`;
+        document.getElementById('btn-empty-import-audio')?.addEventListener('click', () => this._handleOpenImportAudio());
+    }
+
+    _refreshMeetingLogsLocale() {
+        if (Array.isArray(this._cachedSessions)) {
+            if (this._cachedSessions.length === 0) this._renderEmptySessionList();
+            else this._renderFilteredSessions({ force: true });
+        }
+
+        if (this._sessionSearchOpen) {
+            const panel = document.getElementById('session-search-panel');
+            const scrollTop = panel?.scrollTop || 0;
+            this._renderSessionSearchResults();
+            if (panel) panel.scrollTop = scrollTop;
+        }
+
+        if (this._currentViewedSession && document.getElementById('session-viewer')?.style.display !== 'none') {
+            this._setSessionBackContext(this._sessionReturnToSearch);
+            if (this._currentViewedSession.isLegacy) {
+                const title = document.querySelector('#session-logs-editor-container .panel-header-title');
+                if (title) title.textContent = t('session.rawLogTitle');
+                const copyButton = document.querySelector('#session-logs-editor-container [data-copy-legacy-log]');
+                if (copyButton) copyButton.title = t('session.copyRawLogTooltip');
+            } else if (this._currentSessionJson) {
+                this._renderSessionLogs(this._currentSessionJson, { preserveScroll: true });
+            }
+        }
+
+        if (this._currentSessionJson) {
+            this._renderSessionViewerMetadata(this._currentSessionJson);
+            this._updateRetranscriptStatus(this._currentSessionJson);
+        }
+    }
+
+    _renderFilteredSessions({ force = false } = {}) {
         const listEl = document.getElementById('sessions-list');
         if (!listEl) return;
         if (!this._selectedSessionIds) this._selectedSessionIds = new Set();
@@ -7768,7 +7785,7 @@ class App {
             : `<tr><td class="logs-table-empty" colspan="${isPersonalScope ? 9 : 10}">${t('logsTable.empty')}</td></tr>`;
 
         const existingTable = listEl.querySelector('.logs-table');
-        if (existingTable && existingTable.dataset.scope === activeScope) {
+        if (!force && existingTable && existingTable.dataset.scope === activeScope) {
             // Update table body rows without destroying filter inputs (preserves input focus!)
             const tbody = existingTable.querySelector('tbody');
             if (tbody) tbody.innerHTML = rows;
@@ -11949,9 +11966,28 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         status.style.display = '';
     }
 
-    _renderSessionLogs(json) {
+    _renderSessionLogs(json, { preserveScroll = false } = {}) {
         const container = document.getElementById('session-logs-editor-container');
         if (!container) return;
+
+        const scrollProgress = new Map();
+        if (preserveScroll) {
+            container.querySelectorAll('.session-log-scroll, [data-log-panel="timeline"]').forEach((panel) => {
+                const key = panel.matches('.session-log-scroll')
+                    ? (panel.closest('[data-log-panel]')?.dataset.logPanel || 'single')
+                    : 'timeline';
+                const maxScroll = Math.max(0, panel.scrollHeight - panel.clientHeight);
+                scrollProgress.set(key, maxScroll > 0 ? panel.scrollTop / maxScroll : 0);
+            });
+        }
+        const restoreScrollProgress = () => {
+            for (const [key, progress] of scrollProgress) {
+                const panel = key === 'single'
+                    ? container.querySelector('.session-log-scroll')
+                    : container.querySelector(`[data-log-panel="${key}"]${key === 'timeline' ? '' : ' .session-log-scroll'}`);
+                if (panel) panel.scrollTop = progress * Math.max(0, panel.scrollHeight - panel.clientHeight);
+            }
+        };
 
         const hasTranslation = this._sessionHasTranslation(json);
         const segments = (json?.chunks || []).flatMap(chunk => chunk.segments || [])
@@ -11977,6 +12013,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const singleScroll = container.querySelector('.session-log-scroll');
             const scrollBottom = container.querySelector('.session-log-scroll-bottom');
             const scrollTop = container.querySelector('.session-log-scroll-top');
+            restoreScrollProgress();
             const updateScrollButton = () => {
                 if (!singleScroll) return;
                 const isAwayFromBottom = singleScroll.scrollHeight - singleScroll.scrollTop - singleScroll.clientHeight > 120;
@@ -11998,7 +12035,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         container.innerHTML = `<div class="session-logs-live session-logs-dual">
             <section class="session-log-column" data-log-panel="source"><header class="panel-column-header"><span class="panel-header-title">📝 ${esc(sourceName)}</span>${copyButton('source', this._escAttr(t('session.copySourceTooltip')), 'btn-copy-source')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.src)).join('')}</div></section>
             <div class="session-log-timeline-wrap">
-              <header class="panel-column-header panel-time-header"><span class="panel-header-title">Timeline</span></header>
+              <header class="panel-column-header panel-time-header"><span class="panel-header-title">${this._esc(t('transcript.timeline'))}</span></header>
               <div class="session-log-timeline" data-log-panel="timeline">${segments.map((segment, index) => timelineRow(index, segment)).join('')}</div>
             </div>
             <section class="session-log-column" data-log-panel="translation"><header class="panel-column-header"><span class="panel-header-title">🌐 ${esc(targetName)}</span>${copyButton('translation', this._escAttr(t('session.copyTranslationTooltip')), 'btn-copy-translation')}</header><div class="session-log-scroll">${segments.map((segment, index) => dualRow(index, segment.tgt || '—')).join('')}</div></section>
@@ -12012,6 +12049,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         const scrollBottom = container.querySelector('.session-log-scroll-bottom');
         const scrollTop = container.querySelector('.session-log-scroll-top');
         const logPanels = [sourceScroll, timeline, targetScroll].filter(Boolean);
+        restoreScrollProgress();
         let scrollSyncFrame = 0;
         let scrollSyncSource = null;
         let scrollSyncTimer = 0;
