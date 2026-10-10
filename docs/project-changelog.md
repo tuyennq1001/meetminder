@@ -1,9 +1,17 @@
 # Changelog
 
+
 All notable changes to Meet Minder are documented here.
 Each release section is extracted automatically by `.github/workflows/release.yml` and published as the GitHub Release body.
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
+
+
+## v1.0.12 - 2026-10-10
+
+### Improved
+
+- **Meeting log re-transcription**: Use the selected translation engine and its matching API key for both audio transcription and translation, including Local MLX.
 
 ## v1.0.11 - 2026-10-10
 

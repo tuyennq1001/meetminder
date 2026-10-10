@@ -3644,33 +3644,33 @@ pub fn cancel_retranscribe_session(id: String) -> Result<bool, String> {
     }
 }
 
-/// Route saved audio to the selected transcription engine. Gemini Flash uses
-/// file audio understanding, Gemini Transcribe uses its dedicated transcription
-/// path, and Local MLX stays on-device. Cloud routes do not replay audio through
-/// the real-time Live Translate session.
+/// Route saved audio through the currently selected translation engine.
 #[tauri::command]
 pub async fn retranscribe_session(
     app: AppHandle,
     id: String,
     api_key: String,
-    transcript_engine: String,
+    translation_engine: String,
     source_lang: Option<String>,
     target_lang: Option<String>,
 ) -> Result<SessionReadResult, String> {
-    if transcript_engine.trim() == "local_mlx" {
-        return retranscribe_session_with_local_mlx(app, id, source_lang, target_lang).await;
+    match translation_engine.trim() {
+        "local" | "local_mlx" => {
+            retranscribe_session_with_local_mlx(app, id, source_lang, target_lang).await
+        }
+        "gemini" | "gemini_live_translate" | "gemini_transcribe" | "" => {
+            retranscribe_session_with_gemini_transcribe(app, id, api_key, source_lang, target_lang)
+                .await
+        }
+        "openai" => {
+            retranscribe_session_with_openai(app, id, api_key, source_lang, target_lang).await
+        }
+        "soniox" => {
+            retranscribe_session_with_soniox(app, id, api_key, source_lang, target_lang).await
+        }
+        "qwen" => retranscribe_session_with_qwen(app, id, api_key, source_lang, target_lang).await,
+        other => Err(format!("Unsupported translation engine: {}", other)),
     }
-    if transcript_engine.trim() == "gemini_transcribe" {
-        return retranscribe_session_with_gemini_transcribe(
-            app,
-            id,
-            api_key,
-            source_lang,
-            target_lang,
-        )
-        .await;
-    }
-    retranscribe_session_with_gemini(app, id, api_key, source_lang, target_lang).await
 }
 
 fn register_retranscribe_cancel(
@@ -3727,6 +3727,679 @@ fn load_retranscribe_context(
     }
 
     Ok((md_path, json_path, audio_path, mime_type, audio_size, data))
+}
+
+fn retranscribe_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(45))
+        .timeout(std::time::Duration::from_secs(1800))
+        .build()
+        .map_err(|error| format!("Could not create transcription client: {}", error))
+}
+
+fn retranscribe_parts(
+    audio_path: &Path,
+    duration_sec: f64,
+    file_size: u64,
+    id: &str,
+    chunk_seconds: u64,
+    max_bytes: u64,
+) -> Result<(Option<AudioChunkWorkspace>, Vec<(PathBuf, u64, u64)>), String> {
+    if duration_sec.ceil() as u64 <= chunk_seconds && file_size <= max_bytes {
+        return Ok((
+            None,
+            vec![(audio_path.to_path_buf(), 0, duration_sec.ceil() as u64)],
+        ));
+    }
+    let (workspace, parts) =
+        create_audio_chunks_with_size(audio_path, duration_sec, id, chunk_seconds)?;
+    Ok((Some(workspace), parts))
+}
+
+fn api_error(provider: &str, status: reqwest::StatusCode, body: &str) -> String {
+    let message = serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|value| {
+            value
+                .pointer("/error/message")
+                .and_then(Value::as_str)
+                .or_else(|| value.get("message").and_then(Value::as_str))
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| body.to_string());
+    format!(
+        "{} API error ({}): {}",
+        provider,
+        status,
+        message.chars().take(500).collect::<String>()
+    )
+}
+
+async fn translate_transcript_segments_with_openai(
+    client: &reqwest::Client,
+    api_key: &str,
+    source_lang: &str,
+    target_lang: &str,
+    segments: &mut [Segment],
+    cancel_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<(), String> {
+    let source_name = language_name(source_lang);
+    let target_name = language_name(target_lang);
+    for start in (0..segments.len()).step_by(24) {
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("Quá trình Re-transcript đã bị hủy".into());
+        }
+        let end = (start + 24).min(segments.len());
+        let items: Vec<Value> = segments[start..end]
+            .iter()
+            .map(|item| serde_json::json!({"source":item.src}))
+            .collect();
+        let response = client.post("https://api.openai.com/v1/chat/completions")
+            .bearer_auth(api_key.trim())
+            .json(&serde_json::json!({
+                "model":"gpt-4o-mini", "temperature":0,
+                "response_format":{"type":"json_object"},
+                "messages":[
+                    {"role":"system","content":format!("Translate every source item from {source_name} to {target_name}. Return only JSON {{\"translations\":[strings]}} in the same order and count. Preserve names and technical terms." )},
+                    {"role":"user","content":serde_json::to_string(&items).unwrap_or_default()}
+                ]
+            })).send().await.map_err(|error| format!("OpenAI translation request failed: {}", error))?;
+        let status = response.status();
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|error| format!("Read OpenAI translation failed: {}", error))?;
+        if !status.is_success() {
+            return Err(api_error("OpenAI", status, &body.to_string()));
+        }
+        let content = body
+            .pointer("/choices/0/message/content")
+            .and_then(Value::as_str)
+            .ok_or("OpenAI returned an empty translation")?;
+        let parsed: Value = serde_json::from_str(content)
+            .map_err(|error| format!("OpenAI returned invalid translations JSON: {}", error))?;
+        let translations = parsed
+            .get("translations")
+            .and_then(Value::as_array)
+            .ok_or("OpenAI translation response has no translations array")?;
+        if translations.len() != end - start {
+            return Err(format!(
+                "OpenAI returned {} translations for {} transcript segments",
+                translations.len(),
+                end - start
+            ));
+        }
+        for (segment, translation) in segments[start..end].iter_mut().zip(translations) {
+            segment.tgt = translation.as_str().unwrap_or_default().to_string();
+        }
+    }
+    Ok(())
+}
+
+async fn retranscribe_session_with_openai(
+    app: AppHandle,
+    id: String,
+    api_key: String,
+    source_lang: Option<String>,
+    target_lang: Option<String>,
+) -> Result<SessionReadResult, String> {
+    if api_key.trim().is_empty() {
+        return Err("OpenAI API key is empty".into());
+    }
+    let (md_path, json_path, audio_path, mime_type, audio_size, mut data) =
+        load_retranscribe_context(&app, &id, source_lang, target_lang)?;
+    let duration_sec = required_audio_duration(&audio_path)?;
+    let (_workspace, parts) = retranscribe_parts(
+        &audio_path,
+        duration_sec,
+        audio_size,
+        &id,
+        10 * 60,
+        24 * 1024 * 1024,
+    )?;
+    let (cancel_flag, _guard) = register_retranscribe_cancel(&id)?;
+    let client = retranscribe_client()?;
+    let mut segments = Vec::new();
+    for (index, (path, start_sec, end_sec)) in parts.iter().enumerate() {
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("Quá trình Re-transcript đã bị hủy".into());
+        }
+        emit_audio_transcript_progress(
+            &app,
+            &id,
+            "transcribe",
+            &format!("OpenAI đang xử lý phần {}/{}...", index + 1, parts.len()),
+            20 + ((index as u64 * 55) / parts.len() as u64) as u8,
+        );
+        let bytes =
+            fs::read(path).map_err(|error| format!("Read audio for OpenAI failed: {}", error))?;
+        let part = reqwest::multipart::Part::bytes(bytes)
+            .file_name(
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("recording.wav")
+                    .to_string(),
+            )
+            .mime_str(if path == &audio_path {
+                mime_type
+            } else {
+                "audio/wav"
+            })
+            .map_err(|error| error.to_string())?;
+        let mut form = reqwest::multipart::Form::new()
+            .part("file", part)
+            .text("model", "whisper-1")
+            .text("response_format", "verbose_json")
+            .text("timestamp_granularities[]", "segment");
+        if data.source_lang != "auto" && !data.source_lang.is_empty() {
+            form = form.text("language", data.source_lang.clone());
+        }
+        let response = client
+            .post("https://api.openai.com/v1/audio/transcriptions")
+            .bearer_auth(api_key.trim())
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|error| format!("OpenAI transcription request failed: {}", error))?;
+        let status = response.status();
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|error| format!("Read OpenAI transcription failed: {}", error))?;
+        if !status.is_success() {
+            return Err(api_error("OpenAI", status, &body.to_string()));
+        }
+        if let Some(items) = body.get("segments").and_then(Value::as_array) {
+            for item in items {
+                let src = value_string(item, &["text"]);
+                if src.is_empty() {
+                    continue;
+                }
+                let start =
+                    item.get("start").and_then(Value::as_f64).unwrap_or(0.0) + *start_sec as f64;
+                segments.push(Segment {
+                    ts: transcript_timestamp(start),
+                    src,
+                    tgt: String::new(),
+                    speaker: None,
+                });
+            }
+        } else {
+            let text = value_string(&body, &["text"]);
+            if !text.is_empty() {
+                segments.push(Segment {
+                    ts: transcript_timestamp(*start_sec as f64),
+                    src: text,
+                    tgt: String::new(),
+                    speaker: None,
+                });
+            }
+        }
+        emit_audio_transcript_progress(
+            &app,
+            &id,
+            "transcribe",
+            &format!("OpenAI đã xử lý đến {}...", format_duration_str(*end_sec)),
+            20 + (((index + 1) as u64 * 55) / parts.len() as u64) as u8,
+        );
+    }
+    if has_transcript_translation(&data) {
+        emit_audio_transcript_progress(
+            &app,
+            &id,
+            "translate",
+            "Đang dịch transcript bằng OpenAI...",
+            82,
+        );
+        translate_transcript_segments_with_openai(
+            &client,
+            &api_key,
+            &data.source_lang,
+            &data.target_lang,
+            &mut segments,
+            &cancel_flag,
+        )
+        .await?;
+    }
+    save_retranscribed_session(
+        &app,
+        &id,
+        &md_path,
+        &json_path,
+        &mut data,
+        "openai-audio-transcription",
+        segments,
+        Some(duration_sec),
+    )
+}
+
+fn soniox_segments(body: &Value, source_lang: &str, target_lang: &str) -> Vec<Segment> {
+    let Some(tokens) = body.get("tokens").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut result: Vec<Segment> = Vec::new();
+    let mut current_source_index: Option<usize> = None;
+    let translation_enabled =
+        target_lang != "none" && target_lang != "off" && target_lang != source_lang;
+    for token in tokens {
+        let text = value_string(token, &["text"]);
+        if text.is_empty() {
+            continue;
+        }
+        let kind = value_string(token, &["translation_status"]);
+        if kind == "translation" {
+            if translation_enabled {
+                if let Some(index) = current_source_index {
+                    result[index].tgt.push_str(&text);
+                }
+            }
+            continue;
+        }
+        let ms = token.get("start_ms").and_then(Value::as_u64).unwrap_or(0);
+        let should_start = result.last().is_none_or(|last| {
+            let last_sec = timestamp_seconds(&last.ts).unwrap_or(0);
+            ms / 1000 > last_sec + 1
+                || last
+                    .src
+                    .chars()
+                    .last()
+                    .is_some_and(|ch| matches!(ch, '.' | '?' | '!' | '。' | '？' | '！'))
+        });
+        if should_start {
+            result.push(Segment {
+                ts: transcript_timestamp(ms as f64 / 1000.0),
+                src: text,
+                tgt: String::new(),
+                speaker: value_string(token, &["speaker_id", "speaker"]).into(),
+            });
+            current_source_index = Some(result.len() - 1);
+        } else if let Some(last) = result.last_mut() {
+            last.src.push_str(&text);
+        }
+    }
+    result
+}
+
+async fn soniox_cleanup(
+    client: &reqwest::Client,
+    api_key: &str,
+    transcription_id: Option<&str>,
+    file_id: &str,
+) {
+    if let Some(transcription_id) = transcription_id {
+        let _ = client
+            .delete(format!(
+                "https://api.soniox.com/v1/transcriptions/{}",
+                transcription_id
+            ))
+            .bearer_auth(api_key.trim())
+            .send()
+            .await;
+    }
+    let _ = client
+        .delete(format!("https://api.soniox.com/v1/files/{}", file_id))
+        .bearer_auth(api_key.trim())
+        .send()
+        .await;
+}
+
+async fn retranscribe_session_with_soniox(
+    app: AppHandle,
+    id: String,
+    api_key: String,
+    source_lang: Option<String>,
+    target_lang: Option<String>,
+) -> Result<SessionReadResult, String> {
+    if api_key.trim().is_empty() {
+        return Err("Soniox API key is empty".into());
+    }
+    let (md_path, json_path, audio_path, _mime_type, audio_size, mut data) =
+        load_retranscribe_context(&app, &id, source_lang, target_lang)?;
+    let duration_sec = required_audio_duration(&audio_path)?;
+    let (_workspace, parts) = retranscribe_parts(
+        &audio_path,
+        duration_sec,
+        audio_size,
+        &id,
+        10 * 60,
+        100 * 1024 * 1024,
+    )?;
+    let (cancel_flag, _guard) = register_retranscribe_cancel(&id)?;
+    let client = retranscribe_client()?;
+    let mut segments = Vec::new();
+    for (index, (path, start_sec, _end_sec)) in parts.iter().enumerate() {
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("Quá trình Re-transcript đã bị hủy".into());
+        }
+        emit_audio_transcript_progress(
+            &app,
+            &id,
+            "upload",
+            &format!(
+                "Đang tải audio lên Soniox ({}/{})...",
+                index + 1,
+                parts.len()
+            ),
+            15 + ((index as u64 * 60) / parts.len() as u64) as u8,
+        );
+        let bytes =
+            fs::read(path).map_err(|error| format!("Read audio for Soniox failed: {}", error))?;
+        let part = reqwest::multipart::Part::bytes(bytes).file_name(
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("recording.wav")
+                .to_string(),
+        );
+        let upload = client
+            .post("https://api.soniox.com/v1/files")
+            .bearer_auth(api_key.trim())
+            .multipart(reqwest::multipart::Form::new().part("file", part))
+            .send()
+            .await
+            .map_err(|error| format!("Soniox upload failed: {}", error))?;
+        let status = upload.status();
+        let upload_body: Value = upload
+            .json()
+            .await
+            .map_err(|error| format!("Read Soniox upload response failed: {}", error))?;
+        if !status.is_success() {
+            return Err(api_error("Soniox upload", status, &upload_body.to_string()));
+        }
+        let file_id = value_string(&upload_body, &["id"]);
+        if file_id.is_empty() {
+            return Err("Soniox did not return an uploaded file id".into());
+        }
+        let mut request = serde_json::json!({"model":"stt-async-v5", "file_id":file_id, "enable_speaker_diarization":true});
+        if data.source_lang != "auto" && !data.source_lang.is_empty() {
+            request["language_hints"] = serde_json::json!([data.source_lang]);
+        }
+        if has_transcript_translation(&data) {
+            request["translation"] =
+                serde_json::json!({"type":"one_way", "target_language":data.target_lang});
+        }
+        let created = match client
+            .post("https://api.soniox.com/v1/transcriptions")
+            .bearer_auth(api_key.trim())
+            .json(&request)
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                soniox_cleanup(&client, &api_key, None, &file_id).await;
+                return Err(format!("Create Soniox transcription failed: {}", error));
+            }
+        };
+        let status = created.status();
+        let created_body: Value = match created.json().await {
+            Ok(body) => body,
+            Err(error) => {
+                soniox_cleanup(&client, &api_key, None, &file_id).await;
+                return Err(format!(
+                    "Read Soniox transcription response failed: {}",
+                    error
+                ));
+            }
+        };
+        if !status.is_success() {
+            soniox_cleanup(&client, &api_key, None, &file_id).await;
+            return Err(api_error(
+                "Soniox transcription",
+                status,
+                &created_body.to_string(),
+            ));
+        }
+        let transcription_id = value_string(&created_body, &["id"]);
+        if transcription_id.is_empty() {
+            soniox_cleanup(&client, &api_key, None, &file_id).await;
+            return Err("Soniox did not return a transcription id".into());
+        }
+        let poll = loop {
+            if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                break Err("Quá trình Re-transcript đã bị hủy".into());
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            let response = match client
+                .get(format!(
+                    "https://api.soniox.com/v1/transcriptions/{}",
+                    transcription_id
+                ))
+                .bearer_auth(api_key.trim())
+                .send()
+                .await
+            {
+                Ok(response) => response,
+                Err(error) => break Err(format!("Poll Soniox transcription failed: {}", error)),
+            };
+            let status = response.status();
+            let body: Value = match response.json().await {
+                Ok(body) => body,
+                Err(error) => break Err(format!("Read Soniox status failed: {}", error)),
+            };
+            if !status.is_success() {
+                break Err(api_error("Soniox", status, &body.to_string()));
+            }
+            match value_string(&body, &["status"]).as_str() {
+                "completed" => break Ok(()),
+                "error" => break Err(value_string(&body, &["error_message"]).to_string()),
+                _ => emit_audio_transcript_progress(
+                    &app,
+                    &id,
+                    "transcribe",
+                    &format!("Soniox đang phiên âm phần {}/{}...", index + 1, parts.len()),
+                    25 + ((index as u64 * 55) / parts.len() as u64) as u8,
+                ),
+            }
+        };
+        if let Err(error) = poll {
+            soniox_cleanup(&client, &api_key, Some(&transcription_id), &file_id).await;
+            return Err(error);
+        }
+        let result = match client
+            .get(format!(
+                "https://api.soniox.com/v1/transcriptions/{}/transcript",
+                transcription_id
+            ))
+            .bearer_auth(api_key.trim())
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                soniox_cleanup(&client, &api_key, Some(&transcription_id), &file_id).await;
+                return Err(format!("Fetch Soniox transcript failed: {}", error));
+            }
+        };
+        let status = result.status();
+        let result_body: Value = match result.json().await {
+            Ok(body) => body,
+            Err(error) => {
+                soniox_cleanup(&client, &api_key, Some(&transcription_id), &file_id).await;
+                return Err(format!("Read Soniox transcript failed: {}", error));
+            }
+        };
+        if !status.is_success() {
+            soniox_cleanup(&client, &api_key, Some(&transcription_id), &file_id).await;
+            return Err(api_error(
+                "Soniox transcript",
+                status,
+                &result_body.to_string(),
+            ));
+        }
+        let mut part_segments = soniox_segments(&result_body, &data.source_lang, &data.target_lang);
+        normalize_chunk_timestamps(&mut part_segments, *start_sec);
+        segments.append(&mut part_segments);
+        soniox_cleanup(&client, &api_key, Some(&transcription_id), &file_id).await;
+    }
+    save_retranscribed_session(
+        &app,
+        &id,
+        &md_path,
+        &json_path,
+        &mut data,
+        "soniox-async-transcription",
+        segments,
+        Some(duration_sec),
+    )
+}
+
+async fn translate_transcript_segments_with_qwen(
+    client: &reqwest::Client,
+    api_key: &str,
+    source_lang: &str,
+    target_lang: &str,
+    segments: &mut [Segment],
+    cancel_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<(), String> {
+    let source_name = language_name(source_lang);
+    let target_name = language_name(target_lang);
+    for start in (0..segments.len()).step_by(24) {
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("Quá trình Re-transcript đã bị hủy".into());
+        }
+        let end = (start + 24).min(segments.len());
+        let items: Vec<Value> = segments[start..end]
+            .iter()
+            .map(|item| serde_json::json!({"source":item.src}))
+            .collect();
+        let response = client.post("https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions").bearer_auth(api_key.trim()).json(&serde_json::json!({
+            "model":"qwen-plus", "temperature":0,
+            "messages":[{"role":"system","content":format!("Translate each source item from {source_name} to {target_name}. Output only JSON {{\"translations\":[strings]}} preserving order and count." )},{"role":"user","content":serde_json::to_string(&items).unwrap_or_default()}]
+        })).send().await.map_err(|error| format!("Qwen translation request failed: {}", error))?;
+        let status = response.status();
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|error| format!("Read Qwen translation failed: {}", error))?;
+        if !status.is_success() {
+            return Err(api_error("Qwen", status, &body.to_string()));
+        }
+        let content = body
+            .pointer("/choices/0/message/content")
+            .and_then(Value::as_str)
+            .ok_or("Qwen returned an empty translation")?;
+        let parsed: Value = serde_json::from_str(content)
+            .map_err(|error| format!("Qwen returned invalid translations JSON: {}", error))?;
+        let translations = parsed
+            .get("translations")
+            .and_then(Value::as_array)
+            .ok_or("Qwen translation response has no translations array")?;
+        if translations.len() != end - start {
+            return Err("Qwen returned an unexpected number of translations".into());
+        }
+        for (segment, translation) in segments[start..end].iter_mut().zip(translations) {
+            segment.tgt = translation.as_str().unwrap_or_default().to_string();
+        }
+    }
+    Ok(())
+}
+
+async fn retranscribe_session_with_qwen(
+    app: AppHandle,
+    id: String,
+    api_key: String,
+    source_lang: Option<String>,
+    target_lang: Option<String>,
+) -> Result<SessionReadResult, String> {
+    if api_key.trim().is_empty() {
+        return Err("Qwen API key is empty".into());
+    }
+    let (md_path, json_path, audio_path, mime_type, audio_size, mut data) =
+        load_retranscribe_context(&app, &id, source_lang, target_lang)?;
+    let duration_sec = required_audio_duration(&audio_path)?;
+    // Qwen's inline audio request accepts at most 10 MB after Base64 encoding;
+    // two-minute mono PCM chunks leave ample room for that expansion.
+    let (_workspace, parts) = retranscribe_parts(
+        &audio_path,
+        duration_sec,
+        audio_size,
+        &id,
+        2 * 60,
+        7 * 1024 * 1024,
+    )?;
+    let (cancel_flag, _guard) = register_retranscribe_cancel(&id)?;
+    let client = retranscribe_client()?;
+    let mut segments = Vec::new();
+    for (index, (path, start_sec, _end_sec)) in parts.iter().enumerate() {
+        if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("Quá trình Re-transcript đã bị hủy".into());
+        }
+        emit_audio_transcript_progress(
+            &app,
+            &id,
+            "transcribe",
+            &format!("Qwen đang phiên âm phần {}/{}...", index + 1, parts.len()),
+            20 + ((index as u64 * 60) / parts.len() as u64) as u8,
+        );
+        let bytes =
+            fs::read(path).map_err(|error| format!("Read audio for Qwen failed: {}", error))?;
+        let data_uri = format!(
+            "data:{};base64,{}",
+            if path == &audio_path {
+                mime_type
+            } else {
+                "audio/wav"
+            },
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes)
+        );
+        let mut asr_options = serde_json::json!({"enable_itn":false});
+        if data.source_lang != "auto" && !data.source_lang.is_empty() {
+            asr_options["language"] = serde_json::json!(data.source_lang);
+        }
+        let response = client.post("https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions").bearer_auth(api_key.trim()).json(&serde_json::json!({
+            "model":"qwen3-asr-flash", "stream":false, "asr_options":asr_options,
+            "messages":[{"role":"user","content":[{"type":"input_audio","input_audio":{"data":data_uri}}]}]
+        })).send().await.map_err(|error| format!("Qwen transcription request failed: {}", error))?;
+        let status = response.status();
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|error| format!("Read Qwen transcription failed: {}", error))?;
+        if !status.is_success() {
+            return Err(api_error("Qwen", status, &body.to_string()));
+        }
+        let text = body
+            .pointer("/choices/0/message/content")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        if !text.is_empty() {
+            segments.push(Segment {
+                ts: transcript_timestamp(*start_sec as f64),
+                src: text.to_string(),
+                tgt: String::new(),
+                speaker: None,
+            });
+        }
+    }
+    if has_transcript_translation(&data) {
+        emit_audio_transcript_progress(
+            &app,
+            &id,
+            "translate",
+            "Đang dịch transcript bằng Qwen...",
+            84,
+        );
+        translate_transcript_segments_with_qwen(
+            &client,
+            &api_key,
+            &data.source_lang,
+            &data.target_lang,
+            &mut segments,
+            &cancel_flag,
+        )
+        .await?;
+    }
+    save_retranscribed_session(
+        &app,
+        &id,
+        &md_path,
+        &json_path,
+        &mut data,
+        "qwen3-asr-flash",
+        segments,
+        Some(duration_sec),
+    )
 }
 
 fn has_transcript_translation(data: &SessionData) -> bool {
