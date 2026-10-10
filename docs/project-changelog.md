@@ -6,6 +6,12 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.13 - 2026-10-11
+
+### Improved
+
+- **Settings navigation**: Add a dedicated About & Updates entry to Settings so users can find app information and update controls.
+
 
 ## v1.0.12 - 2026-10-10
 

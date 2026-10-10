@@ -14745,6 +14745,19 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     }
 
     async _checkForUpdates() {
+        // Dev builds use a separate bundle identifier and must not present the
+        // public Release update controls.
+        try {
+            const identifier = await window.__TAURI__?.app?.getIdentifier?.();
+            if (identifier?.startsWith('com.meetminder.desktop.dev')) {
+                const updateSection = document.getElementById('section-update');
+                if (updateSection) updateSection.style.display = 'none';
+                return;
+            }
+        } catch (err) {
+            console.warn('[Updater] Could not identify this build:', err);
+        }
+
         updater.onUpdateFound = (version, notes) => {
             this._onUpdateAvailable(version, notes);
         };
