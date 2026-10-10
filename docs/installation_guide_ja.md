@@ -144,9 +144,6 @@ Meet Minderは、会議の全ログ、Markdownメモ、および音声ファイ�
 | <kbd>⌘</kbd> + <kbd>N</kbd> | **メモ引き出し (Take Note Drawer) の開閉** |
 | <kbd>⌘</kbd> + <kbd>L</kbd> | **リアルタイム画面 (Live Mode)** へ切り替え |
 | <kbd>⌘</kbd> + <kbd>O</kbd> | **過去の会議録一覧 (Meeting Logs)** へ切り替え |
-| <kbd>⌘</kbd> + <kbd>1</kbd> | 音声ソース: **システム音声（スピーカーのみ）** |
-| <kbd>⌘</kbd> + <kbd>2</kbd> | 音声ソース: **マイク音声のみ** |
-| <kbd>⌘</kbd> + <kbd>3</kbd> | 音声ソース: **システム ＋ マイク（会議推奨）** |
 | <kbd>⌘</kbd> + <kbd>,</kbd> | **設定画面を開く** |
 | <kbd>⌘</kbd> + <kbd>P</kbd> | ウィンドウ最前面固定トグル（実行中は一時停止） |
 | <kbd>⌘</kbd> + <kbd>M</kbd> | ウィンドウの最小化 |

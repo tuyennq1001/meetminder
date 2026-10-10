@@ -19,6 +19,7 @@ import {
 } from './minutes-templates.js';
 
 import { settingsManager } from './settings.js';
+import { getMissingEngineApiKey } from './required-api-key.js';
 import { TranscriptUI } from './ui.js';
 import { sonioxClient } from './soniox.js';
 import { updater } from './updater.js';
@@ -236,8 +237,8 @@ class App {
             const initSettings = settingsManager.get();
             sessionStore.init({
                 engine: initSettings.translation_mode || 'gemini',
-                sourceLang: initSettings.source_language || 'ja',
-                targetLang: initSettings.target_language || 'vi',
+                sourceLang: initSettings.source_language || 'en',
+                targetLang: initSettings.target_language || 'ja',
             });
 
             // Check platform — hide Local MLX on non-Apple-Silicon
@@ -353,6 +354,8 @@ class App {
         }
         const btnPin = document.getElementById('btn-pin');
         if (btnPin) btnPin.classList.toggle('active', this.isPinned);
+
+        await this._openMissingEngineApiKeySettings();
 
         // Check for updates (non-blocking)
         this._initAboutTab();
@@ -1513,7 +1516,7 @@ class App {
         });
 
         // Source buttons
-        // Audio source dropdown (⌘1/2/3 still switch via _setSource)
+        // Audio source dropdown.
         document.getElementById('select-audio-source')?.addEventListener('change', (e) => {
             this._setSource(e.target.value);
         });
@@ -2175,27 +2178,6 @@ class App {
                 return;
             }
 
-            // Cmd/Ctrl + 1: Switch to System Audio
-            if (hasModifier && e.key === '1') {
-                e.preventDefault();
-                this._setSource('system');
-                return;
-            }
-
-            // Cmd/Ctrl + 2: Switch to Microphone
-            if (hasModifier && e.key === '2') {
-                e.preventDefault();
-                this._setSource('microphone');
-                return;
-            }
-
-            // Cmd/Ctrl + 3: Switch to Both
-            if (hasModifier && e.key === '3') {
-                e.preventDefault();
-                this._setSource('both');
-                return;
-            }
-
             // Cmd/Ctrl + M: Minimize
             if (hasModifier && (e.key === 'm' || e.key === 'M')) {
                 e.preventDefault();
@@ -2264,19 +2246,31 @@ class App {
     // picker. The individual sections remain hidden/shown by _updateModeUI.
     _reorderTranslationCredentialSections() {
         const tab = document.getElementById('tab-translation');
-        const timingSection = document.getElementById('select-translation-timing')
+        const engineSection = document.getElementById('select-translation-mode')
             ?.closest('.settings-section');
-        if (!tab || !timingSection) return;
+        if (!tab || !engineSection) return;
 
-        [
-            'section-api-key',
-            'section-openai-key',
-            'section-gemini-key',
-            'section-qwen-key',
-        ].forEach((id) => {
+        let anchor = engineSection;
+        ['section-gemini-key', 'section-api-key', 'section-openai-key', 'section-qwen-key'].forEach((id) => {
             const section = document.getElementById(id);
-            if (section) tab.insertBefore(section, timingSection);
+            if (section) {
+                anchor.after(section);
+                anchor = section;
+            }
         });
+    }
+
+    async _openMissingEngineApiKeySettings() {
+        const settings = settingsManager.get();
+        const requiredKey = getMissingEngineApiKey(settings);
+        if (!requiredKey) return;
+
+        this._showView('settings');
+        await this._showSettingsScreen('tab-translation');
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const input = document.getElementById(requiredKey.inputId);
+        input?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        input?.focus({ preventScroll: true });
     }
 
     /** Show one settings screen (sidebar item selected) inside the 2-column settings view. */
@@ -2900,9 +2894,9 @@ class App {
         const qwenKeyInput = document.getElementById('input-qwen-key');
         if (qwenKeyInput) qwenKeyInput.value = s.qwen_api_key || '';
         const selectSrc = document.getElementById('select-source-lang');
-        if (selectSrc) selectSrc.value = s.source_language || 'ja';
+        if (selectSrc) selectSrc.value = s.source_language || 'en';
         const selectTgt = document.getElementById('select-target-lang');
-        if (selectTgt) selectTgt.value = s.target_language || 'vi';
+        if (selectTgt) selectTgt.value = s.target_language || 'ja';
         const selectTransMode = document.getElementById('select-translation-mode');
         if (selectTransMode) selectTransMode.value = s.translation_mode || 'gemini';
         const selectTranscriptEngine = document.getElementById('select-transcript-engine');
@@ -2927,9 +2921,9 @@ class App {
 
         // Two-way language selects
         const selectLangA = document.getElementById('select-lang-a');
-        if (selectLangA) selectLangA.value = s.language_a || 'ja';
+        if (selectLangA) selectLangA.value = s.language_a || 'en';
         const selectLangB = document.getElementById('select-lang-b');
-        if (selectLangB) selectLangB.value = s.language_b || 'vi';
+        if (selectLangB) selectLangB.value = s.language_b || 'ja';
 
         // Strict language detection
         const checkStrict = document.getElementById('check-strict-lang');
@@ -3014,15 +3008,15 @@ class App {
             // while Live Translate has only one supported model.
             gemini_model: 'auto',
             qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
-            source_language: document.getElementById('quick-select-source-lang')?.value || settingsManager.get().source_language || 'ja',
-            target_language: document.getElementById('quick-select-target-lang')?.value || settingsManager.get().target_language || 'vi',
+            source_language: document.getElementById('quick-select-source-lang')?.value || settingsManager.get().source_language || 'en',
+            target_language: document.getElementById('quick-select-target-lang')?.value || settingsManager.get().target_language || 'ja',
             translation_mode: document.getElementById('select-translation-mode')?.value || 'gemini',
             transcript_engine: document.getElementById('select-transcript-engine')?.value || settingsManager.get().transcript_engine || 'gemini_live_translate',
             translation_timing: document.getElementById('select-translation-timing')?.value || settingsManager.get().translation_timing || 'on_pause',
             inactivity_timeout_min: parseInt(document.getElementById('select-inactivity-timeout')?.value || '10', 10),
             translation_type: 'one_way',
-            language_a: 'ja',
-            language_b: 'vi',
+            language_a: 'en',
+            language_b: 'ja',
             language_hints_strict: document.getElementById('check-strict-lang')?.checked || false,
             endpoint_delay: parseInt(document.getElementById('range-endpoint-delay')?.value || settingsManager.get().endpoint_delay || 3000),
             audio_source: document.querySelector('input[name="audio-source"]:checked')?.value || 'system',
@@ -3140,10 +3134,6 @@ class App {
         document.documentElement.style.setProperty('--transcript-font-size', `${transcriptFontSize}px`);
         document.documentElement.style.setProperty('--transcript-font-color', transcriptFontColor);
 
-        // Update overlay opacity
-        const overlayView = document.getElementById('overlay-view');
-        overlayView.style.opacity = settings.overlay_opacity || 0.85;
-
         // Live status row: language pair display
         const langEl = document.getElementById('live-lang');
         if (langEl) {
@@ -3162,7 +3152,7 @@ class App {
                 fontColor: settings.font_color || '#ffffff',
                 fontFamily: settings.font_family || 'system',
                 viewMode: viewMode,
-                targetLanguage: settings.target_language || 'vi',
+                targetLanguage: settings.target_language || 'ja',
             });
         }
         this._setViewMode(viewMode);
@@ -3757,11 +3747,11 @@ class App {
             const translationType = settings.translation_type || 'one_way';
             this.sessionMode = translationType;
             if (translationType === 'two_way') {
-                this.sessionSourceLang = settings.language_a || 'ja';
-                this.sessionTargetLang = settings.language_b || 'vi';
+                this.sessionSourceLang = settings.language_a || 'en';
+                this.sessionTargetLang = settings.language_b || 'ja';
             } else {
-                this.sessionSourceLang = settings.source_language || 'ja';
-                this.sessionTargetLang = settings.target_language || 'vi';
+                this.sessionSourceLang = settings.source_language || 'en';
+                this.sessionTargetLang = settings.target_language || 'ja';
             }
         }
 
@@ -3932,7 +3922,7 @@ class App {
         try {
             await this.openAiClient.connect({
                 apiKey: settings.openai_api_key,
-                sourceLanguage: settings.source_language || 'ja',
+                sourceLanguage: settings.source_language || 'en',
                 targetLanguage: settings.target_language,
                 audioOutput: false,
             }, this.openAiOutputQueue);
@@ -4189,8 +4179,8 @@ class App {
         try {
             await this.geminiClient.connect({
                 apiKey: settings.gemini_api_key,
-                sourceLanguage: settings.source_language || 'ja',
-                targetLanguage: settings.target_language || 'vi',
+                sourceLanguage: settings.source_language || 'en',
+                targetLanguage: settings.target_language || 'ja',
                 model: settings.gemini_model || 'auto',
             });
         } catch (err) {
@@ -4445,11 +4435,11 @@ class App {
                 'auto': 'auto', 'ja': 'Japanese', 'en': 'English',
                 'zh': 'Chinese', 'ko': 'Korean', 'vi': 'Vietnamese',
             };
-            const sourceLang = sourceLangMap[settings.source_language] || 'Japanese';
+            const sourceLang = sourceLangMap[settings.source_language] || 'English';
 
             await invoke('start_local_pipeline', {
                 sourceLang: sourceLang,
-                targetLang: settings.target_language || 'vi',
+                targetLang: settings.target_language || 'ja',
                 channel: this.localPipelineChannel,
             });
             console.log('[App] Local pipeline spawned');
@@ -5841,7 +5831,7 @@ class App {
         this.transcriptUI.removeStatusMessage();
         this._updateStatus('idle');
 
-        // Reset live notes to template and clear metadata selectors (keep drawer open by default)
+        // Reset live notes to template and clear metadata selectors.
         if (this._liveNotesEditor) {
             const template = this._getNoteTemplate();
             this._suppressLiveNoteDraft = true;
@@ -5850,12 +5840,13 @@ class App {
             sessionStore.notes = template;
         }
         this._resetNoteMetadataSelectors();
+        this._toggleNotesDrawer(false, false);
 
         const settings = settingsManager.get();
         sessionStore.init({
             engine: settings.translation_mode || 'gemini',
-            sourceLang: settings.source_language || 'ja',
-            targetLang: settings.target_language || 'vi',
+            sourceLang: settings.source_language || 'en',
+            targetLang: settings.target_language || 'ja',
         });
         this._syncLiveMinutesTemplateSelector({ followCategory: true });
         this._syncLiveMeetingTitleInput();
@@ -5984,9 +5975,10 @@ class App {
         const settings = settingsManager.get();
         sessionStore.init({
             engine: settings.translation_mode || 'gemini',
-            sourceLang: settings.source_language || 'ja',
-            targetLang: settings.target_language || 'vi',
+            sourceLang: settings.source_language || 'en',
+            targetLang: settings.target_language || 'ja',
         });
+        this._toggleNotesDrawer(false, false);
         this._syncLiveMinutesTemplateSelector({ followCategory: true });
         this._syncLiveMeetingTitleInput();
         this._updateStatus('idle');
@@ -6309,7 +6301,7 @@ class App {
 
         // Use session metadata captured at start()
         const sourceLang = this.sessionSourceLang || document.getElementById('quick-select-source-lang')?.value || 'auto';
-        const targetLang = this.sessionTargetLang || document.getElementById('quick-select-target-lang')?.value || 'vi';
+        const targetLang = this.sessionTargetLang || document.getElementById('quick-select-target-lang')?.value || 'ja';
         const mode = this.sessionMode || 'one_way';
 
         const content = this.transcriptUI.getFullSessionText({
@@ -7682,7 +7674,7 @@ class App {
             this._renderTagFilterSelect();
 
             if (this._cachedSessions.length === 0) {
-                listEl.innerHTML = `<div class="sessions-empty">${this._esc(t('logsTable.emptyNoLogs'))}<br><button type="button" class="btn-primary small" id="btn-empty-import-audio" style="margin-top:12px;">${this._esc(t('library.import'))}</button></div>`;
+                listEl.innerHTML = `<div class="sessions-empty">${this._esc(t('logsTable.emptyNoLogs'))}<br><span class="empty-import-hint">${this._esc(t('library.importHint'))}</span><button type="button" class="btn-primary small" id="btn-empty-import-audio" style="margin-top:12px;">${this._esc(t('library.import'))}</button></div>`;
                 document.getElementById('btn-empty-import-audio')?.addEventListener('click', () => this._handleOpenImportAudio());
                 this._updateBatchSelectionUI();
                 this._syncSessionMiniPlayerUI();
@@ -15304,7 +15296,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
         this._initNotesResize();
         this._initNoteMetadataSelectors();
-        this._toggleNotesDrawer(true, false);
+        this._toggleNotesDrawer(false, false);
     }
 
     async _initNoteMetadataSelectors() {

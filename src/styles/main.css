@@ -137,7 +137,7 @@ body {
   font-family: 'Roboto', 'Google Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 14px;
   color: var(--text-primary);
-  background: transparent;
+  background: var(--md-sys-color-surface);
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
@@ -231,7 +231,7 @@ summary,
 
 #overlay-view {
   position: relative;
-  background: var(--md-sys-color-surface-container-low);
+  background: var(--md-sys-color-surface);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
   backdrop-filter: blur(28px);
@@ -5844,12 +5844,16 @@ body.resizing-vertical * {
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  flex: 1 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
+  min-width: max-content;
   flex-wrap: nowrap;
   position: relative;
   z-index: 1;
   font-family: var(--table-font-family);
+}
+
+.notes-tools-meta > * {
+  flex-shrink: 0;
 }
 
 .note-meta-select {
@@ -5866,6 +5870,7 @@ body.resizing-vertical * {
   cursor: pointer;
   max-width: 140px;
   min-width: 75px;
+  flex-shrink: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
   transition: all 0.15s ease;
@@ -6038,9 +6043,9 @@ body.resizing-vertical * {
 }
 
 .live-note-title-input {
-  width: clamp(234px, 35vw, 450px);
+  width: clamp(176px, 24vw, 300px);
   min-width: 176px;
-  flex: 0 0 clamp(234px, 35vw, 450px);
+  flex: 0 0 clamp(176px, 24vw, 300px);
   height: 22px;
   box-sizing: border-box;
   padding: 2px 7px;
@@ -8215,10 +8220,40 @@ body.expanded #library-panel { padding: 8px 6%; }
 
 .sessions-list-toolbar-right {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-start;
   gap: 8px;
   margin-left: 0;
+}
+
+.import-audio-control-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.import-audio-supported-hint,
+.empty-import-hint {
+  max-width: 440px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.import-audio-supported-hint {
+  text-align: left;
+}
+
+.empty-import-hint {
+  display: block;
+  margin-top: 8px;
+}
+
+.import-audio-description {
+  margin: 0 0 12px;
 }
 
 /* ─── Independent Meeting Search ────────────────────────────── */

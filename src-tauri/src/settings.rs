@@ -241,8 +241,8 @@ impl Default for Settings {
             gemini_api_key: String::new(),
             gemini_model: "auto".to_string(),
             qwen_api_key: String::new(),
-            source_language: "ja".to_string(),
-            target_language: "vi".to_string(),
+            source_language: "en".to_string(),
+            target_language: "ja".to_string(),
             audio_source: "system".to_string(),
             overlay_opacity: 0.85,
             font_size: 16,
@@ -490,7 +490,7 @@ fn normalize_loaded_settings(mut settings: Settings) -> Settings {
         || settings.target_language.eq_ignore_ascii_case("none")
         || settings.target_language.eq_ignore_ascii_case("off")
     {
-        settings.target_language = "vi".to_string();
+        settings.target_language = "ja".to_string();
     }
     // Live Translate currently has one supported model. Normalize legacy
     // explicit/experimental selections to Auto so the compatibility field
@@ -539,7 +539,7 @@ mod tests {
         let settings = Settings::load_from_paths(&primary_path, Some(&fallback_path));
 
         assert_eq!(settings.gemini_api_key, "test-key");
-        assert_eq!(settings.target_language, "vi");
+        assert_eq!(settings.target_language, "ja");
         assert_eq!(settings.transcript_engine, "gemini_live_translate");
         fs::remove_dir_all(directory).expect("should remove test settings directory");
     }
@@ -571,7 +571,8 @@ mod tests {
         let settings = Settings::load_from_paths(&primary_path, None);
 
         assert_eq!(settings.gemini_api_key, "");
-        assert_eq!(settings.target_language, "vi");
+        assert_eq!(settings.source_language, "en");
+        assert_eq!(settings.target_language, "ja");
     }
 
     #[test]
@@ -580,8 +581,8 @@ mod tests {
         assert_eq!(s.app_language, "en");
         assert_eq!(s.gemini_model, "auto");
         assert_eq!(s.transcript_engine, "gemini_live_translate");
-        assert_eq!(s.source_language, "ja");
-        assert_eq!(s.target_language, "vi");
+        assert_eq!(s.source_language, "en");
+        assert_eq!(s.target_language, "ja");
         assert_eq!(s.audio_source, "system");
         assert_eq!(s.font_size, 16);
         assert_eq!(s.note_font_size, 14);

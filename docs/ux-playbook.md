@@ -17,6 +17,7 @@ trạng thái rõ ràng và không làm mất ngữ cảnh người dùng.
 | Không làm mất trạng thái đang nhập | Khi lọc hoặc re-render, giữ query, bộ lọc, trang, focus và vị trí con trỏ nếu có thể. |
 | Feedback phải gần với nguyên nhân | Loading, empty, error, disabled và success cần có trạng thái riêng; lỗi nên nói người dùng cần làm gì tiếp theo. |
 | Một pattern dùng chung phải có một hành vi chung | Các bảng, modal, nút hành động và thuật ngữ giống nhau nên dùng cùng quy tắc trên toàn sản phẩm. |
+| Nền cửa sổ phải ổn định | Ứng dụng desktop dùng nền đặc cho toàn bộ vùng nội dung; chỉ dùng cửa sổ trong suốt khi đó là hành vi chủ đích và đã được kiểm thử trên nền ứng dụng khác. |
 
 ## 2. Data table: mặc định phải lọc được và sort ở header
 
@@ -182,6 +183,8 @@ Các quy tắc đã chứng minh hữu ích trong Meet Minder:
   giá trị rỗng, ví dụ `(Không chọn...)` thay vì trộn nhiều cách diễn đạt.
 - Placeholder minh hoạ format nhập; label mô tả ý nghĩa. Không dùng placeholder
   thay cho label.
+- Toolbar có nhiều trường nhập phải giữ nguyên bề rộng tối thiểu của từng nhóm;
+  khi thiếu chỗ, cuộn hàng chứa thay vì co hoặc chồng các control lên nhau.
 - Hover, active, selected, focus và disabled phải phân biệt được bằng màu,
   shape hoặc text; không dựa duy nhất vào màu.
 

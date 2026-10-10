@@ -143,9 +143,6 @@ On the main Live Overlay window, click **Start** or use convenient hotkeys:
 | <kbd>⌘</kbd> + <kbd>N</kbd> | **Toggle Take Note Drawer** (Obsidian Markdown editor) |
 | <kbd>⌘</kbd> + <kbd>L</kbd> | Switch to **Live Mode** |
 | <kbd>⌘</kbd> + <kbd>O</kbd> | Switch to **Meeting Logs & Library** |
-| <kbd>⌘</kbd> + <kbd>1</kbd> | Audio source: **System Audio (Speakers)** |
-| <kbd>⌘</kbd> + <kbd>2</kbd> | Audio source: **Microphone** |
-| <kbd>⌘</kbd> + <kbd>3</kbd> | Audio source: **Both System + Microphone (Recommended)** |
 | <kbd>⌘</kbd> + <kbd>,</kbd> | **Open Settings** |
 | <kbd>⌘</kbd> + <kbd>P</kbd> | Pin window always on top |
 | <kbd>⌘</kbd> + <kbd>M</kbd> | Minimize window |

@@ -19,7 +19,7 @@
         "minHeight": 240,
         "maximized": true,
         "center": true,
-        "transparent": true,
+        "transparent": false,
         "decorations": true,
         "titleBarStyle": "Overlay",
         "trafficLightPosition": {

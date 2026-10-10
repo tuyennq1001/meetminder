@@ -143,9 +143,6 @@ Trên màn hình chính (Live Overlay), nhấp nút **Start** hoặc dùng các 
 | <kbd>⌘</kbd> + <kbd>N</kbd> | **Mở / Đóng nhanh ngăn kéo Ghi chú (Take Note Drawer)** |
 | <kbd>⌘</kbd> + <kbd>L</kbd> | Chuyển sang màn hình **Trực tiếp (Live mode)** |
 | <kbd>⌘</kbd> + <kbd>O</kbd> | Chuyển sang màn hình **Kho lưu trữ & Lịch sử cuộc họp (Meeting Logs)** |
-| <kbd>⌘</kbd> + <kbd>1</kbd> | Chọn nguồn thu: **Chỉ âm thanh hệ thống (Loa)** |
-| <kbd>⌘</kbd> + <kbd>2</kbd> | Chọn nguồn thu: **Chỉ Microphone** |
-| <kbd>⌘</kbd> + <kbd>3</kbd> | Chọn nguồn thu: **Hệ thống + Micro kết hợp (Khuyên dùng khi họp)** |
 | <kbd>⌘</kbd> + <kbd>,</kbd> | **Mở Cửa sổ Cài đặt (Settings)** |
 | <kbd>⌘</kbd> + <kbd>P</kbd> | Ghim cửa sổ ứng dụng luôn nổi trên cùng (Toggle Pin Always-on-top) |
 | <kbd>⌘</kbd> + <kbd>M</kbd> | Thu nhỏ cửa sổ ứng dụng |

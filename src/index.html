@@ -107,7 +107,7 @@
           <div class="toolbar-setting-pill toolbar-audio-source-pill" data-i18n-title="toolbar.audio.title" title="Nguồn âm thanh">
             <div class="source-select-wrap">
               <span class="toolbar-source-label" data-i18n="toolbar.audio">Nguồn</span>
-              <select id="select-audio-source" class="source-select" data-i18n-title="toolbar.audio.title" title="Nguồn âm thanh (⌘1/2/3)">
+              <select id="select-audio-source" class="source-select" data-i18n-title="toolbar.audio.title" title="Nguồn âm thanh">
                 <option value="system" data-i18n="audio.system">🔊 System</option>
                 <option value="microphone" data-i18n="audio.microphone">🎤 Mic</option>
                 <option value="both" data-i18n="audio.both">🔊+🎤 Cả 2</option>
@@ -183,7 +183,7 @@
       </div>
 
       <!-- Collapsible Horizontal Take Note Drawer -->
-      <div id="live-notes-drawer" class="live-notes-drawer">
+      <div id="live-notes-drawer" class="live-notes-drawer is-collapsed">
         <!-- Resize Handle for Take Note Drawer -->
         <div id="live-notes-resizer" class="notes-resize-handle" data-i18n-title="notes.resize.title" title="Kéo để thay đổi độ cao ghi chú (Nhấp đúp để đặt lại)">
           <div class="notes-resize-bar"></div>
@@ -193,7 +193,7 @@
         <div class="notes-toolbar">
           <div class="notes-toolbar-main">
             <div class="notes-tools-left">
-              <button id="btn-toggle-notes" class="btn-notes-action active" type="button" data-i18n-title="notes.toggle.open" title="Mở / thu gọn Memo (Alt+M)" aria-keyshortcuts="Alt+M" aria-pressed="true" aria-expanded="true">
+              <button id="btn-toggle-notes" class="btn-notes-action" type="button" data-i18n-title="notes.toggle.open" title="Mở / thu gọn Memo (Alt+M)" aria-keyshortcuts="Alt+M" aria-pressed="false" aria-expanded="false">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
@@ -270,9 +270,12 @@
             <button type="button" id="btn-open-session-search" class="btn-secondary small" data-i18n-title="search.openTitle" title="Tìm kiếm trong tên, Logs và ghi chú">
               <span data-i18n="search.open">🔎 Search</span>
             </button>
-            <button type="button" id="btn-open-import-audio" class="btn-primary small btn-import-audio" data-i18n-title="library.import" title="Import file ghi âm cuộc họp (WAV, MP3, M4A, AAC, OGG, FLAC...)">
-              <span data-i18n="library.import">📥 Import file ghi âm</span>
-            </button>
+            <div class="import-audio-control-wrap">
+              <button type="button" id="btn-open-import-audio" class="btn-primary small btn-import-audio" data-i18n-title="library.import" title="Import file ghi âm cuộc họp (WAV, MP3, M4A, AAC, OGG, FLAC, WEBM)">
+                <span data-i18n="library.import">📥 Import file ghi âm</span>
+              </button>
+              <span class="import-audio-supported-hint" data-i18n="library.importHint">Nhập file âm thanh để tạo bản chép lời và bản ghi cuộc họp · WAV, MP3, M4A, AAC, OGG, FLAC, WEBM</span>
+            </div>
           </div>
         </div>
 
@@ -1300,7 +1303,6 @@
         <tr><td><kbd>⌘S</kbd> / <kbd>⌘P</kbd> / <kbd>⌘C</kbd></td><td>Start / Pause / Continue</td></tr>
         <tr><td><kbd>⌘T</kbd></td><td>Kết thúc cuộc họp & Lưu (Save & Stop)</td></tr>
         <tr><td><kbd id="memo-shortcut-key">Alt+M</kbd></td><td data-i18n="notes.shortcut.description">Mở / Đóng Memo</td></tr>
-        <tr><td><kbd>⌘1</kbd> / <kbd>⌘2</kbd> / <kbd>⌘3</kbd></td><td>Nguồn: System / Mic / Cả 2</td></tr>
         <tr><td><kbd>⌘,</kbd></td><td>Mở Cài đặt</td></tr>
         <tr><td><kbd>⌘P</kbd></td><td>Ghim cửa sổ nổi</td></tr>
         <tr><td><kbd>⌘M</kbd></td><td>Thu nhỏ cửa sổ</td></tr>
@@ -1600,6 +1602,7 @@
         <button type="button" id="btn-close-import-audio" class="icon-btn close-btn" data-i18n-title="modal.close" title="Đóng">×</button>
       </div>
       <div class="modal-body">
+        <p class="modal-desc import-audio-description" data-i18n="modal.importAudio.description">Nhập file âm thanh để tạo bản chép lời và bản ghi cuộc họp. Hỗ trợ WAV, MP3, M4A, AAC, OGG, FLAC và WEBM.</p>
         <!-- Selected File Card -->
         <div class="import-file-card">
           <div class="import-file-info">
