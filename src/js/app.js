@@ -110,6 +110,9 @@ class App {
         this._pendingUpdateReadyBanner = null;
         this._updateEscapeBound = false;
         this._projectRegistry = null;
+        this._projectRegistryVersion = 0;
+        this._knownTagsScopeIndexCache = null;
+        this._liveMinutesTemplateSwitchToken = 0;
         this._activeLogsScopeFilter = 'work'; // 'work' | 'personal' | 'all'
         this._activeCustomerFilter = [];
         this._activeProjectFilter = [];
@@ -4737,6 +4740,7 @@ class App {
                 try {
                     const sessions = await invoke('list_sessions');
                     this._cachedSessions = sessions || [];
+                    this._knownTagsScopeIndexCache = null;
                     sessionTags = (this._cachedSessions || []).flatMap(sess => sess.tags || []);
                 } catch (_) {
                     // Ignore
@@ -4764,37 +4768,45 @@ class App {
         const reg = this._projectRegistry || { tags: [], tag_scopes: {} };
         const sessions = this._cachedSessions || [];
         const tagScopes = reg.tag_scopes || {};
-        const allTagNames = new Set();
-
         const normalizeTag = (value) => String(value || '').trim().replace(/^#+/, '').toLowerCase();
-        for (const tag of reg.tags || []) {
-            const cleanTag = normalizeTag(tag);
-            if (cleanTag) allTagNames.add(cleanTag);
-        }
-        for (const session of sessions) {
-            for (const tag of session.tags || []) {
+        let cache = this._knownTagsScopeIndexCache;
+        if (!cache || cache.registry !== reg || cache.sessions !== sessions || cache.version !== this._projectRegistryVersion) {
+            const allTagNames = new Set();
+            const scopesByTag = new Map();
+            for (const tag of reg.tags || []) {
                 const cleanTag = normalizeTag(tag);
                 if (cleanTag) allTagNames.add(cleanTag);
             }
+            for (const session of sessions) {
+                const sessionScope = session.scope || 'work';
+                for (const tag of session.tags || []) {
+                    const cleanTag = normalizeTag(tag);
+                    if (!cleanTag) continue;
+                    allTagNames.add(cleanTag);
+                    if (!scopesByTag.has(cleanTag)) scopesByTag.set(cleanTag, new Set());
+                    scopesByTag.get(cleanTag).add(sessionScope);
+                }
+            }
+            cache = { registry: reg, sessions, version: this._projectRegistryVersion, allTagNames, scopesByTag, results: new Map() };
+            this._knownTagsScopeIndexCache = cache;
         }
+        const resultKey = `${scope}|${includeShared ? 'shared' : 'scoped'}`;
+        if (cache.results.has(resultKey)) return cache.results.get(resultKey);
 
-        return Array.from(allTagNames)
+        const result = Array.from(cache.allTagNames)
             .filter((tag) => {
                 const declaredScope = tagScopes[tag] || tagScopes[`#${tag}`];
                 if (declaredScope === 'all') return includeShared;
                 if (declaredScope === 'work' || declaredScope === 'personal') {
                     return declaredScope === scope;
                 }
-
-                const matchingSessions = sessions.filter((session) =>
-                    (session.tags || []).some((sessionTag) => normalizeTag(sessionTag) === tag)
-                );
-                if (matchingSessions.length === 0) return scope === 'work';
-                return matchingSessions.some((session) =>
-                    (session.scope || 'work') === scope
-                );
+                const tagScopesInSessions = cache.scopesByTag.get(tag);
+                if (!tagScopesInSessions || tagScopesInSessions.size === 0) return scope === 'work';
+                return tagScopesInSessions.has(scope);
             })
             .sort((a, b) => a.localeCompare(b));
+        cache.results.set(resultKey, result);
+        return result;
     }
 
     _setupTagAutocomplete(inputEl, suggestionsBoxEl, knownTags = []) {
@@ -7249,6 +7261,8 @@ class App {
             console.error('Failed to load project registry:', err);
             this._projectRegistry = { customers: [], projects: [], categories: [], tags: [] };
         }
+        this._projectRegistryVersion++;
+        this._knownTagsScopeIndexCache = null;
         this._populateNoteMetadataSelectors?.();
         return this._projectRegistry;
     }
@@ -7647,6 +7661,7 @@ class App {
             await this._loadProjectRegistry();
             const sessions = await invoke('list_sessions');
             this._cachedSessions = sessions || [];
+            this._knownTagsScopeIndexCache = null;
             if (this._sessionAudioId && !this._cachedSessions.some(session => session.id === this._sessionAudioId)) {
                 this._stopSessionAudioPlayback();
             }
@@ -15387,35 +15402,33 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 sessionStore.projectId = null;
             }
             this._refreshNoteTagsAutocomplete();
-            this._syncLiveMinutesTemplateSelector({ followCategory: true });
+            this._syncLiveMinutesTemplateSelector({ followCategory: true, deferEditorSwitch: true });
         });
 
         selectCust?.addEventListener('change', () => {
             const custId = selectCust.value || null;
+            const curProjId = selectProj?.value || sessionStore.projectId;
+            const curProj = (this._projectRegistry?.projects || []).find(p => p.id === curProjId && p.status === 'active');
             sessionStore.customerId = custId;
             sessionStore._mutations++;
             selectCust.classList.toggle('has-value', Boolean(custId));
-            this._updateNoteProjectsDropdown(custId, null, sessionStore.scope || 'work');
-            const curProjId = selectProj?.value || null;
-            const regProjs = (this._projectRegistry?.projects || []).filter(p => p.status === 'active');
-            if (curProjId) {
-                const projObj = regProjs.find(p => p.id === curProjId);
-                if (custId && projObj && projObj.customer_id && projObj.customer_id !== custId) {
+            if (custId && curProj?.customer_id && curProj.customer_id !== custId) {
+                sessionStore.projectId = null;
+                if (selectProj) {
                     selectProj.value = '';
                     selectProj.classList.remove('has-value');
-                    sessionStore.projectId = null;
                 }
             }
+            this._updateNoteProjectsDropdown(custId, null, sessionStore.scope || 'work');
         });
 
-        selectProj?.addEventListener('change', async () => {
+        selectProj?.addEventListener('change', () => {
             const projId = selectProj.value || null;
             sessionStore.projectId = projId;
             sessionStore._mutations++;
             selectProj.classList.toggle('has-value', Boolean(projId));
             if (projId && selectCust) {
-                const regProjs = (this._projectRegistry?.projects || []).filter(p => p.status === 'active');
-                const foundProj = regProjs.find(p => p.id === projId);
+                const foundProj = (this._projectRegistry?.projects || []).find(p => p.id === projId && p.status === 'active');
                 if (foundProj && foundProj.customer_id) {
                     selectCust.value = foundProj.customer_id;
                     selectCust.classList.add('has-value');
@@ -15429,13 +15442,13 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             sessionStore.category = selectCat.value || null;
             sessionStore._mutations++;
             selectCat.classList.toggle('has-value', Boolean(selectCat.value));
-            this._syncLiveMinutesTemplateSelector({ followCategory: true });
+            this._syncLiveMinutesTemplateSelector({ followCategory: true, deferEditorSwitch: true });
         });
 
         selectMinutesTemplate?.addEventListener('change', () => {
             if (!selectMinutesTemplate.value) return;
             this._liveMinutesTemplateManuallySelected = true;
-            this._switchLiveMinutesTemplate(selectMinutesTemplate.value);
+            this._scheduleLiveMinutesTemplateSwitch(selectMinutesTemplate.value);
         });
 
         inputTags?.addEventListener('input', () => {
@@ -15518,25 +15531,30 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const selectProj = document.getElementById('select-note-project');
         if (!selectProj) return;
         const reg = this._projectRegistry || { projects: [] };
-        const activeProjects = (reg.projects || []).filter(p => p.status === 'active');
         // Filter by scope first (same rule as stop-meeting modal):
         // personal → only personal projects; work → only work projects + customer.
         const effectiveScope = scope || sessionStore.scope || 'work';
-        const scopedProjs = effectiveScope === 'personal'
-            ? activeProjects.filter(p => p.scope === 'personal')
-            : activeProjects.filter(p => (p.scope || 'work') === 'work');
-        const filteredProjs = (effectiveScope === 'work' && selectedCustomerId)
-            ? scopedProjs.filter(p => p.customer_id === selectedCustomerId)
-            : scopedProjs;
-
-        let projHtml = `<option value="">${this._esc(t('notes.project'))}</option>`;
-        for (const p of filteredProjs) {
-            projHtml += `<option value="${this._escAttr(p.id)}">🚀 ${this._esc(p.name)}</option>`;
+        const customerFilter = effectiveScope === 'work' ? (selectedCustomerId || '') : '';
+        const filterKey = `${this._projectRegistryVersion}|${effectiveScope}|${customerFilter}|${t('notes.project')}`;
+        if (selectProj.dataset.filterKey !== filterKey) {
+            const availableProjectIds = new Set();
+            let projHtml = `<option value="">${this._esc(t('notes.project'))}</option>`;
+            for (const project of reg.projects || []) {
+                if (project.status !== 'active') continue;
+                const matchesScope = effectiveScope === 'personal'
+                    ? project.scope === 'personal'
+                    : (project.scope || 'work') === 'work';
+                if (!matchesScope || (customerFilter && project.customer_id !== customerFilter)) continue;
+                availableProjectIds.add(project.id);
+                projHtml += `<option value="${this._escAttr(project.id)}">🚀 ${this._esc(project.name)}</option>`;
+            }
+            selectProj.innerHTML = projHtml;
+            selectProj.dataset.filterKey = filterKey;
+            selectProj._availableProjectIds = availableProjectIds;
         }
-        selectProj.innerHTML = projHtml;
 
         const desired = targetProjectId || sessionStore.projectId || selectProj.value;
-        if (desired && filteredProjs.some(p => p.id === desired)) {
+        if (desired && selectProj._availableProjectIds?.has(desired)) {
             selectProj.value = desired;
         } else {
             selectProj.value = '';
@@ -15553,34 +15571,53 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         return scope === 'personal' && templateIds.has('personal') ? 'personal' : 'standard';
     }
 
-    _syncLiveMinutesTemplateSelector({ followCategory = false } = {}) {
+    _syncLiveMinutesTemplateSelector({ followCategory = false, deferEditorSwitch = false } = {}) {
         const select = document.getElementById('select-live-minutes-template');
         if (!select) return;
 
+        this._liveMinutesTemplateSwitchToken++;
         const templates = this._getStoredMinutesTemplates();
         const templateIds = new Set(templates.map(template => template.id));
         const currentId = sessionStore.meetingMinutesTemplateId;
         if (followCategory) this._liveMinutesTemplateManuallySelected = false;
         const keepManualSelection = this._liveMinutesTemplateManuallySelected && templateIds.has(currentId);
         const selectedId = keepManualSelection ? currentId : this._defaultLiveMinutesTemplateId();
+        const resolvedId = templateIds.has(selectedId) ? selectedId : 'standard';
 
-        select.innerHTML = templates.map(template =>
+        const optionsSignature = JSON.stringify([
+            ...templates.map(template => [template.id, template.name]),
+        ]);
+        if (select.dataset.optionsSignature !== optionsSignature) {
+            select.innerHTML = templates.map(template =>
             `<option value="${this._escAttr(template.id)}">${this._esc(template.name)}</option>`
-        ).join('');
-        select.value = templateIds.has(selectedId) ? selectedId : 'standard';
+            ).join('');
+            select.dataset.optionsSignature = optionsSignature;
+        }
+        select.value = resolvedId;
         select.classList.toggle('has-value', Boolean(select.value));
         const templateLang = this._getTemplateLanguage();
-        if (sessionStore.meetingMinutesTemplateId !== select.value
+        if (sessionStore.meetingMinutesTemplateId !== resolvedId
             || sessionStore.meetingMinutesTemplateLanguage !== templateLang) {
-            this._switchLiveMinutesTemplate(select.value, templateLang);
-        } else if (select.value) {
+            if (deferEditorSwitch) this._scheduleLiveMinutesTemplateSwitch(resolvedId, templateLang);
+            else this._switchLiveMinutesTemplate(resolvedId, templateLang);
+        } else if (resolvedId) {
             const currentNotes = this._liveNotesEditor?.getContent() ?? sessionStore.notes ?? '';
-            const draftKey = sessionStore.minutesTemplateDraftKey(select.value, templateLang);
+            const draftKey = sessionStore.minutesTemplateDraftKey(resolvedId, templateLang);
             if (!Object.prototype.hasOwnProperty.call(sessionStore.notesByMinutesTemplate, draftKey)) {
                 sessionStore.notesByMinutesTemplate[draftKey] = currentNotes;
             }
         }
         if (!keepManualSelection) this._liveMinutesTemplateManuallySelected = false;
+    }
+
+    _scheduleLiveMinutesTemplateSwitch(templateId, locale = settingsManager.get().app_language) {
+        const token = ++this._liveMinutesTemplateSwitchToken;
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (token !== this._liveMinutesTemplateSwitchToken) return;
+                this._switchLiveMinutesTemplate(templateId, locale);
+            });
+        });
     }
 
     _switchLiveMinutesTemplate(templateId, locale = settingsManager.get().app_language) {
@@ -15609,6 +15646,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     }
 
     _resetNoteMetadataSelectors() {
+        this._liveMinutesTemplateSwitchToken++;
         const selectCust = document.getElementById('select-note-customer');
         const selectProj = document.getElementById('select-note-project');
         const selectCat = document.getElementById('select-note-category');

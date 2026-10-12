@@ -6,6 +6,12 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.14 - 2026-10-12
+
+### Fixed
+
+- **Meeting note pulldown response**: Avoid repeated scans and unnecessary option rebuilds when changing scope, customer, project, category, or meeting minutes template.
+
 ## v1.0.13 - 2026-10-11
 
 ### Improved
