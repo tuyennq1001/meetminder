@@ -6,6 +6,13 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.15 - 2026-10-12
+
+### Fixed
+
+- **Meeting notes toolbar layout**: Keep the title and metadata selectors from overlapping, balance the available widths, and show the requested localized prompts.
+- **Empty tag field styling**: Remove the rounded inner input so the empty Tag control matches the square toolbar frame.
+
 ## v1.0.14 - 2026-10-12
 
 ### Fixed

@@ -5811,10 +5811,11 @@ body.resizing-vertical * {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
   flex-wrap: nowrap;
   position: relative;
-  z-index: 2;
+  z-index: 0;
   pointer-events: auto;
   font-family: var(--menu-font-family);
 }
@@ -5838,9 +5839,9 @@ body.resizing-vertical * {
 .notes-tools-meta {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 6px;
-  flex: 0 0 auto;
+  flex: 1 0 auto;
   min-width: max-content;
   flex-wrap: nowrap;
   position: relative;
@@ -5916,6 +5917,8 @@ body.resizing-vertical * {
 }
 
 #select-note-project {
+  min-width: 190px;
+  max-width: 230px;
   border-color: rgba(129, 140, 248, 0.35);
 }
 #select-note-project:hover,
@@ -5953,15 +5956,15 @@ body.resizing-vertical * {
 .note-tags-wrap {
   display: flex;
   align-items: center;
-  flex: 0 1 260px;
-  max-width: 260px;
+  flex: 1 1 260px;
   min-width: 120px;
 }
 
 .notes-tools-meta .tag-tokenize-wrap {
-  flex: 0 1 260px;
+  flex: 1 1 auto;
+  width: 100%;
   min-width: 120px;
-  max-width: 260px;
+  max-width: none;
 }
 
 .notes-tools-meta .tag-tokenize-box {
@@ -5999,6 +6002,10 @@ body.resizing-vertical * {
   min-width: 60px;
   font-size: 11px;
   padding: 2px 1px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 /* Keep tag suggestions visible above the metadata bar in both drawer states. */
@@ -6039,9 +6046,9 @@ body.resizing-vertical * {
 }
 
 .live-note-title-input {
-  width: clamp(176px, 24vw, 300px);
+  width: clamp(281px, 42vw, 600px);
   min-width: 176px;
-  flex: 0 0 clamp(176px, 24vw, 300px);
+  flex: 0 1 clamp(281px, 42vw, 600px);
   height: 22px;
   box-sizing: border-box;
   padding: 2px 7px;
@@ -6054,7 +6061,6 @@ body.resizing-vertical * {
   font-weight: 600;
   outline: none;
   position: relative;
-  z-index: 3;
   pointer-events: auto;
   -webkit-app-region: no-drag;
 }

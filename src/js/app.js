@@ -4917,7 +4917,7 @@ class App {
                 chipsWrap.appendChild(chip);
             }
 
-            inlineInput.placeholder = 'Tag';
+            inlineInput.placeholder = t('notes.tags.placeholder');
         };
 
         const highlightMatch = (text, query) => {
@@ -15475,7 +15475,10 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const isPersonal = currentScope === 'personal';
 
         if (selectScope) {
-            selectScope.value = currentScope;
+            const chosenScope = ['work', 'personal'].includes(selectScope.value)
+                ? selectScope.value
+                : (isPersonal ? 'personal' : '');
+            selectScope.value = chosenScope;
             selectScope.setAttribute('data-scope', currentScope);
         }
 
@@ -15654,7 +15657,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const selectScope = document.getElementById('select-note-scope');
 
         if (selectScope) {
-            selectScope.value = 'work';
+            selectScope.value = '';
             selectScope.setAttribute('data-scope', 'work');
         }
         if (selectCust) {

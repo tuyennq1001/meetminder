@@ -187,6 +187,9 @@ Các quy tắc đã chứng minh hữu ích trong Meet Minder:
   khi thiếu chỗ, cuộn hàng chứa thay vì co hoặc chồng các control lên nhau.
 - Hover, active, selected, focus và disabled phải phân biệt được bằng màu,
   shape hoặc text; không dựa duy nhất vào màu.
+- Toolbar có thể cuộn ngang phải giữ các control trong luồng flex; input co giãn
+  cần giới hạn chiều rộng và không được đặt lớp hiển thị cao hơn control bên cạnh.
+  Kiểm tra lại ở cả cửa sổ hẹp và rộng để pulldown không bị che hoặc mất vùng click.
 
 ## 7. Checklist copy vào ticket/PRD
 
