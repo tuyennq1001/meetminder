@@ -6,6 +6,12 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.18 - 2026-10-13
+
+### Improved
+
+- **Meeting Logs navigation**: Clicking Meeting Logs while viewing log details returns to the meeting list.
+
 ## v1.0.17 - 2026-10-13
 
 ### Fixed

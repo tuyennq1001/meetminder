@@ -995,15 +995,7 @@ class App {
 
         // Back from session viewer to session list
         document.getElementById('btn-session-back-to-list')?.addEventListener('click', async () => {
-            await this._flushNotesAutosave();
-            this._exitSessionEditMode();
-            if (this._sessionReturnToSearch) {
-                this._returnToSessionSearch();
-                return;
-            }
-            document.getElementById('sessions-list-panel').style.display = '';
-            document.getElementById('session-viewer').style.display = 'none';
-            this._showSessions();
+            await this._returnToSessionList();
         });
 
         // Independent full-text search — separate from the Logs table filters.
@@ -3181,6 +3173,12 @@ class App {
     _initShellAndMenus() {
         initShell();
         document.addEventListener('activity-changed', (e) => this._onActivityChanged(e.detail));
+        document.addEventListener('activity-reselected', (e) => {
+            const viewer = document.getElementById('session-viewer');
+            if (e.detail?.activity === 'library' && viewer?.style.display !== 'none') {
+                this._returnToSessionList({ returnToSearch: false });
+            }
+        });
         const sheet = document.getElementById('shortcut-sheet');
         const toggleSheet = (show) => {
             if (sheet) sheet.style.display = show ? '' : 'none';
@@ -3198,6 +3196,18 @@ class App {
             return;
         }
         if (activity === 'library') this._showSessions();
+    }
+
+    async _returnToSessionList({ returnToSearch = this._sessionReturnToSearch } = {}) {
+        await this._flushNotesAutosave();
+        this._exitSessionEditMode();
+        if (returnToSearch && this._sessionReturnToSearch) {
+            this._returnToSessionSearch();
+            return;
+        }
+        document.getElementById('sessions-list-panel').style.display = '';
+        document.getElementById('session-viewer').style.display = 'none';
+        this._showSessions();
     }
 
     // ─── Source Control ────────────────────────────────────

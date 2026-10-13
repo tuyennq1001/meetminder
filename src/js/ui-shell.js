@@ -19,7 +19,16 @@ export function getActivity() {
 }
 
 export function setActivity(id) {
-    if (!ACTIVITIES.includes(id) || id === currentActivity) return;
+    if (!ACTIVITIES.includes(id)) return;
+    if (id === currentActivity) {
+        // Re-selecting Meeting Logs from a detail view returns to its list.
+        if (id === 'library') {
+            document.dispatchEvent(new CustomEvent('activity-reselected', {
+                detail: { activity: id },
+            }));
+        }
+        return;
+    }
     const previous = currentActivity;
     currentActivity = id;
 
