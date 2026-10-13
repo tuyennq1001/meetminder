@@ -1,3 +1,4 @@
+use crate::audio::echo_cancellation::EchoCanceller;
 use crate::audio::microphone::MicCapture;
 use crate::audio::SystemAudioCapture;
 use serde::Serialize;
@@ -252,10 +253,11 @@ pub(crate) fn run_mixer_loop(
     mic_rx: mpsc::Receiver<Vec<u8>>,
     merged_tx: mpsc::Sender<Vec<u8>>,
     stop_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    mut echo_canceller: Option<EchoCanceller>,
 ) {
-    const FRAME_SAMPLES: usize = 320; // 20 ms at 16 kHz
-    const PREBUFFER_SAMPLES: usize = FRAME_SAMPLES * 2; // 40 ms initial cushion
-    const MAX_WAIT_BUFFER_SAMPLES: usize = FRAME_SAMPLES * 5; // 100 ms wait cushion
+    const FRAME_SAMPLES: usize = 160; // 10 ms at 16 kHz, required by AEC3
+    const PREBUFFER_SAMPLES: usize = FRAME_SAMPLES * 4; // 40 ms initial cushion
+    const MAX_WAIT_BUFFER_SAMPLES: usize = FRAME_SAMPLES * 10; // 100 ms wait cushion
     const MAX_BUFFER_SAMPLES: usize = 16_000; // 1 second max buffer to prevent bloat without dropping bursts
     const ACTIVITY_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(150);
     const MAX_WAIT_FOR_LATE_STREAM: std::time::Duration = std::time::Duration::from_millis(15);
@@ -266,6 +268,7 @@ pub(crate) fn run_mixer_loop(
     let mut last_mic_recv: Option<std::time::Instant> = None;
     let mut next_frame: Option<std::time::Instant> = None;
     let mut wait_since: Option<std::time::Instant> = None;
+    let mut both_streams_were_active = false;
 
     loop {
         if let Some(ref stop) = stop_flag {
@@ -345,6 +348,15 @@ pub(crate) fn run_mixer_loop(
                     .map(|t| now.duration_since(t) < ACTIVITY_TIMEOUT)
                     .unwrap_or(false);
 
+                if both_streams_were_active && (!sys_active || !mic_active) {
+                    if let Some(processor) = echo_canceller.as_mut() {
+                        if let Err(error) = processor.reset() {
+                            eprintln!("[Audio] Failed to reset echo cancellation after stream interruption: {error}");
+                        }
+                    }
+                }
+                both_streams_were_active = sys_active && mic_active;
+
                 // If both streams are currently active, but one is momentarily short on samples,
                 // give the late stream a brief grace window (up to 15 ms) before proceeding.
                 // However, if the other buffer is already at max wait cushion, do NOT wait.
@@ -371,11 +383,31 @@ pub(crate) fn run_mixer_loop(
                     continue;
                 }
 
-                let mut mixed_bytes = Vec::with_capacity(FRAME_SAMPLES * 2);
-                for _ in 0..FRAME_SAMPLES {
+                let mut system_frame = [0_i16; FRAME_SAMPLES];
+                let mut microphone_frame = [0_i16; FRAME_SAMPLES];
+                for index in 0..FRAME_SAMPLES {
                     let s1 = sys_buf.pop_front().unwrap_or(0);
                     let s2 = mic_buf.pop_front().unwrap_or(0);
-                    let mixed = mix_and_soft_clip(s1, s2);
+                    system_frame[index] = s1;
+                    microphone_frame[index] = s2;
+                }
+
+                let processed_microphone = match echo_canceller.as_mut() {
+                    Some(processor) => {
+                        match processor.process_frame(&system_frame, &microphone_frame) {
+                            Ok(frame) => frame,
+                            Err(error) => {
+                                eprintln!("[Audio] Echo cancellation failed; preserving microphone frame: {error}");
+                                microphone_frame.to_vec()
+                            }
+                        }
+                    }
+                    None => microphone_frame.to_vec(),
+                };
+
+                let mut mixed_bytes = Vec::with_capacity(FRAME_SAMPLES * 2);
+                for (system, microphone) in system_frame.iter().zip(processed_microphone) {
+                    let mixed = mix_and_soft_clip(*system, microphone);
                     mixed_bytes.extend_from_slice(&mixed.to_le_bytes());
                 }
 
@@ -383,9 +415,9 @@ pub(crate) fn run_mixer_loop(
                     break;
                 }
 
-                let mut next = target_time + std::time::Duration::from_millis(20);
+                let mut next = target_time + std::time::Duration::from_millis(10);
                 if next + std::time::Duration::from_millis(60) < now {
-                    next = now + std::time::Duration::from_millis(20);
+                    next = now + std::time::Duration::from_millis(10);
                 }
                 next_frame = Some(next);
             }
@@ -492,7 +524,20 @@ pub async fn start_capture(
             })?
         }
         "both" => {
-            // Start both sources and digitally mix into a single 16kHz mono receiver
+            // AEC3 uses system playback as the echo reference before mixing to mono.
+            let echo_canceller = if cfg!(target_os = "macos") {
+                Some(EchoCanceller::new().map_err(|error| {
+                    append_recording_log(
+                        recording_log.as_deref(),
+                        &format!("echo canceller initialization failed error={}", error),
+                    );
+                    error
+                })?)
+            } else {
+                None
+            };
+
+            // Start both sources and digitally mix into a single 16kHz mono receiver.
             let mut sys = state.system_audio.lock().map_err(|e| {
                 let error = e.to_string();
                 append_recording_log(
@@ -527,7 +572,7 @@ pub async fn start_capture(
             let (merged_tx, merged_rx) = mpsc::channel::<Vec<u8>>();
 
             std::thread::spawn(move || {
-                run_mixer_loop(sys_rx, mic_rx, merged_tx, None);
+                run_mixer_loop(sys_rx, mic_rx, merged_tx, None, echo_canceller);
             });
 
             merged_rx
@@ -1166,7 +1211,7 @@ mod tests {
         let stop_clone = stop.clone();
 
         let handle = std::thread::spawn(move || {
-            run_mixer_loop(sys_rx, mic_rx, merged_tx, Some(stop_clone));
+            run_mixer_loop(sys_rx, mic_rx, merged_tx, Some(stop_clone), None);
         });
 
         // Send 10 frames (320 samples each = 640 bytes) of mic data
@@ -1216,7 +1261,7 @@ mod tests {
         let stop_clone = stop.clone();
 
         let handle = std::thread::spawn(move || {
-            run_mixer_loop(sys_rx, mic_rx, merged_tx, Some(stop_clone));
+            run_mixer_loop(sys_rx, mic_rx, merged_tx, Some(stop_clone), None);
         });
 
         // Send 10 frames of system audio; mic sends NOTHING

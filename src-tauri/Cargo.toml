@@ -1,6 +1,6 @@
 [package]
 name = "meet-minder"
-version = "1.0.16"
+version = "1.0.17"
 description = "Meet Minder — real-time speech translation for meetings"
 authors = ["Terry <tuyennq.1001@gmail.com>"]
 edition = "2021"
@@ -38,6 +38,7 @@ tokio = { version = "1", features = ["sync", "rt", "macros", "time", "fs"] }
 rubato = "0.16"
 # Local offline TTS: Piper (VITS) via sherpa-onnx (static-linked, no dylib bundling).
 sherpa-onnx = "1.13.3"
+sonora = "=0.2.0"
 tauri-plugin-dialog = "2"
 regex = "1"
 # Model archive extraction (.tar.bz2) for downloaded Piper voices.

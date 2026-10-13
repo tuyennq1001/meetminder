@@ -6,6 +6,12 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.17 - 2026-10-13
+
+### Fixed
+
+- **External-speaker echo in recordings**: Apply local AEC3 echo cancellation to the microphone signal in macOS Both mode, then mix it with system audio for recording and recognition.
+
 ## v1.0.16 - 2026-10-13
 
 ### Improved

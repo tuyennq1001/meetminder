@@ -1,3 +1,4 @@
+pub mod echo_cancellation;
 pub mod microphone;
 pub mod resampler;
 
