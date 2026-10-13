@@ -5061,8 +5061,8 @@ class App {
         };
 
         const closeDropdown = () => {
+            if (!isDropdownOpen) return;
             dropdown.style.display = 'none';
-            dropdown.innerHTML = '';
             isDropdownOpen = false;
             highlightedIndex = -1;
             box.classList.remove('is-focused');
@@ -5141,6 +5141,7 @@ class App {
         });
 
         const onDocClick = (e) => {
+            if (!isDropdownOpen) return;
             const clickedPortalDropdown = isLiveNoteAutocomplete && dropdown.contains(e.target);
             if (!wrap.contains(e.target) && !clickedPortalDropdown) {
                 closeDropdown();
@@ -15588,16 +15589,17 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const resolvedId = templateIds.has(selectedId) ? selectedId : 'standard';
 
         const optionsSignature = JSON.stringify([
+            t('notes.minutesTemplate'),
             ...templates.map(template => [template.id, template.name]),
         ]);
         if (select.dataset.optionsSignature !== optionsSignature) {
-            select.innerHTML = templates.map(template =>
-            `<option value="${this._escAttr(template.id)}">${this._esc(template.name)}</option>`
-            ).join('');
+            select.innerHTML = `<option value="">${this._esc(t('notes.minutesTemplate'))}</option>${templates.map(template =>
+                `<option value="${this._escAttr(template.id)}">${this._esc(template.name)}</option>`
+            ).join('')}`;
             select.dataset.optionsSignature = optionsSignature;
         }
-        select.value = resolvedId;
-        select.classList.toggle('has-value', Boolean(select.value));
+        select.value = keepManualSelection ? resolvedId : '';
+        select.classList.toggle('has-value', keepManualSelection);
         const templateLang = this._getTemplateLanguage();
         if (sessionStore.meetingMinutesTemplateId !== resolvedId
             || sessionStore.meetingMinutesTemplateLanguage !== templateLang) {
