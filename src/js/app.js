@@ -3173,12 +3173,6 @@ class App {
     _initShellAndMenus() {
         initShell();
         document.addEventListener('activity-changed', (e) => this._onActivityChanged(e.detail));
-        document.addEventListener('activity-reselected', (e) => {
-            const viewer = document.getElementById('session-viewer');
-            if (e.detail?.activity === 'library' && viewer?.style.display !== 'none') {
-                this._returnToSessionList({ returnToSearch: false });
-            }
-        });
         const sheet = document.getElementById('shortcut-sheet');
         const toggleSheet = (show) => {
             if (sheet) sheet.style.display = show ? '' : 'none';
@@ -3195,7 +3189,16 @@ class App {
             this._suppressNextShowSessions = false;
             return;
         }
-        if (activity === 'library') this._showSessions();
+        if (activity === 'library') {
+            if (previous === activity) {
+                const viewer = document.getElementById('session-viewer');
+                if (viewer?.style.display !== 'none') {
+                    this._returnToSessionList({ returnToSearch: false });
+                }
+                return;
+            }
+            this._showSessions();
+        }
     }
 
     async _returnToSessionList({ returnToSearch = this._sessionReturnToSearch } = {}) {
