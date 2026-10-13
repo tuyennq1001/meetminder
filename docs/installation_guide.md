@@ -8,26 +8,19 @@ Comprehensive step-by-step guide to installing, configuring, and using **Meet Mi
 
 - **Operating System**: macOS 13.0 (Ventura) or later.
 - **Supported Hardware**:
-  - **Apple Silicon** (M1 / M2 / M3 / M4) — Recommended for peak performance and 100% offline Local MLX transcription.
-  - **Intel Mac** (i5 / i7 / i9) — Fully supported with all cloud engines (Gemini, Soniox, OpenAI, Qwen).
+  - **Apple Silicon** (M1 / M2 / M3 / M4). Current releases support Apple Silicon Macs only.
 - **Permissions**: **Screen & System Audio Recording** and **Microphone** permissions required to capture meeting audio.
 
 ---
 
-## Step 1 — Download v1.0.0 Release
+## Step 1 — Download the latest release
 
-Visit [**GitHub Releases — Meet Minder**](https://github.com/tuyennq1001/meetminder/releases/latest) and download the file for your Mac architecture:
-
-| Architecture | Installer File | Supported Devices |
-| :--- | :--- | :--- |
-| **Apple Silicon** | `MeetMinder_1.0.0_aarch64.dmg` | Apple M1, M2, M3, M4 (MacBook, Mac mini, iMac, Mac Studio) |
-| **Intel Mac** | `MeetMinder_1.0.0_x64.dmg` | All Intel Core-based Mac systems |
+Visit [**GitHub Releases — Meet Minder**](https://github.com/tuyennq1001/meetminder/releases/latest) and download the Apple Silicon installer (`Meet.Minder_<version>_aarch64.dmg`). Releases currently support Apple Silicon Macs only.
 
 > [!TIP]
 > **Check your Mac architecture:**
 > Click the ** (Apple)** icon at top-left ➔ **About This Mac**:
-> - If you see **Chip: Apple M...** ➔ Choose **`aarch64`**.
-> - If you see **Processor: Intel Core...** ➔ Choose **`x64`**.
+> - If you see **Chip: Apple M...**, your Mac is supported by the current release.
 
 ---
 

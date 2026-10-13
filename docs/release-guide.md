@@ -70,15 +70,12 @@ git push origin v0.9.2
 ```
 
 **Hoạt động tự động của GitHub Actions (`.github/workflows/release.yml`):**
-- Tự động build ứng dụng cho 3 kiến trúc:
-  - macOS Apple Silicon (arm64 / M1/M2/M3/M4)
-  - macOS Intel (x86_64)
-  - Windows (x86_64)
+- Chỉ build ứng dụng macOS Apple Silicon (arm64 / M1/M2/M3/M4). Workflow xác minh runner là arm64 và không tạo gói Intel hoặc Windows.
 - Tự động ký chữ ký số Tauri (`TAURI_SIGNING_PRIVATE_KEY`).
 - Ký app macOS bằng **Developer ID Application** và gửi app/DMG đến dịch vụ notarization của Apple. Workflow sẽ dừng nếu thiếu chứng chỉ hoặc thông tin notarization; không tạo bản ad-hoc để phát hành.
 - Dùng thêm `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` nếu private key được tạo có mật khẩu; để trống secret này nếu key không có mật khẩu.
 - Workflow bật updater artifacts qua `src-tauri/tauri.release.conf.json`, nên build Dev vẫn giữ `createUpdaterArtifacts: false` và không cần signing key updater.
-- Tự động tạo các gói update nén `.app.tar.gz`, chữ ký `.sig` và file định tuyến `latest.json`.
+- Chỉ tạo gói cập nhật macOS Apple Silicon `.app.tar.gz`, chữ ký `.sig` và file định tuyến `latest.json` với nền tảng `darwin-aarch64`.
 - Tự động trích xuất release notes từ `docs/project-changelog.md`.
 - Tạo một bản Release (Draft) trên GitHub.
 

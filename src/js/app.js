@@ -7707,7 +7707,8 @@ class App {
     _renderEmptySessionList() {
         const listEl = document.getElementById('sessions-list');
         if (!listEl) return;
-        listEl.innerHTML = `<div class="sessions-empty">${this._esc(t('logsTable.emptyNoLogs'))}<br><span class="empty-import-hint">${this._esc(t('library.importHint'))}</span><button type="button" class="btn-primary small" id="btn-empty-import-audio" style="margin-top:12px;">${this._esc(t('library.import'))}</button></div>`;
+        listEl.classList.add('is-empty');
+        listEl.innerHTML = `<div class="sessions-empty"><div>${this._esc(t('logsTable.emptyNoLogs'))}</div><span class="empty-import-hint">${this._esc(t('library.importHint'))}</span><button type="button" class="btn-primary small" id="btn-empty-import-audio">${this._esc(t('library.import'))}</button></div>`;
         document.getElementById('btn-empty-import-audio')?.addEventListener('click', () => this._handleOpenImportAudio());
     }
 
@@ -7745,6 +7746,7 @@ class App {
     _renderFilteredSessions({ force = false } = {}) {
         const listEl = document.getElementById('sessions-list');
         if (!listEl) return;
+        listEl.classList.remove('is-empty');
         if (!this._selectedSessionIds) this._selectedSessionIds = new Set();
 
         const workCount = (this._cachedSessions || []).filter(s => (s.scope || 'work') === 'work').length;

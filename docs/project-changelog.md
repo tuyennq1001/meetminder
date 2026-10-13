@@ -6,6 +6,16 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.19 - 2026-10-13
+
+### Fixed
+
+- **Meeting Logs empty state layout**: Keep the import guidance and action together in the empty panel and align the toolbar controls consistently.
+
+### Release
+
+- **Apple Silicon only**: Build, sign, publish, and auto-update macOS arm64 releases only.
+
 ## v1.0.18 - 2026-10-13
 
 ### Improved
