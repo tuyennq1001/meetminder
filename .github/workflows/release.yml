@@ -194,7 +194,11 @@ jobs:
             > artifacts/latest.json
           jq . artifacts/latest.json
           URL_FILE=$(jq -r '.platforms["darwin-aarch64"].url' artifacts/latest.json)
-          test -f "artifacts/macos/${URL_FILE##*/}"
+          MATCHED_FILE=$(find artifacts/macos -type f -name "${URL_FILE##*/}" -print -quit)
+          if [ -z "$MATCHED_FILE" ]; then
+            echo "::error::Updater URL has no matching release asset: $URL_FILE"
+            exit 1
+          fi
 
       - name: Extract release notes from changelog
         id: notes
