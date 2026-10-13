@@ -6,6 +6,13 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.16 - 2026-10-13
+
+### Improved
+
+- **Meeting note pulldown response**: Avoid unnecessary tag dropdown DOM cleanup when opening Customer, Project, or Category selectors.
+- **Meeting minutes template label**: Keep the localized “select template” placeholder visible while Standard remains the default template.
+
 ## v1.0.15 - 2026-10-12
 
 ### Fixed
