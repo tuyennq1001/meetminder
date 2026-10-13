@@ -20,11 +20,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.0.18-blueviolet?style=flat-square" alt="Version 1.0.18">
+  <img src="https://img.shields.io/badge/version-v1.0.19-blueviolet?style=flat-square" alt="Version 1.0.19">
   <img src="https://img.shields.io/badge/built_with-Tauri_v2-24C8D8?logo=tauri&logoColor=white&style=flat-square" alt="Built with Tauri v2">
   <img src="https://img.shields.io/badge/backend-Rust_2021-DEA584?logo=rust&logoColor=white&style=flat-square" alt="Rust 2021">
-  <img src="https://img.shields.io/badge/macOS-Apple_Silicon_%7C_Intel-black?logo=apple&logoColor=white&style=flat-square" alt="macOS">
-  <img src="https://img.shields.io/badge/Windows-10%2F11_64--bit-0078D6?logo=windows&logoColor=white&style=flat-square" alt="Windows">
+  <img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?logo=apple&logoColor=white&style=flat-square" alt="macOS">
   <img src="https://img.shields.io/badge/editor-CodeMirror_6-EA5906?logo=codemirror&logoColor=white&style=flat-square" alt="CodeMirror 6">
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License MIT">
 </p>
@@ -45,7 +44,7 @@
 
 ---
 
-## ⬇️ Tải về bản cài đặt (v1.0.18)
+## ⬇️ Tải về bản cài đặt (v1.0.19)
 
 Tải phiên bản mới nhất từ trang [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest).
 
@@ -55,13 +54,11 @@ Trên macOS, cài và mở phiên bản mới nhất bằng một lệnh:
 curl -fsSL https://raw.githubusercontent.com/tuyennq1001/meetminder/main/install.sh | bash
 ```
 
-Trình cài đặt tự nhận diện Apple Silicon hoặc Intel và tải đúng file DMG đã ký. Bạn cũng có thể tải file DMG thủ công bên dưới.
+Trình cài đặt tải DMG đã ký dành cho Apple Silicon. Hiện Meet Minder chỉ phát hành cho máy Mac dùng Apple Silicon.
 
 | Hệ điều hành | Kiến trúc / Thiết bị | File cài đặt | Hướng dẫn |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.18_aarch64.dmg` | [Hướng dẫn macOS](docs/installation_guide_vi.md) |
-| **macOS** | **Intel Mac** (i5 / i7 / i9) | `Meet.Minder_1.0.18_x64.dmg` | [Hướng dẫn macOS](docs/installation_guide_vi.md) |
-| **Windows** | **Windows 10 / 11** (64-bit) | `Meet.Minder_1.0.18_x64-setup.exe` | [Hướng dẫn Windows](docs/installation_guide_win_vi.md) |
+| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.19_aarch64.dmg` | [Hướng dẫn macOS](docs/installation_guide_vi.md) |
 
 ---
 

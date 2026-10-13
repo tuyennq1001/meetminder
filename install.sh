@@ -13,7 +13,7 @@ fail() {
 
 case "$(uname -m)" in
   arm64) RELEASE_ARCH="aarch64" ;;
-  x86_64) RELEASE_ARCH="x64" ;;
+  x86_64) fail "Meet Minder releases are available for Apple Silicon Macs only." ;;
   *) fail "Unsupported Mac architecture: $(uname -m)" ;;
 esac
 

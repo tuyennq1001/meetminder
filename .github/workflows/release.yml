@@ -17,6 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Verify Apple Silicon runner
+        run: test "$(uname -m)" = arm64
+
       - name: Validate updater signing key
         shell: bash
         run: |
@@ -123,171 +126,9 @@ jobs:
             src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
 
-  build-macos-intel:
-    runs-on: macos-14  # Cross-compile to Intel
-    env:
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Validate updater signing key
-        shell: bash
-        run: |
-          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not configured in repository secrets."
-            exit 1
-          fi
-
-      - name: Install Apple Certificate
-        env:
-          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          if [ -z "${CERTIFICATE:-}" ]; then
-            echo "::error::APPLE_CERTIFICATE is required for notarized macOS releases."
-            exit 1
-          fi
-          if [ -z "${CERTIFICATE_PASSWORD:-}" ]; then
-            echo "::error::APPLE_CERTIFICATE_PASSWORD is required."
-            exit 1
-          fi
-
-          CERT_PATH=$RUNNER_TEMP/certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
-          echo -n "$CERTIFICATE" | base64 --decode -o $CERT_PATH
-
-          security create-keychain -p "" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "" $KEYCHAIN_PATH
-          security import $CERT_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security set-key-partition-list -S apple-tool:,apple: -k "" $KEYCHAIN_PATH
-          security list-keychains -d user -s $KEYCHAIN_PATH login.keychain
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 20
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-apple-darwin
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build Tauri app (Intel)
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::$name is required for signed and notarized macOS releases."
-              exit 1
-            fi
-          done
-          if [[ "$APPLE_SIGNING_IDENTITY" != Developer\ ID\ Application:* ]]; then
-            echo "::error::APPLE_SIGNING_IDENTITY must be a Developer ID Application identity."
-            exit 1
-          fi
-          npm run tauri build -- --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json --config "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY}\"}}}"
-
-      - name: Finalize and verify signed macOS artifacts (Intel)
-        env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: bash scripts/finalize-macos-release.sh src-tauri/target/x86_64-apple-darwin/release/bundle
-
-      - name: Notarize and verify DMG (Intel)
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        shell: bash
-        run: |
-          shopt -s nullglob
-          dmgs=(src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg)
-          if [ ${#dmgs[@]} -eq 0 ]; then
-            echo "::error::No Intel macOS DMG was produced."
-            exit 1
-          fi
-          for dmg in "${dmgs[@]}"; do
-            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
-            xcrun stapler staple "$dmg"
-            xcrun stapler validate "$dmg"
-            spctl --assess --type open --context context:primary-signature --verbose "$dmg"
-          done
-
-      - name: Upload macOS Intel artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-intel-build
-          path: |
-            src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
-            src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
-          if-no-files-found: error
-
-  build-windows:
-    runs-on: windows-latest
-    env:
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Validate updater signing key
-        shell: bash
-        run: |
-          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not configured in repository secrets."
-            exit 1
-          fi
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: 20
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build Tauri app
-        run: |
-          npm run tauri build -- --config src-tauri/tauri.release.conf.json
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build
-          path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/nsis/*.exe.sig
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/msi/*.msi.sig
-          if-no-files-found: error
 
   release:
-    needs: [build-macos, build-macos-intel, build-windows]
+    needs: [build-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -296,129 +137,64 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
-      - name: Download macOS artifacts
+      - name: Download Apple Silicon macOS artifacts
         uses: actions/download-artifact@v4
         with:
           name: macos-build
           path: artifacts/macos
 
-      - name: Download macOS Intel artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-intel-build
-          path: artifacts/macos-intel
-
-      - name: Download Windows artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-build
-          path: artifacts/windows
-
       - name: List artifacts
-        run: find artifacts -type f | head -30
+        run: find artifacts -type f | sort
 
-      - name: Rename macOS artifacts to include arch
+      - name: Rename updater archive to include architecture
         run: |
           set -euo pipefail
-
-          rename_macos_artifacts() {
-            local root="$1"
-            local arch="$2"
-
-            while IFS= read -r -d '' file; do
-              mv "$file" "${file%.app.tar.gz}_${arch}.app.tar.gz"
-            done < <(find "$root" -type f -name '*.app.tar.gz' -print0)
-
-            while IFS= read -r -d '' file; do
-              mv "$file" "${file%.app.tar.gz.sig}_${arch}.app.tar.gz.sig"
-            done < <(find "$root" -type f -name '*.app.tar.gz.sig' -print0)
-          }
-
-          rename_macos_artifacts artifacts/macos aarch64
-          rename_macos_artifacts artifacts/macos-intel x64
-
-          echo "Renamed artifacts:"
-          find artifacts -name "*.tar.gz*" -type f
+          while IFS= read -r -d '' file; do
+            mv "$file" "${file%.app.tar.gz}_aarch64.app.tar.gz"
+          done < <(find artifacts/macos -type f -name '*.app.tar.gz' -print0)
+          while IFS= read -r -d '' file; do
+            mv "$file" "${file%.app.tar.gz.sig}_aarch64.app.tar.gz.sig"
+          done < <(find artifacts/macos -type f -name '*.app.tar.gz.sig' -print0)
 
       - name: Normalize release asset filenames
         run: |
           set -euo pipefail
-
           while IFS= read -r -d '' file; do
             normalized="${file// /.}"
             if [[ "$file" != "$normalized" ]]; then
               mv "$file" "$normalized"
             fi
           done < <(find artifacts -type f -name '* *' -print0)
-
-          echo "Normalized release assets:"
           find artifacts -type f | sort
 
-      - name: Generate latest.json for updater
+      - name: Generate latest.json for Apple Silicon updater
         run: |
           set -euo pipefail
-
           VERSION="${{ steps.version.outputs.VERSION }}"
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
           REPO="https://github.com/${{ github.repository }}/releases/download/v${VERSION}"
-
-          find_artifact() {
-            find "$1" -type f -name "$2" -print -quit
-          }
-
-          DARWIN_AARCH64_FILE=$(find_artifact artifacts/macos '*_aarch64.app.tar.gz')
-          DARWIN_X86_64_FILE=$(find_artifact artifacts/macos-intel '*_x64.app.tar.gz')
-          WINDOWS_X86_64_FILE=$(find_artifact artifacts/windows '*.exe')
-
-          for file in "$DARWIN_AARCH64_FILE" "$DARWIN_X86_64_FILE" "$WINDOWS_X86_64_FILE"; do
-            if [ -z "$file" ] || [ ! -f "$file" ]; then
-              echo "::error::Missing updater artifact: $file"
-              exit 1
-            fi
-            if [ ! -s "$file.sig" ]; then
-              echo "::error::Missing updater signature: $file.sig"
-              exit 1
-            fi
-          done
-
-          DARWIN_AARCH64_NAME=$(basename "$DARWIN_AARCH64_FILE")
-          DARWIN_X86_64_NAME=$(basename "$DARWIN_X86_64_FILE")
-          WINDOWS_X86_64_NAME=$(basename "$WINDOWS_X86_64_FILE")
-
+          UPDATE_FILE=$(find artifacts/macos -type f -name '*_aarch64.app.tar.gz' -print -quit)
+          if [ -z "$UPDATE_FILE" ] || [ ! -f "$UPDATE_FILE" ]; then
+            echo "::error::Missing Apple Silicon updater archive."
+            exit 1
+          fi
+          if [ ! -s "$UPDATE_FILE.sig" ]; then
+            echo "::error::Missing updater signature: $UPDATE_FILE.sig"
+            exit 1
+          fi
+          UPDATE_NAME=$(basename "$UPDATE_FILE")
           jq -n \
             --arg version "$VERSION" \
             --arg notes "See release notes at https://github.com/${{ github.repository }}/releases/tag/v${VERSION}" \
             --arg pub_date "$DATE" \
             --arg repo "$REPO" \
-            --arg darwin_aarch64_sig "$(cat "$DARWIN_AARCH64_FILE.sig")" \
-            --arg darwin_x86_64_sig "$(cat "$DARWIN_X86_64_FILE.sig")" \
-            --arg windows_x86_64_sig "$(cat "$WINDOWS_X86_64_FILE.sig")" \
-            --arg darwin_aarch64_file "$DARWIN_AARCH64_NAME" \
-            --arg darwin_x86_64_file "$DARWIN_X86_64_NAME" \
-            --arg windows_x86_64_file "$WINDOWS_X86_64_NAME" \
-            '{
-              version: $version,
-              notes: $notes,
-              pub_date: $pub_date,
-              platforms: {
-                "darwin-aarch64": {signature: $darwin_aarch64_sig, url: ($repo + "/" + $darwin_aarch64_file)},
-                "darwin-x86_64": {signature: $darwin_x86_64_sig, url: ($repo + "/" + $darwin_x86_64_file)},
-                "windows-x86_64": {signature: $windows_x86_64_sig, url: ($repo + "/" + $windows_x86_64_file)}
-              }
-            }' > artifacts/latest.json
-
-          echo "Generated latest.json:"
-          cat artifacts/latest.json
-
-          while IFS= read -r url; do
-            asset_name="${url##*/}"
-            asset_path=$(find artifacts -type f -name "$asset_name" -print -quit)
-            if [ -z "$asset_path" ]; then
-              echo "::error::Updater URL has no matching release asset: $url"
-              exit 1
-            fi
-          done < <(jq -r '.platforms[].url' artifacts/latest.json)
+            --arg signature "$(cat "$UPDATE_FILE.sig")" \
+            --arg file "$UPDATE_NAME" \
+            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: {"darwin-aarch64": {signature: $signature, url: ($repo + "/" + $file)}}}' \
+            > artifacts/latest.json
+          jq . artifacts/latest.json
+          URL_FILE=$(jq -r '.platforms["darwin-aarch64"].url' artifacts/latest.json)
+          test -f "artifacts/macos/${URL_FILE##*/}"
 
       - name: Extract release notes from changelog
         id: notes
@@ -426,26 +202,18 @@ jobs:
           VERSION="${{ steps.version.outputs.VERSION }}"
           CHANGELOG="docs/project-changelog.md"
           OUT="release-notes.md"
-
-          # Extract section between "## v${VERSION}" and the next "## v" heading
           awk -v tag="## v${VERSION}" '
             $0 ~ "^" tag " " || $0 ~ "^" tag "$" { flag=1; next }
             /^## v/ { flag=0 }
             flag { print }
           ' "$CHANGELOG" > "$OUT"
-
-          # Fallback if section is empty (missing entry)
           if [ ! -s "$OUT" ]; then
             echo "Release v${VERSION}" > "$OUT"
             echo "" >> "$OUT"
             echo "See commits: https://github.com/${{ github.repository }}/compare/...v${VERSION}" >> "$OUT"
           fi
-
-          # Append auto-generated full changelog link
           echo "" >> "$OUT"
           echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/...v${VERSION}" >> "$OUT"
-
-          echo "--- Release notes preview ---"
           cat "$OUT"
 
       - name: Create Release
@@ -455,8 +223,6 @@ jobs:
           body_path: release-notes.md
           files: |
             artifacts/**/*.dmg
-            artifacts/**/*.exe
-            artifacts/**/*.msi
             artifacts/**/*.app.tar.gz
             artifacts/**/*.sig
             artifacts/latest.json

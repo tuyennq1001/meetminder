@@ -8,26 +8,19 @@ Tài liệu hướng dẫn chi tiết từng bước cài đặt, cấu hình v�
 
 - **Hệ điều hành**: macOS 13.0 (Ventura) trở lên.
 - **Phần cứng hỗ trợ**:
-  - **Apple Silicon** (M1 / M2 / M3 / M4) — Tận dụng tối đa hiệu năng và hỗ trợ chế độ dịch ngoại tuyến 100% Local MLX.
-  - **Intel Mac** (i5 / i7 / i9) — Hoạt động mượt mà với các engine Cloud (Gemini, Soniox, OpenAI, Qwen).
+  - **Apple Silicon** (M1 / M2 / M3 / M4). Bản phát hành hiện tại chỉ hỗ trợ máy Mac dùng Apple Silicon.
 - **Quyền hệ điều hành**: Cần cấp quyền **Screen & System Audio Recording** và **Microphone** để bắt âm thanh cuộc họp.
 
 ---
 
-## Bước 1 — Tải về bản cài đặt v1.0.0
+## Bước 1 — Tải về bản phát hành mới nhất
 
-Truy cập trang [**GitHub Releases — Meet Minder**](https://github.com/tuyennq1001/meetminder/releases/latest) và tải file cài đặt tương ứng với dòng máy của bạn:
-
-| Kiến trúc chip | File cài đặt | Đối tượng thiết bị |
-| :--- | :--- | :--- |
-| **Apple Silicon** | `MeetMinder_1.0.0_aarch64.dmg` | Mac M1, M2, M3, M4 (MacBook, Mac mini, iMac, Mac Studio) |
-| **Intel Mac** | `MeetMinder_1.0.0_x64.dmg` | Các dòng máy Mac sử dụng chip Intel Core |
+Truy cập trang [**GitHub Releases — Meet Minder**](https://github.com/tuyennq1001/meetminder/releases/latest) và tải DMG dành cho Apple Silicon (`Meet.Minder_<version>_aarch64.dmg`). Bản phát hành hiện tại chỉ hỗ trợ máy Mac dùng Apple Silicon.
 
 > [!TIP]
 > **Cách kiểm tra chip máy Mac của bạn:**
 > Nhấp vào biểu tượng ** (Apple)** ở góc trên bên trái màn hình ➔ chọn **Giới thiệu về máy Mac này (About This Mac)**:
-> - Nếu hiển thị **Chip: Apple M...** ➔ Chọn bản **`aarch64`**.
-> - Nếu hiển thị **Bộ xử lý: Intel Core...** ➔ Chọn bản **`x64`**.
+> - Nếu hiển thị **Chip: Apple M...**, máy Mac của bạn được hỗ trợ bởi bản phát hành hiện tại.
 
 ---
 

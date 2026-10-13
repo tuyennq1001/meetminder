@@ -8,26 +8,19 @@ macOS環境における **Meet Minder v1.0** のインストール、初期設�
 
 - **対応OS**: macOS 13.0 (Ventura) 以降
 - **対応ハードウェア**:
-  - **Apple Silicon** (M1 / M2 / M3 / M4) — 最高パフォーマンスおよび完全オフラインのLocal MLX音声翻訳をサポート。
-  - **Intel Mac** (i5 / i7 / i9) — すべてのクラウドエンジン（Gemini、Soniox、OpenAI、Qwen）でスムーズに動作。
+  - **Apple Silicon** (M1 / M2 / M3 / M4)。現在のリリースはApple Silicon搭載Macのみ対応しています。
 - **必要な権限**: 会議音声を正しく取得するため、**「画面とシステムオーディオの録音」** および **「マイク」** の権限許可が必要です。
 
 ---
 
-## ステップ 1 — インストーラーのダウンロード (v1.0.0)
+## ステップ 1 — 最新版インストーラーのダウンロード
 
-[**GitHub Releases — Meet Minder**](https://github.com/tuyennq1001/meetminder/releases/latest) にアクセスし、お使いのMacのアーキテクチャに合わせたファイルをダウンロードしてください。
-
-| アーキテクチャ | インストーラーファイル | 対象デバイス |
-| :--- | :--- | :--- |
-| **Apple Silicon** | `MeetMinder_1.0.0_aarch64.dmg` | Apple M1, M2, M3, M4 搭載 Mac（MacBook, Mac mini, iMac, Mac Studio） |
-| **Intel Mac** | `MeetMinder_1.0.0_x64.dmg` | Intel Core プロセッサ搭載の Mac 各機種 |
+[**GitHub Releases — Meet Minder**](https://github.com/tuyennq1001/meetminder/releases/latest) からApple Silicon向けDMG（`Meet.Minder_<version>_aarch64.dmg`）をダウンロードしてください。現在のリリースはApple Silicon搭載Macのみ対応しています。
 
 > [!TIP]
 > **Macのプロセッサ確認方法:**
 > 画面左上の ** (Apple)** メニュー ➔ **「このMacについて (About This Mac)」** を選択：
-> - **「チップ: Apple M...」** と表示されている場合 ➔ **`aarch64`** 版を選択。
-> - **「プロセッサ: Intel Core...」** と表示されている場合 ➔ **`x64`** 版を選択。
+> - **「チップ: Apple M...」** と表示されているMacが現在のリリースに対応しています。
 
 ---
 

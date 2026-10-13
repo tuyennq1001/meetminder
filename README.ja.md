@@ -20,11 +20,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.0.18-blueviolet?style=flat-square" alt="Version 1.0.18">
+  <img src="https://img.shields.io/badge/version-v1.0.19-blueviolet?style=flat-square" alt="Version 1.0.19">
   <img src="https://img.shields.io/badge/built_with-Tauri_v2-24C8D8?logo=tauri&logoColor=white&style=flat-square" alt="Built with Tauri v2">
   <img src="https://img.shields.io/badge/backend-Rust_2021-DEA584?logo=rust&logoColor=white&style=flat-square" alt="Rust 2021">
-  <img src="https://img.shields.io/badge/macOS-Apple_Silicon_%7C_Intel-black?logo=apple&logoColor=white&style=flat-square" alt="macOS">
-  <img src="https://img.shields.io/badge/Windows-10%2F11_64--bit-0078D6?logo=windows&logoColor=white&style=flat-square" alt="Windows">
+  <img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?logo=apple&logoColor=white&style=flat-square" alt="macOS">
   <img src="https://img.shields.io/badge/editor-CodeMirror_6-EA5906?logo=codemirror&logoColor=white&style=flat-square" alt="CodeMirror 6">
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License MIT">
 </p>
@@ -45,15 +44,13 @@
 
 ---
 
-## ⬇️ ダウンロード (v1.0.18)
+## ⬇️ ダウンロード (v1.0.19)
 
-最新のインストーラーは [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest) からダウンロードできます。
+Apple Silicon搭載Mac向けの最新インストーラーは [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest) からダウンロードできます。
 
 | OS | アーキテクチャ / 対象端末 | インストーラー | ガイド |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.18_aarch64.dmg` | [macOS インストール手順](docs/installation_guide_ja.md) |
-| **macOS** | **Intel Mac** (i5 / i7 / i9) | `Meet.Minder_1.0.18_x64.dmg` | [macOS インストール手順](docs/installation_guide_ja.md) |
-| **Windows** | **Windows 10 / 11** (64-bit) | `Meet.Minder_1.0.18_x64-setup.exe` | [Windows インストール手順](docs/installation_guide_win.md) |
+| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.19_aarch64.dmg` | [macOS インストール手順](docs/installation_guide_ja.md) |
 
 ---
 
