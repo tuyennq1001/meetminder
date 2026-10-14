@@ -11825,7 +11825,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             const regenBtn = document.getElementById('btn-minutes-regenerate');
             if (regenBtn) {
                 regenBtn.disabled = true;
-                regenBtn.innerHTML = `<span class="spinner-ring button-spinner-inline"></span> ${this._esc(tForLocale(uiLocale, 'session.minutesGeneratingBtn'))}`;
+                regenBtn.innerHTML = `<span class="retranscript-spinner-inline"></span> ${this._esc(tForLocale(uiLocale, 'session.minutesGeneratingBtn'))}`;
             }
             return;
         }
