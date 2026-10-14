@@ -6,6 +6,16 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.20 - 2026-10-14
+
+### Fixed
+
+- **Updater responsiveness**: Throttle download progress rendering, apply finite request timeouts, and defer app installation until the user chooses to restart.
+
+### Release
+
+- **Apple Silicon only**: Build, sign, publish, and auto-update macOS arm64 releases only.
+
 ## v1.0.19 - 2026-10-13
 
 ### Fixed

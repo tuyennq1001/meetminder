@@ -106,6 +106,7 @@ class App {
         this._backgroundSessionSaveDismissTimer = null;
         this._pendingUpdateVersion = null;
         this._updateReadyVersion = null;
+        this._updateInstalled = false;
         this._isDownloadingUpdate = false;
         this._pendingUpdateReadyBanner = null;
         this._updateEscapeBound = false;
@@ -14845,7 +14846,16 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         if (this._updateReadyVersion === version) {
             this._onUpdateReady(version, notes);
         } else if (!this._isDownloadingUpdate) {
-            this._startBackgroundUpdateDownload(version, notes);
+            if (updater.canDownloadInBackground()) {
+                this._startBackgroundUpdateDownload(version, notes);
+            } else {
+                const btnText = document.getElementById('update-btn-text');
+                const btn = document.getElementById('btn-do-update');
+                const statusText = document.getElementById('update-status-text');
+                if (btn) btn.disabled = false;
+                if (btnText) btnText.textContent = t('updater.manualUpdateAction');
+                if (statusText) statusText.textContent = t('updater.manualUpdateAvailable', { version });
+            }
         }
     }
 
@@ -14867,7 +14877,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
         try {
             console.log(`[Updater] Downloading v${version} in background...`);
-            await updater.downloadAndInstall((downloaded, total) => {
+            const installedDuringDownload = await updater.download((downloaded, total) => {
                 if (total > 0) {
                     const pct = Math.round((downloaded / total) * 100);
                     if (progressFill) progressFill.style.width = `${pct}%`;
@@ -14879,8 +14889,9 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             });
 
             this._isDownloadingUpdate = false;
+            this._updateInstalled = installedDuringDownload;
             this._updateReadyVersion = version;
-            console.log(`[Updater] Update v${version} downloaded and installed successfully!`);
+            console.log(`[Updater] Update v${version} downloaded successfully!`);
             this._onUpdateReady(version, notes);
         } catch (err) {
             this._isDownloadingUpdate = false;
@@ -14988,15 +14999,31 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     }
 
     async _relaunchApp() {
+        if (this._isInstallingUpdate) return;
         if (this.isRunning) {
             const ok = confirm(t('app.restartDuringMeetingConfirm'));
             if (!ok) return;
         }
 
+        this._isInstallingUpdate = true;
         const btnText = document.getElementById('update-btn-text');
-        if (btnText) btnText.textContent = 'Restarting...';
+        const updateButton = document.getElementById('btn-do-update');
+        const bannerButton = document.getElementById('btn-banner-relaunch');
+        if (updateButton) updateButton.disabled = true;
+        if (bannerButton) {
+            bannerButton.disabled = true;
+            bannerButton.textContent = t('updater.installing');
+        }
+        if (btnText) btnText.textContent = t('updater.installing');
+        const statusText = document.getElementById('update-status-text');
+        if (statusText) statusText.textContent = t('updater.installing');
 
         try {
+            if (!this._updateInstalled) {
+                await updater.install();
+                this._updateInstalled = true;
+            }
+
             const relaunch = window.__TAURI__?.process?.relaunch;
             if (relaunch) {
                 await relaunch();
@@ -15005,11 +15032,15 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 if (invoke) await invoke('plugin:process|restart');
             }
         } catch (restartErr) {
-            console.warn('[Update] Restart failed, update is installed:', restartErr);
-            if (btnText) btnText.textContent = t('updater.restartApp');
-            const statusText = document.getElementById('update-status-text');
-            if (statusText) statusText.textContent = t('updater.downloadComplete', { version: this._updateReadyVersion || '' });
-            this._showToast(t('app.updateCompleteRestart'), 'success');
+            console.warn('[Update] Install or restart failed:', restartErr);
+            this._isInstallingUpdate = false;
+            if (updateButton) updateButton.disabled = false;
+            if (bannerButton) {
+                bannerButton.disabled = false;
+                bannerButton.textContent = t('updater.retryInstall');
+            }
+            if (btnText) btnText.textContent = t('updater.retryInstall');
+            if (statusText) statusText.textContent = t('updater.installFailed', { error: restartErr?.message || restartErr });
         }
     }
 
