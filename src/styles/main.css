@@ -8218,7 +8218,7 @@ body.expanded #library-panel { padding: 8px 6%; }
 
 .sessions-list-toolbar-right {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-start;
   flex-wrap: nowrap;
   gap: 8px;
