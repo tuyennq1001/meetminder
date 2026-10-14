@@ -3548,6 +3548,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
   font-size: 12px;
   font-weight: 600;
   padding: 5px 12px;
+  min-height: 32px;
+  box-sizing: border-box;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -8217,6 +8220,7 @@ body.expanded #library-panel { padding: 8px 6%; }
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  flex-wrap: nowrap;
   gap: 8px;
   margin-left: 0;
 }
