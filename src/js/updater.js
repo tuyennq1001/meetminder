@@ -6,6 +6,8 @@
 class Updater {
     constructor() {
         this.updateAvailable = null;
+        this.updateDownloaded = false;
+        this.updateInstalled = false;
         this.onUpdateFound = null; // callback(version, notes)
         this.onCheckComplete = null; // callback(hasUpdate)
         this.onError = null; // callback(error)
@@ -57,7 +59,7 @@ class Updater {
     async _checkViaPlugin(check) {
         try {
             console.log('[Updater] Checking for updates via plugin API...');
-            const update = await check();
+            const update = await check({ timeout: 30_000 });
 
             if (update) {
                 console.log(`[Updater] Update found: v${update.version}`);
@@ -101,20 +103,25 @@ class Updater {
         }
     }
 
+    canDownloadInBackground() {
+        return typeof this.updateAvailable?.download === 'function';
+    }
+
     /**
-     * Download and install pending update
+     * Download the pending update without replacing the running app.
      * @param {Function} onProgress - callback(downloaded, total)
+     * @returns {Promise<boolean>} true when a legacy fallback also installed it
      */
-    async downloadAndInstall(onProgress) {
+    async download(onProgress) {
         if (!this.updateAvailable) return;
 
         try {
-            // If updateAvailable is the plugin update object (has downloadAndInstall method)
-            if (typeof this.updateAvailable.downloadAndInstall === 'function') {
+            if (typeof this.updateAvailable.download === 'function') {
                 let downloaded = 0;
                 let contentLength = 0;
+                let lastProgressUpdateAt = 0;
 
-                await this.updateAvailable.downloadAndInstall((event) => {
+                await this.updateAvailable.download((event) => {
                     switch (event.event) {
                         case 'Started':
                             contentLength = event.data.contentLength || 0;
@@ -122,22 +129,50 @@ class Updater {
                             break;
                         case 'Progress':
                             downloaded += event.data.chunkLength;
-                            if (onProgress) onProgress(downloaded, contentLength);
+                            if (onProgress) {
+                                const now = Date.now();
+                                const isComplete = contentLength > 0 && downloaded >= contentLength;
+                                if (isComplete || now - lastProgressUpdateAt >= 250) {
+                                    lastProgressUpdateAt = now;
+                                    onProgress(downloaded, contentLength);
+                                }
+                            }
                             break;
                         case 'Finished':
                             console.log('[Updater] Download complete');
+                            if (onProgress) onProgress(downloaded, contentLength);
                             break;
                     }
-                });
+                }, { timeout: 300_000 });
+                this.updateDownloaded = true;
+                return false;
             } else {
-                // Invoke fallback
+                // Older invoke-only builds expose a combined operation. Defer
+                // it until the user explicitly chooses to install and restart.
                 const invoke = window.__TAURI__?.core?.invoke;
                 if (invoke) {
                     await invoke('plugin:updater|download_and_install');
+                    this.updateInstalled = true;
+                    return true;
                 }
             }
+        } catch (err) {
+            console.error('[Updater] Download failed:', err);
+            throw err;
+        }
+    }
 
-            console.log('[Updater] Update installed, restarting...');
+    async install() {
+        if (this.updateInstalled) return;
+
+        if (!this.updateAvailable || !this.updateDownloaded || typeof this.updateAvailable.install !== 'function') {
+            throw new Error('Update package is not ready to install');
+        }
+
+        try {
+            await this.updateAvailable.install();
+            this.updateInstalled = true;
+            console.log('[Updater] Update installed');
         } catch (err) {
             console.error('[Updater] Install failed:', err);
             throw err;
