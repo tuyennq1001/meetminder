@@ -114,6 +114,7 @@ class App {
         this._projectRegistryVersion = 0;
         this._knownTagsScopeIndexCache = null;
         this._liveMinutesTemplateSwitchToken = 0;
+        this._liveMinutesTemplateManualId = null;
         this._activeLogsScopeFilter = 'work'; // 'work' | 'personal' | 'all'
         this._activeCustomerFilter = [];
         this._activeProjectFilter = [];
@@ -15409,7 +15410,8 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
         this._initNotesResize();
         this._initNoteMetadataSelectors();
-        this._toggleNotesDrawer(false, false);
+        const savedNotesOpen = localStorage.getItem('live_notes_open');
+        this._toggleNotesDrawer(savedNotesOpen === null ? false : savedNotesOpen === 'true', false);
     }
 
     async _initNoteMetadataSelectors() {
@@ -15449,7 +15451,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 sessionStore.projectId = null;
             }
             this._refreshNoteTagsAutocomplete();
-            this._syncLiveMinutesTemplateSelector({ followCategory: true, deferEditorSwitch: true });
+            this._syncLiveMinutesTemplateSelector({ deferEditorSwitch: true });
         });
 
         selectCust?.addEventListener('change', () => {
@@ -15489,12 +15491,13 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             sessionStore.category = selectCat.value || null;
             sessionStore._mutations++;
             selectCat.classList.toggle('has-value', Boolean(selectCat.value));
-            this._syncLiveMinutesTemplateSelector({ followCategory: true, deferEditorSwitch: true });
+            this._syncLiveMinutesTemplateSelector({ deferEditorSwitch: true });
         });
 
         selectMinutesTemplate?.addEventListener('change', () => {
             if (!selectMinutesTemplate.value) return;
             this._liveMinutesTemplateManuallySelected = true;
+            this._liveMinutesTemplateManualId = selectMinutesTemplate.value;
             this._scheduleLiveMinutesTemplateSwitch(selectMinutesTemplate.value);
         });
 
@@ -15629,9 +15632,13 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         const templates = this._getStoredMinutesTemplates();
         const templateIds = new Set(templates.map(template => template.id));
         const currentId = sessionStore.meetingMinutesTemplateId;
-        if (followCategory) this._liveMinutesTemplateManuallySelected = false;
-        const keepManualSelection = this._liveMinutesTemplateManuallySelected && templateIds.has(currentId);
-        const selectedId = keepManualSelection ? currentId : this._defaultLiveMinutesTemplateId();
+        if (followCategory) {
+            this._liveMinutesTemplateManuallySelected = false;
+            this._liveMinutesTemplateManualId = null;
+        }
+        const manualId = this._liveMinutesTemplateManualId || currentId;
+        const keepManualSelection = this._liveMinutesTemplateManuallySelected && templateIds.has(manualId);
+        const selectedId = keepManualSelection ? manualId : this._defaultLiveMinutesTemplateId();
         const resolvedId = templateIds.has(selectedId) ? selectedId : 'standard';
 
         const optionsSignature = JSON.stringify([
@@ -15658,7 +15665,10 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 sessionStore.notesByMinutesTemplate[draftKey] = currentNotes;
             }
         }
-        if (!keepManualSelection) this._liveMinutesTemplateManuallySelected = false;
+        if (!keepManualSelection) {
+            this._liveMinutesTemplateManuallySelected = false;
+            this._liveMinutesTemplateManualId = null;
+        }
     }
 
     _scheduleLiveMinutesTemplateSwitch(templateId, locale = settingsManager.get().app_language) {
@@ -15727,6 +15737,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             inputTags.classList.remove('has-value');
         }
         this._liveMinutesTemplateManuallySelected = false;
+        this._liveMinutesTemplateManualId = null;
         this._refreshNoteTagsAutocomplete();
     }
 
@@ -15841,6 +15852,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
         const isOpen = !drawer.classList.contains('is-collapsed');
         const shouldOpen = forceOpen !== null ? forceOpen : !isOpen;
+        localStorage.setItem('live_notes_open', String(shouldOpen));
 
         if (shouldOpen) {
             drawer.classList.remove('is-collapsed');
