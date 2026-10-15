@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.0.23-blueviolet?style=flat-square" alt="Version 1.0.23">
+  <img src="https://img.shields.io/badge/version-v1.0.24-blueviolet?style=flat-square" alt="Version 1.0.24">
   <img src="https://img.shields.io/badge/built_with-Tauri_v2-24C8D8?logo=tauri&logoColor=white&style=flat-square" alt="Built with Tauri v2">
   <img src="https://img.shields.io/badge/backend-Rust_2021-DEA584?logo=rust&logoColor=white&style=flat-square" alt="Rust 2021">
   <img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?logo=apple&logoColor=white&style=flat-square" alt="macOS">
@@ -44,13 +44,13 @@
 
 ---
 
-## ⬇️ ダウンロード (v1.0.23)
+## ⬇️ ダウンロード (v1.0.24)
 
 Apple Silicon搭載Mac向けの最新インストーラーは [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest) からダウンロードできます。
 
 | OS | アーキテクチャ / 対象端末 | インストーラー | ガイド |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.23_aarch64.dmg` | [macOS インストール手順](docs/installation_guide_ja.md) |
+| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.24_aarch64.dmg` | [macOS インストール手順](docs/installation_guide_ja.md) |
 
 ---
 

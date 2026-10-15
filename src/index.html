@@ -270,12 +270,7 @@
             <button type="button" id="btn-open-session-search" class="btn-secondary small" data-i18n-title="search.openTitle" title="Tìm kiếm trong tên, Logs và ghi chú">
               <span data-i18n="search.open">🔎 Search</span>
             </button>
-            <div class="import-audio-control-wrap">
-              <button type="button" id="btn-open-import-audio" class="btn-primary small btn-import-audio" data-i18n-title="library.import" title="Import file ghi âm cuộc họp (WAV, MP3, M4A, AAC, OGG, FLAC, WEBM)">
-                <span data-i18n="library.import">📥 Import file ghi âm</span>
-              </button>
-              <span class="import-audio-supported-hint" data-i18n="library.importHint">Nhập file âm thanh để tạo bản chép lời và bản ghi cuộc họp · WAV, MP3, M4A, AAC, OGG, FLAC, WEBM</span>
-            </div>
+            <button type="button" id="btn-open-import-audio" class="btn-secondary small btn-import-audio" data-i18n="library.importButton" data-i18n-title="library.importHint" data-i18n-aria-label="library.import" title="Nhập file âm thanh để tạo bản chép lời và bản ghi cuộc họp · WAV, MP3, M4A, AAC, OGG, FLAC, WEBM" aria-label="Nhập file ghi âm">📥 Import</button>
           </div>
         </div>
 
@@ -1142,7 +1137,7 @@
             <div style="display:flex; align-items:flex-end; gap:8px; flex-wrap:wrap;">
               <div>
                 <label class="field-label" for="select-audio-retention" style="margin:0;" data-storage-optimize-copy="retentionLabel">Giữ ghi âm trong</label>
-                <select id="select-audio-retention" class="select-input" data-storage-optimize-aria="retentionLabel" aria-label="Giữ ghi âm trong">
+                <select id="select-audio-retention" class="select-input storage-retention-select" data-storage-optimize-aria="retentionLabel" aria-label="Giữ ghi âm trong">
                   <option value="1w" data-storage-optimize-copy="week">1 tuần gần nhất</option>
                   <option value="1m" selected data-storage-optimize-copy="month">1 tháng gần nhất</option>
                   <option value="3m" data-storage-optimize-copy="threeMonths">3 tháng gần nhất</option>
@@ -1194,7 +1189,7 @@
               </div>
               <div class="git-backup-options-grid" style="display:grid; grid-template-columns:1fr; gap:12px; margin-top:12px;">
                 <label class="field-label" style="margin:0;"><span style="display:block;"><input type="checkbox" id="check-git-auto-commit" /> <span data-i18n="settings.storage.gitAutoCommit">Commit tự động theo lịch</span></span>
-                  <select id="select-git-commit-interval" class="select-input" style="display:block; width:100%; margin-top:5px;">
+                  <select id="select-git-commit-interval" class="select-input git-backup-interval-select" style="display:block; margin-top:5px;">
                     <option value="15" data-i18n="settings.storage.gitEvery15">Mỗi 15 phút</option>
                     <option value="30" data-i18n="settings.storage.gitEvery30">Mỗi 30 phút</option>
                     <option value="60" data-i18n="settings.storage.gitEvery60">Mỗi 1 giờ</option>
@@ -1208,7 +1203,7 @@
                   </label>
                   <div id="git-auto-push-options" class="git-auto-push-options" aria-disabled="true">
                     <label class="field-label" style="margin:8px 0 0;"><span data-i18n="settings.storage.gitPushInterval">Chu kỳ push</span>
-                      <select id="select-git-push-interval" class="select-input" style="display:block; width:100%; margin-top:5px;">
+                      <select id="select-git-push-interval" class="select-input git-backup-interval-select" style="display:block; margin-top:5px;">
                         <option value="15" data-i18n="settings.storage.gitEvery15">Mỗi 15 phút</option>
                         <option value="30" data-i18n="settings.storage.gitEvery30">Mỗi 30 phút</option>
                         <option value="60" data-i18n="settings.storage.gitEvery60">Mỗi 1 giờ</option>

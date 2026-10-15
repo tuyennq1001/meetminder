@@ -9847,6 +9847,33 @@ class App {
         }
     }
 
+    _localizeGitPushError(error) {
+        const raw = String(error ?? '').trim();
+        const message = raw.replace(/^(?:Git\s+)?push\s+(?:thất bại|failed):\s*/i, '').trim();
+        const ssh = message.match(/ssh:\s*connect to host\s+(\S+)\s+port\s+(\d+):\s*([\s\S]*)/i);
+        if (ssh) {
+            const host = ssh[1];
+            const port = ssh[2];
+            const reasonText = ssh[3].replace(/\s*fatal:\s*Could not read from remote repository[\s\S]*$/i, '').trim();
+            const normalizedReason = reasonText.toLowerCase();
+            let reasonKey = 'settings.storage.gitPushSystemError';
+            if (/timed out|timeout/.test(normalizedReason)) reasonKey = 'settings.storage.gitPushTimeout';
+            else if (/connection refused/.test(normalizedReason)) reasonKey = 'settings.storage.gitPushConnectionRefused';
+            else if (/could not resolve|name or service not known|nodename nor servname|temporary failure in name resolution/.test(normalizedReason)) {
+                reasonKey = 'settings.storage.gitPushHostNotFound';
+            }
+            return t('settings.storage.gitPushSshConnectionFailed', {
+                host,
+                port,
+                reason: t(reasonKey),
+            });
+        }
+        if (/could not read from remote repository|permission denied|publickey|repository .*not found|authentication failed|access denied/i.test(message)) {
+            return t('settings.storage.gitPushRemoteAccessFailed');
+        }
+        return t('settings.storage.gitPushErrorGeneric');
+    }
+
     _renderGitPushHistory(storagePath) {
         const emptyEl = document.getElementById('git-backup-history-empty');
         const wrapEl = document.querySelector('.git-backup-history-table-wrap');
@@ -9872,7 +9899,7 @@ class App {
                 ? paths.slice(0, 5).join(', ') + (paths.length > 5 ? ` (+${paths.length - 5})` : '')
                 : t('settings.storage.pushNoNewCommit');
             const dataLabel = success ? pathSummary : (paths.length ? t('settings.storage.pushPending', { summary: pathSummary }) : t('settings.storage.pushUnknown'));
-            const error = item.error ? this._esc(item.error) : '—';
+            const error = item.error ? this._esc(this._localizeGitPushError(item.error)) : '—';
             const sourceLabel = item.source === 'Manual' || item.source === 'Backup ngay'
                 ? t('settings.storage.sourceManual')
                 : (item.source === 'Meeting End' || item.source === 'Sau meeting' ? t('settings.storage.sourceMeetingEnd') : t('settings.storage.sourceSchedule'));
@@ -9964,7 +9991,14 @@ class App {
                     source: manual ? 'Manual' : 'Schedule',
                 });
             }
-            if (manual) this._showToast(result.message, result.warning ? 'warning' : 'success');
+            if (manual) {
+                const message = result.warning
+                    ? (result.committed
+                        ? t('settings.gitCommitPushFailed', { error: this._localizeGitPushError(result.warning) })
+                        : this._localizeGitPushError(result.warning))
+                    : result.message;
+                this._showToast(message, result.warning ? 'warning' : 'success');
+            }
             await this._renderGitBackupStatus();
         } catch (err) {
             if (reason === 'schedule') localStorage.setItem(this._gitBackupStorageKey(repo, 'commit'), String(Date.now()));
@@ -10005,7 +10039,7 @@ class App {
                 const statusEl = document.getElementById('git-backup-status');
                 if (statusEl) {
                     statusEl.classList.add('is-error');
-                    statusEl.textContent = result.warning;
+                    statusEl.textContent = this._localizeGitPushError(result.warning);
                 }
                 return;
             }
@@ -10016,7 +10050,7 @@ class App {
             const statusEl = document.getElementById('git-backup-status');
             if (statusEl) {
                 statusEl.classList.add('is-error');
-                statusEl.textContent = t('settings.gitPushFailed', { error: err });
+                statusEl.textContent = this._localizeGitPushError(err);
             }
         } finally {
             this._gitBackupBusy = false;
