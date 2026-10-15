@@ -17,6 +17,17 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 - **Apple Silicon only**: Build, sign, publish, and auto-update macOS arm64 releases only.
 
+## v1.0.22 - 2026-10-15
+
+### Fixed
+
+- **Memo template selection**: Keep a manually selected minutes template when changing scope or category, and preserve it through project metadata updates.
+- **Memo drawer state**: Remember whether Memo is open or collapsed across app restarts and updates.
+
+### Release
+
+- **Apple Silicon only**: Build, sign, publish, and auto-update macOS arm64 releases only.
+
 ## v1.0.20 - 2026-10-14
 
 ### Fixed
