@@ -215,6 +215,8 @@ pub fn run() {
             commands::session_store::retranscribe_session,
             commands::session_store::cancel_retranscribe_session,
             commands::session_store::get_storage_info,
+            commands::session_store::preview_audio_cleanup,
+            commands::session_store::cleanup_old_audio,
             commands::session_store::select_custom_transcripts_dir,
             commands::session_store::preview_storage_dir_change,
             commands::session_store::set_custom_transcripts_dir,

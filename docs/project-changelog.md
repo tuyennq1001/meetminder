@@ -6,6 +6,17 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.23 - 2026-10-15
+
+### New Features
+
+- **Optimize storage**: Preview and remove old audio recordings while preserving meeting logs, transcripts, notes, and minutes. Choose a 1-week, 1-month, 3-month, or 6-month retention period.
+- **Safe cleanup preview**: Show linked and orphan recordings, file counts, reclaimable size, and files kept because their dates are unknown before confirming deletion.
+
+### Release
+
+- **Apple Silicon only**: Build, sign, publish, and auto-update macOS arm64 releases only.
+
 ## v1.0.21 - 2026-10-14
 
 ### Fixed

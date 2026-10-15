@@ -7,6 +7,7 @@
 // Legacy `.md`-only files from the old `save_transcript` command are still
 // listed (with `has_legacy_only: true`) but not editable.
 
+use chrono::{DateTime, Months, NaiveDateTime, Utc};
 use futures_util::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -251,6 +252,7 @@ pub struct SessionListItem {
     pub chunk_count: usize,
     pub segment_count: usize,
     pub has_legacy_only: bool,
+    pub has_audio: bool,
     pub has_meeting_minutes: bool,
     pub tags: Vec<String>,
     pub customer_id: Option<String>,
@@ -1252,6 +1254,7 @@ fn list_sessions_inner(app: &AppHandle) -> Result<Vec<SessionListItem>, String> 
             }
             "work".to_string()
         });
+        let has_audio = find_session_audio(&dir, &data.id).is_some();
 
         items.push(SessionListItem {
             id: data.id,
@@ -1265,6 +1268,7 @@ fn list_sessions_inner(app: &AppHandle) -> Result<Vec<SessionListItem>, String> 
             chunk_count: data.chunks.len(),
             segment_count,
             has_legacy_only: false,
+            has_audio,
             has_meeting_minutes,
             tags: data.tags,
             customer_id: effective_cust_id,
@@ -1308,6 +1312,7 @@ fn list_sessions_inner(app: &AppHandle) -> Result<Vec<SessionListItem>, String> 
             chunk_count: 0,
             segment_count: 0,
             has_legacy_only: true,
+            has_audio: find_session_audio(&dir, stem).is_some(),
             has_meeting_minutes: false,
             tags: Vec::new(),
             customer_id: None,
@@ -6765,6 +6770,218 @@ start_sec must be the approximate offset in seconds.";
     Ok(SessionReadResult { md, json: data })
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct AudioCleanupPreview {
+    pub cutoff_at: String,
+    pub total_files: usize,
+    pub total_size_bytes: u64,
+    pub linked_files: usize,
+    pub linked_size_bytes: u64,
+    pub orphan_files: usize,
+    pub orphan_size_bytes: u64,
+    pub unknown_date_files: usize,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct AudioCleanupResult {
+    pub deleted_files: usize,
+    pub deleted_size_bytes: u64,
+    pub failed_files: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+struct AudioCleanupCandidate {
+    path: PathBuf,
+    size_bytes: u64,
+    linked: bool,
+}
+
+fn parse_session_date(value: &str) -> Option<DateTime<Utc>> {
+    if let Ok(parsed) = DateTime::parse_from_rfc3339(value) {
+        return Some(parsed.with_timezone(&Utc));
+    }
+    for format in ["%Y-%m-%d %H-%M-%S", "%Y-%m-%d %H:%M:%S"] {
+        if let Ok(parsed) = NaiveDateTime::parse_from_str(value, format) {
+            return Some(parsed.and_utc());
+        }
+    }
+    None
+}
+
+fn retention_cutoff(retention: &str, now: DateTime<Utc>) -> Result<DateTime<Utc>, String> {
+    let cutoff = match retention {
+        "1w" => now.checked_sub_signed(chrono::Duration::weeks(1)),
+        "1m" => now.checked_sub_months(Months::new(1)),
+        "3m" => now.checked_sub_months(Months::new(3)),
+        "6m" => now.checked_sub_months(Months::new(6)),
+        _ => return Err("Invalid audio retention period".into()),
+    };
+    cutoff.ok_or_else(|| "Could not calculate audio retention cutoff".into())
+}
+
+fn collect_audio_cleanup_candidates(
+    root: &Path,
+    session_dates: &HashMap<String, Option<DateTime<Utc>>>,
+    cutoff: DateTime<Utc>,
+) -> Result<(Vec<AudioCleanupCandidate>, usize), String> {
+    let mut files = Vec::new();
+    let mut seen_paths = std::collections::HashSet::new();
+    let mut unknown_date_files = 0;
+
+    for base in [audio_dir(root), root.to_path_buf()] {
+        let entries = match fs::read_dir(&base) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(format!("Could not read audio folder: {error}")),
+        };
+        for entry in entries {
+            let entry = entry.map_err(|error| format!("Could not read audio entry: {error}"))?;
+            if !entry
+                .file_type()
+                .map_err(|error| format!("Could not inspect audio file: {error}"))?
+                .is_file()
+            {
+                continue;
+            }
+            let path = entry.path();
+            if !seen_paths.insert(path.clone()) {
+                continue;
+            }
+            let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if !SUPPORTED_AUDIO_EXTS
+                .iter()
+                .any(|supported| extension.eq_ignore_ascii_case(supported))
+            {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            let Some(id) = stem.strip_prefix("session-") else {
+                continue;
+            };
+
+            let linked_date = session_dates.get(id);
+            let (linked, created_at) = match linked_date {
+                Some(Some(date)) => (true, Some(*date)),
+                Some(None) => (true, None),
+                None => {
+                    let modified = fs::metadata(&path)
+                        .and_then(|metadata| metadata.modified())
+                        .ok()
+                        .map(DateTime::<Utc>::from);
+                    (false, modified)
+                }
+            };
+            let Some(created_at) = created_at else {
+                unknown_date_files += 1;
+                continue;
+            };
+            if created_at >= cutoff {
+                continue;
+            }
+            let metadata = fs::metadata(&path)
+                .map_err(|error| format!("Could not inspect audio file: {error}"))?;
+            files.push(AudioCleanupCandidate {
+                path,
+                size_bytes: metadata.len(),
+                linked,
+            });
+        }
+    }
+    Ok((files, unknown_date_files))
+}
+
+fn session_date_map(app: &AppHandle) -> Result<HashMap<String, Option<DateTime<Utc>>>, String> {
+    Ok(list_sessions_inner(app)?
+        .into_iter()
+        .map(|session| {
+            let date = parse_session_date(&session.created_at);
+            (session.id, date)
+        })
+        .collect())
+}
+
+fn audio_cleanup_preview_inner(
+    app: &AppHandle,
+    retention: &str,
+) -> Result<AudioCleanupPreview, String> {
+    let cutoff = retention_cutoff(retention, Utc::now())?;
+    let root = sessions_dir(app)?;
+    let dates = session_date_map(app)?;
+    let (files, unknown_date_files) = collect_audio_cleanup_candidates(&root, &dates, cutoff)?;
+    let mut preview = AudioCleanupPreview {
+        cutoff_at: cutoff.to_rfc3339(),
+        total_files: files.len(),
+        total_size_bytes: 0,
+        linked_files: 0,
+        linked_size_bytes: 0,
+        orphan_files: 0,
+        orphan_size_bytes: 0,
+        unknown_date_files,
+    };
+    for file in files {
+        preview.total_size_bytes += file.size_bytes;
+        if file.linked {
+            preview.linked_files += 1;
+            preview.linked_size_bytes += file.size_bytes;
+        } else {
+            preview.orphan_files += 1;
+            preview.orphan_size_bytes += file.size_bytes;
+        }
+    }
+    Ok(preview)
+}
+
+#[tauri::command]
+pub async fn preview_audio_cleanup(
+    app: AppHandle,
+    retention: String,
+) -> Result<AudioCleanupPreview, String> {
+    tokio::task::spawn_blocking(move || audio_cleanup_preview_inner(&app, &retention))
+        .await
+        .map_err(|error| format!("Task join error: {error}"))?
+}
+
+#[tauri::command]
+pub async fn cleanup_old_audio(
+    app: AppHandle,
+    retention: String,
+) -> Result<AudioCleanupResult, String> {
+    tokio::task::spawn_blocking(move || {
+        let cutoff = retention_cutoff(&retention, Utc::now())?;
+        let root = sessions_dir(&app)?;
+        let dates = session_date_map(&app)?;
+        let (candidates, _) = collect_audio_cleanup_candidates(&root, &dates, cutoff)?;
+        let mut result = AudioCleanupResult {
+            deleted_files: 0,
+            deleted_size_bytes: 0,
+            failed_files: Vec::new(),
+        };
+        for candidate in candidates {
+            match fs::remove_file(&candidate.path) {
+                Ok(()) => {
+                    result.deleted_files += 1;
+                    result.deleted_size_bytes += candidate.size_bytes;
+                }
+                Err(error) => result.failed_files.push(format!(
+                    "{}: {error}",
+                    candidate
+                        .path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                )),
+            }
+        }
+        Ok(result)
+    })
+    .await
+    .map_err(|error| format!("Task join error: {error}"))?
+}
+
 #[tauri::command]
 pub fn get_storage_info(app: AppHandle) -> Result<StorageInfo, String> {
     let current = sessions_dir(&app)?;
@@ -7434,6 +7651,7 @@ mod tests {
             chunk_count: 1,
             segment_count: 5,
             has_legacy_only: false,
+            has_audio: false,
             has_meeting_minutes: false,
             tags: vec!["sprint".to_string(), "Relipa".to_string()],
             customer_id: None,
@@ -7470,6 +7688,57 @@ mod tests {
 
         // Không khớp
         assert!(!session_item_matches_metadata(&item, "honda", "honda"));
+    }
+
+    #[test]
+    fn audio_cleanup_parses_session_dates_and_calendar_retention() {
+        use chrono::TimeZone;
+        assert_eq!(
+            parse_session_date("2026-03-27 10-21-05").unwrap(),
+            Utc.with_ymd_and_hms(2026, 3, 27, 10, 21, 5).unwrap()
+        );
+        let now = Utc.with_ymd_and_hms(2026, 10, 15, 12, 0, 0).unwrap();
+        assert_eq!(
+            retention_cutoff("1m", now).unwrap(),
+            Utc.with_ymd_and_hms(2026, 9, 15, 12, 0, 0).unwrap()
+        );
+        assert!(retention_cutoff("invalid", now).is_err());
+    }
+
+    #[test]
+    fn audio_cleanup_collects_old_linked_and_orphan_files_only() {
+        let root = std::env::temp_dir().join(format!(
+            "meet-minder-audio-cleanup-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(audio_dir(&root)).unwrap();
+        fs::write(audio_dir(&root).join("session-linked.wav"), b"old").unwrap();
+        fs::write(audio_dir(&root).join("session-recent.mp3"), b"recent").unwrap();
+        fs::write(root.join("session-orphan.m4a"), b"orphan").unwrap();
+        fs::write(audio_dir(&root).join("session-unknown.aac"), b"unknown").unwrap();
+        fs::write(audio_dir(&root).join("unrelated.wav"), b"ignore").unwrap();
+
+        let now = Utc::now();
+        let cutoff = now + chrono::Duration::seconds(2);
+        let mut dates = HashMap::new();
+        dates.insert(
+            "linked".to_string(),
+            Some(now - chrono::Duration::days(365)),
+        );
+        dates.insert("recent".to_string(), Some(now + chrono::Duration::days(1)));
+        dates.insert("unknown".to_string(), None);
+
+        let (candidates, unknown) =
+            collect_audio_cleanup_candidates(&root, &dates, cutoff).unwrap();
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(unknown, 1);
+        assert_eq!(candidates.iter().filter(|file| file.linked).count(), 1);
+        assert_eq!(candidates.iter().filter(|file| !file.linked).count(), 1);
+        assert_eq!(
+            candidates.iter().map(|file| file.size_bytes).sum::<u64>(),
+            9
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

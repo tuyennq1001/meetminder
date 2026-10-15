@@ -1137,6 +1137,23 @@
             <div id="storage-migration-status" class="storage-migration-status" role="status" aria-live="polite" style="display:none; margin-top:12px;"></div>
           </div>
           <div class="settings-section" style="margin-top:14px;">
+            <span class="field-label settings-subsection-title" style="margin:0;" data-storage-optimize-copy="title">Tối ưu dung lượng</span>
+            <p class="hint" style="margin:4px 0 10px;" data-storage-optimize-copy="description">Xóa ghi âm cũ để giải phóng dung lượng; log, transcript và ghi chú vẫn được giữ.</p>
+            <div style="display:flex; align-items:flex-end; gap:8px; flex-wrap:wrap;">
+              <div>
+                <label class="field-label" for="select-audio-retention" style="margin:0;" data-storage-optimize-copy="retentionLabel">Giữ ghi âm trong</label>
+                <select id="select-audio-retention" class="select-input" data-storage-optimize-aria="retentionLabel" aria-label="Giữ ghi âm trong">
+                  <option value="1w" data-storage-optimize-copy="week">1 tuần gần nhất</option>
+                  <option value="1m" selected data-storage-optimize-copy="month">1 tháng gần nhất</option>
+                  <option value="3m" data-storage-optimize-copy="threeMonths">3 tháng gần nhất</option>
+                  <option value="6m" data-storage-optimize-copy="sixMonths">6 tháng gần nhất</option>
+                </select>
+              </div>
+              <button type="button" id="btn-optimize-storage" class="btn-danger-small" data-storage-optimize-copy="button" data-storage-optimize-aria="button" aria-label="Xem trước và dọn ghi âm">Xem trước và dọn ghi âm</button>
+            </div>
+            <div id="storage-optimization-status" class="hint storage-optimization-status" role="status" aria-live="polite" style="display:none; margin-top:10px;"></div>
+          </div>
+          <div class="settings-section" style="margin-top:14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
               <div>
                 <span class="field-label settings-subsection-title obsidian-setting-title" style="margin:0;"><svg class="markdown-file-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 2.75h8l4.5 4.5v14H6a2 2 0 0 1-2-2v-14a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M14 2.75v5h4.5M7.5 13h9M7.5 16h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 18.5h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span data-i18n="settings.storage.obsidianTitle">Markdown</span></span>

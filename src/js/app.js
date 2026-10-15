@@ -27,6 +27,7 @@ import { sessionStore, SessionStore } from './session-store.js';
 import { QWEN_LANGS } from './qwen-langs.js';
 import { NotesEditor } from './notes-editor.js';
 import { applyLocale, normalizeLocale, t, tForLocale, formatDateTime } from './i18n.js';
+import { bindStorageOptimization } from './storage-optimization.js';
 import {
     getStorageLocationChoice,
     getStorageLocationSuccess,
@@ -1526,6 +1527,22 @@ class App {
             } catch (err) {
                 this._showToast(t('settings.storage.openFolderFailed', { error: err }), 'error');
             }
+        });
+
+        bindStorageOptimization({
+            invoke,
+            promptConfirmDelete: (options) => this._promptConfirmDelete(options),
+            showToast: (message, type) => this._showToast(message, type),
+            formatBytes: (bytes) => this._formatStorageBytes(bytes),
+            onComplete: async () => {
+                try {
+                    this._cachedSessions = await invoke('list_sessions');
+                    this._renderFilteredSessions();
+                } catch (refreshError) {
+                    console.warn('[Storage] Could not refresh Meeting Logs after audio cleanup:', refreshError);
+                }
+                await this._renderSettingsStorageTab();
+            },
         });
         document.getElementById('btn-open-transcripts')?.addEventListener('click', async () => {
             try {
@@ -8006,7 +8023,7 @@ class App {
         const category = session.category ? `<button type="button" class="session-category-badge" data-category="${this._escAttr(session.category)}" title="${this._escAttr(t('logsTable.filterByCategory', { category: session.category }))}">${this._esc(session.category)}</button>` : '<span class="logs-empty-value">—</span>';
         const durationSec = Number(session.duration_sec) || 0;
         const duration = durationSec > 0 ? this._formatPlayerTime(durationSec) : '<span class="logs-empty-value">—</span>';
-        const playButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action session-audio-action" data-play-session="${this._escAttr(session.id)}" aria-label="${this._escAttr(t('logsTable.playTooltip'))}" title="${this._escAttr(t('logsTable.playTooltip'))}">▶</button>`;
+        const playButton = session.has_legacy_only || !session.has_audio ? '' : `<button type="button" class="session-btn-action session-audio-action" data-play-session="${this._escAttr(session.id)}" aria-label="${this._escAttr(t('logsTable.playTooltip'))}" title="${this._escAttr(t('logsTable.playTooltip'))}">▶</button>`;
         const editButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-edit-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.editTooltip'))}">${PENCIL_YELLOW_ICON}</button>`;
 
         const scopeBadge = isAllScope

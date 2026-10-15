@@ -2271,6 +2271,10 @@ input[type="range"]::-webkit-slider-thumb:hover {
     border-color: color-mix(in srgb, var(--md-sys-color-error) 45%, var(--border-subtle));
 }
 
+.storage-optimization-status.is-error {
+    color: var(--md-sys-color-error);
+}
+
 /* Checkbox */
 .checkbox-option {
   display: flex;
