@@ -6,6 +6,17 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.26 - 2026-10-23
+
+### Improved
+
+- **Meeting Minutes, saved notes, and templates**: Open these text areas in read-only mode; use Edit, Save, or Cancel to control changes.
+- **Unsaved edit protection**: Offer Save, Discard, or Continue editing before switching content areas, languages, templates, or leaving with Escape.
+
+### Release
+
+- **Apple Silicon only**: Build, sign, publish, and auto-update macOS arm64 releases only.
+
 ## v1.0.25 - 2026-10-23
 
 ### New Features

@@ -91,13 +91,21 @@ class App {
         this._pendingMinutesAutosave = null;
         this._minutesAutosaveQueue = Promise.resolve();
         this._suppressMinutesAutosave = false;
+        this._sessionMinutesEditing = false;
+        this._sessionMinutesEditBaseline = '';
+        this._sessionMinutesEditLang = 'en';
         this._notesAutosaveTimer = null;
         this._pendingNotesAutosave = null;
         this._notesAutosaveQueue = Promise.resolve();
         this._suppressNotesAutosave = false;
-        this._templateAutosaveTimer = null;
         this._templateAutosaveQueue = Promise.resolve();
         this._suppressTemplateAutosave = false;
+        this._sessionNotesEditing = false;
+        this._sessionNotesEditBaseline = '';
+        this._templateEditing = false;
+        this._templateEditBaseline = null;
+        this._templateSaving = false;
+        this._sessionTextEditSaving = { minutes: false, notes: false };
         this._hasUnsavedMeetingData = false;
         this._inactivityTimer = null;
         this._captureHealthTimer = null;
@@ -947,7 +955,8 @@ class App {
         });
 
         // Settings button
-        document.getElementById('btn-settings')?.addEventListener('click', () => {
+        document.getElementById('btn-settings')?.addEventListener('click', async () => {
+            if (this._currentViewedSession && !await this._resolveActiveSessionTextEdit()) return;
             this._showView('settings');
         });
 
@@ -957,6 +966,14 @@ class App {
             const select = event.target;
             const previousLocale = normalizeLocale(settingsManager.get().app_language);
             const nextLocale = normalizeLocale(select.value);
+            if (this._currentSettingsScreen === 'tab-templates' && !await this._resolveTemplateEdit()) {
+                select.value = previousLocale;
+                return;
+            }
+            if (this._currentViewedSession && !await this._resolveActiveSessionTextEdit()) {
+                select.value = previousLocale;
+                return;
+            }
             applyLocale(nextLocale);
             this._refreshLiveMemoTemplateLanguage(nextLocale);
             this._updateStartButton();
@@ -986,7 +1003,8 @@ class App {
         });
 
         // Back from settings
-        document.getElementById('btn-back')?.addEventListener('click', () => {
+        document.getElementById('btn-back')?.addEventListener('click', async () => {
+            if (this._currentSettingsScreen === 'tab-templates' && !await this._resolveTemplateEdit()) return;
             this._showView('overlay');
         });
 
@@ -1340,9 +1358,13 @@ class App {
             } else if (this._lastCompletedRetranscribeId) {
                 const targetId = this._lastCompletedRetranscribeId;
                 this._hideRetranscriptProgress();
-                setActivity('library');
-                await this._openSession(targetId);
-                this._switchSessionTab('logs');
+                if (this._currentViewedSession && !await this._resolveActiveSessionTextEdit()) return;
+                if (getActivity() !== 'library') {
+                    this._suppressNextShowSessions = true;
+                    setActivity('library');
+                }
+                if (!await this._openSession(targetId)) return;
+                await this._switchSessionTab('logs');
             }
         });
         document.getElementById('btn-retranscript-floating-cancel')?.addEventListener('click', (e) => {
@@ -1362,16 +1384,19 @@ class App {
             e.stopPropagation();
             this._hideBackgroundSessionSave();
         });
-        document.getElementById('session-save-floating-bar')?.addEventListener('click', (e) => {
+        document.getElementById('session-save-floating-bar')?.addEventListener('click', async (e) => {
             if (e.target.closest('#btn-session-save-floating-retry') || e.target.closest('#btn-session-save-floating-close')) {
                 return;
             }
             const task = this._backgroundSessionSave;
             if (task && task.status === 'saved' && task.id) {
-                setActivity('library');
-                this._showSessions().then(() => {
-                    this._openSession(task.id);
-                });
+                if (this._currentViewedSession && !await this._resolveActiveSessionTextEdit()) return;
+                if (getActivity() !== 'library') {
+                    this._suppressNextShowSessions = true;
+                    setActivity('library');
+                }
+                await this._showSessions();
+                await this._openSession(task.id);
             }
         });
 
@@ -1390,15 +1415,16 @@ class App {
                 this._hideMinutesProgress();
             }
 
+            if (this._currentViewedSession && !await this._resolveActiveSessionTextEdit()) return;
             if (getActivity() !== 'library') {
                 this._suppressNextShowSessions = true;
                 setActivity('library');
             }
 
-            await this._openSession(targetId);
-            this._switchSessionTab('minutes');
+            if (!await this._openSession(targetId)) return;
+            await this._switchSessionTab('minutes');
             if (targetLang) {
-                this._switchMinutesSubtab(targetLang);
+                await this._switchMinutesSubtab(targetLang);
             }
 
             const editorEl = document.getElementById('session-minutes-editor-container');
@@ -2038,6 +2064,19 @@ class App {
             const hasModifier = e.metaKey || e.ctrlKey;
             const isTyping = (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) && !e.target.readOnly;
 
+            if (e.key === 'Escape' && !isTyping) {
+                if (this._templateEditing) {
+                    e.preventDefault();
+                    this._resolveTemplateEdit();
+                    return;
+                }
+                if (this._sessionMinutesEditing || this._sessionNotesEditing) {
+                    e.preventDefault();
+                    this._resolveActiveSessionTextEdit();
+                    return;
+                }
+            }
+
             // Inline session editing shortcuts
             if (this._isSessionEditing) {
                 if (hasModifier && (e.key === 's' || e.key === 'S')) {
@@ -2052,12 +2091,12 @@ class App {
                 }
             }
 
-            // Settings view shortcuts: Cmd/Ctrl+S saves templates in tab-templates without starting meetings
+            // Cmd/Ctrl+S is an explicit save shortcut while editing a template.
             if (getActivity() === 'settings') {
                 if (hasModifier && (e.key === 's' || e.key === 'S')) {
                     e.preventDefault();
                     if (this._currentSettingsScreen === 'tab-templates') {
-                        this._flushSettingsTemplatesAutosave();
+                        if (this._templateEditing) this._toggleTemplateEditSave();
                     }
                     return;
                 }
@@ -2271,6 +2310,9 @@ class App {
     async _showSettingsScreen(id) {
         if (!id || !document.getElementById(id)) id = 'tab-customers';
         const targetScreen = id;
+        if (targetScreen !== this._currentSettingsScreen && this._currentSettingsScreen === 'tab-templates') {
+            if (!await this._resolveTemplateEdit()) return;
+        }
         this._currentSettingsScreen = targetScreen;
 
         // Highlight sidebar nav item
@@ -2317,6 +2359,7 @@ class App {
      * kind: 'customer' (id) | 'project' (id) | 'category' (name) | 'tag' (name)
      */
     async _jumpToLogsWithFilter(kind, value, scopeOverride) {
+        if (this._currentViewedSession && !await this._resolveActiveSessionTextEdit()) return;
         this._activeCustomerFilter = [];
         this._activeProjectFilter = [];
         this._activeCategoryFilter = [];
@@ -2350,16 +2393,20 @@ class App {
             }
         }
         this._activeLogsScopeFilter = ['work', 'personal', 'all'].includes(logsScope) ? logsScope : 'all';
-        setActivity('library');
+        if (getActivity() !== 'library') {
+            this._suppressNextShowSessions = true;
+            setActivity('library');
+        }
         this._showView('overlay');
         await this._showSessions();
     }
 
     /** Jump from a Category row to the linked Minutes template setting. */
-    _jumpToTemplateSetting(templateId) {
+    async _jumpToTemplateSetting(templateId) {
         if (!templateId) return;
-        this._showSettingsScreen('tab-templates');
-        this._switchSettingsTemplatePreset(templateId);
+        if (this._currentViewedSession && !await this._resolveActiveSessionTextEdit()) return;
+        await this._showSettingsScreen('tab-templates');
+        await this._switchSettingsTemplatePreset(templateId);
     }
 
     // ─── Settings: Scope Tabs (Projects, Categories, Tags) ───
@@ -2418,6 +2465,8 @@ class App {
         document.getElementById('btn-template-add')?.addEventListener('click', () => {
             this._addMeetingMinutesTemplate();
         });
+        document.getElementById('btn-template-edit-save')?.addEventListener('click', () => this._toggleTemplateEditSave());
+        document.getElementById('btn-template-cancel-edit')?.addEventListener('click', () => this._discardTemplateEdit());
 
         document.getElementById('templates-preset-bar')?.addEventListener('click', (event) => {
             const btn = event.target.closest('.templates-preset-btn');
@@ -2425,17 +2474,22 @@ class App {
         });
 
         document.getElementById('template-name-input')?.addEventListener('input', (event) => {
+            if (!this._templateEditing) return;
             const template = this._getMinutesTemplates().find(item => item.id === this._activeTemplateId);
             if (!template || template.id === 'standard') return;
             template.name = event.currentTarget.value;
             this._renderMinutesTemplateList();
-            this._scheduleSettingsTemplatesAutosave();
+            this._updateTemplateEditStatus();
         });
 
         document.getElementById('template-name-input')?.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
-                this._flushSettingsTemplatesAutosave();
+                if (this._templateEditing) this._toggleTemplateEditSave();
+            } else if (event.key === 'Escape' && this._templateEditing) {
+                event.preventDefault();
+                event.stopPropagation();
+                this._resolveTemplateEdit();
             }
         });
 
@@ -2444,7 +2498,6 @@ class App {
             btn.addEventListener('click', () => {
                 const lang = btn.dataset.lang;
                 if (lang) {
-                    this._hasUserSwitchedTemplateLang = true;
                     this._switchSettingsTemplateLang(lang);
                 }
             });
@@ -2595,16 +2648,18 @@ class App {
             this._templateEditor = new NotesEditor();
             this._templateEditor.mount(container, {
                 initialContent: this._getMinutesTemplates().find(item => item.id === this._activeTemplateId)?.translations?.[this._activeTemplateLang] || '',
+                readOnly: true,
                 placeholderText: t('settings.template.placeholderMinutes'),
                 onChange: content => {
-                    if (this._suppressTemplateAutosave) return;
+                    if (this._suppressTemplateAutosave || !this._templateEditing) return;
                     const template = this._getMinutesTemplates().find(item => item.id === this._activeTemplateId);
                     if (!template) return;
                     if (!template.translations) template.translations = {};
                     template.translations[this._activeTemplateLang] = content;
-                    this._scheduleSettingsTemplatesAutosave();
+                    this._updateTemplateEditStatus();
                 },
-                onSave: () => this._flushSettingsTemplatesAutosave(),
+                onSave: () => this._templateEditing ? this._toggleTemplateEditSave() : false,
+                onCancel: () => this._templateEditing ? this._resolveTemplateEdit() : false,
             });
         }
         this._updateSettingsTemplateUI();
@@ -2612,15 +2667,16 @@ class App {
 
     async _switchSettingsTemplatePreset(templateId) {
         if (!this._getMinutesTemplates().some(template => template.id === templateId)) return;
-        this._saveActiveSettingsTemplateEditor();
-        if (!await this._flushSettingsTemplatesAutosave()) return;
+        if (templateId === this._activeTemplateId) return;
+        if (!await this._resolveTemplateEdit()) return;
         this._activeTemplateId = templateId;
         this._updateSettingsTemplateUI();
     }
 
     async _switchSettingsTemplateLang(lang) {
-        this._saveActiveSettingsTemplateEditor();
-        if (!await this._flushSettingsTemplatesAutosave()) return;
+        if (lang === this._activeTemplateLang) return;
+        if (!await this._resolveTemplateEdit()) return;
+        this._hasUserSwitchedTemplateLang = true;
         this._activeTemplateLang = lang;
         this._updateSettingsTemplateUI();
     }
@@ -2639,8 +2695,8 @@ class App {
         const standard = template.id === 'standard';
         if (nameInput) {
             nameInput.value = template.name;
-            nameInput.readOnly = standard;
-            nameInput.setAttribute('aria-readonly', String(standard));
+            nameInput.readOnly = !this._templateEditing || standard;
+            nameInput.setAttribute('aria-readonly', String(!this._templateEditing || standard));
         }
         const standardBadge = document.getElementById('template-standard-badge');
         if (standardBadge) standardBadge.hidden = !standard;
@@ -2657,7 +2713,17 @@ class App {
             this._suppressTemplateAutosave = true;
             this._templateEditor.setContent(this._getActiveSettingsTemplateContent(template));
             this._suppressTemplateAutosave = false;
+            this._templateEditor.setReadOnly(!this._templateEditing);
         }
+        const editButton = document.getElementById('btn-template-edit-save');
+        if (editButton) {
+            editButton.textContent = t(this._templateEditing ? 'textEdit.save' : 'textEdit.edit');
+            editButton.dataset.i18n = this._templateEditing ? 'textEdit.save' : 'textEdit.edit';
+            editButton.classList.toggle('btn-primary', this._templateEditing);
+            editButton.classList.toggle('btn-secondary', !this._templateEditing);
+        }
+        const cancelButton = document.getElementById('btn-template-cancel-edit');
+        if (cancelButton) cancelButton.hidden = !this._templateEditing;
     }
 
     _defaultMinutesTemplateContent(templateId, lang) {
@@ -2673,6 +2739,7 @@ class App {
     _resetCurrentSettingsTemplate() {
         const template = this._getMinutesTemplates().find(item => item.id === this._activeTemplateId);
         if (!template) return;
+        if (!this._templateEditing) this._beginTemplateEdit();
         if (template.id === 'standard' || ['tech', 'one_on_one', 'personal'].includes(template.id)) {
             template.translations[this._activeTemplateLang] = this._defaultMinutesTemplateContent(template.id, this._activeTemplateLang);
         } else {
@@ -2681,8 +2748,126 @@ class App {
                 || this._defaultMinutesTemplateContent('standard', this._activeTemplateLang);
         }
         this._updateSettingsTemplateUI();
-        this._scheduleSettingsTemplatesAutosave();
+        this._updateTemplateEditStatus();
         this._showToast(t('settings.template.resetMinutes'), 'info');
+    }
+
+    _setTemplateEditMode(editing) {
+        this._templateEditing = editing;
+        const template = this._getMinutesTemplates().find(item => item.id === this._activeTemplateId);
+        const nameInput = document.getElementById('template-name-input');
+        const editButton = document.getElementById('btn-template-edit-save');
+        const cancelButton = document.getElementById('btn-template-cancel-edit');
+        const standard = template?.id === 'standard';
+        if (nameInput) {
+            nameInput.readOnly = !editing || standard;
+            nameInput.setAttribute('aria-readonly', String(!editing || standard));
+        }
+        this._templateEditor?.setReadOnly(!editing);
+        if (editButton) {
+            editButton.textContent = t(editing ? 'textEdit.save' : 'textEdit.edit');
+            editButton.dataset.i18n = editing ? 'textEdit.save' : 'textEdit.edit';
+            editButton.classList.toggle('btn-primary', editing);
+            editButton.classList.toggle('btn-secondary', !editing);
+            editButton.disabled = false;
+        }
+        if (cancelButton) cancelButton.hidden = !editing;
+        if (cancelButton) cancelButton.disabled = false;
+        if (!editing) this._templateEditBaseline = null;
+    }
+
+    _beginTemplateEdit() {
+        if (this._templateEditing) return;
+        const template = this._getMinutesTemplates().find(item => item.id === this._activeTemplateId);
+        if (!template) return;
+        this._templateEditBaseline = {
+            id: template.id,
+            lang: this._activeTemplateLang,
+            name: template.name,
+            content: this._templateEditor?.getContent() || '',
+        };
+        this._setTemplateEditMode(true);
+        this._updateTemplateEditStatus();
+        this._templateEditor?.focus();
+    }
+
+    _isTemplateEditDirty() {
+        if (!this._templateEditing || !this._templateEditBaseline) return false;
+        const template = this._getMinutesTemplates().find(item => item.id === this._activeTemplateId);
+        const baseline = this._templateEditBaseline;
+        return template?.name !== baseline.name || this._templateEditor?.getContent() !== baseline.content;
+    }
+
+    _updateTemplateEditStatus() {
+        const status = document.getElementById('template-autosave-status');
+        if (status) status.textContent = this._isTemplateEditDirty() ? t('textEdit.unsaved') : '';
+    }
+
+    async _toggleTemplateEditSave() {
+        if (!this._templateEditing) {
+            this._beginTemplateEdit();
+            return true;
+        }
+        if (this._templateSaving) return false;
+        this._templateSaving = true;
+        const editButton = document.getElementById('btn-template-edit-save');
+        const cancelButton = document.getElementById('btn-template-cancel-edit');
+        const status = document.getElementById('template-autosave-status');
+        if (editButton) editButton.disabled = true;
+        if (cancelButton) cancelButton.disabled = true;
+        if (status) status.textContent = t('textEdit.saving');
+        const saved = await this._saveSettingsTemplates();
+        this._templateSaving = false;
+        if (!saved) {
+            if (editButton) editButton.disabled = false;
+            if (cancelButton) cancelButton.disabled = false;
+            if (status && !status.textContent) status.textContent = t('textEdit.saveFailed');
+            return false;
+        }
+        this._setTemplateEditMode(false);
+        if (status) status.textContent = t('textEdit.saved');
+        return true;
+    }
+
+    _discardTemplateEdit() {
+        const baseline = this._templateEditBaseline;
+        if (!baseline) return;
+        const template = this._getMinutesTemplates().find(item => item.id === baseline.id);
+        if (template) {
+            template.name = baseline.name;
+            template.translations ||= {};
+            template.translations[baseline.lang] = baseline.content;
+        }
+        this._suppressTemplateAutosave = true;
+        this._templateEditor?.setContent(baseline.content);
+        this._suppressTemplateAutosave = false;
+        this._setTemplateEditMode(false);
+        this._updateSettingsTemplateUI();
+        this._updateTemplateEditStatus();
+    }
+
+    async _resolveTemplateEdit() {
+        if (this._templateSaving) return false;
+        if (!this._templateEditing) return true;
+        if (!this._isTemplateEditDirty()) {
+            this._setTemplateEditMode(false);
+            return true;
+        }
+        const choice = await this._promptConfirmDelete({
+            title: t('textEdit.unsavedTitle'),
+            message: t('textEdit.unsavedMessage'),
+            confirmText: t('textEdit.save'),
+            cancelText: t('textEdit.continue'),
+            alternateText: t('textEdit.discard'),
+            variant: 'primary',
+            icon: '✏️',
+        });
+        if (choice === true) return this._toggleTemplateEditSave();
+        if (choice === 'alternate') {
+            this._discardTemplateEdit();
+            return true;
+        }
+        return false;
     }
 
     _legacyMinutesTemplateSettings(templates) {
@@ -2705,8 +2890,7 @@ class App {
     }
 
     async _addMeetingMinutesTemplate() {
-        this._saveActiveSettingsTemplateEditor();
-        if (!await this._flushSettingsTemplatesAutosave()) return;
+        if (!await this._resolveTemplateEdit()) return;
         const templates = this._getMinutesTemplates();
         const standard = templates.find(template => template.id === 'standard');
         const id = globalThis.crypto?.randomUUID?.() || `minutes_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -2744,8 +2928,7 @@ class App {
     }
 
     async _deleteMeetingMinutesTemplate() {
-        this._saveActiveSettingsTemplateEditor();
-        if (!await this._flushSettingsTemplatesAutosave()) return;
+        if (!await this._resolveTemplateEdit()) return;
         const templates = this._getMinutesTemplates();
         const template = templates.find(item => item.id === this._activeTemplateId);
         if (!template || template.id === 'standard') return;
@@ -2805,23 +2988,6 @@ class App {
         if (status) status.textContent = key ? t(key) : '';
     }
 
-    _scheduleSettingsTemplatesAutosave() {
-        if (this._suppressTemplateAutosave) return;
-        this._setTemplateAutosaveStatus('settings.template.autosavePending');
-        clearTimeout(this._templateAutosaveTimer);
-        this._templateAutosaveTimer = setTimeout(() => {
-            this._templateAutosaveTimer = null;
-            this._saveSettingsTemplates({ quiet: true });
-        }, 650);
-    }
-
-    async _flushSettingsTemplatesAutosave() {
-        clearTimeout(this._templateAutosaveTimer);
-        this._templateAutosaveTimer = null;
-        this._saveActiveSettingsTemplateEditor();
-        return this._saveSettingsTemplates({ quiet: true });
-    }
-
     async _saveSettingsTemplates({ quiet = false } = {}) {
         const templates = this._getMinutesTemplates();
         const template = templates.find(item => item.id === this._activeTemplateId);
@@ -2854,7 +3020,7 @@ class App {
             ...this._legacyMinutesTemplateSettings(snapshot),
             meeting_minutes_use_notes: document.getElementById('check-meeting-minutes-use-notes')?.checked !== false,
         };
-        this._setTemplateAutosaveStatus('settings.template.autosaving');
+        this._setTemplateAutosaveStatus('textEdit.saving');
         const persist = async () => settingsManager.save(changes);
         this._templateAutosaveQueue = this._templateAutosaveQueue
             .catch(() => {})
@@ -2863,12 +3029,12 @@ class App {
             await this._templateAutosaveQueue;
             this._syncLiveMinutesTemplateSelector();
             this._renderMinutesTemplateList();
-            this._setTemplateAutosaveStatus('settings.template.autosaved');
+            this._setTemplateAutosaveStatus('textEdit.saved');
             this._renderSettingsCategoriesTab();
             if (!quiet) this._showToast(t('settings.template.saved'), 'success');
             return true;
         } catch (err) {
-            this._setTemplateAutosaveStatus('settings.template.autosaveFailed');
+            this._setTemplateAutosaveStatus('textEdit.saveFailed');
             if (!quiet) this._showToast(t('settings.template.saveFailed', { error: err }), 'error');
             return false;
         }
@@ -3206,24 +3372,33 @@ class App {
         this._toggleShortcutSheet = toggleSheet;
     }
 
-    _onActivityChanged({ activity, previous }) {
+    async _onActivityChanged({ activity, previous }) {
         if (this._suppressNextShowSessions) {
             this._suppressNextShowSessions = false;
             return;
         }
+        const viewer = document.getElementById('session-viewer');
+        const viewerVisible = viewer?.style.display !== 'none';
+        if (previous === 'library' && activity !== 'library' && viewerVisible
+            && !await this._resolveActiveSessionTextEdit()) {
+            this._suppressNextShowSessions = true;
+            setActivity('library');
+            return;
+        }
         if (activity === 'library') {
             if (previous === activity) {
-                const viewer = document.getElementById('session-viewer');
-                if (viewer?.style.display !== 'none') {
+                if (viewerVisible) {
                     this._returnToSessionList({ returnToSearch: false });
                 }
                 return;
             }
+            if (viewerVisible && !await this._resolveActiveSessionTextEdit()) return;
             this._showSessions();
         }
     }
 
     async _returnToSessionList({ returnToSearch = this._sessionReturnToSearch } = {}) {
+        if (!await this._resolveActiveSessionTextEdit()) return false;
         await this._flushNotesAutosave();
         this._exitSessionEditMode();
         if (returnToSearch && this._sessionReturnToSearch) {
@@ -3233,6 +3408,7 @@ class App {
         document.getElementById('sessions-list-panel').style.display = '';
         document.getElementById('session-viewer').style.display = 'none';
         this._showSessions();
+        return true;
     }
 
     // ─── Source Control ────────────────────────────────────
@@ -6974,6 +7150,7 @@ class App {
         const viewer = document.getElementById('session-viewer');
         const viewerVisible = viewer && viewer.style.display !== 'none';
         if (viewerVisible && this._currentViewedSession?.id === id) return;
+        if (this._currentViewedSession && !await this._resolveActiveSessionTextEdit()) return;
 
         if (getActivity() !== 'library') {
             this._suppressNextShowSessions = true;
@@ -7641,17 +7818,18 @@ class App {
     async _openSessionFromSearchTarget(targetKey, fallbackTarget = null) {
         const target = targetKey ? this._sessionSearchTargets.get(targetKey) : fallbackTarget;
         if (!target?.session?.id) return;
+        if (this._currentViewedSession && !await this._resolveActiveSessionTextEdit()) return;
 
         const session = target.session;
         const match = target.match;
         const panel = document.getElementById('session-search-panel');
         this._sessionSearchScrollTop = panel?.scrollTop || 0;
         this._closeSessionSearch({ restoreList: false, restoreFocus: false });
-        await this._openSession(session.id, !!session.has_legacy_only, { fromSearch: true });
+        if (!await this._openSession(session.id, !!session.has_legacy_only, { fromSearch: true })) return;
 
         if (!match) return;
         const tab = match.kind === 'notes' ? 'notes' : 'logs';
-        this._switchSessionTab(tab);
+        if (!await this._switchSessionTab(tab)) return;
         this._focusSessionSearchMatch(match);
     }
 
@@ -11791,6 +11969,10 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         document.getElementById('subtab-btn-minutes-vi')?.addEventListener('click', () => this._switchMinutesSubtab('vi'));
         document.getElementById('subtab-btn-minutes-en')?.addEventListener('click', () => this._switchMinutesSubtab('en'));
         document.getElementById('btn-session-edit-langs')?.addEventListener('click', () => this._handleEditSessionLangs());
+        document.getElementById('btn-minutes-edit-save')?.addEventListener('click', () => this._toggleSessionTextEdit('minutes'));
+        document.getElementById('btn-notes-edit-save')?.addEventListener('click', () => this._toggleSessionTextEdit('notes'));
+        document.getElementById('btn-minutes-cancel-edit')?.addEventListener('click', () => this._discardSessionTextEdit('minutes'));
+        document.getElementById('btn-notes-cancel-edit')?.addEventListener('click', () => this._discardSessionTextEdit('notes'));
 
         // Tab Minutes actions
         document.getElementById('btn-minutes-copy-rich')?.addEventListener('click', () => this._copyRichMeetingMinutes());
@@ -11838,7 +12020,9 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         });
     }
 
-    _switchSessionTab(tab) {
+    async _switchSessionTab(tab) {
+        if (tab === this._activeSessionTab) return true;
+        if (!await this._resolveActiveSessionTextEdit()) return false;
         this._activeSessionTab = tab;
         this._setMinutesAutosaveStatus('');
         this._setNotesAutosaveStatus('');
@@ -11854,6 +12038,167 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 if (t === tab) panel.getBoundingClientRect();
             }
         });
+        return true;
+    }
+
+    _setSessionTextEditMode(kind, editing) {
+        const isMinutes = kind === 'minutes';
+        const editor = isMinutes ? this._sessionMinutesEditor : this._sessionNotesEditor;
+        const button = document.getElementById(isMinutes ? 'btn-minutes-edit-save' : 'btn-notes-edit-save');
+        const cancelButton = document.getElementById(isMinutes ? 'btn-minutes-cancel-edit' : 'btn-notes-cancel-edit');
+        if (isMinutes) this._sessionMinutesEditing = editing;
+        else this._sessionNotesEditing = editing;
+        editor?.setReadOnly(!editing);
+        if (cancelButton) cancelButton.hidden = !editing;
+        if (cancelButton) cancelButton.disabled = false;
+        if (button) {
+            button.textContent = t(editing ? 'textEdit.save' : 'textEdit.edit');
+            button.dataset.i18n = editing ? 'textEdit.save' : 'textEdit.edit';
+            button.classList.toggle('btn-primary', editing);
+            button.classList.toggle('btn-secondary', !editing);
+            button.disabled = false;
+        }
+        if (isMinutes) {
+            const regenerate = document.getElementById('btn-minutes-regenerate');
+            if (regenerate) regenerate.disabled = editing;
+        }
+    }
+
+    _isSessionTextEditDirty(kind) {
+        const editor = kind === 'minutes' ? this._sessionMinutesEditor : this._sessionNotesEditor;
+        const baseline = kind === 'minutes' ? this._sessionMinutesEditBaseline : this._sessionNotesEditBaseline;
+        const editing = kind === 'minutes' ? this._sessionMinutesEditing : this._sessionNotesEditing;
+        return Boolean(editing && editor && editor.getContent() !== baseline);
+    }
+
+    _updateSessionTextEditStatus(kind) {
+        const id = kind === 'minutes' ? 'session-minutes-autosave-status' : 'session-notes-autosave-status';
+        const status = document.getElementById(id);
+        if (!status) return;
+        const visible = this._isSessionTextEditDirty(kind);
+        status.textContent = visible ? t('textEdit.unsaved') : '';
+        status.classList.toggle('is-visible', visible);
+    }
+
+    _setSessionTextEditMessage(kind, key) {
+        const id = kind === 'minutes' ? 'session-minutes-autosave-status' : 'session-notes-autosave-status';
+        const status = document.getElementById(id);
+        if (!status) return;
+        status.textContent = key ? t(key) : '';
+        status.classList.toggle('is-visible', Boolean(key));
+    }
+
+    async _toggleSessionTextEdit(kind) {
+        const isMinutes = kind === 'minutes';
+        const editor = isMinutes ? this._sessionMinutesEditor : this._sessionNotesEditor;
+        if (!editor || !this._currentViewedSession || this._currentViewedSession.isLegacy) return false;
+        if (isMinutes ? this._sessionMinutesEditing : this._sessionNotesEditing) {
+            return this._saveSessionTextEdit(kind);
+        }
+        if (isMinutes) {
+            this._sessionMinutesEditBaseline = editor.getContent();
+            this._sessionMinutesEditLang = this._activeMinutesLang || 'en';
+        } else {
+            this._sessionNotesEditBaseline = editor.getContent();
+        }
+        this._setSessionTextEditMode(kind, true);
+        this._updateSessionTextEditStatus(kind);
+        editor.focus();
+        return true;
+    }
+
+    async _saveSessionTextEdit(kind) {
+        const isMinutes = kind === 'minutes';
+        const editor = isMinutes ? this._sessionMinutesEditor : this._sessionNotesEditor;
+        const current = this._currentViewedSession;
+        if (!editor || !current || current.isLegacy) return false;
+        if (this._sessionTextEditSaving[kind]) return false;
+        this._sessionTextEditSaving[kind] = true;
+        const button = document.getElementById(isMinutes ? 'btn-minutes-edit-save' : 'btn-notes-edit-save');
+        const cancelButton = document.getElementById(isMinutes ? 'btn-minutes-cancel-edit' : 'btn-notes-cancel-edit');
+        const content = editor.getContent();
+        if (button) button.disabled = true;
+        if (cancelButton) cancelButton.disabled = true;
+        this._setSessionTextEditMessage(kind, 'textEdit.saving');
+        try {
+            if (isMinutes) {
+                const lang = this._sessionMinutesEditLang || this._activeMinutesLang || 'en';
+                await invoke('update_session_meeting_minutes', { id: current.id, minutes: content, lang });
+                this._loadedMinutes ||= {};
+                this._loadedMinutes[lang] = content;
+                if (this._currentSessionJson?.id === current.id) {
+                    this._currentSessionJson[`meeting_minutes_${lang}`] = content;
+                    this._currentSessionJson.meeting_minutes = content;
+                    this._currentSessionJson.meeting_minutes_lang = lang;
+                }
+                this._sessionMinutesEditBaseline = content;
+                this._updateMinutesBadges();
+                await this._exportToObsidian(current.id, this._currentSessionJson?.title || current.id, lang, content, false, 'minutes', true);
+            } else {
+                await invoke('update_session_notes', { id: current.id, notes: content });
+                if (this._currentSessionJson?.id === current.id) this._currentSessionJson.notes = content;
+                this._sessionNotesEditBaseline = content;
+            }
+            this._setSessionTextEditMode(kind, false);
+            this._setSessionTextEditMessage(kind, 'textEdit.saved');
+            if (isMinutes) this._renderCurrentMinutesSubtab();
+            return true;
+        } catch (err) {
+            if (button) button.disabled = false;
+            if (cancelButton) cancelButton.disabled = false;
+            this._setSessionTextEditMessage(kind, 'textEdit.saveFailed');
+            this._showToast(t(isMinutes ? 'session.minutesSaveError' : 'session.notesSaveError', { error: err }), 'error');
+            return false;
+        } finally {
+            this._sessionTextEditSaving[kind] = false;
+        }
+    }
+
+    _discardSessionTextEdit(kind) {
+        const isMinutes = kind === 'minutes';
+        const editor = isMinutes ? this._sessionMinutesEditor : this._sessionNotesEditor;
+        const baseline = isMinutes ? this._sessionMinutesEditBaseline : this._sessionNotesEditBaseline;
+        if (editor) {
+            if (isMinutes) this._suppressMinutesAutosave = true;
+            else this._suppressNotesAutosave = true;
+            editor.setContent(baseline);
+            if (isMinutes) this._suppressMinutesAutosave = false;
+            else this._suppressNotesAutosave = false;
+        }
+        this._setSessionTextEditMode(kind, false);
+        this._updateSessionTextEditStatus(kind);
+        if (isMinutes) this._renderCurrentMinutesSubtab();
+    }
+
+    async _resolveSessionTextEdit(kind) {
+        if (this._sessionTextEditSaving[kind]) return false;
+        const editing = kind === 'minutes' ? this._sessionMinutesEditing : this._sessionNotesEditing;
+        if (!editing) return true;
+        if (!this._isSessionTextEditDirty(kind)) {
+            this._setSessionTextEditMode(kind, false);
+            return true;
+        }
+        const choice = await this._promptConfirmDelete({
+            title: t('textEdit.unsavedTitle'),
+            message: t('textEdit.unsavedMessage'),
+            confirmText: t('textEdit.save'),
+            cancelText: t('textEdit.continue'),
+            alternateText: t('textEdit.discard'),
+            variant: 'primary',
+            icon: '✏️',
+        });
+        if (choice === true) return this._saveSessionTextEdit(kind);
+        if (choice === 'alternate') {
+            this._discardSessionTextEdit(kind);
+            return true;
+        }
+        return false;
+    }
+
+    async _resolveActiveSessionTextEdit() {
+        const kind = this._activeSessionTab === 'notes' ? 'notes'
+            : (this._activeSessionTab === 'minutes' ? 'minutes' : null);
+        return kind ? this._resolveSessionTextEdit(kind) : true;
     }
 
     _minutesLangName(lang) {
@@ -11869,8 +12214,13 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
     }
 
     async _switchMinutesSubtab(lang) {
-        await this._flushMinutesAutosave();
-        this._activeMinutesLang = lang || 'en';
+        const nextLang = lang || 'en';
+        if (nextLang === this._activeMinutesLang) {
+            if (!this._sessionMinutesEditing) this._renderCurrentMinutesSubtab();
+            return true;
+        }
+        if (!await this._resolveSessionTextEdit('minutes')) return false;
+        this._activeMinutesLang = nextLang;
         this._setMinutesAutosaveStatus('');
         const subtabs = ['ja', 'vi', 'en'];
         subtabs.forEach(l => {
@@ -11879,6 +12229,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         });
 
         this._renderCurrentMinutesSubtab();
+        return true;
     }
 
     _renderCurrentMinutesSubtab() {
@@ -11906,6 +12257,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
         if (loadingEl) loadingEl.style.display = 'none';
 
+        const editButton = document.getElementById('btn-minutes-edit-save');
+        if (editButton) editButton.style.display = content && !this._currentViewedSession?.isLegacy ? '' : 'none';
         if (content) {
             if (emptyEl) emptyEl.style.display = 'none';
             if (editorContainer) editorContainer.style.display = '';
@@ -11915,7 +12268,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                     this._sessionMinutesEditor.setContent(content);
                     this._suppressMinutesAutosave = false;
                 }
-                this._sessionMinutesEditor.setReadOnly(false);
+                this._sessionMinutesEditor.setReadOnly(!this._sessionMinutesEditing);
             }
         } else {
             if (emptyEl) emptyEl.style.display = 'flex';
@@ -11929,7 +12282,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                     this._sessionMinutesEditor.setContent('');
                     this._suppressMinutesAutosave = false;
                 }
-                this._sessionMinutesEditor.setReadOnly(false);
+                this._sessionMinutesEditor.setReadOnly(true);
             }
         }
     }
@@ -11958,10 +12311,11 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             this._sessionMinutesEditor = new NotesEditor();
             this._sessionMinutesEditor.mount(minCont, {
                 initialContent: '',
-                readOnly: false,
+                readOnly: true,
                 placeholderText: t('session.minutesPlaceholder'),
-                onChange: content => this._scheduleMinutesAutosave(content),
-                onSave: () => this._flushMinutesAutosave(),
+                onChange: () => this._updateSessionTextEditStatus('minutes'),
+                onSave: () => this._sessionMinutesEditing ? this._saveSessionTextEdit('minutes') : false,
+                onCancel: () => this._sessionMinutesEditing ? this._resolveSessionTextEdit('minutes') : false,
             });
         }
 
@@ -11971,10 +12325,11 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             this._sessionNotesEditor.mount(notesCont, {
                 initialContent: '',
                 imageAssets: [],
-                readOnly: false,
+                readOnly: true,
                 placeholderText: t('session.notesPlaceholder'),
-                onChange: content => this._scheduleNotesAutosave(content),
-                onSave: () => this._flushNotesAutosave(),
+                onChange: () => this._updateSessionTextEditStatus('notes'),
+                onSave: () => this._sessionNotesEditing ? this._saveSessionTextEdit('notes') : false,
+                onCancel: () => this._sessionNotesEditing ? this._resolveSessionTextEdit('notes') : false,
             });
         }
 
@@ -14421,7 +14776,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._showMinutesCompleted(sessionId, lang);
 
             if (this._currentViewedSession?.id === sessionId) {
-                this._switchMinutesSubtab(lang);
+                await this._switchMinutesSubtab(lang);
             }
             this._showToast(tForLocale(uiLocale, 'session.minutesSavedSuccess', { lang: tForLocale(uiLocale, `lang.name.${lang}`) }), 'success');
         } catch (err) {
@@ -14586,6 +14941,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     }
 
     async _openSession(id, isLegacy = false, { fromSearch = false } = {}) {
+        if (this._currentViewedSession && !await this._resolveActiveSessionTextEdit()) return false;
         await this._flushNotesAutosave();
         await this._flushMinutesAutosave();
         this._sessionReturnToSearch = fromSearch;
@@ -14617,6 +14973,14 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (duration) duration.textContent = this._formatPlayerTime(knownDuration);
         }
         this._currentViewedSession = { id, isLegacy };
+        this._sessionMinutesEditing = false;
+        this._sessionNotesEditing = false;
+        this._setSessionTextEditMode('minutes', false);
+        this._setSessionTextEditMode('notes', false);
+        this._setSessionTextEditMessage('minutes', '');
+        this._setSessionTextEditMessage('notes', '');
+        const notesEditButton = document.getElementById('btn-notes-edit-save');
+        if (notesEditButton) notesEditButton.style.display = isLegacy ? 'none' : '';
         this._renderSessionObsidianButton();
         this._setMinutesAutosaveStatus('');
         this._syncSessionMiniPlayerUI();
@@ -14661,7 +15025,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                     status.textContent = '';
                     status.style.display = 'none';
                 }
-                this._switchSessionTab('logs');
+                await this._switchSessionTab('logs');
             } else {
                 if (tabBtnMinutes) tabBtnMinutes.style.display = '';
                 if (tabBtnNotes) tabBtnNotes.style.display = '';
@@ -14730,7 +15094,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                 } else {
                     preferredSubtab = (appLocale === 'ja' || appLocale === 'vi') ? appLocale : 'en';
                 }
-                this._switchMinutesSubtab(preferredSubtab);
+                await this._switchMinutesSubtab(preferredSubtab);
 
                 // 2. Notes Tab
                 const notesText = json.notes || '';
@@ -14742,21 +15106,23 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
                     } finally {
                         this._suppressNotesAutosave = false;
                     }
-                    this._sessionNotesEditor.setReadOnly(false);
+                    this._sessionNotesEditor.setReadOnly(true);
                 }
                 // 3. Logs Tab — same single/dual layout as the Live transcript.
                 this._renderSessionLogs(json);
 
                 // Default Tab: if has any minutes -> 'minutes', otherwise -> 'logs'
                 if (this._loadedMinutes.ja || this._loadedMinutes.vi || this._loadedMinutes.en) {
-                    this._switchSessionTab('minutes');
+                    await this._switchSessionTab('minutes');
                 } else {
-                    this._switchSessionTab('logs');
+                    await this._switchSessionTab('logs');
                 }
             }
+            return true;
         } catch (err) {
             console.error('[App] _openSession error:', err);
             this._showToast(t('session.readError', { error: err }), 'error');
+            return false;
         }
     }
 

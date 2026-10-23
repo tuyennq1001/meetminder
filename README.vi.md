@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.0.25-blueviolet?style=flat-square" alt="Version 1.0.25">
+  <img src="https://img.shields.io/badge/version-v1.0.26-blueviolet?style=flat-square" alt="Version 1.0.26">
   <img src="https://img.shields.io/badge/built_with-Tauri_v2-24C8D8?logo=tauri&logoColor=white&style=flat-square" alt="Built with Tauri v2">
   <img src="https://img.shields.io/badge/backend-Rust_2021-DEA584?logo=rust&logoColor=white&style=flat-square" alt="Rust 2021">
   <img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?logo=apple&logoColor=white&style=flat-square" alt="macOS">
@@ -44,7 +44,7 @@
 
 ---
 
-## ⬇️ Tải về bản cài đặt (v1.0.25)
+## ⬇️ Tải về bản cài đặt (v1.0.26)
 
 Tải phiên bản mới nhất từ trang [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest).
 
@@ -58,7 +58,7 @@ Trình cài đặt tải DMG đã ký dành cho Apple Silicon. Hiện Meet Minde
 
 | Hệ điều hành | Kiến trúc / Thiết bị | File cài đặt | Hướng dẫn |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.25_aarch64.dmg` | [Hướng dẫn macOS](docs/installation_guide_vi.md) |
+| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.26_aarch64.dmg` | [Hướng dẫn macOS](docs/installation_guide_vi.md) |
 
 ---
 
