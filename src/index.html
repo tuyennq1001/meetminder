@@ -428,10 +428,12 @@
               </div>
               <div class="minutes-actions-group">
               <button type="button" id="btn-minutes-regenerate" class="btn-secondary small instant-tooltip" data-i18n-title="session.minutesRegenerateTitle"><svg class="session-action-icon minutes-action-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="m12 3-1.5 4.5L6 9l4.5 1.5L12 15l1.5-4.5L18 9l-4.5-1.5L12 3Z"></path><path d="m5 3-.5 1.5L3 5l1.5.5L5 7l.5-1.5L7 5l-1.5-.5L5 3Z"></path><path d="m19 15-.5 1.5L17 17l1.5.5L19 19l.5-1.5L19 15Z"></path></svg><span data-i18n="session.minutesRegenerate">Tạo lại biên bản</span></button>
-              <span id="session-minutes-autosave-status" class="subbar-info" role="status" aria-live="polite"></span>
               </div>
             </div>
             <div class="minutes-actions-group minutes-utility-actions">
+              <button type="button" id="btn-minutes-edit-save" class="btn-secondary small" data-i18n="textEdit.edit">Edit</button>
+              <button type="button" id="btn-minutes-cancel-edit" class="btn-secondary small" data-i18n="textEdit.cancel" hidden>Cancel</button>
+              <span id="session-minutes-autosave-status" class="subbar-info" role="status" aria-live="polite"></span>
               <button type="button" id="btn-minutes-copy-rich" class="btn-primary small" data-i18n-title="session.minutesCopyHtmlTitle" title="Copy dạng Rich Text / HTML (giữ nguyên bảng và in đậm) để dán vào Gmail, Outlook, Slack"><span data-i18n="session.minutesCopyHtml">📋 Copy HTML</span></button>
               <button type="button" id="btn-minutes-copy-md" class="btn-secondary small" data-i18n-title="session.minutesCopyMdTitle" title="Copy dạng Markdown"><span data-i18n="session.minutesCopyMd">📄 Copy .md</span></button>
             </div>
@@ -459,6 +461,8 @@
               <span class="subbar-info" data-i18n="session.notesSubbarInfo">📝 Ghi chú do bạn tự nhập trong và sau cuộc họp</span>
             </div>
             <div class="session-tab-subbar-right">
+              <button type="button" id="btn-notes-edit-save" class="btn-secondary small" data-i18n="textEdit.edit">Edit</button>
+              <button type="button" id="btn-notes-cancel-edit" class="btn-secondary small" data-i18n="textEdit.cancel" hidden>Cancel</button>
               <span id="session-notes-autosave-status" class="subbar-info" role="status" aria-live="polite" aria-atomic="true"></span>
               <button type="button" id="btn-notes-copy-rich" class="btn-primary small" data-i18n-title="session.notesCopyHtmlTitle" title="Copy dạng Rich Text / HTML để dán vào Email, Slack"><span data-i18n="session.notesCopyHtml">📋 Copy HTML</span></button>
               <button type="button" id="btn-notes-copy-md" class="btn-secondary small" data-i18n-title="session.notesCopyMdTitle" title="Copy dạng Markdown"><span data-i18n="session.notesCopyMd">📄 Copy .md</span></button>
@@ -1051,7 +1055,7 @@
               <p class="hint" style="margin-top: 0; margin-bottom: 12px; font-size: 13px; line-height: 1.5;" data-i18n="settings.template.minutesHint">
                 Tạo và quản lý mẫu biên bản. Mỗi Danh mục có thể sử dụng một mẫu riêng; mẫu Standard được dùng làm phương án dự phòng.
               </p>
-              <p class="hint" style="margin-top:-6px; margin-bottom:12px;" data-i18n="settings.template.autosaveHint">Mọi thay đổi được tự động lưu.</p>
+              <p class="hint" style="margin-top:-6px; margin-bottom:12px;" data-i18n="settings.template.editHint">Nhấn Edit để chỉnh sửa template, sau đó nhấn Save để lưu.</p>
 
               <div class="settings-grid-row template-source-setting">
                 <span class="field-label" data-i18n="settings.template.sourceLabel">Nguồn tạo biên bản</span>
@@ -1090,6 +1094,8 @@
                     <div class="template-editor-info">
                       <span id="template-editor-hint" class="hint" style="margin:0; font-size:12px;" data-i18n="settings.template.autoVarsMinutes" data-i18n-html="true">Automatic variables: <code>{{title}}</code>, <code>{{date}}</code>, <code>{{duration}}</code>, <code>{{participants}}</code></span>
                       <div class="template-editor-actions">
+                        <button type="button" id="btn-template-edit-save" class="btn-secondary small" data-i18n="textEdit.edit">Edit</button>
+                        <button type="button" id="btn-template-cancel-edit" class="btn-secondary small" data-i18n="textEdit.cancel" hidden>Cancel</button>
                         <button type="button" id="btn-template-reset" class="btn-secondary small" data-i18n-title="settings.template.resetTitleMinutes" data-i18n="settings.template.reset">🔄 Reset</button>
                         <button type="button" id="btn-template-delete" class="btn-danger-small" data-i18n-title="settings.template.deleteTitle" data-i18n="settings.template.delete">🗑 Delete</button>
                         <span id="template-autosave-status" class="hint" role="status" aria-live="polite"></span>

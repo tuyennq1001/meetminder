@@ -25988,8 +25988,7 @@ var NotesEditor = class {
       actionKeymap.push({
         key: "Escape",
         run: () => {
-          this.onCancel();
-          return true;
+          return this.onCancel() !== false;
         }
       });
     }
