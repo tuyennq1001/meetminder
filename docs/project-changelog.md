@@ -6,6 +6,16 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.27 - 2026-10-23
+
+### Fixed
+
+- **Escape with unsaved text edits**: Keep the Save / Discard / Continue editing prompt open when pressing Escape inside a text editor.
+
+### Release
+
+- **Apple Silicon only**: Build, sign, publish, and auto-update macOS arm64 releases only.
+
 ## v1.0.26 - 2026-10-23
 
 ### Improved
