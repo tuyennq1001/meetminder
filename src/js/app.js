@@ -2054,28 +2054,28 @@ class App {
             if (!modal || !dismissModal(modal)) return;
             event.preventDefault();
             event.stopImmediatePropagation();
-        });
+        }, true);
     }
 
     // ─── Keyboard Shortcuts ─────────────────────────────────
 
     _bindKeyboardShortcuts() {
         document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            if (this._templateEditing) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                this._resolveTemplateEdit();
+            } else if (this._sessionMinutesEditing || this._sessionNotesEditing) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                this._resolveActiveSessionTextEdit();
+            }
+        }, true);
+
+        document.addEventListener('keydown', (e) => {
             const hasModifier = e.metaKey || e.ctrlKey;
             const isTyping = (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) && !e.target.readOnly;
-
-            if (e.key === 'Escape' && !isTyping) {
-                if (this._templateEditing) {
-                    e.preventDefault();
-                    this._resolveTemplateEdit();
-                    return;
-                }
-                if (this._sessionMinutesEditing || this._sessionNotesEditing) {
-                    e.preventDefault();
-                    this._resolveActiveSessionTextEdit();
-                    return;
-                }
-            }
 
             // Inline session editing shortcuts
             if (this._isSessionEditing) {
