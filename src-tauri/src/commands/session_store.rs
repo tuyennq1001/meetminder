@@ -225,6 +225,10 @@ pub struct SessionData {
     pub meeting_minutes_en: Option<String>,
     #[serde(default)]
     pub retranscribed_at: Option<String>,
+    #[serde(default)]
+    pub transcript_status: Option<String>,
+    #[serde(default)]
+    pub transcript_error: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -251,6 +255,8 @@ pub struct SessionListItem {
     pub duration_sec: u64,
     pub chunk_count: usize,
     pub segment_count: usize,
+    pub transcript_status: String,
+    pub transcript_error: Option<String>,
     pub has_legacy_only: bool,
     pub has_audio: bool,
     pub has_meeting_minutes: bool,
@@ -1255,6 +1261,14 @@ fn list_sessions_inner(app: &AppHandle) -> Result<Vec<SessionListItem>, String> 
             "work".to_string()
         });
         let has_audio = find_session_audio(&dir, &data.id).is_some();
+        let transcript_status = match data.transcript_status.as_deref() {
+            Some("completed" | "not_transcribed" | "processing" | "failed") => {
+                data.transcript_status.clone().unwrap_or_default()
+            }
+            _ if segment_count > 0 => "completed".to_string(),
+            _ if has_audio => "not_transcribed".to_string(),
+            _ => "unknown".to_string(),
+        };
 
         items.push(SessionListItem {
             id: data.id,
@@ -1267,6 +1281,8 @@ fn list_sessions_inner(app: &AppHandle) -> Result<Vec<SessionListItem>, String> 
             duration_sec: data.duration_sec,
             chunk_count: data.chunks.len(),
             segment_count,
+            transcript_status,
+            transcript_error: data.transcript_error,
             has_legacy_only: false,
             has_audio,
             has_meeting_minutes,
@@ -1311,6 +1327,8 @@ fn list_sessions_inner(app: &AppHandle) -> Result<Vec<SessionListItem>, String> 
             duration_sec: 0,
             chunk_count: 0,
             segment_count: 0,
+            transcript_status: "unknown".to_string(),
+            transcript_error: None,
             has_legacy_only: true,
             has_audio: find_session_audio(&dir, stem).is_some(),
             has_meeting_minutes: false,
@@ -1411,6 +1429,37 @@ pub async fn delete_sessions(app: AppHandle, ids: Vec<String>) -> Result<(), Str
 #[tauri::command]
 pub fn update_session_title(app: AppHandle, id: String, title: String) -> Result<(), String> {
     update_session_metadata(app, id, Some(title), None, None, None, None, None)
+}
+
+#[tauri::command]
+pub fn update_session_transcript_status(
+    app: AppHandle,
+    id: String,
+    status: String,
+    error: Option<String>,
+) -> Result<(), String> {
+    validate_id(&id)?;
+    if !matches!(
+        status.as_str(),
+        "completed" | "not_transcribed" | "processing" | "failed"
+    ) {
+        return Err(format!("Unsupported transcript status: {status}"));
+    }
+    let dir = sessions_dir(&app)?;
+    let (_, existing_json_path) = session_paths_for_read(&dir, &id);
+    let (_, json_path) = session_paths(&dir, &id);
+    let json_str =
+        fs::read_to_string(&existing_json_path).map_err(|e| format!("Read failed: {}", e))?;
+    let mut data: SessionData =
+        serde_json::from_str(&json_str).map_err(|e| format!("Parse failed: {}", e))?;
+    data.transcript_status = Some(status);
+    data.transcript_error = error
+        .map(|value| value.chars().take(500).collect::<String>())
+        .filter(|value| !value.trim().is_empty());
+    let bytes = serde_json::to_vec_pretty(&data).map_err(|e| format!("Serialize failed: {}", e))?;
+    fs::create_dir_all(records_dir(&dir))
+        .map_err(|e| format!("Could not create records directory: {}", e))?;
+    write_atomic(&json_path, &bytes)
 }
 
 #[tauri::command]
@@ -6246,6 +6295,8 @@ pub async fn import_audio_session(
         meeting_minutes_vi: None,
         meeting_minutes_en: None,
         retranscribed_at: Some(now),
+        transcript_status: Some("completed".to_string()),
+        transcript_error: None,
     };
     emit_audio_transcript_progress(&app, &id, "save", "Đang lưu Meeting Logs mới...", 95);
     let md = rebuild_session_markdown(&data);
@@ -6473,6 +6524,8 @@ async fn import_audio_session_legacy(
             meeting_minutes_vi: None,
             meeting_minutes_en: None,
             retranscribed_at: Some(now),
+            transcript_status: Some("completed".to_string()),
+            transcript_error: None,
         };
         emit_audio_transcript_progress(&app, &id, "save", "Đang ghi Logs mới vào ổ đĩa...", 95);
         let md = rebuild_session_markdown(&data);
@@ -6759,6 +6812,8 @@ start_sec must be the approximate offset in seconds.";
         meeting_minutes_vi: None,
         meeting_minutes_en: None,
         retranscribed_at: Some(now),
+        transcript_status: Some("completed".to_string()),
+        transcript_error: None,
     };
 
     emit_audio_transcript_progress(&app, &id, "save", "Đang ghi Logs mới vào ổ đĩa...", 95);
@@ -7431,6 +7486,8 @@ mod tests {
             meeting_minutes_vi: Some("1. Báo cáo tiến độ\n2. Phân công task".to_string()),
             meeting_minutes_en: None,
             retranscribed_at: None,
+            transcript_status: None,
+            transcript_error: None,
         };
 
         let md = rebuild_session_markdown(&data);
@@ -7575,6 +7632,8 @@ mod tests {
             meeting_minutes_vi: None,
             meeting_minutes_en: None,
             retranscribed_at: None,
+            transcript_status: None,
+            transcript_error: None,
         };
 
         let srt = build_session_srt(&data);
@@ -7631,6 +7690,8 @@ mod tests {
             meeting_minutes_vi: None,
             meeting_minutes_en: None,
             retranscribed_at: None,
+            transcript_status: None,
+            transcript_error: None,
         };
 
         let txt = build_session_txt(&data);
@@ -7650,6 +7711,8 @@ mod tests {
             duration_sec: 120,
             chunk_count: 1,
             segment_count: 5,
+            transcript_status: "completed".to_string(),
+            transcript_error: None,
             has_legacy_only: false,
             has_audio: false,
             has_meeting_minutes: false,

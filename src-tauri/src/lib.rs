@@ -186,6 +186,7 @@ pub fn run() {
             commands::session_store::delete_session,
             commands::session_store::delete_sessions,
             commands::session_store::update_session_title,
+            commands::session_store::update_session_transcript_status,
             commands::session_store::update_session_tags,
             commands::session_store::update_session_metadata,
             commands::session_store::update_session_content,

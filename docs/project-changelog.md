@@ -6,6 +6,17 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.25 - 2026-10-23
+
+### New Features
+
+- **Meeting Logs transcript status**: Show whether each recording is transcribed, not transcribed, processing, failed, or unknown. Persist the latest status and error, including interrupted processing, across app restarts.
+- **Status filtering and sorting**: Filter and sort Meeting Logs by transcript status in Work, Personal, and All scopes. Processing remains visible on the active row without appearing as a filter choice.
+
+### Release
+
+- **Apple Silicon only**: Build, sign, publish, and auto-update macOS arm64 releases only.
+
 ## v1.0.24 - 2026-10-15
 
 ### Fixed

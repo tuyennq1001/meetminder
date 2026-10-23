@@ -28,6 +28,7 @@ import { QWEN_LANGS } from './qwen-langs.js';
 import { NotesEditor } from './notes-editor.js';
 import { applyLocale, normalizeLocale, t, tForLocale, formatDateTime } from './i18n.js';
 import { bindStorageOptimization } from './storage-optimization.js';
+import { TRANSCRIPT_STATUS_FILTER_OPTIONS, getTranscriptStatus, persistTranscriptStatus, recoverInterruptedTranscriptStatuses, renderTranscriptStatusCell, transcriptStatusMatches } from './transcript-status.js';
 import {
     getStorageLocationChoice,
     getStorageLocationSuccess,
@@ -121,6 +122,7 @@ class App {
         this._activeProjectFilter = [];
         this._activeCategoryFilter = [];
         this._activeTagFilter = [];
+        this._activeTranscriptStatusFilter = '';
         this._projScopeFilter = '';
         this._activeMinutesGeneration = null;
         this._lastCompletedMinutes = null;
@@ -155,7 +157,7 @@ class App {
         this._sessionSort = { field: 'created_at', dir: 'desc' };
         try {
             const savedSort = JSON.parse(localStorage.getItem('meet_minder_logs_sort') || 'null');
-            const validFields = ['created_at', 'title', 'customer_name', 'project_name', 'category', 'tags', 'duration_sec'];
+            const validFields = ['created_at', 'title', 'customer_name', 'project_name', 'category', 'tags', 'duration_sec', 'transcript_status'];
             if (savedSort && validFields.includes(savedSort.field) && ['asc', 'desc'].includes(savedSort.dir)) {
                 this._sessionSort = { field: savedSort.field, dir: savedSort.dir };
             }
@@ -2319,6 +2321,7 @@ class App {
         this._activeProjectFilter = [];
         this._activeCategoryFilter = [];
         this._activeTagFilter = [];
+        this._activeTranscriptStatusFilter = '';
         this._sessionNameQuery = '';
         const searchInput = document.getElementById('input-session-search');
         if (searchInput) searchInput.value = '';
@@ -7694,6 +7697,7 @@ class App {
             await this._loadProjectRegistry();
             const sessions = await invoke('list_sessions');
             this._cachedSessions = sessions || [];
+            recoverInterruptedTranscriptStatuses(this._cachedSessions, this._activeRetranscribe?.id, t, invoke);
             this._knownTagsScopeIndexCache = null;
             if (this._sessionAudioId && !this._cachedSessions.some(session => session.id === this._sessionAudioId)) {
                 this._stopSessionAudioPlayback();
@@ -7762,6 +7766,13 @@ class App {
         }
     }
 
+    async _setTranscriptStatus(id, status, error = null) {
+        await persistTranscriptStatus({ sessions: this._cachedSessions || [], currentSessionJson: this._currentSessionJson, id, status, error, invoke });
+        if (document.getElementById('sessions-list-panel')?.style.display !== 'none') {
+            this._renderFilteredSessions();
+        }
+    }
+
     _renderFilteredSessions({ force = false } = {}) {
         const listEl = document.getElementById('sessions-list');
         if (!listEl) return;
@@ -7793,6 +7804,7 @@ class App {
 
         const nameQuery = this._sessionNameQuery.trim().toLocaleLowerCase();
         const lowerTagFilter = (this._activeTagFilter || []).map(f => (f || '').toLowerCase());
+        const transcriptStatusFilter = this._activeTranscriptStatusFilter || '';
         let filtered = (this._cachedSessions || []).filter(session => {
             const sessScope = session.scope || 'work';
             const scopeMatches = isAllScope || sessScope === activeScope;
@@ -7801,7 +7813,7 @@ class App {
             const projectMatches = !this._activeProjectFilter.length || this._activeProjectFilter.includes(session.project_id);
             const categoryMatches = !this._activeCategoryFilter.length || this._activeCategoryFilter.includes(session.category);
             const tagMatches = !lowerTagFilter.length || (session.tags || []).some(tag => lowerTagFilter.includes((tag || '').toLowerCase()));
-            return scopeMatches && titleMatches && customerMatches && projectMatches && categoryMatches && tagMatches;
+            return scopeMatches && titleMatches && customerMatches && projectMatches && categoryMatches && tagMatches && transcriptStatusMatches(session, transcriptStatusFilter);
         });
         this._filteredSessions = filtered;
 
@@ -7809,6 +7821,7 @@ class App {
             if (field === 'created_at') return session.created_at || '';
             if (field === 'tags') return (session.tags || []).join(', ');
             if (field === 'duration_sec') return Number(session.duration_sec) || 0;
+            if (field === 'transcript_status') return t(`logsTable.transcript.${getTranscriptStatus(session)}`);
             return session[field] || '';
         };
         filtered = [...filtered].sort((a, b) => {
@@ -7835,7 +7848,7 @@ class App {
 
         const rows = pageItems.length
             ? pageItems.map((session, index) => this._renderSessionTableRow(session, pageStart + index + 1, isPersonalScope, isAllScope)).join('')
-            : `<tr><td class="logs-table-empty" colspan="${isPersonalScope ? 9 : 10}">${t('logsTable.empty')}</td></tr>`;
+            : `<tr><td class="logs-table-empty" colspan="${isPersonalScope ? 10 : 11}">${t('logsTable.empty')}</td></tr>`;
 
         const existingTable = listEl.querySelector('.logs-table');
         if (!force && existingTable && existingTable.dataset.scope === activeScope) {
@@ -7944,6 +7957,10 @@ class App {
         const activeProject = this._activeProjectFilter[0] || '';
         const activeCategory = this._activeCategoryFilter[0] || '';
         const activeTag = this._activeTagFilter[0] || '';
+        const activeTranscriptStatus = this._activeTranscriptStatusFilter || '';
+
+        const transcriptStatuses = TRANSCRIPT_STATUS_FILTER_OPTIONS;
+        const statusLabel = status => t(`logsTable.transcript.${status}`);
 
         const customerHeader = isPersonalScope ? '' : `<th class="${sortHeaderClass('customer_name')}" data-sort="customer_name" tabindex="0" aria-sort="${sortHeaderAria('customer_name')}">${t('logsTable.customer')} <span class="sort-icon">${sortIcon('customer_name')}</span></th>`;
         const projectHeaderTitle = isPersonalScope ? t('logsTable.personalProject') : t('logsTable.project');
@@ -7955,6 +7972,7 @@ class App {
                 <th class="${sortHeaderClass('title')}" data-sort="title" tabindex="0" aria-sort="${sortHeaderAria('title')}">${t('logsTable.title')} <span class="sort-icon">${sortIcon('title')}</span></th>
                 <th class="${sortHeaderClass('created_at')}" data-sort="created_at" tabindex="0" aria-sort="${sortHeaderAria('created_at')}">${t('logsTable.date')} <span class="sort-icon">${sortIcon('created_at')}</span></th>
                 <th class="${sortHeaderClass('duration_sec')}" data-sort="duration_sec" tabindex="0" aria-sort="${sortHeaderAria('duration_sec')}">${t('logsTable.duration')} <span class="sort-icon">${sortIcon('duration_sec')}</span></th>
+                <th class="${sortHeaderClass('transcript_status')}" data-sort="transcript_status" tabindex="0" aria-sort="${sortHeaderAria('transcript_status')}">${t('logsTable.transcriptStatus')} <span class="sort-icon">${sortIcon('transcript_status')}</span></th>
                 ${customerHeader}
                 <th class="${sortHeaderClass('project_name')}" data-sort="project_name" tabindex="0" aria-sort="${sortHeaderAria('project_name')}">${projectHeaderTitle} <span class="sort-icon">${sortIcon('project_name')}</span></th>
                 <th class="${sortHeaderClass('category')}" data-sort="category" tabindex="0" aria-sort="${sortHeaderAria('category')}">${t('logsTable.category')} <span class="sort-icon">${sortIcon('category')}</span></th>
@@ -7969,8 +7987,9 @@ class App {
                     </button>
                 </td>
                 <td><input type="search" class="logs-filter-input" data-filter-name value="${this._escAttr(this._sessionNameQuery)}" placeholder="${this._escAttr(t('logsTable.filterTitlePlaceholder'))}"></td>
-                <td></td>
-                <td></td>
+                <td></td><!-- Date column -->
+                <td></td><!-- Duration column: keep status filter aligned below its own header -->
+                <td><select class="logs-filter-select" data-filter-select="transcript-status">${renderSelectOptions(transcriptStatuses, activeTranscriptStatus, t('logsTable.allTranscriptStatuses'), statusLabel)}</select></td>
                 ${customerFilterCell}
                 <td><select class="logs-filter-select" data-filter-select="project">${renderSelectOptions(relevantProjects, activeProject, isPersonalScope ? t('logsTable.allPersonalProjects') : t('logsTable.allProjects'))}</select></td>
                 <td><select class="logs-filter-select" data-filter-select="category">${renderSelectOptions(categories, activeCategory, t('logsTable.allCategories'))}</select></td>
@@ -7983,8 +8002,8 @@ class App {
             </tr>`;
 
         const colGroup = isPersonalScope
-            ? `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-duration"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`
-            : `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-duration"><col class="logs-col-customer"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`;
+            ? `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-duration"><col class="logs-col-transcript-status"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`
+            : `<colgroup><col class="logs-col-check"><col class="logs-col-index"><col class="logs-col-title"><col class="logs-col-date"><col class="logs-col-duration"><col class="logs-col-transcript-status"><col class="logs-col-customer"><col class="logs-col-project"><col class="logs-col-category"><col class="logs-col-tag"><col class="logs-col-actions"></colgroup>`;
 
         listEl.innerHTML = `<div class="logs-table-container"><table class="logs-table" data-scope="${activeScope}">${colGroup}<thead>${header}</thead><tbody>${rows}</tbody></table></div>
             <div class="session-pagination">
@@ -8023,6 +8042,7 @@ class App {
         const category = session.category ? `<button type="button" class="session-category-badge" data-category="${this._escAttr(session.category)}" title="${this._escAttr(t('logsTable.filterByCategory', { category: session.category }))}">${this._esc(session.category)}</button>` : '<span class="logs-empty-value">—</span>';
         const durationSec = Number(session.duration_sec) || 0;
         const duration = durationSec > 0 ? this._formatPlayerTime(durationSec) : '<span class="logs-empty-value">—</span>';
+        const transcriptStatusCell = renderTranscriptStatusCell(session, t, value => this._esc(value), value => this._escAttr(value));
         const playButton = session.has_legacy_only || !session.has_audio ? '' : `<button type="button" class="session-btn-action session-audio-action" data-play-session="${this._escAttr(session.id)}" aria-label="${this._escAttr(t('logsTable.playTooltip'))}" title="${this._escAttr(t('logsTable.playTooltip'))}">▶</button>`;
         const editButton = session.has_legacy_only ? '' : `<button type="button" class="session-btn-action" data-edit-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.editTooltip'))}">${PENCIL_YELLOW_ICON}</button>`;
 
@@ -8039,7 +8059,7 @@ class App {
             <td class="logs-index">${number}</td>
             <td class="logs-title-cell"><button type="button" class="logs-title-link" data-open-session="${this._escAttr(session.id)}">${scopeBadge}${this._esc(session.title || t('logsTable.untitled'))}</button></td>
             <td class="logs-date">${this._formatSessionDate(session.created_at)}</td>
-            <td class="logs-duration">${duration}</td>${customerTd}<td>${project}</td><td>${category}</td><td><div class="logs-tags" title="${this._escAttr(tagsTitle)}">${tags}</div></td>
+            <td class="logs-duration">${duration}</td>${transcriptStatusCell}${customerTd}<td>${project}</td><td>${category}</td><td><div class="logs-tags" title="${this._escAttr(tagsTitle)}">${tags}</div></td>
             <td><div class="logs-actions">${playButton}${editButton}<button type="button" class="session-btn-action" data-copy-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.copyTooltip'))}">⧉</button><button type="button" class="session-delete-btn" data-delete-session="${this._escAttr(session.id)}" title="${this._escAttr(t('logsTable.deleteTooltip'))}"><svg class="session-delete-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg></button></div></td>
         </tr>`;
     }
@@ -8088,6 +8108,7 @@ class App {
             if (kind === 'project') this._activeProjectFilter = normalizedValues;
             if (kind === 'category') this._activeCategoryFilter = normalizedValues;
             if (kind === 'tag') this._activeTagFilter = normalizedValues;
+            if (kind === 'transcript-status') this._activeTranscriptStatusFilter = normalizedValues[0] || '';
             this._sessionPage = 1;
             this._renderFilteredSessions();
         };
@@ -8133,6 +8154,7 @@ class App {
             this._activeProjectFilter = [];
             this._activeCategoryFilter = [];
             this._activeTagFilter = [];
+            this._activeTranscriptStatusFilter = '';
             this._selectedSessionIds.clear();
             this._sessionSelectionAnchorId = null;
             this._sessionPage = 1;
@@ -12954,6 +12976,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
 
         this._activeRetranscribe = {
             id,
+            previousTranscriptStatus: sess?.transcript_status || (sess?.segment_count > 0 ? 'completed' : 'not_transcribed'),
+            previousTranscriptError: sess?.transcript_error || null,
             timeoutId,
             buttonsToDisable,
             originalTexts,
@@ -12976,6 +13000,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             15,
             options.customTitle,
         );
+        await this._setTranscriptStatus(id, 'processing');
 
         let currentPct = 15;
         const progressInterval = setInterval(() => {
@@ -13026,6 +13051,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             });
             clearInterval(progressInterval);
             if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
+            await this._setTranscriptStatus(id, 'completed');
 
             this._setRetranscriptProgress('save', t('retranscript.progress.saving'), 89);
             if (this._currentViewedSession?.id === id) {
@@ -13109,10 +13135,15 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             if (this._activeRetranscribe?.id === id) {
                 const isCancelled = String(err).includes('hủy') || String(err).includes('cancel');
                 const failedStage = this._activeRetranscribe.stage || 'transcribe';
+                const previousStatus = this._activeRetranscribe.previousTranscriptStatus || 'not_transcribed';
+                const previousError = this._activeRetranscribe.previousTranscriptError || null;
                 this._cleanupActiveRetranscribe();
                 if (!isCancelled) {
                     console.error('[App] Re-transcript failed:', err);
+                    await this._setTranscriptStatus(id, 'failed', this._redactSensitiveError(String(err)));
                     this._showRetranscriptFailed(t('retranscript.error.prefix', { error: err }), false, failedStage);
+                } else {
+                    await this._setTranscriptStatus(id, previousStatus, previousError);
                 }
                 if (isCancelled) {
                     this._retranscriptCancellationPending = false;

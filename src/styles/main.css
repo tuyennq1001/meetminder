@@ -3682,7 +3682,28 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .logs-col-category { width: 12%; }
 .logs-col-tag { width: 14%; }
 .logs-col-duration { width: 96px; }
+.logs-col-transcript-status { width: 150px; }
 .logs-col-actions { width: 142px; }
+
+.transcript-status-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 4px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.92em;
+}
+.transcript-status-completed { border-color: rgba(16, 185, 129, .38); background: rgba(16, 185, 129, .1); color: #34d399; }
+.transcript-status-not_transcribed { border-color: rgba(148, 163, 184, .35); background: rgba(148, 163, 184, .08); color: var(--md-sys-color-on-surface-variant); }
+.transcript-status-processing { border-color: rgba(96, 165, 250, .4); background: rgba(96, 165, 250, .12); color: #93c5fd; }
+.transcript-status-failed { border-color: rgba(248, 113, 113, .42); background: rgba(248, 113, 113, .11); color: #fca5a5; }
+.transcript-status-unknown { border-color: rgba(148, 163, 184, .25); background: transparent; color: var(--md-sys-color-on-surface-variant); }
 
 .logs-table th,
 .logs-table td {
