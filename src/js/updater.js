@@ -3,11 +3,12 @@
  * Tries multiple access patterns: plugin API, then invoke fallback
  */
 
-class Updater {
+export class Updater {
     constructor() {
         this.updateAvailable = null;
         this.updateDownloaded = false;
         this.updateInstalled = false;
+        this._downloadInProgressUpdate = null;
         this.onUpdateFound = null; // callback(version, notes)
         this.onCheckComplete = null; // callback(hasUpdate)
         this.onError = null; // callback(error)
@@ -63,7 +64,7 @@ class Updater {
 
             if (update) {
                 console.log(`[Updater] Update found: v${update.version}`);
-                this.updateAvailable = update;
+                this._rememberUpdate(update);
                 if (this.onUpdateFound) {
                     this.onUpdateFound(update.version, update.body || '');
                 }
@@ -87,7 +88,7 @@ class Updater {
 
             if (result && result.available) {
                 console.log(`[Updater] Update found: v${result.version}`);
-                this.updateAvailable = result;
+                this._rememberUpdate(result);
                 if (this.onUpdateFound) {
                     this.onUpdateFound(result.version, result.body || '');
                 }
@@ -103,6 +104,31 @@ class Updater {
         }
     }
 
+    _rememberUpdate(update) {
+        const current = this.updateAvailable;
+        const retainingCurrentDownload = current
+            && current.version === update.version
+            && (this.updateDownloaded || this._downloadInProgressUpdate === current);
+        if (retainingCurrentDownload) {
+            // A fresh check creates a new Tauri Update resource without a
+            // downloaded package. Keep the resource that owns the bytes so a
+            // later install() still has the package attached to it.
+            if (update !== current && typeof update.close === 'function') {
+                update.close().catch((err) => console.warn('[Updater] Could not release duplicate update:', err));
+            }
+            return;
+        }
+
+        if (current !== update) {
+            if (current && typeof current.close === 'function') {
+                current.close().catch((err) => console.warn('[Updater] Could not release previous update:', err));
+            }
+            this.updateAvailable = update;
+            this.updateDownloaded = false;
+            this.updateInstalled = false;
+        }
+    }
+
     canDownloadInBackground() {
         return typeof this.updateAvailable?.download === 'function';
     }
@@ -115,13 +141,16 @@ class Updater {
     async download(onProgress) {
         if (!this.updateAvailable) return;
 
+        const update = this.updateAvailable;
+        this._downloadInProgressUpdate = update;
+
         try {
-            if (typeof this.updateAvailable.download === 'function') {
+            if (typeof update.download === 'function') {
                 let downloaded = 0;
                 let contentLength = 0;
                 let lastProgressUpdateAt = 0;
 
-                await this.updateAvailable.download((event) => {
+                await update.download((event) => {
                     switch (event.event) {
                         case 'Started':
                             contentLength = event.data.contentLength || 0;
@@ -144,7 +173,7 @@ class Updater {
                             break;
                     }
                 }, { timeout: 300_000 });
-                this.updateDownloaded = true;
+                if (this.updateAvailable === update) this.updateDownloaded = true;
                 return false;
             } else {
                 // Older invoke-only builds expose a combined operation. Defer
@@ -159,6 +188,10 @@ class Updater {
         } catch (err) {
             console.error('[Updater] Download failed:', err);
             throw err;
+        } finally {
+            if (this._downloadInProgressUpdate === update) {
+                this._downloadInProgressUpdate = null;
+            }
         }
     }
 
