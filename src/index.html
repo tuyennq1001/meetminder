@@ -404,6 +404,14 @@
           </div>
         </div>
 
+        <div id="minutes-search" class="minutes-search" hidden>
+          <input id="minutes-search-input" type="search" data-i18n-placeholder="session.minutesSearchPlaceholder" data-i18n-aria-label="session.minutesSearchLabel" placeholder="Search this content…" aria-label="Search meeting content" />
+          <span id="minutes-search-count" class="minutes-search-count" role="status" aria-live="polite"></span>
+          <button type="button" id="minutes-search-prev" class="btn-secondary small" data-i18n-title="session.minutesSearchPrevious" title="Previous match">↑</button>
+          <button type="button" id="minutes-search-next" class="btn-secondary small" data-i18n-title="session.minutesSearchNext" title="Next match">↓</button>
+          <button type="button" id="minutes-search-clear" class="btn-secondary small" data-i18n-title="session.minutesSearchClear" title="Clear search">×</button>
+        </div>
+
         <!-- TAB 1: MINUTES -->
         <div id="session-tab-panel-minutes" class="session-tab-panel folder-tab-panel active">
           <!-- Minutes language tabs + actions (primary actions stay on the left) -->

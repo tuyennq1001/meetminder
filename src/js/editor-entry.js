@@ -209,6 +209,35 @@ class LinkWidget extends WidgetType {
 }
 
 const refreshImageAssetsEffect = StateEffect.define();
+const searchStateEffect = StateEffect.define();
+const searchStateField = StateField.define({
+  create: () => ({ query: '', active: 1 }),
+  update(value, tr) {
+    for (const effect of tr.effects) if (effect.is(searchStateEffect)) value = effect.value;
+    return value;
+  },
+});
+const searchDecorations = StateField.define({
+  create: (state) => buildSearchDecorations(state),
+  update: (_, tr) => buildSearchDecorations(tr.state),
+  provide: (field) => EditorView.decorations.from(field),
+});
+const searchMark = Decoration.mark({ class: 'cm-search-match' });
+const activeSearchMark = Decoration.mark({ class: 'cm-search-match-active' });
+function buildSearchDecorations(state) {
+  const { query, active } = state.field(searchStateField, false) || {};
+  if (!query) return Decoration.none;
+  const text = state.doc.toString();
+  const lower = text.toLocaleLowerCase();
+  const needle = query.toLocaleLowerCase();
+  const ranges = [];
+  let at = 0;
+  while ((at = lower.indexOf(needle, at)) !== -1) {
+    ranges.push((ranges.length + 1 === active ? activeSearchMark : searchMark).range(at, at + query.length));
+    at += query.length;
+  }
+  return Decoration.set(ranges, true);
+}
 
 function escapeTableHtml(text) {
   return text
@@ -1124,6 +1153,8 @@ export class NotesEditor {
         markdown({ base: markdownLanguage }),
         syntaxHighlighting(markdownHighlightStyle),
         tableDecorationsField,
+        searchStateField,
+        searchDecorations,
         createLivePreviewPlugin((id) => this.imageAssets.get(id)),
         Prec.highest(keymap.of(smartListKeymap)),
         keymap.of([...actionKeymap, ...defaultKeymap, ...historyKeymap]),
@@ -1262,6 +1293,31 @@ export class NotesEditor {
     }
 
     return false;
+  }
+
+  setSearchQuery(query, active = 1) {
+    if (!this.view) return { count: 0, active: 0 };
+    this.view.dispatch({ effects: searchStateEffect.of({ query: String(query || '').trim(), active }) });
+    return this.getSearchMatches();
+  }
+
+  getSearchMatches() {
+    if (!this.view) return { count: 0, active: 0 };
+    const { query, active } = this.view.state.field(searchStateField);
+    if (!query) return { count: 0, active: 0 };
+    const text = this.getContent().toLocaleLowerCase();
+    let count = 0; let at = -1;
+    while ((at = text.indexOf(query.toLocaleLowerCase(), at + 1)) !== -1) count++;
+    return { count, active: count ? Math.min(active, count) : 0 };
+  }
+
+  revealSearchResult(index) {
+    const query = this.view?.state.field(searchStateField).query;
+    if (!query || !this.view) return;
+    const text = this.getContent().toLocaleLowerCase();
+    let at = -1;
+    for (let i = 0; i <= index; i++) at = text.indexOf(query.toLocaleLowerCase(), at + 1);
+    if (at >= 0) this.view.dispatch({ selection: { anchor: at, head: at + query.length }, effects: EditorView.scrollIntoView(at, { y: 'center' }) });
   }
 
   insertText(text) {

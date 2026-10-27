@@ -26,6 +26,7 @@ import { updater } from './updater.js';
 import { sessionStore, SessionStore } from './session-store.js';
 import { QWEN_LANGS } from './qwen-langs.js';
 import { NotesEditor } from './notes-editor.js';
+import { clearRenderedSearch, searchRenderedText } from './viewer-search.js';
 import { applyLocale, normalizeLocale, t, tForLocale, formatDateTime } from './i18n.js';
 import { bindStorageOptimization } from './storage-optimization.js';
 import { TRANSCRIPT_STATUS_FILTER_OPTIONS, getTranscriptStatus, persistTranscriptStatus, recoverInterruptedTranscriptStatuses, renderTranscriptStatusCell, transcriptStatusMatches } from './transcript-status.js';
@@ -11968,6 +11969,20 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         document.getElementById('subtab-btn-minutes-ja')?.addEventListener('click', () => this._switchMinutesSubtab('ja'));
         document.getElementById('subtab-btn-minutes-vi')?.addEventListener('click', () => this._switchMinutesSubtab('vi'));
         document.getElementById('subtab-btn-minutes-en')?.addEventListener('click', () => this._switchMinutesSubtab('en'));
+        const search = document.getElementById('minutes-search-input');
+        search?.addEventListener('input', () => this._updateMinutesSearch());
+        document.getElementById('minutes-search-prev')?.addEventListener('click', () => this._moveMinutesSearch(-1));
+        document.getElementById('minutes-search-next')?.addEventListener('click', () => this._moveMinutesSearch(1));
+        document.getElementById('minutes-search-clear')?.addEventListener('click', () => { search.value = ''; clearRenderedSearch(); this._updateMinutesSearch(); search.focus(); });
+        search?.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') { event.preventDefault(); search.value = ''; clearRenderedSearch(); this._updateMinutesSearch(); }
+            if (event.key === 'Enter') { event.preventDefault(); this._moveMinutesSearch(event.shiftKey ? -1 : 1); }
+        });
+        document.addEventListener('keydown', (event) => {
+            if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'f' || !['minutes', 'notes', 'logs'].includes(this._activeSessionTab)
+                || !this._currentViewedSession || [...document.querySelectorAll('.modal-overlay')].some((modal) => modal.getClientRects().length)) return;
+            event.preventDefault(); document.getElementById('minutes-search')?.removeAttribute('hidden'); search?.focus(); search?.select();
+        });
         document.getElementById('btn-session-edit-langs')?.addEventListener('click', () => this._handleEditSessionLangs());
         document.getElementById('btn-minutes-edit-save')?.addEventListener('click', () => this._toggleSessionTextEdit('minutes'));
         document.getElementById('btn-notes-edit-save')?.addEventListener('click', () => this._toggleSessionTextEdit('notes'));
@@ -12024,6 +12039,8 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         if (tab === this._activeSessionTab) return true;
         if (!await this._resolveActiveSessionTextEdit()) return false;
         this._activeSessionTab = tab;
+        document.getElementById('minutes-search')?.toggleAttribute('hidden', tab === 'minutes' && !Object.values(this._loadedMinutes || {}).some(Boolean));
+        document.getElementById('minutes-search')?.toggleAttribute('hidden', tab === 'minutes' && !Object.values(this._loadedMinutes || {}).some(Boolean));
         this._setMinutesAutosaveStatus('');
         this._setNotesAutosaveStatus('');
         const tabs = ['minutes', 'notes', 'logs'];
@@ -12039,6 +12056,34 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
             }
         });
         return true;
+    }
+
+    _updateMinutesSearch() {
+        const input = document.getElementById('minutes-search-input');
+        const query = input?.value || '';
+        this._minutesSearchIndex = 1;
+        if (!query) clearRenderedSearch();
+        const result = this._activeSessionTab === 'logs'
+            ? searchRenderedText(document.getElementById('session-logs-editor-container'), query, 1)
+            : (this._activeSessionTab === 'notes' ? this._sessionNotesEditor : this._sessionMinutesEditor)?.setSearchQuery(query, 1) || { count: 0, active: 0 };
+        if (result.count && this._activeSessionTab !== 'logs') (this._activeSessionTab === 'notes' ? this._sessionNotesEditor : this._sessionMinutesEditor).revealSearchResult(0);
+        const label = document.getElementById('minutes-search-count');
+        if (label) label.textContent = query ? (result.count ? `1/${result.count}` : 'No matches') : '';
+    }
+
+    _moveMinutesSearch(direction) {
+        const input = document.getElementById('minutes-search-input');
+        if (!input?.value.trim()) return;
+        const result = this._activeSessionTab === 'logs'
+            ? searchRenderedText(document.getElementById('session-logs-editor-container'), input.value, 1)
+            : (this._activeSessionTab === 'notes' ? this._sessionNotesEditor : this._sessionMinutesEditor)?.getSearchMatches() || { count: 0 };
+        if (!result.count) return;
+        this._minutesSearchIndex = ((this._minutesSearchIndex || 1) - 1 + direction + result.count) % result.count + 1;
+        const active = this._activeSessionTab === 'logs'
+            ? searchRenderedText(document.getElementById('session-logs-editor-container'), input.value, this._minutesSearchIndex)
+            : (this._activeSessionTab === 'notes' ? this._sessionNotesEditor : this._sessionMinutesEditor).setSearchQuery(input.value, this._minutesSearchIndex);
+        if (this._activeSessionTab !== 'logs') (this._activeSessionTab === 'notes' ? this._sessionNotesEditor : this._sessionMinutesEditor).revealSearchResult(active.active - 1);
+        document.getElementById('minutes-search-count').textContent = `${active.active}/${active.count}`;
     }
 
     _setSessionTextEditMode(kind, editing) {

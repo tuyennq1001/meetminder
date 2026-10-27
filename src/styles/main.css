@@ -9275,3 +9275,12 @@ button.template-badge-pill:hover {
     grid-row: 3;
   }
 }
+ .minutes-search { display:flex; align-items:center; gap:6px; padding:6px 10px; border-bottom:1px solid var(--md-sys-color-outline-variant); }
+.minutes-search[hidden] { display:none; }
+.minutes-search input { flex:1; min-width:80px; max-width:420px; padding:7px 10px; border:1px solid var(--md-sys-color-outline-variant); border-radius:7px; background:var(--md-sys-color-surface); color:var(--md-sys-color-on-surface); }
+.minutes-search-count { min-width:48px; text-align:center; color:var(--md-sys-color-on-surface-variant); font-size:12px; }
+.cm-search-match { background:rgba(255,203,71,.38); border-radius:2px; }
+.cm-search-match-active { background:#ffbd3d; color:#201600; border-radius:2px; outline:1px solid #ffbd3d; }
+::highlight(meet-minder-viewer-search) { background:rgba(255,203,71,.38); }
+::highlight(meet-minder-viewer-search-active) { background:#ffbd3d; color:#201600; }
+@media(max-width:520px) { .minutes-search { flex-wrap:wrap; } .minutes-search input { flex-basis:60%; max-width:none; } }
