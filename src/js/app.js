@@ -15289,7 +15289,8 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         };
         updater.onError = (err) => {
             const statusText = document.getElementById('update-status-text');
-            if (statusText) statusText.textContent = `⚠️ Check failed: ${err.message || err}`;
+            if (statusText) statusText.textContent = t('updater.checkFailed', { error: err.message || err });
+            this._showManualUpdateFallback();
         };
         updater.onCheckComplete = (hasUpdate) => {
             const checkBtn = document.getElementById('btn-check-update');
@@ -15314,11 +15315,36 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     }
 
     _triggerUpdateCheck() {
+        this._hideManualUpdateFallback();
         const statusText = document.getElementById('update-status-text');
         const checkBtn = document.getElementById('btn-check-update');
         if (statusText) statusText.textContent = 'Checking for updates...';
         if (checkBtn) checkBtn.classList.add('spinning');
         updater.checkForUpdates();
+    }
+
+    _showManualUpdateFallback() {
+        const fallback = document.getElementById('update-fallback');
+        const message = document.getElementById('update-fallback-text');
+        const button = document.getElementById('btn-update-manual-download');
+        if (message) message.textContent = t('updater.manualFallback');
+        if (button) button.textContent = t('updater.downloadFromGithub');
+        if (fallback) fallback.style.display = '';
+    }
+
+    _hideManualUpdateFallback() {
+        const fallback = document.getElementById('update-fallback');
+        if (fallback) fallback.style.display = 'none';
+    }
+
+    async _openManualUpdatePage() {
+        try {
+            await window.__TAURI__?.opener?.openUrl('https://github.com/tuyennq1001/meetminder/releases/latest');
+        } catch (err) {
+            console.warn('[Updater] Could not open GitHub Releases:', err);
+            const statusText = document.getElementById('update-status-text');
+            if (statusText) statusText.textContent = `⚠️ ${err?.message || err}`;
+        }
     }
 
     _onUpdateAvailable(version, notes) {
@@ -15356,6 +15382,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
     async _startBackgroundUpdateDownload(version, notes) {
         if (this._isDownloadingUpdate || this._updateReadyVersion === version) return;
         this._isDownloadingUpdate = true;
+        this._hideManualUpdateFallback();
 
         const btnText = document.getElementById('update-btn-text');
         const btn = document.getElementById('btn-do-update');
@@ -15393,6 +15420,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (btn) btn.disabled = false;
             if (btnText) btnText.textContent = t('updater.retryDownload');
             if (statusText) statusText.textContent = t('updater.downloadFailed', { error: err?.message || err });
+            this._showManualUpdateFallback();
         }
     }
 
@@ -15457,7 +15485,11 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             this._relaunchApp();
         });
 
-        document.getElementById('btn-banner-later')?.addEventListener('click', () => {
+        document.getElementById('btn-banner-later')?.addEventListener('click', (event) => {
+            if (event.currentTarget.dataset.action === 'manual-download') {
+                this._openManualUpdatePage();
+                return;
+            }
             this._dismissUpdateBanner(version);
         });
 
@@ -15500,6 +15532,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         }
 
         this._isInstallingUpdate = true;
+        this._hideManualUpdateFallback();
         const btnText = document.getElementById('update-btn-text');
         const updateButton = document.getElementById('btn-do-update');
         const bannerButton = document.getElementById('btn-banner-relaunch');
@@ -15535,6 +15568,17 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             }
             if (btnText) btnText.textContent = t('updater.retryInstall');
             if (statusText) statusText.textContent = t('updater.installFailed', { error: restartErr?.message || restartErr });
+            this._showManualUpdateFallback();
+            const banner = document.getElementById('update-ready-banner');
+            const bannerTitle = banner?.querySelector('.update-banner-title');
+            const bannerSubtitle = banner?.querySelector('.update-banner-subtitle');
+            const manualButton = document.getElementById('btn-banner-later');
+            if (bannerTitle) bannerTitle.textContent = t('updater.failureTitle');
+            if (bannerSubtitle) bannerSubtitle.textContent = t('updater.manualFallback');
+            if (manualButton) {
+                manualButton.textContent = t('updater.downloadFromGithub');
+                manualButton.dataset.action = 'manual-download';
+            }
         }
     }
 
@@ -15569,6 +15613,10 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         // Check for Updates button
         document.getElementById('btn-check-update')?.addEventListener('click', () => {
             this._triggerUpdateCheck();
+        });
+
+        document.getElementById('btn-update-manual-download')?.addEventListener('click', () => {
+            this._openManualUpdatePage();
         });
 
         // Download & Install / Relaunch button

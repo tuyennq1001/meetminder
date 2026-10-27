@@ -12,6 +12,18 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 - **Search meeting content**: Find and navigate matches in Meeting Minutes, manual notes, and Meeting Logs.
 
+## v1.0.29 - 2026-10-27
+
+### Fixed
+
+- **Updater install state**: Keep the downloaded update resource when checking the same version again, so the install action still has the downloaded package.
+
+## v1.0.30 - 2026-10-27
+
+### Improved
+
+- **Updater recovery guidance**: Show the update error and provide a direct GitHub Releases download action when automatic update checks, downloads, or installs fail.
+
 ## v1.0.27 - 2026-10-23
 
 ### Fixed
