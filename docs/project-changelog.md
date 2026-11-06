@@ -6,6 +6,12 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.31 - 2026-11-07
+
+### Fixed
+
+- **Memo drawer initial state**: Open Memo by default until a preference is saved, then remember whether it was open or collapsed across app launches.
+
 ## v1.0.28 - 2026-10-27
 
 ### Added

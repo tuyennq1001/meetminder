@@ -15952,7 +15952,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         this._initNotesResize();
         this._initNoteMetadataSelectors();
         const savedNotesOpen = localStorage.getItem('live_notes_open');
-        this._toggleNotesDrawer(savedNotesOpen === null ? false : savedNotesOpen === 'true', false);
+        this._toggleNotesDrawer(savedNotesOpen === null ? true : savedNotesOpen === 'true', false);
     }
 
     async _initNoteMetadataSelectors() {
