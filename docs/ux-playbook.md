@@ -15,6 +15,7 @@ trạng thái rõ ràng và không làm mất ngữ cảnh người dùng.
 | Người dùng luôn biết mình đang ở đâu | Hiển thị tiêu đề, tab/scope đang chọn, số lượng bản ghi và trạng thái active rõ ràng. |
 | Thao tác quan trọng phải có đường lui | Có Cancel/Close, Escape cho dialog, undo hoặc confirm cho thao tác phá huỷ. |
 | Không làm mất trạng thái đang nhập | Khi lọc hoặc re-render, giữ query, bộ lọc, trang, focus và vị trí con trỏ nếu có thể. |
+| Quyền hệ thống phải khớp trạng thái thực tế | Trước khi hiện lại hộp thoại cấp quyền, kiểm tra trạng thái hiện tại. Nếu hệ điều hành báo quyền đã bật nhưng thao tác vẫn lỗi, giải thích lỗi và bước khôi phục thay vì xin lại cùng quyền. |
 | Feedback phải gần với nguyên nhân | Loading, empty, error, disabled và success cần có trạng thái riêng; lỗi nên nói người dùng cần làm gì tiếp theo. |
 | Một pattern dùng chung phải có một hành vi chung | Các bảng, modal, nút hành động và thuật ngữ giống nhau nên dùng cùng quy tắc trên toàn sản phẩm. |
 | Nền cửa sổ phải ổn định | Ứng dụng desktop dùng nền đặc cho toàn bộ vùng nội dung; chỉ dùng cửa sổ trong suốt khi đó là hành vi chủ đích và đã được kiểm thử trên nền ứng dụng khác. |
