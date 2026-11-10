@@ -4371,10 +4371,20 @@ class App {
                 console.error('Failed to start audio capture:', err);
                 const errStr = String(err);
                 if (errStr.includes('Screen Recording') || errStr.includes('TCC') || errStr.includes('shareable content')) {
-                    this._showToast(t('permission.screenAudioRequired'), 'error');
+                    let screenCaptureGranted = false;
                     try {
-                        await invoke('request_screen_capture_permission');
+                        const status = await invoke('check_permissions');
+                        screenCaptureGranted = status?.screen_recording === 'granted';
                     } catch {}
+
+                    if (screenCaptureGranted) {
+                        this._showToast(t('permission.screenAudioCaptureFailed'), 'error');
+                    } else {
+                        this._showToast(t('permission.screenAudioRequired'), 'error');
+                        try {
+                            await invoke('request_screen_capture_permission');
+                        } catch {}
+                    }
                 } else {
                     this._showToast(`Audio error: ${err}`, 'error');
                 }

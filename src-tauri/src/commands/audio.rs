@@ -933,7 +933,15 @@ extern "C" {
 pub fn request_screen_capture_permission() -> bool {
     #[cfg(target_os = "macos")]
     unsafe {
-        CGRequestScreenCaptureAccess()
+        // Do not show another macOS authorization alert when TCC already
+        // reports screen capture as granted. ScreenCaptureKit can still fail
+        // for other reasons, and its failure must not be treated as a request
+        // to ask for the same permission again.
+        if CGPreflightScreenCaptureAccess() {
+            true
+        } else {
+            CGRequestScreenCaptureAccess()
+        }
     }
     #[cfg(not(target_os = "macos"))]
     true
