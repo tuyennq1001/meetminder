@@ -6,6 +6,12 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.32 - 2026-11-10
+
+### Fixed
+
+- **Screen & System Audio permission flow**: Check macOS authorization before requesting permission again. If macOS reports access as enabled but capture still fails, show recovery guidance instead of reopening the same prompt.
+
 ## v1.0.31 - 2026-11-07
 
 ### Fixed
