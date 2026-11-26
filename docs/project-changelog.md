@@ -6,6 +6,12 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.33 - 2026-11-26
+
+### Fixed
+
+- Memo keeps its open or collapsed state when you save or discard a meeting and when you reopen Meet Minder.
+
 ## v1.0.32 - 2026-11-10
 
 ### Fixed
