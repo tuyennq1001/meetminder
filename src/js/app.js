@@ -6067,7 +6067,6 @@ class App {
             sessionStore.notes = template;
         }
         this._resetNoteMetadataSelectors();
-        this._toggleNotesDrawer(false, false);
 
         const settings = settingsManager.get();
         sessionStore.init({
@@ -6205,7 +6204,6 @@ class App {
             sourceLang: settings.source_language || 'en',
             targetLang: settings.target_language || 'ja',
         });
-        this._toggleNotesDrawer(false, false);
         this._syncLiveMinutesTemplateSelector({ followCategory: true });
         this._syncLiveMeetingTitleInput();
         this._updateStatus('idle');
@@ -16403,7 +16401,7 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
 
         const isOpen = !drawer.classList.contains('is-collapsed');
         const shouldOpen = forceOpen !== null ? forceOpen : !isOpen;
-        localStorage.setItem('live_notes_open', String(shouldOpen));
+        if (forceOpen === null) localStorage.setItem('live_notes_open', String(shouldOpen));
 
         if (shouldOpen) {
             drawer.classList.remove('is-collapsed');
