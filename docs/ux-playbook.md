@@ -121,6 +121,8 @@ này sang dự án khác, cần đưa ba hạng mục đó vào Definition of Do
   sách đã lọc sẵn.
 - Khi quay lại list từ detail, giữ filter/sort/page nếu người dùng đang duyệt
   danh sách; chỉ reset khi họ chủ động chọn reset.
+- Ghi nhớ trạng thái mở hoặc thu gọn khi người dùng thao tác với khung Memo.
+  Giữ trạng thái đó khi phiên họp kết thúc, bị hủy hoặc ứng dụng mở lại.
 - Khi đổi metadata cuộc họp như Project hoặc Category, giữ minutes template người dùng đã
   chọn thủ công; chỉ quay về template mặc định nếu lựa chọn hiện tại không còn
   hợp lệ hoặc người dùng chủ động reset.
