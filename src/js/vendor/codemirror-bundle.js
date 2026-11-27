@@ -25361,7 +25361,43 @@ function isLineSelected(selection, line) {
   }
   return false;
 }
-function buildListLineInfo(doc2) {
+var listSourceMarker = Decoration.mark({ class: "cm-md-bullet-source" });
+var ListIndentWidget = class extends WidgetType {
+  constructor(level, guides) {
+    super();
+    this.level = level;
+    this.guides = guides;
+  }
+  eq(other) {
+    return this.level === other.level && JSON.stringify(this.guides) === JSON.stringify(other.guides);
+  }
+  toDOM() {
+    const indent = document.createElement("span");
+    indent.className = "cm-md-list-indent";
+    indent.style.width = `${this.level * 24}px`;
+    indent.setAttribute("aria-hidden", "true");
+    for (const guide of this.guides) {
+      const stem = document.createElement("span");
+      stem.className = "cm-md-list-guide-stem";
+      stem.style.left = `${guide.level * 24 + 8}px`;
+      if (guide.startsHere) stem.classList.add("starts-here");
+      if (guide.endsHere) stem.classList.add("ends-here");
+      indent.appendChild(stem);
+    }
+    if (this.level > 0) {
+      const branch = document.createElement("span");
+      branch.className = "cm-md-list-guide-branch";
+      branch.style.left = `${(this.level - 1) * 24 + 8}px`;
+      branch.style.width = "16px";
+      indent.appendChild(branch);
+    }
+    return indent;
+  }
+  ignoreEvent() {
+    return false;
+  }
+};
+function buildListLineInfo(doc2, tabSize) {
   const listLines = /* @__PURE__ */ new Map();
   const stack = [];
   for (let lineNumber = 1; lineNumber <= doc2.lines; lineNumber++) {
@@ -25371,19 +25407,25 @@ function buildListLineInfo(doc2) {
       if (line.text.trim()) stack.length = 0;
       continue;
     }
-    const indent = match[1].replace(/\t/g, "    ").length;
-    while (stack.length && indent <= stack[stack.length - 1]) stack.pop();
+    const whitespace = match[1];
+    const indent = countColumn(whitespace, tabSize);
+    while (stack.length && indent <= stack[stack.length - 1].indent) stack.pop();
     const level = stack.length;
     const previousLine = lineNumber > 1 ? doc2.line(lineNumber - 1) : null;
     const previousInfo = previousLine ? listLines.get(previousLine.from) : null;
-    listLines.set(line.from, {
+    const info = {
       level,
+      indent,
       isUnordered: /^[-*+]$/.test(match[2]),
-      isTask: /^\[[ xX]\]/.test(line.text.slice(match[0].length).trimStart()),
-      prefixLength: match[0].length,
+      whitespace,
+      parents: stack.slice(),
+      lastChild: null,
       isListStart: !previousInfo || level === 0 && previousInfo.level !== 0
-    });
-    stack.push(indent);
+    };
+    const parent = stack.at(-1);
+    if (parent && info.isUnordered) parent.lastChild = line.from;
+    listLines.set(line.from, info);
+    stack.push(info);
   }
   return listLines;
 }
@@ -25402,12 +25444,12 @@ function createLivePreviewPlugin(resolveImageAsset = () => null) {
         }
       }
       buildDecorations(view) {
-        const { doc: doc2, selection } = view.state;
+        const { doc: doc2, selection, tabSize } = view.state;
         const isReadOnly = Boolean(view.state.readOnly);
         const tree = syntaxTree(view.state);
         const decos = [];
         const decoratedLines = /* @__PURE__ */ new Set();
-        const listLineInfo = buildListLineInfo(doc2);
+        const listLineInfo = buildListLineInfo(doc2, tabSize);
         for (const { from, to } of view.visibleRanges) {
           tree.iterate({
             from,
@@ -25593,31 +25635,34 @@ function createLivePreviewPlugin(resolveImageAsset = () => null) {
                   const isTask = /^\s*\[[ xX]\]/.test(afterMarker);
                   if (listInfo?.isUnordered && !decoratedLines.has(line.from)) {
                     decoratedLines.add(line.from);
-                    const listClasses = [
-                      "cm-md-list-item",
-                      `cm-md-list-level-${Math.min(listInfo.level, 3)}`
-                    ];
+                    const listClasses = ["cm-md-list-item"];
                     if (listInfo.isListStart) listClasses.push("cm-md-list-start");
                     decos.push({
                       from: line.from,
                       to: line.from,
                       deco: Decoration.line({ class: listClasses.join(" ") })
                     });
-                  }
-                  if (!isTask) {
-                    const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
-                    if (!isOverlapping) {
-                      const leadingSpaces = (line.text.match(/^(\s*)/)?.[1] || "").length;
-                      const level = Math.floor(leadingSpaces / 4);
+                    const indentLength = listInfo.whitespace.length;
+                    if (indentLength > 0) {
+                      const guides = listInfo.parents.filter((parent) => parent.isUnordered && parent.lastChild !== null && line.from <= parent.lastChild).map((parent) => ({ level: parent.level, endsHere: line.from === parent.lastChild }));
+                      if (listInfo.lastChild !== null) {
+                        guides.push({ level: listInfo.level, startsHere: true });
+                      }
                       decos.push({
-                        from: nodeFrom,
-                        to: nodeTo,
-                        deco: Decoration.replace({
-                          widget: new BulletWidget(level)
-                        })
+                        from: line.from,
+                        to: line.from + indentLength,
+                        deco: Decoration.replace({ widget: new ListIndentWidget(listInfo.level, guides) })
                       });
                     }
                   }
+                  const isOverlapping = !isReadOnly && isSelectionOverlapping(selection, nodeFrom, nodeTo);
+                  decos.push({
+                    from: nodeFrom,
+                    to: nodeTo,
+                    deco: isTask || isOverlapping ? listSourceMarker : Decoration.replace({
+                      widget: new BulletWidget(listInfo?.level ?? 0)
+                    })
+                  });
                 }
                 return false;
               }

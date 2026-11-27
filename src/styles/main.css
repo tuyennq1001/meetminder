@@ -6479,6 +6479,10 @@ body.resizing-vertical * {
 
 /* ─── CodeMirror 6 Live Preview Styling ──────────────────────── */
 .cm-editor {
+  --cm-md-bullet-width: 16px;
+  --cm-md-guide-width: 1px;
+  --cm-md-guide-color: rgba(161, 161, 170, 0.4);
+  --cm-md-marker-center: calc(var(--cm-md-bullet-width) / 2);
   width: 100%;
   height: 100%;
   outline: none !important;
@@ -6501,76 +6505,55 @@ body.resizing-vertical * {
 /* Keep Markdown lists readable while preserving the same indentation in edit
    and read-only preview modes. */
 .cm-line.cm-md-list-item {
-  padding-top: 3px !important;
+  --cm-md-list-padding-top: 3px;
+  --cm-md-marker-y: calc(var(--cm-md-list-padding-top) + 0.825em + 1px);
+  position: relative;
+  padding-top: var(--cm-md-list-padding-top) !important;
   padding-bottom: 3px !important;
   line-height: 1.65 !important;
 }
 
-/* Obsidian-style indentation guides make nested note lists easier to scan. */
-.cm-line.cm-md-list-level-1,
-.cm-line.cm-md-list-level-2,
-.cm-line.cm-md-list-level-3 {
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-  background-image: linear-gradient(
-    to right,
-    transparent 7px,
-    rgba(161, 161, 170, 0.28) 7px,
-    rgba(161, 161, 170, 0.28) 8px,
-    transparent 8px
-  );
+.cm-md-list-indent {
+  position: static;
+  display: inline-block;
+  height: 1em;
+  vertical-align: baseline;
+  white-space: pre;
+  pointer-events: none;
 }
 
-.cm-line.cm-md-list-level-2,
-.cm-line.cm-md-list-level-3 {
-  background-image:
-    linear-gradient(
-      to right,
-      transparent 23px,
-      rgba(161, 161, 170, 0.28) 23px,
-      rgba(161, 161, 170, 0.28) 24px,
-      transparent 24px
-    ),
-    linear-gradient(
-      to right,
-      transparent 7px,
-      rgba(161, 161, 170, 0.28) 7px,
-      rgba(161, 161, 170, 0.28) 8px,
-      transparent 8px
-    );
+.cm-md-list-guide-stem,
+.cm-md-list-guide-branch {
+  position: absolute;
+  top: calc(-1 * var(--cm-md-list-padding-top));
+  width: var(--cm-md-guide-width);
+  background: var(--cm-md-guide-color);
 }
 
-.cm-line.cm-md-list-level-3 {
-  background-image:
-    linear-gradient(
-      to right,
-      transparent 39px,
-      rgba(161, 161, 170, 0.28) 39px,
-      rgba(161, 161, 170, 0.28) 40px,
-      transparent 40px
-    ),
-    linear-gradient(
-      to right,
-      transparent 23px,
-      rgba(161, 161, 170, 0.28) 23px,
-      rgba(161, 161, 170, 0.28) 24px,
-      transparent 24px
-    ),
-    linear-gradient(
-      to right,
-      transparent 7px,
-      rgba(161, 161, 170, 0.28) 7px,
-      rgba(161, 161, 170, 0.28) 8px,
-      transparent 8px
-    );
+.cm-md-list-guide-stem {
+  bottom: calc(-3px);
+}
+
+.cm-md-list-guide-stem.starts-here {
+  top: var(--cm-md-marker-y);
+}
+
+.cm-md-list-guide-stem.ends-here {
+  bottom: calc(100% - var(--cm-md-marker-y));
+}
+
+.cm-md-list-guide-branch {
+  top: var(--cm-md-marker-y);
+  height: var(--cm-md-guide-width);
+  width: var(--cm-md-bullet-width);
 }
 
 .cm-line.cm-md-list-item + .cm-line.cm-md-list-item {
-  padding-top: 2px !important;
+  --cm-md-list-padding-top: 2px;
 }
 
 .cm-line.cm-md-list-start {
-  padding-top: 7px !important;
+  --cm-md-list-padding-top: 7px;
 }
 
 .cm-scroller {
@@ -6789,22 +6772,30 @@ body.resizing-vertical * {
   display: block;
 }
 
+.cm-md-bullet,
+.cm-md-bullet-source {
+  width: var(--cm-md-bullet-width);
+  margin-inline-end: 8px;
+  text-align: center;
+}
+
+.cm-md-bullet-source {
+  display: inline-block;
+}
+
 .cm-md-bullet {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: var(--note-font-size, 14px);
   line-height: 1;
-  text-align: center;
-  width: 16px;
-  min-width: 16px;
-  margin-right: 8px;
   vertical-align: -1px;
   user-select: none;
   font-weight: 700;
 }
 
-.cm-md-bullet-level-0 {
+.cm-md-bullet-level-0,
+.cm-md-bullet-level-3 {
   color: #d9b0de;
 }
 

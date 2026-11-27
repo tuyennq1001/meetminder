@@ -6,6 +6,12 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.34 - 2026-11-27
+
+### Improved
+
+- **Markdown list indentation**: Normalize indentation by nesting level so items at the same level align consistently when the source uses two spaces, four spaces, or tabs. Draw connected guides from parent bullets through child branches.
+
 ## v1.0.33 - 2026-11-26
 
 ### Fixed

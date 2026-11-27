@@ -183,6 +183,10 @@ Các quy tắc đã chứng minh hữu ích trong Meet Minder:
 - Giữ phân cấp chữ nhất quán: tiêu đề màn hình lớn hơn tiêu đề nhóm; tiêu đề
   nhóm lớn hơn nhãn và nội dung chi tiết. Nếu cỡ chữ có thể tuỳ chỉnh, dẫn các
   cấp từ cùng biến cỡ chữ thay vì đặt số pixel cố định khiến thứ tự bị đảo.
+- Trong danh sách Markdown, chuẩn hóa khoảng thụt hiển thị theo cấp, bất kể
+  Markdown nguồn dùng 2 dấu cách, 4 dấu cách hay tab. Kéo vạch từ dấu đầu dòng
+  cha đến nhánh của mục con cuối cùng. Mỗi nhánh ngang chạm dấu đầu dòng con.
+  Kiểm tra khi xem và sửa, kể cả khi văn bản xuống dòng.
 - Icon là tín hiệu phụ, không thay thế text; cùng một đối tượng nên giữ cùng
   icon trên toolbar, form, bảng và badge.
 - Các form có cùng loại metadata nên giữ cùng thứ tự trường và cùng cách ghi
