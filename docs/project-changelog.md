@@ -6,6 +6,12 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.36 - 2026-11-28
+
+### Improved
+
+- **Shared glossary table**: Add clear Vietnamese and Japanese column headers and keep them visible while scrolling Settings.
+
 ## v1.0.35 - 2026-11-28
 
 ### Added
