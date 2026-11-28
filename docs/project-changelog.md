@@ -6,6 +6,12 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.37 - 2026-11-28
+
+### Fixed
+
+- **Update-ready banner layout**: Keep the notification and relaunch button dimensions stable while installing or retrying an update.
+
 ## v1.0.36 - 2026-11-28
 
 ### Improved
