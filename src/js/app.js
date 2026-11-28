@@ -1765,7 +1765,7 @@ class App {
 
         document.getElementById('btn-add-gemini-glossary-entry')?.addEventListener('click', () => {
             const draft = this._readGeminiGlossaryDraft();
-            draft.entries.push({ en: '', ja: '' });
+            draft.entries.push({ vi: '', ja: '' });
             this._renderGeminiGlossaryEntries(draft.entries);
             const inputs = document.querySelectorAll('#gemini-live-glossary-entries .gemini-glossary-row input');
             inputs[inputs.length - 2]?.focus();
@@ -3243,8 +3243,33 @@ class App {
             return;
         }
 
+        const table = document.createElement('table');
+        table.className = 'gemini-glossary-table';
+        table.dataset.i18nAriaLabel = 'settings.glossary.title';
+        table.setAttribute('aria-label', t('settings.glossary.title'));
+
+        const head = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        [
+            ['settings.glossary.vietnamese', t('settings.glossary.vietnamese')],
+            ['settings.glossary.japanese', t('settings.glossary.japanese')],
+        ].forEach(([key, label]) => {
+            const header = document.createElement('th');
+            header.scope = 'col';
+            header.dataset.i18n = key;
+            header.textContent = label;
+            headerRow.append(header);
+        });
+        const actionsHeader = document.createElement('th');
+        actionsHeader.className = 'gemini-glossary-actions-header';
+        actionsHeader.setAttribute('aria-hidden', 'true');
+        headerRow.append(actionsHeader);
+        head.append(headerRow);
+
+        const body = document.createElement('tbody');
+
         cleanEntries.forEach((entry, index) => {
-            const row = document.createElement('div');
+            const row = document.createElement('tr');
             row.className = 'gemini-glossary-row';
 
             const vietnamese = document.createElement('input');
@@ -3271,6 +3296,11 @@ class App {
             japanese.placeholder = t('settings.glossary.japanese');
             japanese.setAttribute('aria-label', t('settings.glossary.japanese'));
 
+            const vietnameseCell = document.createElement('td');
+            vietnameseCell.append(vietnamese);
+            const japaneseCell = document.createElement('td');
+            japaneseCell.append(japanese);
+
             const remove = document.createElement('button');
             remove.type = 'button';
             remove.className = 'btn-secondary small';
@@ -3279,9 +3309,16 @@ class App {
             remove.title = t('settings.glossary.remove');
             remove.setAttribute('aria-label', t('settings.glossary.remove'));
 
-            row.append(vietnamese, japanese, remove);
-            container.append(row);
+            const removeCell = document.createElement('td');
+            removeCell.className = 'gemini-glossary-remove-cell';
+            removeCell.append(remove);
+
+            row.append(vietnameseCell, japaneseCell, removeCell);
+            body.append(row);
         });
+
+        table.append(head, body);
+        container.append(table);
     }
 
     _setGeminiGlossarySaveStatus(message, isError = false) {
