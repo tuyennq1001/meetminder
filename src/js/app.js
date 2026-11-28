@@ -212,6 +212,8 @@ class App {
         this._geminiWatchdogAlerted = false;
         this._geminiAutoReconnectBlocked = false;
         this._geminiAutoReconnectBlockedKind = '';
+        this._activeGeminiLiveTranslationMode = 'direct';
+        this._geminiLiveTranslationMode = 'direct';
         this._lastGeminiDiagnosticSignature = '';
         this._lastGeminiDiagnosticAt = 0;
         this._networkAlertKind = '';
@@ -711,6 +713,10 @@ class App {
             unknown: ['network.unknownTitle', 'network.unknownDesc'],
             network: ['network.interruptedTitle', 'network.interruptedDesc'],
         }[kind] || ['network.interruptedTitle', 'network.interruptedDesc'];
+        if (engine === 'gemini' && this._geminiLiveTranslationMode === 'batch') {
+            if (kind === 'quota') copy[1] = 'network.geminiGroupedQuotaDesc';
+            if (kind === 'auth') copy[1] = 'network.geminiGroupedAuthDesc';
+        }
         if (title) title.textContent = t(copy[0]);
         if (desc) desc.textContent = t(copy[1]);
         if (meta) {
@@ -721,7 +727,9 @@ class App {
                     : t('network.lastOutputNone'));
             }
             if (kind === 'quota' || kind === 'auth') {
-                metaParts.push(t('network.autoReconnectStopped'));
+                metaParts.push(engine === 'gemini' && this._geminiLiveTranslationMode === 'batch'
+                    ? t('network.geminiGroupedTranslationPausedMeta')
+                    : t('network.autoReconnectStopped'));
             } else if (kind === 'stalled') {
                 metaParts.push(reason || t('network.stalledDesc'));
             }
@@ -788,6 +796,11 @@ class App {
         await this._stopTranslationEngine();
 
         this.translationMode = newMode;
+        if (newMode === 'gemini') {
+            this._activeGeminiLiveTranslationMode = settingsManager.get().gemini_live_translation_mode === 'batch'
+                ? 'batch'
+                : 'direct';
+        }
         await settingsManager.save({ translation_mode: newMode });
 
         const selectMode = document.getElementById('select-translation-mode');
@@ -1740,6 +1753,45 @@ class App {
             if (this.isRunning) {
                 await this._hotSwapToEngine(newMode);
             }
+        });
+
+        document.getElementById('select-gemini-live-translation-mode')?.addEventListener('change', async () => {
+            this._updateModeUI(settingsManager.get().translation_mode || 'gemini');
+            await this._autoSaveSettingsFromForm();
+            if (this.isRunning) {
+                this._showToast(t('settings.engine.geminiLiveModeNextStart'), 'info');
+            }
+        });
+
+        document.getElementById('btn-add-gemini-glossary-entry')?.addEventListener('click', () => {
+            const draft = this._readGeminiGlossaryDraft();
+            draft.entries.push({ en: '', ja: '' });
+            this._renderGeminiGlossaryEntries(draft.entries);
+            const inputs = document.querySelectorAll('#gemini-live-glossary-entries .gemini-glossary-row input');
+            inputs[inputs.length - 2]?.focus();
+            this._setGeminiGlossarySaveStatus('');
+        });
+
+        document.getElementById('gemini-live-glossary-entries')?.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-glossary-remove]');
+            if (!button) return;
+            const draft = this._readGeminiGlossaryDraft();
+            draft.entries.splice(Number(button.dataset.glossaryRemove), 1);
+            this._renderGeminiGlossaryEntries(draft.entries);
+            this._scheduleGeminiGlossaryAutoSave(0);
+        });
+
+        document.getElementById('gemini-live-glossary-entries')?.addEventListener('input', (event) => {
+            if (!event.target.matches('input')) return;
+            event.target.removeAttribute('aria-invalid');
+            this._scheduleGeminiGlossaryAutoSave();
+        });
+        document.getElementById('gemini-live-glossary-entries')?.addEventListener('change', (event) => {
+            if (event.target.matches('input')) this._scheduleGeminiGlossaryAutoSave(0);
+        });
+
+        document.getElementById('check-gemini-live-glossary-enabled')?.addEventListener('change', () => {
+            this._scheduleGeminiGlossaryAutoSave(0);
         });
 
         // Translation timing (configured in Settings, not the compact toolbar)
@@ -3064,6 +3116,17 @@ class App {
         this._updateTranscriptEngineUI(s.translation_mode || 'gemini');
         const selectTiming = document.getElementById('select-translation-timing');
         if (selectTiming) selectTiming.value = s.translation_timing || 'on_pause';
+        const selectGeminiLiveMode = document.getElementById('select-gemini-live-translation-mode');
+        if (selectGeminiLiveMode) {
+            selectGeminiLiveMode.value = s.gemini_live_translation_mode === 'batch' ? 'batch' : 'direct';
+        }
+        const glossary = s.gemini_live_glossary && typeof s.gemini_live_glossary === 'object'
+            ? s.gemini_live_glossary
+            : { enabled: false, entries: [] };
+        const glossaryToggle = document.getElementById('check-gemini-live-glossary-enabled');
+        if (glossaryToggle) glossaryToggle.checked = glossary.enabled === true;
+        this._renderGeminiGlossaryEntries(Array.isArray(glossary.entries) ? glossary.entries : []);
+        this._setGeminiGlossarySaveStatus('');
         const inactSelect = document.getElementById('select-inactivity-timeout');
         if (inactSelect) inactSelect.value = String(s.inactivity_timeout_min ?? 10);
         this._updateModeUI(s.translation_mode || 'gemini');
@@ -3153,6 +3216,162 @@ class App {
         }, 300);
     }
 
+    _readGeminiGlossaryDraft() {
+        const rows = [...document.querySelectorAll('#gemini-live-glossary-entries .gemini-glossary-row')];
+        return {
+            enabled: document.getElementById('check-gemini-live-glossary-enabled')?.checked === true,
+            entries: rows.map((row) => ({
+                vi: row.querySelector('[data-glossary-lang="vi"]')?.value.trim() || '',
+                ja: row.querySelector('[data-glossary-lang="ja"]')?.value.trim() || '',
+            })),
+        };
+    }
+
+    _renderGeminiGlossaryEntries(entries = []) {
+        const container = document.getElementById('gemini-live-glossary-entries');
+        if (!container) return;
+        container.replaceChildren();
+
+        const cleanEntries = entries
+            .filter((entry) => entry && typeof entry === 'object')
+            .map((entry) => ({ vi: String(entry.vi || ''), ja: String(entry.ja || '') }));
+        if (!cleanEntries.length) {
+            const empty = document.createElement('p');
+            empty.className = 'hint';
+            empty.textContent = t('settings.glossary.empty');
+            container.append(empty);
+            return;
+        }
+
+        cleanEntries.forEach((entry, index) => {
+            const row = document.createElement('div');
+            row.className = 'gemini-glossary-row';
+
+            const vietnamese = document.createElement('input');
+            vietnamese.type = 'text';
+            vietnamese.autocomplete = 'off';
+            vietnamese.maxLength = 120;
+            vietnamese.className = 'input-field';
+            vietnamese.dataset.glossaryLang = 'vi';
+            vietnamese.dataset.i18nPlaceholder = 'settings.glossary.vietnamese';
+            vietnamese.dataset.i18nAriaLabel = 'settings.glossary.vietnamese';
+            vietnamese.value = entry.vi;
+            vietnamese.placeholder = t('settings.glossary.vietnamese');
+            vietnamese.setAttribute('aria-label', t('settings.glossary.vietnamese'));
+
+            const japanese = document.createElement('input');
+            japanese.type = 'text';
+            japanese.autocomplete = 'off';
+            japanese.maxLength = 120;
+            japanese.className = 'input-field';
+            japanese.dataset.glossaryLang = 'ja';
+            japanese.dataset.i18nPlaceholder = 'settings.glossary.japanese';
+            japanese.dataset.i18nAriaLabel = 'settings.glossary.japanese';
+            japanese.value = entry.ja;
+            japanese.placeholder = t('settings.glossary.japanese');
+            japanese.setAttribute('aria-label', t('settings.glossary.japanese'));
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn-secondary small';
+            remove.dataset.glossaryRemove = String(index);
+            remove.textContent = '×';
+            remove.title = t('settings.glossary.remove');
+            remove.setAttribute('aria-label', t('settings.glossary.remove'));
+
+            row.append(vietnamese, japanese, remove);
+            container.append(row);
+        });
+    }
+
+    _setGeminiGlossarySaveStatus(message, isError = false) {
+        const status = document.getElementById('gemini-glossary-save-status');
+        if (!status) return;
+        status.textContent = message;
+        status.classList.toggle('hint-warning', isError);
+    }
+
+    _scheduleGeminiGlossaryAutoSave(delay = 400) {
+        clearTimeout(this._geminiGlossaryAutoSaveTimer);
+        const revision = (this._geminiGlossaryDraftRevision || 0) + 1;
+        this._geminiGlossaryDraftRevision = revision;
+        this._setGeminiGlossarySaveStatus(t('settings.glossary.saving'));
+        this._geminiGlossaryAutoSaveTimer = setTimeout(() => {
+            const previousSave = this._geminiGlossarySaveQueue || Promise.resolve();
+            this._geminiGlossarySaveQueue = previousSave
+                .catch(() => {})
+                .then(() => this._autoSaveGeminiGlossaryFromForm(revision));
+        }, delay);
+    }
+
+    async _autoSaveGeminiGlossaryFromForm(revision) {
+        const draft = this._readGeminiGlossaryDraft();
+        const entries = [];
+        const rowIndexesByVietnamese = new Map();
+        const rowIndexesByJapanese = new Map();
+        const conflicts = new Set();
+        const seenPairs = new Set();
+
+        draft.entries.forEach((entry, index) => {
+            const vi = entry.vi.trim();
+            const ja = entry.ja.trim();
+            if (!vi && !ja) return;
+            const viKey = vi.normalize('NFKC').toLocaleLowerCase('vi-VN');
+            const jaKey = ja.normalize('NFKC').toLocaleLowerCase('ja-JP');
+            const pairKey = `${viKey}\u001f${jaKey}`;
+
+            if (vi && ja) {
+                if (rowIndexesByVietnamese.has(viKey) && rowIndexesByVietnamese.get(viKey).jaKey !== jaKey) {
+                    conflicts.add(index);
+                    conflicts.add(rowIndexesByVietnamese.get(viKey).index);
+                }
+                if (rowIndexesByJapanese.has(jaKey) && rowIndexesByJapanese.get(jaKey).viKey !== viKey) {
+                    conflicts.add(index);
+                    conflicts.add(rowIndexesByJapanese.get(jaKey).index);
+                }
+                rowIndexesByVietnamese.set(viKey, { jaKey, index });
+                rowIndexesByJapanese.set(jaKey, { viKey, index });
+            }
+
+            if (!seenPairs.has(pairKey)) {
+                seenPairs.add(pairKey);
+                entries.push({ vi, ja });
+            }
+        });
+
+        const rows = [...document.querySelectorAll('#gemini-live-glossary-entries .gemini-glossary-row')];
+        rows.forEach((row, index) => {
+            const invalid = conflicts.has(index);
+            row.querySelectorAll('input').forEach((input) => {
+                if (invalid) input.setAttribute('aria-invalid', 'true');
+                else input.removeAttribute('aria-invalid');
+            });
+        });
+        if (conflicts.size) {
+            if (revision === this._geminiGlossaryDraftRevision) {
+                this._setGeminiGlossarySaveStatus(t('settings.glossary.conflict'), true);
+            }
+            return;
+        }
+
+        try {
+            await settingsManager.save({
+                gemini_live_glossary: {
+                    enabled: draft.enabled,
+                    entries,
+                },
+            });
+            if (revision === this._geminiGlossaryDraftRevision) {
+                this._setGeminiGlossarySaveStatus(t('settings.glossary.saved'));
+            }
+        } catch (error) {
+            console.error('[Gemini glossary] Save failed:', error);
+            if (revision === this._geminiGlossaryDraftRevision) {
+                this._setGeminiGlossarySaveStatus(t('settings.glossary.saveFailed'), true);
+            }
+        }
+    }
+
     async _autoSaveSettingsFromForm() {
         const settings = {
             app_language: normalizeLocale(document.getElementById('select-app-language')?.value || settingsManager.get().app_language),
@@ -3162,6 +3381,9 @@ class App {
             // Keep this compatibility field, but do not expose a selector
             // while Live Translate has only one supported model.
             gemini_model: 'auto',
+            gemini_live_translation_mode: document.getElementById('select-gemini-live-translation-mode')?.value === 'batch'
+                ? 'batch'
+                : 'direct',
             qwen_api_key: document.getElementById('input-qwen-key')?.value.trim() || '',
             source_language: document.getElementById('quick-select-source-lang')?.value || settingsManager.get().source_language || 'en',
             target_language: document.getElementById('quick-select-target-lang')?.value || settingsManager.get().target_language || 'ja',
@@ -3594,10 +3816,19 @@ class App {
         const sectionApiKey = document.getElementById('section-api-key');
         const sectionOpenAiKey = document.getElementById('section-openai-key');
         const sectionGeminiKey = document.getElementById('section-gemini-key');
+        const sectionGeminiLiveMode = document.getElementById('section-gemini-live-mode');
+        const sectionSonioxTiming = document.getElementById('section-soniox-translation-timing');
         const sectionQwenKey = document.getElementById('section-qwen-key');
         if (sectionApiKey) sectionApiKey.style.display = isSoniox ? '' : 'none';
         if (sectionOpenAiKey) sectionOpenAiKey.style.display = isOpenAi ? '' : 'none';
         if (sectionGeminiKey) sectionGeminiKey.style.display = isGemini ? '' : 'none';
+        if (sectionGeminiLiveMode) sectionGeminiLiveMode.style.display = isGemini ? '' : 'none';
+        const glossaryPanel = document.getElementById('gemini-live-glossary-panel');
+        const liveModeSelect = document.getElementById('select-gemini-live-translation-mode');
+        if (glossaryPanel) {
+            glossaryPanel.style.display = isGemini && liveModeSelect?.value === 'batch' ? '' : 'none';
+        }
+        if (sectionSonioxTiming) sectionSonioxTiming.style.display = isSoniox ? '' : 'none';
         if (sectionQwenKey) sectionQwenKey.style.display = isQwen ? '' : 'none';
 
         const sectionStrictLang = document.getElementById('section-strict-lang');
@@ -3873,7 +4104,7 @@ class App {
         if (this._isStoppingSession) return;
         const settings = settingsManager.get();
         this.translationMode = settings.translation_mode || 'soniox';
-        console.log('[App] start() called, translation_mode:', this.translationMode, 'settings:', JSON.stringify(settings));
+        console.log('[App] start() called, translation_mode:', this.translationMode);
 
         // Local MLX needs macOS Apple Silicon — block here (option is selectable
         // but can't actually run on other platforms) instead of crashing.
@@ -3932,8 +4163,22 @@ class App {
             this._pausedAt = null;
         }
 
+        const resumingPausedMeeting = this.isPaused;
         this.isRunning = true;
         this.isPaused = false;
+        this._activeGeminiLiveTranslationMode = settings.gemini_live_translation_mode === 'batch'
+            ? 'batch'
+            : 'direct';
+        if (!resumingPausedMeeting || !this._activeGeminiLiveGlossary) {
+            const glossary = settings.gemini_live_glossary;
+            this._activeGeminiLiveGlossary = {
+                enabled: glossary?.enabled === true,
+                entries: Array.isArray(glossary?.entries)
+                    ? glossary.entries.map((entry) => ({ vi: String(entry?.vi || ''), ja: String(entry?.ja || '') }))
+                    : [],
+            };
+            this._geminiGlossaryTranscriptionHintsDisabled = false;
+        }
         this._hideNetworkAlertBanner();
         this._geminiAutoReconnectBlocked = false;
         this._geminiAutoReconnectBlockedKind = '';
@@ -4175,14 +4420,22 @@ class App {
         this._updateStatus('connecting');
         const { GeminiRealtimeClient } = await import('./gemini-realtime-client.js');
 
+        const liveTranslationMode = this._activeGeminiLiveTranslationMode === 'batch' ? 'batch' : 'direct';
+        this._geminiLiveTranslationMode = liveTranslationMode;
         const usesLiveTranslate = !settings.gemini_model
             || settings.gemini_model === 'auto'
             || settings.gemini_model.includes('live-translate');
-        this.transcriptUI.provider = usesLiveTranslate ? 'gemini-live' : 'gemini';
+        const usesDirectLiveTranslate = liveTranslationMode === 'direct' && usesLiveTranslate;
+        this.transcriptUI.provider = usesDirectLiveTranslate ? 'gemini-live' : 'gemini';
 
         this.geminiClient = new GeminiRealtimeClient();
 
         this.geminiClient.onStatusChange = (state) => {
+            if (state === 'glossary_hints_unavailable') {
+                this._geminiGlossaryTranscriptionHintsDisabled = true;
+                this._showToast(t('settings.glossary.transcriptionFallback'), 'info');
+                return;
+            }
             if (state === 'ready') {
                 this._geminiReconnectAttempts = 0;
                 this._updateStatus('connected');
@@ -4248,16 +4501,25 @@ class App {
             console.warn('[Gemini Realtime] Translation failed:', pendingId, message);
             const kind = this._classifyGeminiIssue('translation_failed', message);
             this._logGeminiDiagnostic(kind, 'translation_failed', message);
+            const isGroupedTranslation = this._geminiLiveTranslationMode === 'batch';
+            const displayedMessage = isGroupedTranslation && (kind === 'quota' || kind === 'auth')
+                ? `${message} · ${t('settings.engine.geminiGroupedTranslationPaused')}`
+                : message;
             if (this.isRunning) {
-                this._showNetworkAlertBanner('gemini', message, kind);
-                if (kind === 'quota' || kind === 'auth') {
-                    this._geminiAutoReconnectBlocked = true;
-                    this._geminiAutoReconnectBlockedKind = kind;
-                    this._disconnectLiveEngine().catch((error) => {
-                        console.warn('[Gemini Realtime] Failed to stop after non-transient translation error:', error);
-                    });
-                } else if ((kind === 'network' || kind === 'server') && navigator.onLine) {
-                    this._scheduleGeminiReconnect(2500);
+                const sameAlertVisible = this._networkAlertBannerVisible
+                    && this._networkAlertKind === kind
+                    && this._networkAlertReason === displayedMessage;
+                if (!sameAlertVisible) this._showNetworkAlertBanner('gemini', displayedMessage, kind);
+                if (!isGroupedTranslation) {
+                    if (kind === 'quota' || kind === 'auth') {
+                        this._geminiAutoReconnectBlocked = true;
+                        this._geminiAutoReconnectBlockedKind = kind;
+                        this._disconnectLiveEngine().catch((error) => {
+                            console.warn('[Gemini Realtime] Failed to stop after non-transient translation error:', error);
+                        });
+                    } else if ((kind === 'network' || kind === 'server') && navigator.onLine) {
+                        this._scheduleGeminiReconnect(2500);
+                    }
                 }
             }
             if (pendingId !== null) {
@@ -4400,6 +4662,9 @@ class App {
                 sourceLanguage: settings.source_language || 'en',
                 targetLanguage: settings.target_language || 'ja',
                 model: settings.gemini_model || 'auto',
+                liveTranslationMode: this._geminiLiveTranslationMode,
+                liveGlossary: this._activeGeminiLiveGlossary || { enabled: false, entries: [] },
+                glossaryTranscriptionHintsEnabled: !this._geminiGlossaryTranscriptionHintsDisabled,
             });
         } catch (err) {
             console.error('[Gemini Realtime] connect error:', err);
@@ -13447,6 +13712,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
         }, 1500);
         this._activeRetranscribe.progressInterval = progressInterval;
 
+        let transcriptSaved = false;
         try {
             // options.sourceLang/targetLang: cặp ngôn ngữ mới (từ modal sửa ngôn ngữ).
             // Backend áp dụng trước khi build prompt và chỉ lưu khi thành công.
@@ -13457,6 +13723,7 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 sourceLang: options.sourceLang || null,
                 targetLang: options.targetLang || null,
             });
+            transcriptSaved = true;
             clearInterval(progressInterval);
             if (!this._activeRetranscribe || this._activeRetranscribe.id !== id) return;
             await this._setTranscriptStatus(id, 'completed');
@@ -13546,7 +13813,14 @@ Hãy phân tích toàn bộ chuỗi cuộc họp trên và tạo một BẢN T�
                 const previousStatus = this._activeRetranscribe.previousTranscriptStatus || 'not_transcribed';
                 const previousError = this._activeRetranscribe.previousTranscriptError || null;
                 this._cleanupActiveRetranscribe();
-                if (!isCancelled) {
+                if (!isCancelled && transcriptSaved) {
+                    console.warn('[App] Transcript saved, but follow-up processing failed:', err);
+                    await this._setTranscriptStatus(id, 'completed');
+                    this._showRetranscriptCompleted(id, t('retranscript.floating.done'));
+                    this._showToast(t('retranscript.toast.done'), 'success');
+                    await this._showSessions();
+                    this._drainRetranscriptQueue();
+                } else if (!isCancelled) {
                     console.error('[App] Re-transcript failed:', err);
                     await this._setTranscriptStatus(id, 'failed', this._redactSensitiveError(String(err)));
                     this._showRetranscriptFailed(t('retranscript.error.prefix', { error: err }), false, failedStage);

@@ -4,6 +4,70 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct GeminiLiveGlossaryEntry {
+    pub vi: String,
+    pub ja: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
+pub struct GeminiLiveGlossarySettings {
+    pub enabled: bool,
+    pub entries: Vec<GeminiLiveGlossaryEntry>,
+}
+
+fn deserialize_gemini_live_glossary<'de, D>(
+    deserializer: D,
+) -> Result<GeminiLiveGlossarySettings, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // Read the new optional setting as JSON first so a malformed glossary does
+    // not make the app discard unrelated settings (API keys included).
+    let value = serde_json::Value::deserialize(deserializer)?;
+    let Some(object) = value.as_object() else {
+        return Ok(GeminiLiveGlossarySettings::default());
+    };
+
+    let enabled = object
+        .get("enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let mut entries = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    if let Some(raw_entries) = object.get("entries").and_then(serde_json::Value::as_array) {
+        for item in raw_entries {
+            let Some(item) = item.as_object() else { continue };
+            // Legacy English/Japanese rows keep their Japanese spelling, but
+            // English is not reclassified as Vietnamese during migration.
+            let vi = item
+                .get("vi")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let ja = item
+                .get("ja")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let vi = if vi.chars().count() <= 120 { vi } else { String::new() };
+            let ja = if ja.chars().count() <= 120 { ja } else { String::new() };
+            if vi.is_empty() && ja.is_empty() {
+                continue;
+            }
+            let key = format!("{}\u{1f}{}", vi.to_lowercase(), ja);
+            if seen.insert(key) {
+                entries.push(GeminiLiveGlossaryEntry { vi, ja });
+            }
+        }
+    }
+    Ok(GeminiLiveGlossarySettings { enabled, entries })
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct MeetingMinutesTemplate {
     #[serde(default)]
     pub id: String,
@@ -32,6 +96,12 @@ pub struct Settings {
     /// Google Gemini model name
     #[serde(default = "default_gemini_model")]
     pub gemini_model: String,
+    /// Gemini Live translation strategy: "direct" | "batch"
+    #[serde(default = "default_gemini_live_translation_mode")]
+    pub gemini_live_translation_mode: String,
+    /// Optional app-wide term mappings for Gemini Live grouped translation.
+    #[serde(default, deserialize_with = "deserialize_gemini_live_glossary")]
+    pub gemini_live_glossary: GeminiLiveGlossarySettings,
     /// Alibaba Cloud DashScope API key (for Qwen LiveTranslate Flash)
     #[serde(default)]
     pub qwen_api_key: String,
@@ -240,6 +310,8 @@ impl Default for Settings {
             openai_api_key: String::new(),
             gemini_api_key: String::new(),
             gemini_model: "auto".to_string(),
+            gemini_live_translation_mode: default_gemini_live_translation_mode(),
+            gemini_live_glossary: GeminiLiveGlossarySettings::default(),
             qwen_api_key: String::new(),
             source_language: "en".to_string(),
             target_language: "ja".to_string(),
@@ -414,6 +486,10 @@ fn default_gemini_model() -> String {
     "auto".to_string()
 }
 
+fn default_gemini_live_translation_mode() -> String {
+    "direct".to_string()
+}
+
 fn default_transcript_engine() -> String {
     "gemini_live_translate".to_string()
 }
@@ -496,6 +572,11 @@ fn normalize_loaded_settings(mut settings: Settings) -> Settings {
     // explicit/experimental selections to Auto so the compatibility field
     // cannot preserve a misleading UI choice.
     settings.gemini_model = "auto".to_string();
+    if settings.gemini_live_translation_mode != "direct"
+        && settings.gemini_live_translation_mode != "batch"
+    {
+        settings.gemini_live_translation_mode = default_gemini_live_translation_mode();
+    }
     if settings.transcript_engine != "gemini_live_translate"
         && settings.transcript_engine != "gemini_transcribe"
         && settings.transcript_engine != "local_mlx"

@@ -4491,6 +4491,8 @@ fn save_retranscribed_session(
     }];
     data.engine = engine.to_string();
     data.retranscribed_at = Some(chrono::Local::now().to_rfc3339());
+    data.transcript_status = Some("completed".to_string());
+    data.transcript_error = None;
     emit_audio_transcript_progress(app, id, "save", "Đang ghi Logs mới vào ổ đĩa...", 95);
     let md = rebuild_session_markdown(data);
     let json_bytes = serde_json::to_vec_pretty(data)

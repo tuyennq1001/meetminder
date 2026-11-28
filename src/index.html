@@ -722,13 +722,37 @@
             <p class="hint" id="hint-transcript-engine" data-i18n="settings.engine.transcriptFollowsTranslation">Tạo lại transcript từ file sẽ dùng engine dịch đang chọn và API key tương ứng.</p>
           </div>
 
-          <div class="settings-section">
+          <div class="settings-section" id="section-soniox-translation-timing">
             <span class="field-label" data-i18n="settings.engine.timingLabel">Kiểu dịch</span>
-        <select id="select-translation-timing" data-i18n-title="settings.engine.timingTitle" title="Chọn dịch khi hết câu hoặc dịch ngay lập tức">
+        <select id="select-translation-timing" data-i18n-title="settings.engine.timingTitle" title="Chọn độ trễ tối đa trước khi Soniox chốt câu">
           <option value="on_pause" selected data-i18n="settings.engine.timingOnPause">⏳ Dịch khi hết câu</option>
           <option value="realtime" data-i18n="settings.engine.timingRealtime">⚡ Dịch ngay lập tức</option>
         </select>
-        <p class="hint" data-i18n="settings.engine.timingHint">Mặc định dịch khi người nói hết câu. Chọn dịch ngay lập tức nếu muốn thấy bản dịch sớm hơn trong lúc đang nói.</p>
+        <p class="hint" data-i18n="settings.engine.timingHint">Chỉ áp dụng cho Soniox. Chọn độ trễ tối đa 3 giây hoặc 0,5 giây để Soniox chốt câu; độ trễ ngắn hơn có thể tách lời nói thành các đoạn ngắn hơn.</p>
+          </div>
+
+          <div class="settings-section" id="section-gemini-live-mode" style="display:none">
+            <span class="field-label" data-i18n="settings.engine.geminiLiveModeLabel">Gemini Live: translation mode</span>
+            <select id="select-gemini-live-translation-mode">
+              <option value="direct" data-i18n="settings.engine.geminiLiveModeDirect">⚡ Direct translation</option>
+              <option value="batch" data-i18n="settings.engine.geminiLiveModeBatch">🧩 Grouped text translation</option>
+            </select>
+            <p class="hint" data-i18n="settings.engine.geminiLiveModeHint">Direct uses Live Translate. Grouped mode transcribes first, then batches up to 6 sentences for text translation. It applies the next time you start a Live session.</p>
+            <div id="gemini-live-glossary-panel" class="gemini-live-glossary-panel" style="display:none">
+              <span class="field-label" data-i18n="settings.glossary.title">Shared glossary</span>
+              <label class="gemini-glossary-toggle">
+                <input type="checkbox" id="check-gemini-live-glossary-enabled" />
+                <span data-i18n="settings.glossary.enabled">Apply names automatically during grouped transcription and translation</span>
+              </label>
+              <p class="hint" data-i18n="settings.glossary.hint">Used only in Grouped translation for Vietnamese ↔ Japanese. The app sends names to Gemini to help recognition, then preserves the target spelling in translations when the full name matches. This is a hint; Gemini may still misrecognize a name.</p>
+              <p class="hint" data-i18n="settings.glossary.autoSaveHint">Changes are saved automatically as you edit and apply the next time you start Live.</p>
+              <p class="hint" data-i18n="settings.glossary.limit">Up to 100 spellings are sent as recognition hints; remaining entries can still be applied to translations when matched.</p>
+              <div id="gemini-live-glossary-entries" class="gemini-glossary-entries" aria-live="polite"></div>
+              <div class="gemini-glossary-actions">
+                <button type="button" id="btn-add-gemini-glossary-entry" class="btn-secondary small" data-i18n="settings.glossary.add">＋ Add name</button>
+                <span id="gemini-glossary-save-status" class="gemini-glossary-save-status" role="status" aria-live="polite"></span>
+              </div>
+            </div>
           </div>
 
           <!-- Local MLX Offline Package Card -->
