@@ -15858,7 +15858,8 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
         if (updateButton) updateButton.disabled = true;
         if (bannerButton) {
             bannerButton.disabled = true;
-            bannerButton.textContent = t('updater.installing');
+            bannerButton.textContent = t('updater.bannerInstalling');
+            bannerButton.setAttribute('aria-busy', 'true');
         }
         if (btnText) btnText.textContent = t('updater.installing');
         const statusText = document.getElementById('update-status-text');
@@ -15883,7 +15884,8 @@ Lưu ý: Văn phong trang trọng, chuẩn mực công việc, rõ ràng, gãy g
             if (updateButton) updateButton.disabled = false;
             if (bannerButton) {
                 bannerButton.disabled = false;
-                bannerButton.textContent = t('updater.retryInstall');
+                bannerButton.removeAttribute('aria-busy');
+                bannerButton.textContent = t('updater.bannerRetry');
             }
             if (btnText) btnText.textContent = t('updater.retryInstall');
             if (statusText) statusText.textContent = t('updater.installFailed', { error: restartErr?.message || restartErr });

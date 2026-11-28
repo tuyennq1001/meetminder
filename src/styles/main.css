@@ -3405,7 +3405,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
   position: fixed;
   bottom: 24px;
   right: 24px;
-  max-width: 440px;
+  width: 440px;
+  max-width: calc(100vw - 48px);
+  box-sizing: border-box;
   background: var(--md-sys-color-surface-container-high, #26292f);
   border: 1px solid var(--md-sys-color-primary-container, #54245b);
   border-radius: 14px;
@@ -3474,6 +3476,13 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .btn-update-relaunch {
+  flex: 0 0 112px;
+  width: 112px;
+  min-width: 112px;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
   background: var(--md-sys-color-primary, #d9b0de);
   color: var(--md-sys-color-on-primary, #2d1231);
   border: none;
