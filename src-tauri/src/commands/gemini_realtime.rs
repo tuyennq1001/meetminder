@@ -6,6 +6,7 @@
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use crate::settings::GeminiLiveGlossarySettings;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -47,8 +48,24 @@ pub struct GeminiRealtimeConfig {
     /// BCP-47-ish code (e.g. "vi", "en", "ja")
     pub target_language: String,
     pub model: Option<String>,
+    /// "direct" uses Live Translate audio output; "batch" transcribes first and translates text.
+    #[serde(default = "default_live_translation_mode")]
+    pub live_translation_mode: String,
+    #[serde(default)]
+    pub gemini_live_glossary: GeminiLiveGlossarySettings,
+    /// Runtime circuit breaker set after Gemini explicitly rejects customVocabulary.
+    #[serde(default = "default_glossary_transcription_hints_enabled")]
+    pub glossary_transcription_hints_enabled: bool,
     #[serde(default)]
     pub diarization: bool,
+}
+
+fn default_live_translation_mode() -> String {
+    "direct".to_string()
+}
+
+fn default_glossary_transcription_hints_enabled() -> bool {
+    true
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -114,6 +131,7 @@ struct TranslationJob {
     id: u64,
     original: String,
     speaker: Option<String>,
+    target_language: String,
 }
 
 /// Gemini Live Translate streams source and target transcript fragments on
@@ -302,6 +320,7 @@ pub async fn gemini_realtime_start(
 
         if let Err(e) = run_session(
             config,
+            session_id.saturating_mul(1_000_000),
             target_lang,
             audio_rx,
             stop_rx,
@@ -402,7 +421,8 @@ pub async fn gemini_realtime_stop(
 }
 
 async fn run_session(
-    cfg: GeminiRealtimeConfig,
+    mut cfg: GeminiRealtimeConfig,
+    translation_id_base: u64,
     target_lang_ref: Arc<tokio::sync::RwLock<String>>,
     mut audio_rx: mpsc::UnboundedReceiver<Vec<u8>>,
     mut stop_rx: mpsc::UnboundedReceiver<()>,
@@ -411,52 +431,119 @@ async fn run_session(
     cooldowns: Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
     translation_cache: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
 ) -> Result<(), String> {
-    let ws_url = format!(
-        "wss://{}/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key={}",
-        GEMINI_LIVE_WS_HOST,
-        cfg.api_key.trim()
-    );
+    let mut setup_fallback_attempted = false;
+    let (mut ws_sink, mut ws_stream) = loop {
+        let ws_url = format!(
+            "wss://{}/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key={}",
+            GEMINI_LIVE_WS_HOST,
+            cfg.api_key.trim()
+        );
 
-    eprintln!("[gemini-live] Connecting to WebSocket endpoint...");
-    let (ws_stream, response) = connect_async(ws_url.as_str()).await.map_err(|e| match e {
-        tokio_tungstenite::tungstenite::Error::Http(response) => {
-            let status = response.status();
-            let body = response
-                .body()
-                .as_ref()
-                .map(|bytes| String::from_utf8_lossy(bytes).to_string())
-                .unwrap_or_default();
-            if body.trim().is_empty() {
-                format!("WebSocket handshake failed: HTTP {}", status)
-            } else {
-                format!(
-                    "WebSocket handshake failed: HTTP {}: {}",
-                    status,
-                    body.trim()
-                )
+        eprintln!("[gemini-live] Connecting to WebSocket endpoint...");
+        let (ws_stream, response) = connect_async(ws_url.as_str()).await.map_err(|e| match e {
+            tokio_tungstenite::tungstenite::Error::Http(response) => {
+                let status = response.status();
+                let body = response
+                    .body()
+                    .as_ref()
+                    .map(|bytes| String::from_utf8_lossy(bytes).to_string())
+                    .unwrap_or_default();
+                if body.trim().is_empty() {
+                    format!("WebSocket handshake failed: HTTP {}", status)
+                } else {
+                    format!(
+                        "WebSocket handshake failed: HTTP {}: {}",
+                        status,
+                        body.trim()
+                    )
+                }
             }
-        }
-        other => format!("WebSocket handshake failed: {}", other),
-    })?;
+            other => format!("WebSocket handshake failed: {}", other),
+        })?;
 
-    eprintln!(
-        "[gemini-live] WebSocket connected! HTTP status: {}",
-        response.status()
-    );
+        eprintln!(
+            "[gemini-live] WebSocket connected! HTTP status: {}",
+            response.status()
+        );
+        let (mut sink, mut stream) = ws_stream.split();
+        let setup_msg = build_setup_message(&cfg);
+        eprintln!(
+            "[gemini-live] Sending setup for model {} ({} custom vocabulary terms)",
+            normalized_model(&cfg),
+            gemini_glossary_vocabulary(&cfg).len()
+        );
+        sink.send(Message::Text(setup_msg.into()))
+            .await
+            .map_err(|e| format!("send setup message: {}", e))?;
 
-    let (mut ws_sink, mut ws_stream) = ws_stream.split();
-
-    // 1. Send initial setup message
-    let setup_msg = build_setup_message(&cfg);
-    eprintln!("[gemini-live] Sending setup: {}", setup_msg);
-    ws_sink
-        .send(Message::Text(setup_msg.into()))
+        // Gemini requires the client to wait for setupComplete before sending
+        // audio. Waiting here also lets us safely retry an explicitly rejected
+        // vocabulary field before the microphone stream enters this session.
+        let setup_result = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            loop {
+                match stream.next().await {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Some(result) = parse_gemini_setup_response(text.as_ref()) {
+                            break result;
+                        }
+                    }
+                    Some(Ok(Message::Binary(bytes))) => {
+                        if let Ok(text) = std::str::from_utf8(&bytes) {
+                            if let Some(result) = parse_gemini_setup_response(text) {
+                                break result;
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Close(frame))) => {
+                        let detail = frame
+                            .map(|frame| format!("{}: {}", frame.code, frame.reason))
+                            .unwrap_or_else(|| "closed during setup".into());
+                        break Err(format!("Gemini closed the connection during setup: {}", detail));
+                    }
+                    Some(Ok(_)) => {}
+                    Some(Err(error)) => break Err(format!("Gemini setup response failed: {}", error)),
+                    None => break Err("Gemini connection ended before setup completed".into()),
+                }
+            }
+        })
         .await
-        .map_err(|e| format!("send setup message: {}", e))?;
+        .map_err(|_| "Timed out waiting for Gemini setup to complete".to_string())?;
+
+        match setup_result {
+            Ok(()) => {
+                emit_event(
+                    &event_sink,
+                    GeminiEvent::Status {
+                        state: "ready".into(),
+                        message: Some("Gemini Live connected".into()),
+                    },
+                );
+                break (sink, stream);
+            }
+            Err(error)
+                if !setup_fallback_attempted
+                    && !gemini_glossary_vocabulary(&cfg).is_empty()
+                    && is_custom_vocabulary_rejection(&error) =>
+            {
+                setup_fallback_attempted = true;
+                cfg.glossary_transcription_hints_enabled = false;
+                emit_event(
+                    &event_sink,
+                    GeminiEvent::Status {
+                        state: "glossary_hints_unavailable".into(),
+                        message: None,
+                    },
+                );
+                let _ = sink.send(Message::Close(None)).await;
+                eprintln!("[gemini-live] Gemini rejected customVocabulary; retrying setup without glossary hints");
+            }
+            Err(error) => return Err(error),
+        }
+    };
 
     let live_translate = uses_live_translate(&cfg);
     let mut live_assembler = LiveTranslateAssembler::new();
-    let mut next_translation_id = 1u64;
+    let mut next_translation_id = translation_id_base.saturating_add(1);
     let mut recent_committed: VecDeque<(String, std::time::Instant)> = VecDeque::with_capacity(64);
     let mut turn_committed: HashSet<String> = HashSet::new();
     let (translation_tx, translation_worker) = if live_translate {
@@ -465,7 +552,6 @@ async fn run_session(
     } else {
         let (tx, worker) = start_translation_worker(
             &cfg,
-            target_lang_ref,
             event_sink.clone(),
             models_cache,
             cooldowns,
@@ -498,6 +584,7 @@ async fn run_session(
                                     &text,
                                     &event_sink,
                                     None,
+                                    &target_lang_ref,
                                     Some(&mut live_assembler),
                                     &mut next_translation_id,
                                     &mut turn_committed,
@@ -510,6 +597,7 @@ async fn run_session(
                                         text,
                                         &event_sink,
                                         None,
+                                        &target_lang_ref,
                                         Some(&mut live_assembler),
                                         &mut next_translation_id,
                                         &mut turn_committed,
@@ -563,6 +651,7 @@ async fn run_session(
                             &text,
                             &event_sink,
                             translation_tx.as_ref(),
+                            &target_lang_ref,
                             live_translate.then_some(&mut live_assembler),
                             &mut next_translation_id,
                             &mut turn_committed,
@@ -575,6 +664,7 @@ async fn run_session(
                                 text,
                                 &event_sink,
                                 translation_tx.as_ref(),
+                                &target_lang_ref,
                                 live_translate.then_some(&mut live_assembler),
                                 &mut next_translation_id,
                                 &mut turn_committed,
@@ -736,6 +826,9 @@ where
         source_language: source_language.to_string(),
         target_language: live_target,
         model: Some(LIVE_TRANSLATE_MODEL.to_string()),
+        live_translation_mode: default_live_translation_mode(),
+        gemini_live_glossary: GeminiLiveGlossarySettings::default(),
+        glossary_transcription_hints_enabled: default_glossary_transcription_hints_enabled(),
         diarization: false,
     };
     let target_lang_ref = Arc::new(tokio::sync::RwLock::new(cfg.target_language.clone()));
@@ -809,6 +902,7 @@ where
 
     let runner = tokio::spawn(run_session(
         cfg,
+        0,
         target_lang_ref,
         audio_rx,
         stop_rx,
@@ -897,18 +991,265 @@ where
     Ok(collected)
 }
 
+#[derive(Debug, Clone)]
+struct GlossaryTerm {
+    source: String,
+    target: String,
+}
+
+#[derive(Debug, Clone)]
+struct GlossaryMarker {
+    token: String,
+    target: String,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedGlossaryJob {
+    job: TranslationJob,
+    prompt_text: String,
+    markers: Vec<GlossaryMarker>,
+}
+
+fn glossary_terms(
+    glossary: &GeminiLiveGlossarySettings,
+    source_language: &str,
+    target_language: &str,
+) -> Vec<GlossaryTerm> {
+    let target = target_language
+        .trim()
+        .to_lowercase()
+        .split('-')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    let source = source_language
+        .trim()
+        .to_lowercase()
+        .split('-')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    let source_column = match (source.as_str(), target.as_str()) {
+        ("vi", "ja") | ("auto", "ja") => "vi",
+        ("ja", "vi") | ("auto", "vi") => "ja",
+        _ => return Vec::new(),
+    };
+
+    let mut mapped: HashMap<String, String> = HashMap::new();
+    let mut ambiguous = HashSet::new();
+    for entry in &glossary.entries {
+        let (term, replacement) = if source_column == "vi" {
+            (entry.vi.trim(), entry.ja.trim())
+        } else {
+            (entry.ja.trim(), entry.vi.trim())
+        };
+        if term.is_empty() || replacement.is_empty() {
+            continue;
+        }
+        let key = term.to_lowercase();
+        match mapped.get(&key) {
+            Some(existing) if existing != replacement => {
+                ambiguous.insert(key);
+            }
+            Some(_) => {}
+            None => {
+                mapped.insert(key, replacement.to_string());
+            }
+        }
+    }
+
+    let mut terms = mapped
+        .into_iter()
+        .filter(|(key, _)| !ambiguous.contains(key))
+        .map(|(source, target)| GlossaryTerm { source, target })
+        .collect::<Vec<_>>();
+    terms.sort_by_key(|term| std::cmp::Reverse(term.source.chars().count()));
+    terms
+}
+
+fn is_japanese_word_char(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x3040..=0x30ff | 0x31f0..=0x31ff | 0x3400..=0x4dbf | 0x4e00..=0x9fff | 0xf900..=0xfaff
+    )
+}
+
+fn is_japanese_particle(ch: char) -> bool {
+    matches!(ch, 'は' | 'が' | 'を' | 'に' | 'へ' | 'と' | 'で' | 'の' | 'も' | 'や' | 'ね' | 'よ' | 'か')
+}
+
+fn has_japanese_suffix_boundary(after: &str) -> bool {
+    ["さん", "ちゃん", "くん", "様", "氏", "社", "株式会社", "合同会社", "有限会社"]
+        .iter()
+        .any(|suffix| after.starts_with(suffix))
+}
+
+fn has_glossary_boundaries(text: &str, start: usize, end: usize, term: &str) -> bool {
+    let before = text[..start].chars().next_back();
+    let after = text[end..].chars().next();
+    let has_japanese = term.chars().any(is_japanese_word_char);
+
+    if term.chars().next().is_some_and(|ch| ch.is_ascii_alphanumeric())
+        && before.is_some_and(|ch| ch.is_ascii_alphanumeric())
+    {
+        return false;
+    }
+    if term.chars().next_back().is_some_and(|ch| ch.is_ascii_alphanumeric())
+        && after.is_some_and(|ch| ch.is_ascii_alphanumeric())
+    {
+        return false;
+    }
+
+    if has_japanese {
+        if before.is_some_and(is_japanese_word_char)
+            && !before.is_some_and(is_japanese_particle)
+        {
+            return false;
+        }
+        if after.is_some_and(is_japanese_word_char)
+            && !after.is_some_and(is_japanese_particle)
+            && !has_japanese_suffix_boundary(&text[end..])
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn next_glossary_match<'a>(
+    text: &str,
+    from: usize,
+    terms: &'a [GlossaryTerm],
+) -> Option<(usize, usize, &'a GlossaryTerm)> {
+    for (start, _) in text.char_indices().filter(|(start, _)| *start >= from) {
+        for term in terms {
+            let end = start.checked_add(term.source.len())?;
+            let Some(candidate) = text.get(start..end) else {
+                continue;
+            };
+            if candidate.eq_ignore_ascii_case(&term.source)
+                && has_glossary_boundaries(text, start, end, &term.source)
+            {
+                return Some((start, end, term));
+            }
+        }
+    }
+    None
+}
+
+fn job_has_glossary_match(
+    job: &TranslationJob,
+    glossary: &GeminiLiveGlossarySettings,
+    source_language: &str,
+    target_language: &str,
+) -> bool {
+    glossary.enabled
+        && next_glossary_match(
+            &job.original,
+            0,
+            &glossary_terms(glossary, source_language, target_language),
+        )
+        .is_some()
+}
+
+fn prepare_glossary_job(
+    job: TranslationJob,
+    terms: &[GlossaryTerm],
+    nonce: &str,
+    raw_texts: &[String],
+) -> PreparedGlossaryJob {
+    let source_text = job.original.replace('\n', " ").replace('\r', " ");
+    let mut prompt_text = String::with_capacity(source_text.len());
+    let mut markers = Vec::new();
+    let mut cursor = 0;
+    let mut marker_index = 0usize;
+    while let Some((start, end, term)) = next_glossary_match(&source_text, cursor, terms) {
+        prompt_text.push_str(&source_text[cursor..start]);
+        let token = format!("[[MMG_{nonce}_{}_{}]]", job.id, marker_index);
+        marker_index += 1;
+        // The nonce is random, but retain the collision check as a hard guard
+        // so user speech can never be mistaken for a generated placeholder.
+        if raw_texts.iter().any(|text| text.contains(&token)) {
+            prompt_text.push_str(&source_text[start..end]);
+        } else {
+            prompt_text.push_str(&token);
+            markers.push(GlossaryMarker {
+                token,
+                target: term.target.clone(),
+            });
+        }
+        cursor = end;
+    }
+    prompt_text.push_str(&source_text[cursor..]);
+    PreparedGlossaryJob {
+        job,
+        prompt_text,
+        markers,
+    }
+}
+
+fn parse_glossary_id_header(line: &str) -> Option<(u64, String)> {
+    let rest = line.trim().strip_prefix("[ID:")?;
+    let close = rest.find(']')?;
+    let id = rest[..close].trim().parse::<u64>().ok()?;
+    Some((id, rest[close + 1..].trim().to_string()))
+}
+
+fn parse_glossary_translations(
+    text: &str,
+) -> (HashMap<u64, String>, HashSet<u64>, HashSet<u64>) {
+    let mut translations = HashMap::new();
+    let mut duplicate_ids = HashSet::new();
+    let mut malformed_ids = HashSet::new();
+    let mut current_id = None;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("```") {
+            continue;
+        }
+        if let Some((id, content)) = parse_glossary_id_header(line) {
+            current_id = Some(id);
+            if translations.contains_key(&id) {
+                duplicate_ids.insert(id);
+            } else {
+                translations.insert(id, content);
+            }
+        } else if line.starts_with("[ID:") {
+            if let Some(id) = current_id {
+                malformed_ids.insert(id);
+            }
+        } else if let Some(id) = current_id {
+            if let Some(content) = translations.get_mut(&id) {
+                if !content.is_empty() {
+                    content.push(' ');
+                }
+                content.push_str(line);
+            }
+        }
+    }
+    (translations, duplicate_ids, malformed_ids)
+}
+
+fn glossary_cache_key(target_language: &str, text: &str, cache_namespace: &str) -> String {
+    if cache_namespace.is_empty() {
+        format!("{}:{}", target_language, text)
+    } else {
+        format!("{}:{}:{}", target_language, cache_namespace, text)
+    }
+}
+
 async fn translate_job(
     http_client: reqwest::Client,
     api_key: String,
-    target_lang_ref: std::sync::Arc<tokio::sync::RwLock<String>>,
+    target_lang: String,
     job: TranslationJob,
     models_ref: std::sync::Arc<tokio::sync::RwLock<Vec<String>>>,
     cooldowns_ref: std::sync::Arc<
         tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>,
     >,
     cache_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, String>>>,
+    cache_namespace: String,
 ) -> GeminiEvent {
-    let target_lang = target_lang_ref.read().await.clone();
     let is_no_translate = target_lang == "none" || target_lang == "off" || target_lang.is_empty();
 
     let translation = if is_no_translate {
@@ -917,7 +1258,7 @@ async fn translate_job(
         let trimmed_text = job.original.trim().to_string();
 
         // 1. Check in-memory phrase cache
-        let cache_key = format!("{}:{}", target_lang, trimmed_text);
+        let cache_key = glossary_cache_key(&target_lang, &trimmed_text, &cache_namespace);
         let cached = {
             let cache = cache_ref.lock().await;
             cache.get(&cache_key).cloned()
@@ -994,6 +1335,235 @@ async fn translate_job(
     }
 }
 
+fn glossary_marker_tokens(text: &str) -> (Vec<String>, bool) {
+    let mut tokens = Vec::new();
+    let mut remaining = text;
+    let mut malformed = false;
+    while let Some(start) = remaining.find("[[MMG_") {
+        let after_start = &remaining[start..];
+        let Some(end) = after_start.find("]]") else {
+            malformed = true;
+            break;
+        };
+        tokens.push(after_start[..end + 2].to_string());
+        remaining = &after_start[end + 2..];
+    }
+    (tokens, malformed)
+}
+
+async fn translate_glossary_jobs(
+    http_client: reqwest::Client,
+    api_key: String,
+    target_language: String,
+    jobs: Vec<TranslationJob>,
+    glossary: GeminiLiveGlossarySettings,
+    source_language: String,
+    models_ref: std::sync::Arc<tokio::sync::RwLock<Vec<String>>>,
+    cooldowns_ref: std::sync::Arc<
+        tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>,
+    >,
+    cache_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, String>>>,
+    cache_namespace: String,
+) -> Vec<GeminiEvent> {
+    let is_no_translate = target_language == "none"
+        || target_language == "off"
+        || target_language.is_empty();
+    if is_no_translate {
+        return jobs
+            .into_iter()
+            .map(|job| GeminiEvent::Segment {
+                id: job.id,
+                original: job.original,
+                translation: String::new(),
+                speaker: job.speaker,
+            })
+            .collect();
+    }
+
+    let mut results = HashMap::new();
+    let mut uncached_jobs = Vec::new();
+    let all_jobs = jobs.clone();
+    {
+        let cache = cache_ref.lock().await;
+        for job in jobs.iter().cloned() {
+            let cache_key = glossary_cache_key(
+                &target_language,
+                job.original.trim(),
+                &cache_namespace,
+            );
+            if let Some(cached) = cache.get(&cache_key) {
+                results.insert(job.id, cached.clone());
+            } else {
+                uncached_jobs.push(job);
+            }
+        }
+    }
+
+    if uncached_jobs.is_empty() {
+        return jobs_from_results_with_jobs(all_jobs, results, HashMap::new());
+    }
+
+    let terms = glossary_terms(&glossary, &source_language, &target_language);
+    let raw_texts = uncached_jobs
+        .iter()
+        .map(|job| job.original.clone())
+        .collect::<Vec<_>>();
+    let mut nonce = uuid::Uuid::new_v4().simple().to_string();
+    while raw_texts.iter().any(|text| text.contains(&format!("MMG_{nonce}_"))) {
+        nonce = uuid::Uuid::new_v4().simple().to_string();
+    }
+    let prepared = uncached_jobs
+        .into_iter()
+        .map(|job| prepare_glossary_job(job, &terms, &nonce, &raw_texts))
+        .collect::<Vec<_>>();
+
+    let mut prompt_items = String::new();
+    for item in &prepared {
+        prompt_items.push_str(&format!("[ID:{}] {}\n", item.job.id, item.prompt_text));
+    }
+    let target_name = map_lang_name(&target_language);
+    let prompt = format!(
+        "Translate the following speech items naturally into {target_name}. Each item has a stable ID. Return exactly one line per item in the form [ID:<same ID>] <translation>. IDs may be returned in any order. Keep every token beginning [[MMG_ and ending ]] exactly unchanged, once, in the translation for its own item. Do not translate, remove, move, duplicate, or invent these tokens. Do not apply glossary names unless the corresponding token is present. Output no explanations.\n{}",
+        prompt_items.trim()
+    );
+    let models = models_ref.read().await.clone();
+    let mut response_text = None;
+    let mut batch_error: Option<String> = None;
+    for attempt in 0..TRANSLATION_MAX_ATTEMPTS {
+        if attempt > 0 {
+            let delay_ms = 2000u64 * attempt as u64;
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        }
+        match translate_raw_prompt(&http_client, &api_key, &prompt, &models, &cooldowns_ref).await {
+            Ok(Some(value)) if !value.trim().is_empty() => {
+                response_text = Some(value);
+                break;
+            }
+            Ok(_) => {}
+            Err(error) => {
+                let stop_retrying = is_non_retryable_translation_error(&error);
+                batch_error = Some(error);
+                if stop_retrying {
+                    break;
+                }
+            }
+        }
+    }
+
+    let mut failures = HashMap::new();
+    if let Some(error) = batch_error
+        .as_deref()
+        .filter(|message| is_non_retryable_translation_error(message))
+    {
+        for item in &prepared {
+            failures.insert(item.job.id, error.to_string());
+        }
+    } else if let Some(response_text) = response_text {
+        let (mut parsed, duplicate_ids, malformed_ids) =
+            parse_glossary_translations(&response_text);
+        let mut expected_tokens = HashMap::<String, u64>::new();
+        for item in &prepared {
+            for marker in &item.markers {
+                expected_tokens.insert(marker.token.clone(), item.job.id);
+            }
+        }
+        let (response_tokens, _) = glossary_marker_tokens(&response_text);
+        let destination_terms = terms
+            .iter()
+            .map(|term| GlossaryTerm {
+                source: term.target.clone(),
+                target: String::new(),
+            })
+            .collect::<Vec<_>>();
+
+        for item in &prepared {
+            let id = item.job.id;
+            let Some(mut translation) = parsed.remove(&id) else {
+                failures.insert(id, "Gemini returned no translation for this segment.".into());
+                continue;
+            };
+            let mut valid = !duplicate_ids.contains(&id) && !malformed_ids.contains(&id);
+            if duplicate_ids.contains(&id) || malformed_ids.contains(&id) {
+                failures.insert(id, "Gemini returned a malformed or duplicate segment ID.".into());
+                continue;
+            }
+
+            let (segment_tokens, segment_malformed) = glossary_marker_tokens(&translation);
+            valid &= !segment_malformed
+                && segment_tokens
+                    .iter()
+                    .all(|token| expected_tokens.contains_key(token));
+            if segment_tokens.iter().any(|token| {
+                expected_tokens
+                    .get(token)
+                    .is_some_and(|owner_id| *owner_id != id)
+            }) {
+                valid = false;
+            }
+            // A target spelling emitted without a protected source match is
+            // evidence that the model applied the glossary on its own.
+            if next_glossary_match(&translation, 0, &destination_terms).is_some() {
+                valid = false;
+            }
+            for marker in &item.markers {
+                if response_tokens.iter().filter(|token| *token == &marker.token).count() != 1
+                    || response_text.matches(&marker.token).count() != 1
+                    || translation.matches(&marker.token).count() != 1
+                {
+                    valid = false;
+                }
+            }
+            if !valid {
+                failures.insert(id, "Gemini returned an invalid glossary translation format.".into());
+                continue;
+            }
+
+            for marker in &item.markers {
+                translation = translation.replace(&marker.token, &marker.target);
+            }
+            if translation.trim().is_empty() {
+                failures.insert(id, "Gemini returned an empty translation.".into());
+                continue;
+            }
+            if item.job.original.trim().len() < 120 {
+                let cache_key = glossary_cache_key(
+                    &target_language,
+                    item.job.original.trim(),
+                    &cache_namespace,
+                );
+                cache_ref.lock().await.insert(cache_key, translation.clone());
+            }
+            results.insert(id, translation);
+        }
+
+    } else {
+        let message = batch_error.unwrap_or_else(|| "Gemini returned an empty translation.".into());
+        for item in &prepared {
+            failures.insert(item.job.id, message.clone());
+        }
+    }
+
+    jobs_from_results_with_jobs(all_jobs, results, failures)
+}
+
+fn jobs_from_results_with_jobs(
+    jobs: Vec<TranslationJob>,
+    mut results: HashMap<u64, String>,
+    mut failures: HashMap<u64, String>,
+) -> Vec<GeminiEvent> {
+    jobs.into_iter()
+        .map(|job| match failures.remove(&job.id) {
+            Some(message) => GeminiEvent::TranslationFailed { id: job.id, message },
+            None => GeminiEvent::Segment {
+                id: job.id,
+                original: job.original,
+                translation: results.remove(&job.id).unwrap_or_default(),
+                speaker: job.speaker,
+            },
+        })
+        .collect()
+}
+
 async fn finish_translation_worker(
     translation_tx: Option<mpsc::Sender<TranslationJob>>,
     translation_worker: Option<tokio::task::JoinHandle<()>>,
@@ -1015,7 +1585,6 @@ async fn finish_translation_worker(
 
 async fn start_translation_worker(
     cfg: &GeminiRealtimeConfig,
-    target_lang_ref: Arc<tokio::sync::RwLock<String>>,
     event_sink: GeminiEventSink,
     models_cache: Arc<tokio::sync::RwLock<Option<(std::time::Instant, Vec<String>)>>>,
     cooldowns: Arc<tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>>,
@@ -1030,45 +1599,117 @@ async fn start_translation_worker(
     ));
     let (translation_tx, mut translation_rx) = mpsc::channel::<TranslationJob>(64);
     let translation_api_key = cfg.api_key.clone();
+    let translation_glossary = cfg.gemini_live_glossary.clone();
+    let translation_source_language = cfg.source_language.clone();
+    let cache_namespace = if cfg.live_translation_mode.eq_ignore_ascii_case("batch")
+        && translation_glossary.enabled
+    {
+        serde_json::to_string(&translation_glossary).unwrap_or_default()
+    } else {
+        String::new()
+    };
 
     let worker = tokio::spawn(async move {
-        while let Some(first_job) = translation_rx.recv().await {
+        let mut paused_error: Option<String> = None;
+        let mut queued_jobs = VecDeque::new();
+        loop {
+            let first_job = if let Some(job) = queued_jobs.pop_front() {
+                job
+            } else {
+                match translation_rx.recv().await {
+                    Some(job) => job,
+                    None => break,
+                }
+            };
+            if let Some(message) = paused_error.as_ref() {
+                send_events(
+                    &event_sink,
+                    vec![GeminiEvent::TranslationFailed {
+                        id: first_job.id,
+                        message: message.clone(),
+                    }],
+                );
+                continue;
+            }
+
             let mut batch = vec![first_job];
-            while let Ok(next_job) = translation_rx.try_recv() {
-                batch.push(next_job);
-                if batch.len() >= 6 {
-                    break;
+            let target_language = batch[0].target_language.clone();
+            let collect_until = tokio::time::Instant::now() + std::time::Duration::from_millis(800);
+            while batch.len() < 6 {
+                match tokio::time::timeout_at(collect_until, translation_rx.recv()).await {
+                    Ok(Some(next_job)) if next_job.target_language == target_language => {
+                        batch.push(next_job)
+                    }
+                    Ok(Some(next_job)) => {
+                        queued_jobs.push_back(next_job);
+                        break;
+                    }
+                    Ok(None) | Err(_) => break,
                 }
             }
 
             let events = if batch.len() == 1 {
-                vec![
-                    translate_job(
+                let job = batch.remove(0);
+                if job_has_glossary_match(
+                    &job,
+                    &translation_glossary,
+                    &translation_source_language,
+                    &target_language,
+                ) {
+                    translate_glossary_jobs(
                         http_client.clone(),
                         translation_api_key.clone(),
-                        target_lang_ref.clone(),
-                        batch.remove(0),
+                        target_language,
+                        vec![job],
+                        translation_glossary.clone(),
+                        translation_source_language.clone(),
                         available_models.clone(),
                         cooldowns.clone(),
                         translation_cache.clone(),
+                        cache_namespace.clone(),
                     )
-                    .await,
-                ]
+                    .await
+                } else {
+                    vec![translate_job(
+                        http_client.clone(),
+                        translation_api_key.clone(),
+                        target_language,
+                        job,
+                        available_models.clone(),
+                        cooldowns.clone(),
+                        translation_cache.clone(),
+                        cache_namespace.clone(),
+                    )
+                    .await]
+                }
             } else {
                 translate_batch_jobs(
                     http_client.clone(),
                     translation_api_key.clone(),
-                    target_lang_ref.clone(),
+                    target_language,
                     batch,
+                    translation_glossary.clone(),
+                    translation_source_language.clone(),
                     available_models.clone(),
                     cooldowns.clone(),
                     translation_cache.clone(),
+                    cache_namespace.clone(),
                 )
                 .await
             };
 
+            paused_error = events.iter().find_map(|event| match event {
+                GeminiEvent::TranslationFailed { message, .. }
+                    if is_non_retryable_translation_error(message) =>
+                {
+                    Some(message.clone())
+                }
+                _ => None,
+            });
             send_events(&event_sink, events);
-            tokio::time::sleep(TRANSLATION_PACE_DELAY).await;
+            if paused_error.is_none() {
+                tokio::time::sleep(TRANSLATION_PACE_DELAY).await;
+            }
         }
     });
 
@@ -1103,6 +1744,73 @@ fn map_bcp47(code: &str) -> Option<String> {
             }
         }
     }
+}
+
+fn gemini_glossary_vocabulary(cfg: &GeminiRealtimeConfig) -> Vec<String> {
+    if !cfg.live_translation_mode.eq_ignore_ascii_case("batch")
+        || !cfg.gemini_live_glossary.enabled
+        || !cfg.glossary_transcription_hints_enabled
+    {
+        return Vec::new();
+    }
+
+    let source = cfg
+        .source_language
+        .trim()
+        .to_lowercase()
+        .split('-')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    let use_vietnamese = source == "vi" || source == "auto";
+    let use_japanese = source == "ja" || source == "auto";
+    let mut seen = HashSet::new();
+    let mut vocabulary = Vec::new();
+    for entry in &cfg.gemini_live_glossary.entries {
+        for phrase in [
+            use_vietnamese.then_some(entry.vi.trim()),
+            use_japanese.then_some(entry.ja.trim()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if phrase.is_empty() || !seen.insert(phrase.to_lowercase()) {
+                continue;
+            }
+            vocabulary.push(phrase.to_string());
+            if vocabulary.len() >= 100 {
+                return vocabulary;
+            }
+        }
+    }
+    vocabulary
+}
+
+fn parse_gemini_setup_response(text: &str) -> Option<Result<(), String>> {
+    let value = serde_json::from_str::<serde_json::Value>(text).ok()?;
+    if value.get("setupComplete").is_some() {
+        return Some(Ok(()));
+    }
+    let error = value
+        .get("error")
+        .or_else(|| value.get("setupError"))?;
+    if let Some(message) = error.as_str() {
+        return Some(Err(format!("Gemini setup error: {}", message)));
+    }
+    let code = error
+        .get("code")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or_default();
+    let message = error
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("Gemini rejected the Live setup");
+    Some(Err(format!("Gemini setup error {}: {}", code, message)))
+}
+
+fn is_custom_vocabulary_rejection(error: &str) -> bool {
+    let normalized = error.to_lowercase().replace('_', "");
+    normalized.contains("customvocabulary") || normalized.contains("custom vocabulary")
 }
 
 fn map_lang_name(code: &str) -> String {
@@ -1142,7 +1850,8 @@ fn normalized_model(cfg: &GeminiRealtimeConfig) -> String {
 
 fn uses_live_translate(cfg: &GeminiRealtimeConfig) -> bool {
     let target = cfg.target_language.trim().to_lowercase();
-    normalized_model(cfg) == LIVE_TRANSLATE_MODEL
+    !cfg.live_translation_mode.eq_ignore_ascii_case("batch")
+        && normalized_model(cfg) == LIVE_TRANSLATE_MODEL
         && !target.is_empty()
         && target != "none"
         && target != "off"
@@ -1169,21 +1878,21 @@ fn build_setup_message(cfg: &GeminiRealtimeConfig) -> String {
         .to_string();
     }
 
-    // Live Translate requires a target language. If the user selects
-    // "No translation", retain the transcription-only behavior instead of
-    // sending an invalid Live Translate setup.
+    // Live Translate requires a target language. Batch mode and "No
+    // translation" use the dedicated transcription model instead.
     let model = if requested_model == LIVE_TRANSLATE_MODEL {
         FALLBACK_TRANSCRIBE_MODEL.to_string()
     } else {
         requested_model
     };
+    let is_transcribe_live = model == FALLBACK_TRANSCRIBE_MODEL;
 
     let is_no_translate = cfg.target_language == "none"
         || cfg.target_language == "off"
         || cfg.target_language.is_empty();
 
     let src = cfg.source_language.trim().to_lowercase();
-    let sys_instruction = if is_no_translate {
+    let sys_instruction = if is_no_translate || is_transcribe_live {
         if !src.is_empty() && src != "auto" {
             let src_name = map_lang_name(&src);
             format!("You are an automated live speech transcription engine. The speaker is speaking {}. Accurately transcribe all spoken audio verbatim in {} without translation.", src_name, src_name)
@@ -1205,13 +1914,18 @@ fn build_setup_message(cfg: &GeminiRealtimeConfig) -> String {
     if let Some(bcp47) = map_bcp47(&src) {
         input_audio_transcription["languageCodes"] = serde_json::json!([bcp47]);
     }
+    if is_transcribe_live {
+        let vocabulary = gemini_glossary_vocabulary(cfg);
+        if !vocabulary.is_empty() {
+            input_audio_transcription["customVocabulary"] = serde_json::json!(vocabulary);
+        }
+    }
 
-    serde_json::json!({
+    let mut setup = serde_json::json!({
         "setup": {
             "model": model,
             "generationConfig": {
-                "responseModalities": ["TEXT"],
-                "temperature": 0.2
+                "responseModalities": ["TEXT"]
             },
             "inputAudioTranscription": input_audio_transcription,
             "realtimeInputConfig": {
@@ -1219,17 +1933,20 @@ fn build_setup_message(cfg: &GeminiRealtimeConfig) -> String {
                     "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH",
                     "silenceDurationMs": 600
                 }
-            },
-            "systemInstruction": {
-                "parts": [
-                    {
-                        "text": sys_instruction
-                    }
-                ]
             }
         }
-    })
-    .to_string()
+    });
+
+    // Live Transcribe is a dedicated ASR model and documents its text
+    // transcription config without a conversational system instruction.
+    if !is_transcribe_live {
+        setup["setup"]["generationConfig"]["temperature"] = serde_json::json!(0.2);
+        setup["setup"]["systemInstruction"] = serde_json::json!({
+            "parts": [{ "text": sys_instruction }]
+        });
+    }
+
+    setup.to_string()
 }
 
 /// Extracts complete sentences (ending in punctuation or clause boundary >= min_clause_chars)
@@ -1412,6 +2129,7 @@ async fn handle_server_message(
     text: &str,
     event_sink: &GeminiEventSink,
     translation_tx: Option<&mpsc::Sender<TranslationJob>>,
+    target_lang_ref: &Arc<tokio::sync::RwLock<String>>,
     live_assembler: Option<&mut LiveTranslateAssembler>,
     next_translation_id: &mut u64,
     turn_committed: &mut HashSet<String>,
@@ -1529,8 +2247,8 @@ async fn handle_server_message(
                             let translation_id = *next_translation_id;
                             *next_translation_id = (*next_translation_id).saturating_add(1);
                             eprintln!(
-                                "[gemini-live] Stream commit sentence #{}: {}",
-                                translation_id, sent_trimmed
+                                "[gemini-live] Stream commit sentence id={}",
+                                translation_id
                             );
 
                             emit_event(
@@ -1549,6 +2267,7 @@ async fn handle_server_message(
                                         id: translation_id,
                                         original: sent_trimmed.to_string(),
                                         speaker: speaker.clone(),
+                                        target_language: target_lang_ref.read().await.clone(),
                                     })
                                     .await;
                             }
@@ -1608,18 +2327,15 @@ async fn handle_server_message(
                         }
 
                         if is_recent_duplicate(sent_trimmed, turn_committed, recent_committed) {
-                            eprintln!(
-                                "[gemini-live] Skipped duplicate final sentence: {}",
-                                sent_trimmed
-                            );
+                            eprintln!("[gemini-live] Skipped a duplicate final sentence");
                             continue;
                         }
 
                         let translation_id = *next_translation_id;
                         *next_translation_id = (*next_translation_id).saturating_add(1);
                         eprintln!(
-                            "[gemini-live] Final speech sentence #{}: {}",
-                            translation_id, sent_trimmed
+                            "[gemini-live] Final speech sentence id={}",
+                            translation_id
                         );
 
                         emit_event(
@@ -1638,6 +2354,7 @@ async fn handle_server_message(
                                     id: translation_id,
                                     original: sent_trimmed.to_string(),
                                     speaker: speaker.clone(),
+                                    target_language: target_lang_ref.read().await.clone(),
                                 })
                                 .await;
                         }
@@ -2148,15 +2865,17 @@ fn parse_numbered_translations(text: &str, expected_count: usize) -> Vec<String>
 async fn translate_batch_jobs(
     http_client: reqwest::Client,
     api_key: String,
-    target_lang_ref: std::sync::Arc<tokio::sync::RwLock<String>>,
+    target_lang: String,
     jobs: Vec<TranslationJob>,
+    glossary: GeminiLiveGlossarySettings,
+    source_language: String,
     models_ref: std::sync::Arc<tokio::sync::RwLock<Vec<String>>>,
     cooldowns_ref: std::sync::Arc<
         tokio::sync::Mutex<HashMap<String, (std::time::Instant, ModelCooldownKind)>>,
     >,
     cache_ref: std::sync::Arc<tokio::sync::Mutex<HashMap<String, String>>>,
+    cache_namespace: String,
 ) -> Vec<GeminiEvent> {
-    let target_lang = target_lang_ref.read().await.clone();
     let is_no_translate = target_lang == "none" || target_lang == "off" || target_lang.is_empty();
 
     if is_no_translate {
@@ -2171,6 +2890,24 @@ async fn translate_batch_jobs(
             .collect();
     }
 
+    if jobs.iter().any(|job| {
+        job_has_glossary_match(job, &glossary, &source_language, &target_lang)
+    }) {
+        return translate_glossary_jobs(
+            http_client,
+            api_key,
+            target_lang,
+            jobs,
+            glossary,
+            source_language,
+            models_ref,
+            cooldowns_ref,
+            cache_ref,
+            cache_namespace,
+        )
+        .await;
+    }
+
     let mut results: HashMap<u64, String> = HashMap::new();
     let mut failures: HashMap<u64, String> = HashMap::new();
     let mut uncached_indices: Vec<usize> = Vec::new();
@@ -2179,7 +2916,11 @@ async fn translate_batch_jobs(
     {
         let cache = cache_ref.lock().await;
         for (idx, job) in jobs.iter().enumerate() {
-            let cache_key = format!("{}:{}", target_lang, job.original.trim());
+            let cache_key = glossary_cache_key(
+                &target_lang,
+                job.original.trim(),
+                &cache_namespace,
+            );
             if let Some(cached) = cache.get(&cache_key) {
                 results.insert(job.id, cached.clone());
             } else {
@@ -2209,11 +2950,12 @@ async fn translate_batch_jobs(
         let event = translate_job(
             http_client,
             api_key,
-            target_lang_ref,
+            target_lang.clone(),
             job,
             models_ref,
             cooldowns_ref,
             cache_ref,
+            cache_namespace.clone(),
         )
         .await;
         match event {
@@ -2296,7 +3038,7 @@ async fn translate_batch_jobs(
                 let job = &jobs[idx];
                 let trimmed = job.original.trim();
                 if trimmed.len() < 120 {
-                    let cache_key = format!("{}:{}", target_lang, trimmed);
+                    let cache_key = glossary_cache_key(&target_lang, trimmed, &cache_namespace);
                     cache.insert(cache_key, trans.clone());
                 }
                 results.insert(job.id, trans);
@@ -2319,11 +3061,12 @@ async fn translate_batch_jobs(
             let event = translate_job(
                 http_client.clone(),
                 api_key.clone(),
-                target_lang_ref.clone(),
+                target_lang.clone(),
                 job,
                 models_ref.clone(),
                 cooldowns_ref.clone(),
                 cache_ref.clone(),
+                cache_namespace.clone(),
             )
             .await;
             match event {
@@ -2387,6 +3130,9 @@ mod tests {
             source_language: "vi".into(),
             target_language: "none".into(),
             model: None,
+            live_translation_mode: default_live_translation_mode(),
+            gemini_live_glossary: GeminiLiveGlossarySettings::default(),
+            glossary_transcription_hints_enabled: default_glossary_transcription_hints_enabled(),
             diarization: false,
         };
         let msg = build_setup_message(&cfg);
@@ -2405,6 +3151,9 @@ mod tests {
             source_language: "ja".into(),
             target_language: "vi".into(),
             model: Some(LIVE_TRANSLATE_MODEL.into()),
+            live_translation_mode: default_live_translation_mode(),
+            gemini_live_glossary: GeminiLiveGlossarySettings::default(),
+            glossary_transcription_hints_enabled: default_glossary_transcription_hints_enabled(),
             diarization: false,
         };
         let parsed: serde_json::Value = serde_json::from_str(&build_setup_message(&cfg)).unwrap();
@@ -2434,6 +3183,9 @@ mod tests {
             source_language: "ja".into(),
             target_language: "vi".into(),
             model: Some(AUTO_GEMINI_MODEL.into()),
+            live_translation_mode: default_live_translation_mode(),
+            gemini_live_glossary: GeminiLiveGlossarySettings::default(),
+            glossary_transcription_hints_enabled: default_glossary_transcription_hints_enabled(),
             diarization: false,
         };
 

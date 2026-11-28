@@ -33,6 +33,9 @@ export class GeminiRealtimeClient {
                     source_language: cfg.sourceLanguage || 'auto',
                     target_language: cfg.targetLanguage || 'vi',
                     model: cfg.model || null,
+                    live_translation_mode: cfg.liveTranslationMode || 'direct',
+                    gemini_live_glossary: cfg.liveGlossary || { enabled: false, entries: [] },
+                    glossary_transcription_hints_enabled: cfg.glossaryTranscriptionHintsEnabled !== false,
                 },
                 onEvent: this.channel,
             });

@@ -11,6 +11,8 @@ const DEFAULT_SETTINGS = {
   openai_api_key: '',
   gemini_api_key: '',
   gemini_model: 'auto',
+  gemini_live_translation_mode: 'direct',
+  gemini_live_glossary: { enabled: false, entries: [] },
   qwen_api_key: '',
   source_language: 'en',
   target_language: 'ja',

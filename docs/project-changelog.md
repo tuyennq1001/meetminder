@@ -6,6 +6,17 @@ Each release section is extracted automatically by `.github/workflows/release.ym
 
 Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v` heading.
 
+## v1.0.35 - 2026-11-28
+
+### Added
+
+- **Gemini Live grouped text translation**: Transcribe speech first, then translate up to 6 sentences together to reduce translation output and avoid generating unused speech audio.
+- **Shared Vietnamese ↔ Japanese glossary**: Save names once, use them as Gemini transcription hints, and preserve the mapped spelling in grouped translations when the full name matches.
+
+### Fixed
+
+- **Re-transcription status**: Mark a session as completed after a successful re-transcription so a previous failure does not remain in Meeting Logs.
+
 ## v1.0.34 - 2026-11-27
 
 ### Improved

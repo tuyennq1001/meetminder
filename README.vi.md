@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.0.34-blueviolet?style=flat-square" alt="Version 1.0.34">
+  <img src="https://img.shields.io/badge/version-v1.0.35-blueviolet?style=flat-square" alt="Version 1.0.35">
   <img src="https://img.shields.io/badge/built_with-Tauri_v2-24C8D8?logo=tauri&logoColor=white&style=flat-square" alt="Built with Tauri v2">
   <img src="https://img.shields.io/badge/backend-Rust_2021-DEA584?logo=rust&logoColor=white&style=flat-square" alt="Rust 2021">
   <img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?logo=apple&logoColor=white&style=flat-square" alt="macOS">
@@ -44,7 +44,7 @@
 
 ---
 
-## ⬇️ Tải về bản cài đặt (v1.0.34)
+## ⬇️ Tải về bản cài đặt (v1.0.35)
 
 Tải phiên bản mới nhất từ trang [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest).
 
@@ -58,7 +58,7 @@ Trình cài đặt tải DMG đã ký dành cho Apple Silicon. Hiện Meet Minde
 
 | Hệ điều hành | Kiến trúc / Thiết bị | File cài đặt | Hướng dẫn |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.34_aarch64.dmg` | [Hướng dẫn macOS](docs/installation_guide_vi.md) |
+| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.35_aarch64.dmg` | [Hướng dẫn macOS](docs/installation_guide_vi.md) |
 
 ---
 
@@ -94,6 +94,8 @@ Trình cài đặt tải DMG đã ký dành cho Apple Silicon. Hiện Meet Minde
 | **Độ trễ** | Cực thấp (~1–2s) | Thấp (~2–3s) | Siêu thấp (<1s) | Thấp (~1–2s) | Siêu thấp (~1s) |
 | **Chạy Ngoại tuyến (Offline)** | Cần Internet | **Có (100% Offline)**| Cần Internet | Cần Internet | Cần Internet |
 | **Tạo Biên bản họp (Minutes)** | **Xuất sắc (AI Agent)**| Cơ bản | Hỗ trợ qua Gemini | Tốt | Không hỗ trợ |
+| **Chế độ Gemini Live** | Dịch trực tiếp hoặc gom tối đa 6 câu để dịch text | — | — | — | — |
+| **Bảng thuật ngữ dùng chung** | Ánh xạ tên Việt ↔ Nhật trong chế độ dịch theo nhóm | — | — | — | — |
 | **Mức độ Riêng tư** | Trực tiếp ➔ Google | **Cực đại (Nội bộ)** | Trực tiếp ➔ Soniox | Trực tiếp ➔ OpenAI | Trực tiếp ➔ Alibaba |
 | **Hỗ trợ thiết bị** | macOS & Windows | Apple Silicon (M1–M4) | macOS & Windows | macOS & Windows | macOS & Windows |
 

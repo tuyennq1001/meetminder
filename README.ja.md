@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.0.34-blueviolet?style=flat-square" alt="Version 1.0.34">
+  <img src="https://img.shields.io/badge/version-v1.0.35-blueviolet?style=flat-square" alt="Version 1.0.35">
   <img src="https://img.shields.io/badge/built_with-Tauri_v2-24C8D8?logo=tauri&logoColor=white&style=flat-square" alt="Built with Tauri v2">
   <img src="https://img.shields.io/badge/backend-Rust_2021-DEA584?logo=rust&logoColor=white&style=flat-square" alt="Rust 2021">
   <img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?logo=apple&logoColor=white&style=flat-square" alt="macOS">
@@ -44,13 +44,13 @@
 
 ---
 
-## ⬇️ ダウンロード (v1.0.34)
+## ⬇️ ダウンロード (v1.0.35)
 
 Apple Silicon搭載Mac向けの最新インストーラーは [**GitHub Releases**](https://github.com/tuyennq1001/meetminder/releases/latest) からダウンロードできます。
 
 | OS | アーキテクチャ / 対象端末 | インストーラー | ガイド |
 | :--- | :--- | :--- | :--- |
-| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.34_aarch64.dmg` | [macOS インストール手順](docs/installation_guide_ja.md) |
+| **macOS** | **Apple Silicon** (M1 / M2 / M3 / M4) | `Meet.Minder_1.0.35_aarch64.dmg` | [macOS インストール手順](docs/installation_guide_ja.md) |
 
 ---
 
@@ -86,7 +86,8 @@ Apple Silicon搭載Mac向けの最新インストーラーは [**GitHub Releases
 | **遅延速度** | 超低遅延 (~1–2秒) | 低遅延 (~2–3秒) | 最速 (<1秒) | 低遅延 (~1–2秒) | 最速 (~1秒) |
 | **オフライン動作** | インターネット必須 | **可能 (100% Offline)**| インターネット必須 | インターネット必須 | インターネット必須 |
 | **AI自動議事録** | **極めて優秀** | 基本的 | Gemini経由 | 良好 | 非対応 |
-| **用語集登録** | **対応 (組み込み)** | プロンプト形式 | 対応 (API連携) | プロンプト形式 | 非対応 |
+| **Gemini Live の翻訳モード** | 直接翻訳 / 最大6文をまとめたテキスト翻訳 | — | — | — | — |
+| **共通用語集** | グループ翻訳でベトナム語 ↔ 日本語の名前に対応 | — | — | — | — |
 | **プライバシー** | 端末 ➔ Google 直接 | **最高 (端末完結)** | 端末 ➔ Soniox 直接 | 端末 ➔ OpenAI 直接 | 端末 ➔ Alibaba |
 | **対応環境** | macOS & Windows | Apple Silicon (M1–M4) | macOS & Windows | macOS & Windows | macOS & Windows |
 

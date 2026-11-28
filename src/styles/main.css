@@ -1675,6 +1675,80 @@ body:not(.activity-live) .header-divider {
   margin-bottom: 8px;
 }
 
+.gemini-live-glossary-panel {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.gemini-glossary-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 10px 0 6px;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.gemini-glossary-toggle input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.gemini-glossary-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.gemini-glossary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.gemini-glossary-row input {
+  min-width: 0;
+  width: 100%;
+}
+
+.gemini-glossary-row input[aria-invalid="true"] {
+  border-color: var(--danger-color, #ef4444);
+  box-shadow: 0 0 0 1px var(--danger-color, #ef4444);
+}
+
+.gemini-glossary-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gemini-glossary-save-status {
+  min-height: 1.4em;
+  color: var(--text-secondary, #a1a1aa);
+}
+
+@media (max-width: 520px) {
+  .gemini-glossary-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .gemini-glossary-row input:first-child {
+    grid-column: 1;
+  }
+
+  .gemini-glossary-row input:nth-child(2) {
+    grid-column: 1;
+  }
+
+  .gemini-glossary-row button {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
 .section-label {
   display: flex;
   align-items: center;
